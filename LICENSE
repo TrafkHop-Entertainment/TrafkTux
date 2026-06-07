@@ -1,44 +1,85 @@
 ───────────────────────
-LICENSE v3 | 23.03.2026
+LICENSE v4 | 07.06.2026
 ───────────────────────
 
-Copyright © 2026 Trafkhop Entertainment™ <contact.trafkhop@proton.me>
+Copyright © 2026 TrafkHop Entertainment™ <contact.trafkhop@proton.me>
 All rights reserved.
 
-This license applies to all current and future projects
-released by Trafkhop Entertainment™, unless stated otherwise
-on a per-project basis.
+TrafkHop Entertainment™ is an unregistered trademark and the trade name
+of a single-person indie studio. Unauthorized use of this name, logo, or
+branding for any commercial or misleading purpose is strictly prohibited,
+regardless of whether formal trademark registration has been completed.
+
+This license applies to all current and future projects released by
+TrafkHop Entertainment™, unless stated otherwise on a per-project basis.
+
+This license is governed by and construed in accordance with the laws of
+the Republic of Austria (Urheberrechtsgesetz – UrhG) and applicable
+European Union law, including the EU Directive on Copyright in the Digital
+Single Market (2019/790/EU). Any disputes arising from this license shall
+be subject to the exclusive jurisdiction of Austrian courts.
+
+TrafkHop Entertainment™ expressly asserts its moral rights (Urheber-
+persönlichkeitsrechte) as author of all original works covered by this
+license, including the right of attribution (§ 20 UrhG) and the right of
+integrity (§ 21 UrhG). These rights are inalienable and cannot be waived.
+
+Nothing in this license is intended to limit or override any statutory
+rights granted by applicable law, including fair use, fair dealing, or
+equivalent provisions under Austrian or EU law.
+
+To request explicit written permission for any use not covered by this
+license, contact TrafkHop Entertainment™ at: contact.trafkhop@proton.me
+Permission may be granted via confirmed email reply from TrafkHop
+Entertainment™. Confirmations via social media platforms (such as comments,
+direct messages, or posts on YouTube, Twitter/X, Discord, or similar) do
+NOT constitute valid written permission, regardless of content.
+
+Previous versions of this license are archived at:
+https://trafkhop-entertainment.github.io/TrafkSite/SourceHop-Notes/assets/Sourcehop-Documents.html
 
 ─────────────────────
-0. OPEN SOURCE NOTICE
+0. THIRD-PARTY MATERIAL
 ─────────────────────
 
-Some projects released by Trafkhop Entertainment™ may include,
-be built upon, or be distributed alongside third-party software
-components that are subject to their own open source licenses
-(including but not limited to the GNU General Public License,
-MIT License, Apache License 2.0, and similar).
+Some projects released by TrafkHop Entertainment™ may incorporate,
+reference, or be inspired by third-party material. This includes, but
+is not limited to:
 
-This license does NOT override, restrict, or supersede the terms
-of any such third-party open source licenses. The rights and
-obligations defined in those licenses remain fully in effect for
-their respective components.
+  (a) Open source software components subject to their own licenses
+      (including but not limited to the GNU General Public License,
+      MIT License, Apache License 2.0, and similar).
+
+  (b) Creative or fictional material originating from third parties,
+      including community-created works, collaborative fiction
+      projects, internet folklore, or other external intellectual
+      property (such as, but not limited to, the SCP Foundation,
+      the Backrooms, or similar shared universes).
+
+This license does NOT override, restrict, or supersede the terms of
+any applicable third-party license governing such material. The
+rights and obligations defined in those licenses remain fully in
+effect for their respective components.
+
+Where a third-party license imposes conditions on derivative works
+(such as share-alike or attribution requirements), those conditions
+apply to the specific project or component incorporating that
+material, and will be explicitly noted on a per-project basis.
 
 This license applies exclusively to original work created by
-Trafkhop Entertainment™, including but not limited to:
-original source code, creative content, raw assets, branding,
-and configuration files authored by Trafkhop Entertainment™.
+TrafkHop Entertainment™, including but not limited to: original
+source code, creative content, raw assets, branding, and
+configuration files authored by TrafkHop Entertainment™.
 
 ──────────────────
 1. CODE & SOFTWARE
 ──────────────────
 
-This section applies to all forms of original code authored by
-Trafkhop Entertainment™, including but not limited to source code,
-scripts, logic files, shaders, and compiled binaries.
+This section applies to all forms of original code authored by TrafkHop
+Entertainment™, including but not limited to source code, scripts, logic
+files, shaders, and compiled binaries.
 
-The code is publicly available for viewing and reference
-purposes only.
+The code is publicly available for viewing and reference purposes only.
 
 You may NOT:
 
@@ -46,18 +87,63 @@ You may NOT:
 * modify
 * distribute
 * sublicense
-* fork
+* fork (including via GitHub's fork feature or any equivalent platform
+  function)
+* mirror or archive the current version of any project on any platform,
+  service, or system (including but not limited to the Internet Archive /
+  Wayback Machine, archive.today, or similar services), without explicit
+  written permission. Archiving of older, previously released versions of
+  projects is permitted, provided the archived version is clearly dated
+  and not presented as current.
 * integrate
 * use
 
-any part of the code, in whole or in part, in any project,
-commercial or non-commercial, without explicit written permission
-from Trafkhop Entertainment™.
+any part of the code, in whole or in part, in any project, commercial or
+non-commercial, without explicit written permission from TrafkHop
+Entertainment™.
 
 You MAY:
 
 * compile the code for personal, non-distributed use
 * view and reference the code for educational purposes
+
+─────────────────────────────────────────────
+1a. PLATFORM REPOSITORY & FORKING RESTRICTION
+─────────────────────────────────────────────
+
+Forking, cloning, mirroring, or otherwise creating copies of any
+TrafkHop Entertainment™ repository on GitHub, GitLab, Codeberg, or any
+other code hosting or version control platform is strictly prohibited
+without explicit written permission.
+
+If a fork or clone is created solely for the purpose of submitting a pull
+request or contribution, such fork must be deleted immediately after the
+corresponding pull request is closed or merged.
+
+Automated mirroring, scraping, or archiving of repositories — whether by
+bots, scripts, or platform features — is prohibited without prior written
+consent.
+
+─────────────────────────────────
+1b. CONTRIBUTIONS & PULL REQUESTS
+─────────────────────────────────
+
+By submitting any contribution to a TrafkHop Entertainment™ project —
+including but not limited to pull requests, patches, code snippets,
+suggestions, or bug reports that contain original creative or technical
+work — you irrevocably grant TrafkHop Entertainment™ exclusive, perpetual,
+worldwide, royalty-free exploitation rights (ausschließliche Werknutzungs-
+rechte) to that contribution in all known and future forms of use, effective
+upon submission. Moral rights (Urheberpersönlichkeitsrechte) remain with the
+contributor and are not affected by this grant.
+
+You represent that you have full authority to grant such rights and that
+the contribution does not infringe upon any third-party rights.
+
+TrafkHop Entertainment™ is under no obligation to use, include, credit,
+or compensate any contributor. Attribution in credits or documentation is
+at the sole discretion of TrafkHop Entertainment™ and is considered a
+courtesy, not a right.
 
 ───────────────────────────────────────────
 2. CREATIVE CONTENT & INTELLECTUAL PROPERTY
@@ -71,20 +157,42 @@ The following are considered "Creative Content":
 * Music, melodies, and themes (unless otherwise stated)
 * Visual designs and ideas
 
-Permission is GRANTED to create non-commercial fan works,
-including but not limited to:
+Permission is GRANTED to create non-commercial fan works, including but
+not limited to:
 
 * fangames
 * fan animations and videos
 * fan art
 * narrative or transformative projects
+* mod, steam workshop content or similar free addons
 
 Provided that:
 
-* Proper credit to "Trafkhop Entertainment™" is given
+* Proper credit to "TrafkHop Entertainment™" is given
 * The work is clearly marked as unofficial / fan-made
 * No claim of ownership over the original IP is made
 * The content is not used for hateful, harassing, or illegal purposes
+* The fan work constitutes a genuinely original creative work — it must
+  not replicate, closely imitate, or substantially reproduce the structure,
+  gameplay systems, level design, art style, or overall presentation of
+  any TrafkHop Entertainment™ project to such a degree that it could
+  reasonably be mistaken for, or serves as a direct substitute for, an
+  official release. Fan works that are functionally equivalent to, or
+  merely cosmetically altered versions of, an original TrafkHop
+  Entertainment™ project are NOT permitted under this section and are
+  considered infringing copies, not fan works.
+
+Where a TrafkHop Entertainment™ project incorporates third-party
+creative material subject to its own license (e.g., SCP Foundation
+content under CC BY-SA 3.0), any fan works based on or derived from
+that specific project may additionally be subject to the terms of
+that third-party license. TrafkHop Entertainment™ will indicate
+clearly on a per-project basis when such third-party material is
+present and which license applies to it.
+
+It is the responsibility of fan creators to review and comply with
+all applicable third-party licenses for the specific project they
+are basing their work on.
 
 ───────────────────
 3. RAW ASSETS USAGE
@@ -99,71 +207,153 @@ Provided that:
 * music tracks
 * UI elements
 
-Permission is GRANTED to use Raw Assets for non-commercial fan
-projects under the following limitations:
+Permission is GRANTED to use Raw Assets for non-commercial fan projects
+under the following limitations:
 
-* Assets may be used only as part of a larger creative or
-  transformative work
+* Assets may be used only as part of a larger creative or transformative
+  work
 * Assets may be modified for compatibility or style consistency
 * Assets may NOT be redistributed as standalone files or asset packs
 * Assets may NOT be used in a way that replaces the original work
-* Assets may NOT be used to impersonate official
-  Trafkhop Entertainment™ releases
+* Assets may NOT be used to impersonate official TrafkHop
+  Entertainment™ releases
 
 ──────────────────────────────────
 4. CONTENT CREATION & MONETIZATION
 ──────────────────────────────────
 
-Trafkhop Entertainment™ encourages the creation of videos and images
-featuring our projects. You may share and monetize your content on
-video-sharing and social media platforms (such as YouTube, Twitch, etc.)
-subject to the following rules:
+TrafkHop Entertainment™ encourages the creation of videos and images
+featuring our projects. You may share and monetize your content on video-
+sharing and social media platforms (such as YouTube, Twitch, etc.) subject
+to the following rules:
 
 * Monetization is permitted ONLY through official platform-provided
   monetization methods (e.g., YouTube Partner Program, Twitch Affiliates).
 * You are encouraged to provide your own creative input (commentary,
   reviews, or transformative editing).
-* Simple copies of gameplay or music without any original contribution
-  are NOT permitted, unless using official system sharing functions.
-* You may only use content that has been officially released to the
-  public or from official promotional material (trailers, etc.).
-* You must not state or imply that your content is official, sponsored,
-  or endorsed by Trafkhop Entertainment™.
-* We reserve the right to remove or object to any content we deem
-  unlawful, inappropriate, or non-compliant with these guidelines.
+* Simple copies of gameplay or music without any original contribution are
+  NOT permitted, unless using official system sharing functions.
+* You may only use content that has been officially released to the public
+  or from official promotional material (trailers, etc.).
+* You must not state or imply that your content is official, sponsored, or
+  endorsed by TrafkHop Entertainment™.
+* We reserve the right to object to any content we deem unlawful,
+  inappropriate, or non-compliant with these guidelines.
 
 ─────────────────
 5. COMMERCIAL USE
 ─────────────────
 
-Except for the monetization methods explicitly permitted in Section 4,
-any commercial use of:
+Except for the monetization methods explicitly permitted in Section 4, any
+commercial use of:
 
 * original code
 * creative content
 * raw assets
 * music
 
-is strictly prohibited unless explicit written permission
-is granted by Trafkhop Entertainment™.
+is strictly prohibited unless explicit written permission is granted by
+TrafkHop Entertainment™.
+
+──────────────────────────
+6. AI TRAINING PROHIBITION
+──────────────────────────
+
+The use of any content, code, assets, or other material covered by this
+license — in whole or in part — for the purpose of training, fine-tuning,
+evaluating, or otherwise developing artificial intelligence, machine
+learning, or similar automated systems is strictly prohibited without
+explicit written permission from TrafkHop Entertainment™.
+
+This prohibition applies to all external parties. Internal use of
+TrafkHop Entertainment™'s own materials for AI-related purposes by
+TrafkHop Entertainment™ itself is not subject to this restriction.
 
 ──────────────────
-6. LICENSE UPDATES
+7. LICENSE UPDATES
 ──────────────────
 
-Trafkhop Entertainment™ reserves the right to update or modify
-this license at any time, without prior notice or announcement.
+TrafkHop Entertainment™ reserves the right to update or modify this
+license at any time, without prior notice or announcement.
 
-* License updates take effect immediately upon publication.
-* Updated license terms apply to ALL projects by
-  Trafkhop Entertainment™, including previously released ones,
-  unless a project explicitly states otherwise.
-* It is the responsibility of users and contributors to check
-  for the current license version.
+* Updated license terms apply to all future use of TrafkHop
+  Entertainment™ projects from the date of publication onward.
+* For third-party works created under a prior version of this license
+  (e.g., fan games, fan art, or other derivative works permitted under
+  Section 2 or 3), the license version in effect at the time the work
+  was first published or substantially completed shall continue to govern
+  that specific work, provided the work was in full compliance with that
+  prior version at the time of its creation. It is the responsibility of
+  creators to retain a copy of or reference to the license version under
+  which their work was created. Previous license versions are archived at:
+  https://trafkhop-entertainment.github.io/TrafkSite/SourceHop-Notes/assets/Sourcehop-Documents.html
+* All projects and products developed or distributed by TrafkHop
+  Entertainment™ itself are always governed by the most current version
+  of this license, regardless of when they were originally released.
+* It is the responsibility of users and contributors to check for the
+  current license version.
 
 ────────────────────────
-7. RESERVATION OF RIGHTS
+8. RESERVATION OF RIGHTS
 ────────────────────────
 
-All rights not explicitly granted in this license
-are reserved by Trafkhop Entertainment™.
+All rights not explicitly granted in this license are reserved by
+TrafkHop Entertainment™.
+
+──────────────────────────
+9. DISCLAIMER OF WARRANTIES
+──────────────────────────
+
+ALL CONTENT, CODE, ASSETS, AND MATERIALS PROVIDED BY TRAFKHOP
+ENTERTAINMENT™ ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, OR NON-INFRINGEMENT.
+
+IN NO EVENT SHALL TRAFKHOP ENTERTAINMENT™ BE LIABLE FOR ANY DIRECT,
+INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING BUT NOT LIMITED TO PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
+AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR
+TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE
+USE OF THESE MATERIALS, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+─────────────────────
+10. LICENSE VIOLATION
+─────────────────────
+
+Any violation of the terms of this license — including but not limited to
+unauthorized use, copying, distribution, forking, mirroring, or commercial
+exploitation of any material covered herein — automatically and immediately
+terminates all rights, permissions, and licenses granted to the infringing
+party under this or any prior version of this license, without notice and
+without the possibility of reinstatement except by explicit written consent
+of TrafkHop Entertainment™.
+
+In the event of a violation, TrafkHop Entertainment™ reserves the right
+to pursue all available remedies to the fullest extent permitted by
+applicable law, including but not limited to:
+
+* immediate cease and desist demands
+* claims for injunctive relief to stop ongoing infringement
+* claims for compensatory and statutory damages
+* claims for the disgorgement of any profits derived from the infringement
+* recovery of legal fees and costs
+
+Violations may additionally constitute criminal offenses under Austrian
+copyright law (§§ 91–93 UrhG) and may be referred to the appropriate
+authorities for criminal prosecution. TrafkHop Entertainment™ will not
+hesitate to pursue such action where warranted.
+
+─────────────────────────
+11. COPYRIGHT INFRINGEMENT
+─────────────────────────
+
+To report suspected copyright infringement of TrafkHop Entertainment™'s
+intellectual property, or to submit a formal takedown notice, please
+contact:
+
+  contact.trafkhop@proton.me
+
+Include a clear description of the infringing material, its location, and
+your contact information. TrafkHop Entertainment™ takes all reports of
+infringement seriously and will respond in accordance with applicable law.
