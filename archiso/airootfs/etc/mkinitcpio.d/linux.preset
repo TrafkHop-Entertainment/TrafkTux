@@ -1,8 +1,0 @@
-# mkinitcpio preset file for the 'linux' package on trafktux
-
-PRESETS=('trafktux')
-
-ALL_kver='/boot/vmlinuz-linux'
-archiso_config='/etc/mkinitcpio.conf.d/trafktux.conf'
-
-archiso_image="/boot/initramfs-linux.img"

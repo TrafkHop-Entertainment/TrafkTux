@@ -1,0 +1,166 @@
+// ═══════════════════════════════════════════════════════════
+//  TrafkTux Waybar — Bubble Style  v4 (nur IDs)
+//  Height: 35px  |  Autohide via USR1
+// ═══════════════════════════════════════════════════════════
+{
+    "layer": "top",
+    "position": "bottom",
+    "height": 45,
+    // waybar_autohide.c geht davon aus, dass SIGUSR2 = "zeigen" und
+    // SIGUSR1 = "verstecken" bedeutet. Waybars Standardwerte sind aber
+    // SIGUSR1 = toggle, SIGUSR2 = reload (!) - ohne diese zwei Zeilen
+    // reloadet der Touch-Trigger nur lautlos die Config, statt die Bar
+    // sichtbar zu machen.
+    "on-sigusr1": "hide",
+    "on-sigusr2": "show",
+    "spacing": 0,
+
+    "mode": "hide",
+    "hidden-gap": 0,
+    "exclusive": false,
+
+    "reload_style_on_change": true,
+
+    "modules-left": [
+        "custom/appmenu",
+        "custom/powermenu",
+        "custom/workspaces-view",
+        "custom/hide-windows",
+        "custom/shortcut-kitty",
+        "custom/shortcut-thunar",
+        "custom/shortcut-firefox"
+    ],
+
+    "modules-center": [
+        "hyprland/workspaces"
+    ],
+
+    "modules-right": [
+        "custom/volume",
+        "custom/network",
+        "custom/bluetooth",
+        "custom/brightness",
+        "custom/akku",
+        "custom/osk",
+        "tray",
+        "clock"
+    ],
+
+    // ── LEFT ──────────────────────────────────────────────
+    "custom/appmenu": {
+        "format": "󱄅",
+        "tooltip": "App Launcher",
+        "on-click": "setsid python3 ~/.config/rofi/bubble-menu.py --menu launcher --x11"
+    },
+    "custom/powermenu": {
+        "format": "⏻",
+        "tooltip": "Power Menu",
+        "on-click": "setsid python3 ~/.config/rofi/bubble-menu.py --menu powermenu --x11"
+    },
+    "custom/workspaces-view": {
+        "format": "󰙀",
+        "tooltip": "Workspace Overview",
+        "on-click": ""
+    },
+    "custom/hide-windows": {
+        "format": "󰘿",
+        "tooltip": "Hide all Windows",
+        "on-click": ""
+    },
+    "custom/shortcut-kitty": {
+        "format": "",
+        "tooltip": "Kitty Terminal",
+        "on-click": "setsid kitty"
+    },
+    "custom/shortcut-thunar": {
+        "format": "󰉋",
+        "tooltip": "Thunar",
+        "on-click": "setsid thunar"
+    },
+    "custom/shortcut-firefox": {
+        "format": "󰈹",
+        "tooltip": "Firefox",
+        "on-click": "setsid firefox"
+    },
+
+    // ── CENTER ─────────────────────────────────────────────
+    // wlr/taskbar is gone: it talks to the wlr-foreign-toplevel protocol,
+    // which has no idea what a Hyprland "special" workspace is, so windows
+    // parked in special:minimized always leaked through.
+    // hyprland/workspaces (>= Waybar 0.14) asks Hyprland directly, and by
+    // default (show-special: false) it never even enumerates special
+    // workspaces - so special:minimized and everything inside it is
+    // invisible here, which is exactly what we want.
+    "hyprland/workspaces": {
+        "format": "{id}  {windows}",
+        "format-window-separator": " ",
+        "on-click": "activate",
+        "active-only": false,
+        "all-outputs": false,
+        "show-special": false,
+        "special-visible-only": false,
+        "workspace-taskbar": {
+            "enable": true,
+            "update-active-window": true,
+            "format": "{icon}",
+            "icon-size": 18,
+            "on-click-window": "~/.config/waybar/scripts/taskbar-click.sh {address} {button}"
+        }
+    },
+
+    // ── RIGHT ──────────────────────────────────────────────
+    "custom/volume": {
+        "format": "󰕾",
+        "tooltip": "Volume & Audio",
+        "on-click": "socat - UNIX-CONNECT:/tmp/wb-daemon.sock <<< volume"
+    },
+    "custom/network": {
+        "format": "󰤨",
+        "tooltip": "Netzwerk / Wi-Fi",
+        "on-click": "socat - UNIX-CONNECT:/tmp/wb-daemon.sock <<< network"
+    },
+    "custom/bluetooth": {
+        "format": "󰂯",
+        "tooltip": "Bluetooth",
+        "on-click": "socat - UNIX-CONNECT:/tmp/wb-daemon.sock <<< bluetooth"
+    },
+    "custom/brightness": {
+        "format": "󰃠",
+        "tooltip": "Helligkeit & Nachtlicht",
+        "on-click": "socat - UNIX-CONNECT:/tmp/wb-daemon.sock <<< brightness"
+    },
+
+    "custom/akku": {
+        "format": "󰁹  Akku",
+        "tooltip": "Akku-Info",
+        "on-click": "socat - UNIX-CONNECT:/tmp/wb-daemon.sock <<< akku"
+    },
+
+    // Toggle für die On-Screen-Keyboard (wvkbd). "interval": 2 lässt Waybar
+    // regelmäßig exec (siehe unten) pollen, damit das Icon farblich anzeigt,
+    // ob die Tastatur gerade offen ist (per .active-Klasse in style.css) -
+    // exec/exec-if geben nur den Klassenstatus zurück, on-click togglet.
+    // Passe "wvkbd-mobintl" an, falls dein Paket/deine Distro einen anderen
+    // Binary-Namen nutzt (z.B. nur "wvkbd" oder ein eigenes Layout-Binary).
+    "custom/osk": {
+        "format": "󰌌",
+        "tooltip": "Bildschirmtastatur",
+        "interval": 2,
+        "exec": "pgrep -x wvkbd-mobintl >/dev/null && echo '{\"class\":\"active\"}' || echo '{\"class\":\"inactive\"}'",
+        "return-type": "json",
+        "on-click": "pgrep -x wvkbd-mobintl >/dev/null && pkill -x wvkbd-mobintl || setsid wvkbd-mobintl -L 300"
+    },
+
+    "tray": {
+        "icon-size": 15,
+        "spacing": 5,
+        "ignored-items": ["nm-applet", "blueman", "blueman-tray", "xwaylandvideobridge", "XWaylandVideoBridge"]
+    },
+
+    "clock": {
+        "format": "󰥔  {:%H:%M}",
+        "format-alt": "󰃭  {:%d.%m.%Y}",
+        "tooltip": false,
+        "on-click": "socat - UNIX-CONNECT:/tmp/wb-daemon.sock <<< clock"
+    }
+}

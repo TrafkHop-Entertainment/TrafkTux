@@ -1,0 +1,10 @@
+[Trigger]
+Type = Path
+Operation = Install
+Operation = Upgrade
+Target = usr/lib/os-release
+
+[Action]
+Description = Creating live user (liveuser)...
+When = PostTransaction
+Exec = /usr/local/bin/create-liveuser.sh

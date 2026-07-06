@@ -1,0 +1,147 @@
+/* ═══════════════════════════════════════════════════════════
+ *  TrafkTux Waybar — Bubble Style  v4 (nur IDs)
+ *  Height: 35px  |  Autohide via USR1
+ *  ═══════════════════════════════════════════════════════════ */
+
+* {
+    font-family: "JetBrainsMono Nerd Font", "Symbols Nerd Font Mono", "Noto Sans", sans-serif;
+    font-size: 12px;
+}
+
+#waybar {
+background:    #fff495;
+border-radius: 35px 35px 0 0;
+min-height:    45px;
+padding:       0px 15px;
+}
+
+#waybar > box {
+padding-left:  15px;
+padding-right: 15px;
+}
+
+/* ── Alle Module als Blase (gleicher Hintergrund) ──────── */
+#custom-appmenu,
+#custom-powermenu,
+#custom-workspaces-view,
+#custom-hide-windows,
+#custom-shortcut-kitty,
+#custom-shortcut-thunar,
+#custom-shortcut-firefox,
+#custom-shortcut-discord,
+#custom-volume,
+#custom-network,
+#custom-bluetooth,
+#custom-brightness,
+#custom-akku,
+#custom-osk,
+#tray,
+#clock {
+background-image:  url("../rofi/assets/bubble-normal.png");
+background-size:   100% 100%;
+background-repeat: no-repeat;
+background-color:  transparent;   /* kein schwarzer Fallback mehr */
+color:             #fff495;
+padding:           8px;
+min-width: 28px;
+margin:            5px;
+}
+
+/* ── Hover & Active ────────────────────────────────────── */
+#custom-appmenu:hover,
+#custom-powermenu:hover,
+#custom-workspaces-view:hover,
+#custom-hide-windows:hover,
+#custom-shortcut-kitty:hover,
+#custom-shortcut-thunar:hover,
+#custom-shortcut-firefox:hover,
+#custom-shortcut-discord:hover,
+#custom-volume:hover,
+#custom-network:hover,
+#custom-bluetooth:hover,
+#custom-brightness:hover,
+#custom-akku:hover,
+#custom-osk:hover,
+#tray:hover,
+#clock:hover {
+background-image: url("../rofi/assets/bubble-selected.png");
+color:            #c8b800;
+}
+
+/* ── OSK aktiv: dezent hervorheben, damit man sieht ob sie offen ist ── */
+#custom-osk.active {
+background-image: url("../rofi/assets/bubble-selected.png");
+color:            #c8b800;
+}
+
+/* ── Workspaces speziell ─────────────────────────────────
+ * Der Button selbst ist NUR ein Container (keine eigene Blase mehr) -
+ * sonst würde eine einzige lange Pille über Nummer + alle Fenster-Icons
+ * gezogen. Nummer und jedes Fenster-Icon bekommen ihre eigene Blase.
+ */
+#workspaces {
+background: transparent;
+margin:     0 -5px;
+}
+
+#workspaces button {
+background-image:  none;
+background-color:  transparent;
+padding:            0;
+margin:             0;
+min-width:          0;
+}
+
+#workspaces button.urgent .workspace-label {
+color: #ff5555;
+}
+
+/* ── Individuelle Anpassungen ─────────────────────────── */
+#custom-shortcut-kitty {
+margin-left: 35px;            /* Abstand zum linken Nachbarn */
+}
+
+/* ── Taskbar-Icons (pro Fenster, jetzt Teil von hyprland/workspaces) ──
+ * wlr/taskbar ist raus (kann special:minimized nicht filtern). Die
+ * Fenster-Icons kommen jetzt über workspace-taskbar direkt aus der
+ * hyprland/workspaces-Bubble mit rein, als .taskbar-window-Kinder.
+ * Nummer (.workspace-label) und jedes Fenster (.taskbar-window)
+ * bekommen jeweils eine EIGENE Blase, genau wie die anderen Module.
+ */
+#workspaces .workspace-label {
+background-image:  url("../rofi/assets/bubble-normal.png");
+background-size:   100% 100%;
+background-repeat: no-repeat;
+background-color:  transparent;
+color:              #fff495;
+padding:            8px;
+min-width:          28px;
+margin:             5px;
+}
+
+#workspaces button:hover .workspace-label,
+#workspaces button.active .workspace-label {
+background-image: url("../rofi/assets/bubble-selected.png");
+color:            #c8b800;
+}
+
+#workspaces .taskbar-window {
+background-image:  url("../rofi/assets/bubble-normal.png");
+background-size:   100% 100%;
+background-repeat: no-repeat;
+background-color:  transparent;
+padding:            6px;
+min-width:          28px;
+min-height:         28px;
+margin:             5px;
+border-radius:      0;    /* das PNG bringt schon die Form mit */
+}
+
+#workspaces .taskbar-window:hover,
+#workspaces .taskbar-window.active {
+background-image: url("../rofi/assets/bubble-selected.png");
+}
+
+#workspaces .taskbar-window image {
+margin: 0;
+}

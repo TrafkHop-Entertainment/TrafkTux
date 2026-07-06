@@ -22,6 +22,7 @@ if [ "${#IMAGES[@]}" -eq 0 ]; then
     exit 1
 fi
 
+RANDOM=$(od -An -N2 -tu2 < /dev/urandom | tr -d ' ')   # <-- neu
 RANDOM_IMAGE="${IMAGES[$RANDOM % ${#IMAGES[@]}]}"
 
 # hyprpaper.conf neu schreiben mit dem gewählten Bild

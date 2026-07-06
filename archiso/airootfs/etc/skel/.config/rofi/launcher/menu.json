@@ -136,6 +136,12 @@
       ]
     },
     {
+      "name": "8",
+      "type": "folder",
+      "icon": "folder",
+      "children": []
+    },
+    {
       "name": "9 Drivers",
       "type": "folder",
       "icon": "drive-harddisk",

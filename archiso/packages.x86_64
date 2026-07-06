@@ -1,128 +1,174 @@
-alsa-utils
-amd-ucode
-arch-install-scripts
-archinstall
-b43-fwcutter
-base
-bcachefs-tools
-bind
-bolt
-brltty
-broadcom-wl
-btrfs-progs
-clonezilla
-cloud-init
-cryptsetup
-darkhttpd
-ddrescue
-dhcpcd
-diffutils
-dmidecode
-dmraid
-dnsmasq
-dosfstools
-e2fsprogs
-edk2-shell
-efibootmgr
-espeakup
-ethtool
-exfatprogs
-f2fs-tools
-fatresize
-foot-terminfo
-fsarchiver
-gpart
-gpm
-gptfdisk
-grml-zsh-config
-grub
-hdparm
-hyperv
-intel-ucode
-irssi
-iw
-iwd
-jfsutils
-kitty-terminfo
-ldns
-less
-lftp
-libfido2
-libusb-compat
+# TrafkTux - packages.x86_64
+# Nur offizielle Pakete (core/extra/multilib). AUR-Pakete siehe Abschnitt unten
+# (brauchen ein eigenes lokales Repo, siehe Notiz am Dateiende).
+
+# --- Basis / Build ---
+base-devel
 linux
-linux-atm
 linux-firmware
-linux-firmware-marvell
-livecd-sounds
-lsscsi
-lvm2
-lynx
-man-db
-man-pages
-mc
-mdadm
-memtest86+
-memtest86+-efi
 mkinitcpio
-mkinitcpio-archiso
-mkinitcpio-nfs-utils
-mmc-utils
-modemmanager
-mtools
-nano
-nbd
-ndisc6
-nfs-utils
-nilfs-utils
-nmap
-ntfs-3g
-nvme-cli
-open-iscsi
-open-vm-tools
-openconnect
-openpgp-card-tools
-openssh
-openvpn
-partclone
-parted
-partimage
-pcsclite
-ppp
-pptpclient
-pv
-qemu-guest-agent
-refind
-reflector
-rsync
-rxvt-unicode-terminfo
-screen
-sdparm
-sequoia-sq
-sg3_utils
-smartmontools
+linux-headers
+git
+archlinux-keyring
+btrfs-progs
+
+# --- Bootloader / Boot-Splash ---
+plymouth
+grub
+efibootmgr
+os-prober
+
+# --- Aus eigenem lokalen Repo (siehe build-local-repo.sh + pacman.conf.snippet.txt) ---
+# calamares MUSS mit rein, ist ja der Installer selbst.
+calamares
+
+# --- Desktop: Hyprland & Zubehör ---
+hyprland
+hypridle
+hyprlock
+hyprpaper
+hyprpolkitagent
+polkit
+waybar
+rofi
+dunst
+xdg-desktop-portal-hyprland
+xdg-desktop-portal-gtk
+xorg-xwayland
+xorg-xcursorgen
+wl-clipboard
+cliphist
+grim
+slurp
+kitty
+nwg-look
+kvantum
+kvantum-qt5
+qt5ct
+qt6ct
+qt5-imageformats
+qt5-multimedia
+qt6-multimedia
+qt5-wayland
+qt6-wayland
+
+# --- Grafik / GPU ---
+mesa
+vulkan-radeon
+vulkan-intel
+lib32-mesa
+lib32-vulkan-radeon
+lib32-vulkan-intel
+nvidia-open-dkms
+nvidia-utils
+nvidia-settings
+lib32-nvidia-utils
+egl-wayland
+brightnessctl
+gammastep
+
+# --- Audio ---
+pipewire-audio
+pipewire-jack
+noise-suppression-for-voice
+pavucontrol
+playerctl
 sof-firmware
-squashfs-tools
-sudo
-syslinux
-systemd-resolvconf
-tcpdump
-terminus-font
-testdisk
-tmux
-tpm2-tools
-tpm2-tss
-udftools
-usb_modeswitch
-usbmuxd
-usbutils
-vim
-virtualbox-guest-utils-nox
-vpnc
-wireless-regdb
-wireless_tools
-wpa_supplicant
-wvdial
-xdg-utils
-xfsprogs
-xl2tpd
-zsh
+
+# --- Netzwerk / Bluetooth ---
+network-manager-applet
+blueman
+bluez-cups
+avahi
+
+# --- Firewall / Sicherheit / Policy ---
+ufw
+gufw
+keyd
+
+# --- Dateisystem / Datenträger ---
+ntfs-3g
+dosfstools
+mtools
+fuse2
+gparted
+gnome-disk-utility
+gvfs
+gvfs-mtp
+gvfs-smb
+power-profiles-daemon
+upower
+
+# --- Dateimanager ---
+thunar
+thunar-archive-plugin
+thunar-volman
+xdg-user-dirs
+xdg-user-dirs-gtk
+
+# --- Drucken ---
+cups-pdf
+system-config-printer
+print-manager
+hplip
+
+# --- Anwendungen ---
+firefox
+vlc
+vlc-plugins-all
+kate
+kolourpaint
+gwenview
+ark
+gparted
+fastfetch
+gsimplecal
+imagemagick
+
+# --- Kompression / Archive ---
+7zip
+unrar
+zip
+unzip
+
+# --- Sprache / Fonts ---
+noto-fonts
+noto-fonts-emoji
+noto-fonts-cjk
+ttf-jetbrains-mono-nerd
+
+# --- Entwicklung / Sonstiges ---
+python
+python-pip
+python-pipx
+npm
+wget
+curl
+jq
+socat
+cpio
+cmake
+ffmpeg
+flatpak
+btop
+nano
+bash-completion
+
+# --- Anzeigemanager ---
+sddm
+
+# ====================================================================
+# Werden NICHT hier gelistet und NICHT vorgebaut - Calamares baut und
+# installiert diese waehrend der Installation live per yay (braucht
+# Internet auf dem Zielsystem), siehe:
+#   airootfs/usr/local/bin/install-aur-packages.sh
+#   airootfs/etc/calamares/modules/shellprocess-aurinstall.conf
+#
+#   xwaylandvideobridge
+#   pamac-all
+#   hyprshade
+#   hyprland-minimizer-git
+#   wvkbd
+#
+# base-devel + git (fuer makepkg) sind oben schon in der Liste enthalten.
+# ====================================================================

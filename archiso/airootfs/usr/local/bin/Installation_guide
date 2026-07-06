@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Kurze Anleitung, aufrufbar per Icon/Terminal in der Live-Session.
+kitty --title "TrafkTux Installation Guide" -e less <<'EOF'
+TrafkTux - Live-System
+
+1. Test-Umgebung: du bist gerade in einer Live-Session (User: liveuser,
+   kein Passwort noetig, sudo funktioniert direkt).
+
+2. Installation starten: Icon "Install TrafkTux" auf dem Desktop bzw.
+   im App-Menue, oder im Terminal: pkexec calamares
+
+3. Waehrend der Installation kannst du optionale Zusatz-Pakete
+   (Pamac, Hyprland-Extras, Bildschirmtastatur, ...) auswaehlen.
+
+4. Nach der Installation: neu starten, das Live-Medium entfernen und
+   mit deinem waehrend der Installation angelegten Benutzer einloggen.
+EOF

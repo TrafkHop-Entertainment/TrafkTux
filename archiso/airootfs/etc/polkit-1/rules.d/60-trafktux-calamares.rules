@@ -1,0 +1,9 @@
+// Nur fuer die Live-Session gedacht: liveuser hat kein Passwort, daher
+// wuerde eine normale Polkit-Passwortabfrage ins Leere laufen.
+// Wird am Ende der Installation automatisch entfernt (siehe
+// shellprocess-cleanup.conf).
+polkit.addRule(function(action, subject) {
+    if (subject.isInGroup("wheel")) {
+        return polkit.Result.YES;
+    }
+});

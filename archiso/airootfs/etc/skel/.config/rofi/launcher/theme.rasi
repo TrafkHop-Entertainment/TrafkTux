@@ -1,5 +1,19 @@
 /**
- * Bubble Launcher Theme — 4×3 Grid
+ * Bubble Launcher Theme — 5×3 Grid, touch-freundlich
+ *
+ * Spalte 1-3 (nur Wurzelebene): 3×3-Ordner-Raster ("1 System" ... "9 Drivers")
+ * Spalte 4   (nur Wurzelebene): Other / All Apps / App Packages
+ * Spalte 5   (alle Ebenen):     Next Page / Last Page / Zurück-Exit
+ *   (Exit nur in der Wurzel, sonst Zurück - siehe bubble-menu.py build_entries())
+ *
+ * In Unterordnern (und den virtuellen Alle-Apps-/Programme-Listen) füllen
+ * sich Spalte 1-4 stattdessen gleichmäßig zeilenweise mit bis zu 12
+ * Einträgen pro Seite; reicht das nicht, blättert Next/Last Page.
+ *
+ * WICHTIG: flow: horizontal in listview sorgt dafür, dass rofi die
+ * Einträge zeilenweise (links nach rechts) einsortiert - genau die
+ * Reihenfolge, in der bubble-menu.py sie liefert. Ohne das würde die
+ * Nav-Spalte (5) nicht zuverlässig ganz rechts landen.
  *
  * Assets (lege sie in ~/.config/rofi/assets/ ab):
  *   bubble-normal.png   → dunkle lila Blase (inaktiv)
@@ -23,8 +37,8 @@
 
     /* ── Layout ──────────────────────────────────── */
     /* Zellgröße = Breite/Höhe einer Blase. Muss zu deinen PNGs passen. */
-    cell-size:          350px;
-    columns:            4;
+    cell-size:          1080px;
+    columns:            5;
     rows:               3;
     cell-gap:           35px;
 
@@ -37,9 +51,9 @@ window {
     background-color:   rgba(0,0,0,0);
     border:             0px;
     padding:            0px;
-    /* Breite = 4 Zellen + 3 Lücken + 2× Outer-Padding */
-    width: calc(5 * 161px + 2 * 20px + 20px);
-    max-width: 90%;
+    /* Breite = 5 Zellen (@cell-size) + 4 Lücken (@cell-gap) + 2× Outer-Padding (35px) */
+    width: 1080px;
+    max-width: 100%;
     location:           center;
     anchor:             center;
 }
@@ -62,6 +76,7 @@ listview {
     background-color:   @bg-transparent;
     columns:            @columns;
     lines:              @rows;
+    flow:               horizontal;
     fixed-columns:      true;
     fixed-height:       false;
     scrollbar:          false;

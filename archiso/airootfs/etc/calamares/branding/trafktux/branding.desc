@@ -1,0 +1,32 @@
+---
+componentName: trafktux
+
+welcomeStyleCalamares: true
+welcomeExpandingLogo:  true
+
+windowExpanding: normal
+windowSize: 800px,520px
+
+strings:
+  productName:         "TrafkTux"
+  shortProductName:    "TrafkTux"
+  version:             "2026.07"
+  shortVersion:        "2026.07"
+  versionedName:       "TrafkTux 2026.07"
+  shortVersionedName:  "TrafkTux 2026.07"
+  bootloaderEntryName: "TrafkTux"
+  productUrl:          "https://trafkhop-entertainment.github.io/TrafkSite"
+  supportUrl:          "https://trafkhop-entertainment.github.io/TrafkSite"
+
+images:
+  productLogo:    "logo.png"
+  productIcon:    "logo.png"
+  productWelcome: "welcome.png"
+
+slideshow: "show.qml"
+
+style:
+   SidebarBackground:        "#1b1b2b"
+   SidebarBackgroundCurrent: "#5865f2"
+   SidebarText:              "#e0e0e0"
+   SidebarTextCurrent:       "#ffffff"
