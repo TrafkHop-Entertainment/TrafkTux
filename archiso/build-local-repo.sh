@@ -51,6 +51,8 @@ echo "==> Erzeuge Repo-Datenbank..."
 cd "${REPO_DIR}"
 repo-add "${REPO_NAME}.db.tar.gz" ./*.pkg.tar.zst
 
+rm -rf "$BUILD_DIR"
+
 echo ""
 echo "Fertig. Repo liegt in: ${REPO_DIR}"
 echo "Der Ordner ist bereits am richtigen Platz für dein ISO-Profil."
