@@ -68,7 +68,7 @@ if not f then return default end
                 },
 
                 resize_on_border        = true,
-                extend_border_grab_area = 15,
+                extend_border_grab_area = 23,
                 hover_icon_on_border    = true,
                 allow_tearing           = false,
                 layout                  = savedLayout,
@@ -137,7 +137,7 @@ if not f then return default end
             hl.config({
                 plugin = {
                     hyprgrass = {
-                        sensitivity = 15,
+                        sensitivity = 8,
                         edge_margin = 165,
                     },
                 },
@@ -171,42 +171,42 @@ if not f then return default end
                 hl.plugin.hyprbars.add_button({
                     bg_color = "rgba(ff5555ee)",
                                               fg_color = "rgba(111111ee)",
-                                              size     = 12,
+                                              size     = 15,
                                               icon     = "✕",
                                               action   = "hyprctl dispatch 'hl.dsp.window.close()'",
                 })
                 hl.plugin.hyprbars.add_button({
                     bg_color = "rgba(ffffffee)",
                                               fg_color = "rgba(111111ee)",
-                                              size     = 12,
+                                              size     = 15,
                                               icon     = "FS1",
                                               action   = "hyprctl dispatch 'hl.dsp.window.fullscreen({ mode = 1 })'",
                 })
                 hl.plugin.hyprbars.add_button({
                     bg_color = "rgba(ffffffee)",
                                               fg_color = "rgba(111111ee)",
-                                              size     = 12,
+                                              size     = 15,
                                               icon     = "FS0",
                                               action   = "hyprctl dispatch 'hl.dsp.window.fullscreen({ mode = 0 })'",
                 })
                 hl.plugin.hyprbars.add_button({
                     bg_color = "rgba(ffffffee)",
                                               fg_color = "rgba(111111ee)",
-                                              size     = 12,
+                                              size     = 15,
                                               icon     = "⇆",
                                               action   = "hyprctl dispatch 'hl.dsp.layout(\"swapwithmaster\", \"master\")'",
                 })
                 hl.plugin.hyprbars.add_button({
                     bg_color = "rgba(ffffffee)",
                                               fg_color = "rgba(111111ee)",
-                                              size     = 12,
+                                              size     = 15,
                                               icon     = "m",
                                               action   = "hyprctl dispatch 'hl.dsp.exec_cmd(\"hyprland-minimizer\")'",
                 })
                 hl.plugin.hyprbars.add_button({
                     bg_color = "rgba(ffffffee)",
                                               fg_color = "rgba(111111ee)",
-                                              size     = 12,
+                                              size     = 15,
                                               icon     = "📌",
                                               action   = "hyprctl dispatch 'hl.dsp.exec_cmd(\"~/.config/hypr/pip.sh\")'",
                 })
@@ -234,6 +234,16 @@ if not f then return default end
                 hl.bind(mainMod .. " + SHIFT + code:49", hl.dsp.window.fullscreen({ mode = 0 }))
                 hl.bind(mainMod .. " + code:49",         hl.dsp.window.fullscreen({ mode = 1 }))
                 hl.bind(mainMod .. " + ALT + tab",       hl.dsp.exec_cmd("hyprland-minimizer"))
+                hl.bind(mainMod .. " + CTRL + code:49", hl.dsp.exec_cmd("hyprctl dispatch 'hl.dsp.exec_cmd(\"~/.config/hypr/pip.sh\")'"))
+
+                -- Waybar-Autohide sperren/entsperren (SUPER + STRG + ^):
+                -- Verstecke die Bar sofort und halte sie dauerhaft versteckt,
+                -- egal was Maus/Touch tun - praktisch fürs Vollbild-Exit-Menü
+                -- (z.B. SimCity 4), das die Bar sonst blockieren würde.
+                -- Nochmal drücken entsperrt wieder normales Autohide.
+                hl.bind(mainMod .. " + ALT + code:49", hl.dsp.exec_cmd(
+                    "bash -c 'p=/tmp/waybar-autohide.pid; [ -f \"$p\" ] && kill -RTMIN+1 $(cat \"$p\")'"
+                ), { description = "Waybar-Autohide sperren/entsperren" })
 
                 hl.bind(mainMod .. " + R", hl.dsp.exec_cmd('kitty -e bash -c "/run/media/hopx/HopxSSD/TrafkSite/Projects/TrafkTux/TrafkTux/syncwithsystem.sh"'), { description = "Sync with system" })
 
@@ -319,7 +329,7 @@ if not f then return default end
                                     hl.bind("XF86AudioPrev", hl.dsp.exec_cmd("playerctl previous"),   { locked = true })
 
                                     hl.bind(mainMod .. " + Print",         hl.dsp.exec_cmd('grim -g "$(slurp -d)" - | wl-copy'))
-                                    hl.bind(mainMod .. " + SHIFT + Print", hl.dsp.exec_cmd('bash -c "mkdir -p ~/Pictures && grim -g \\"$(slurp -d)\\" ~/Pictures/$(date +%Y%m%d_%H%M%S).png"'))
+                                    hl.bind(mainMod .. " + ALT + Print", hl.dsp.exec_cmd('bash -c "mkdir -p ~/Pictures && grim -g \\"$(slurp -d)\\" ~/Pictures/$(date +%Y%m%d_%H%M%S).png"'))
 
                                     hl.window_rule({
                                         name           = "suppress-maximize-events",

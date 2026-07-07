@@ -24,8 +24,17 @@
 #define TOUCH_SHOW_SIGNAL SIGRTMIN
 #define TOUCH_TIMEOUT_SEC 4
 
+// ── Manuelles Sperren (z.B. fürs Vollbild-Spiel) ─────────────────────
+// Per Knopfdruck (siehe hyprland.lua) wird SIGRTMIN+1 geschickt und
+// schaltet einen Lock um. Solange gesperrt ist, zeigt die Loop die Bar
+// nie wieder - egal was Maus/Touch machen - bis derselbe Knopf sie
+// wieder entsperrt.
+#define LOCK_TOGGLE_SIGNAL (SIGRTMIN + 1)
+
 volatile sig_atomic_t running = 1;
 volatile sig_atomic_t touch_trigger = 0;
+volatile sig_atomic_t lock_trigger = 0;
+volatile sig_atomic_t autohide_locked = 0;
 
 // ── Logging ────────────────────────────────────────────────────────
 void do_log(const char *msg) {
@@ -222,6 +231,14 @@ void on_touch_trigger(int sig) {
     touch_trigger = 1;
 }
 
+// ── Lock-Toggle empfangen ──────────────────────────────────────────
+// Auch hier nur async-signal-safe ein Flag setzen, der eigentliche
+// Toggle (kill(), fopen()) passiert wieder in der Main-Loop.
+void on_lock_toggle(int sig) {
+    (void)sig;
+    lock_trigger = 1;
+}
+
 // ── Eigene PID ablegen ────────────────────────────────────────────────
 // Damit andere Skripte (z.B. eine hyprgrass-Geste) uns gezielt anpingen
 // können: `kill -RTMIN $(cat /tmp/waybar-autohide.pid)`.
@@ -249,6 +266,11 @@ int main() {
     sa_touch.sa_handler = on_touch_trigger;
     sigaction(TOUCH_SHOW_SIGNAL, &sa_touch, NULL);
 
+    struct sigaction sa_lock;
+    memset(&sa_lock, 0, sizeof(sa_lock));
+    sa_lock.sa_handler = on_lock_toggle;
+    sigaction(LOCK_TOGGLE_SIGNAL, &sa_lock, NULL);
+
     write_pid_file();
 
     char *sock_path = find_hypr_socket();
@@ -275,6 +297,33 @@ int main() {
     ts.tv_nsec = 10 * 1000000L; // 10 Millisekunden
 
     while (running) {
+        if (lock_trigger) {
+            lock_trigger = 0;
+            autohide_locked = !autohide_locked;
+
+            if (autohide_locked) {
+                // Sofort blind verstecken - ohne 'if (visible)' Prüfung,
+                // da Waybar durch den SUPER-Modifier des Shortcuts aktiv sein kann!
+                send_signal(SIGUSR1);
+                visible = 0;
+                touch_override_active = 0;
+                do_log("Autohide manuell gesperrt (Bar bleibt versteckt)");
+                system("notify-send -t 1200 'Waybar' 'Autohide gesperrt' >/dev/null 2>&1 &");
+            } else {
+                do_log("Autohide manuell entsperrt");
+                system("notify-send -t 1200 'Waybar' 'Autohide entsperrt' >/dev/null 2>&1 &");
+            }
+        }
+
+        if (autohide_locked) {
+            // Trigger, die während der Sperre reinkommen, verwerfen wir -
+            // sonst würde die Bar sofort wieder auftauchen, sobald man
+            // entsperrt, auch wenn man das gar nicht wollte.
+            touch_trigger = 0;
+            nanosleep(&ts, NULL);
+            continue;
+        }
+
         if (touch_trigger) {
             touch_trigger = 0;
             if (!visible) {

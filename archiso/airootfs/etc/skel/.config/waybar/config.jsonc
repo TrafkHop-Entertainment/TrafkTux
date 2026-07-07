@@ -3,19 +3,15 @@
 //  Height: 35px  |  Autohide via USR1
 // ═══════════════════════════════════════════════════════════
 {
-    "layer": "top",
+    "layer": "overlay",
     "position": "bottom",
     "height": 45,
-    // waybar_autohide.c geht davon aus, dass SIGUSR2 = "zeigen" und
-    // SIGUSR1 = "verstecken" bedeutet. Waybars Standardwerte sind aber
-    // SIGUSR1 = toggle, SIGUSR2 = reload (!) - ohne diese zwei Zeilen
-    // reloadet der Touch-Trigger nur lautlos die Config, statt die Bar
-    // sichtbar zu machen.
     "on-sigusr1": "hide",
     "on-sigusr2": "show",
     "spacing": 0,
 
     "mode": "hide",
+    "modifier": "none",
     "hidden-gap": 0,
     "exclusive": false,
 

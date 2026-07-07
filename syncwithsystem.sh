@@ -140,5 +140,9 @@ echo "  Gesichert vor Ueberschreiben: $BACKED_UP"
 if [[ $DRY_RUN -eq 0 && $BACKED_UP -gt 0 ]]; then
     echo "  Backups liegen unter: $BACKUP_DIR"
 fi
+
+systemctl --user daemon-reload
+systemctl --user restart wb-autohide.service wb-daemon.service
+
 echo ""
 echo "Tipp: mit '--dry-run' kannst du vorher unverbindlich schauen, was passieren wuerde."

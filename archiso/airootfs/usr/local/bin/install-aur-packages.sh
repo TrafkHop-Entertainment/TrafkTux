@@ -1,34 +1,37 @@
 #!/usr/bin/env bash
-# Wird von Calamares (shellprocess@aurinstall) im Ziel-System ausgefuehrt,
-# NACH Partitionierung/Basisinstallation, aber VOR dem Aufraeum-Schritt
-# (der die passwortlosen sudo/polkit-Regeln wieder entfernt).
+# Wird von Calamares (shellprocess@aurinstall) im Ziel-System ausgefuehrt.
 #
-# Braucht Internet im Chroot (sollte durch networkcfg vorher stehen).
+# Installiert die vorgebauten AUR-Zusatzpakete rein lokal aus dem
+# mitgelieferten [trafktux]-Repo (airootfs/opt/trafktux-repo). Braucht
+# KEIN Internet und KEIN yay/makepkg mehr, da alle Pakete bereits von
+# build-local-repo.sh vorgebaut wurden.
 set -euo pipefail
 
-TARGET_USER="${1:-}"
+REPO_DIR="/opt/trafktux-repo"
+REPO_NAME="trafktux"
+SYNC_DB="/var/lib/pacman/sync/${REPO_NAME}.db"
 
-if [[ -z "${TARGET_USER}" ]] || ! id -u "${TARGET_USER}" &>/dev/null; then
-    echo "Kein gueltiger Ziel-User uebergeben (' ${TARGET_USER} '), ueberspringe AUR-Installation." >&2
+PACKAGES=(
+  xwaylandvideobridge
+  pamac-all
+  hyprshade
+  hyprland-minimizer-git
+  wvkbd
+)
+
+if [[ ! -d "${REPO_DIR}" ]]; then
+    echo "Kein lokales Repo unter ${REPO_DIR} gefunden, ueberspringe AUR-Installation." >&2
     exit 0
 fi
 
-BUILD_DIR="/tmp/aur-build"
-mkdir -p "${BUILD_DIR}"
-chown "${TARGET_USER}:${TARGET_USER}" "${BUILD_DIR}"
+# Die lokale Repo-Datenbank direkt einspielen, statt "pacman -Sy"
+# aufzurufen. "pacman -Sy" wuerde ALLE konfigurierten Repos (also auch
+# core/extra ueber's Internet) synchronisieren wollen und ohne
+# Internetverbindung fehlschlagen - das hier bleibt komplett offline.
+mkdir -p "$(dirname "${SYNC_DB}")"
+cp -f "${REPO_DIR}/${REPO_NAME}.db.tar.gz" "${SYNC_DB}"
 
-run_as_user() {
-    su - "${TARGET_USER}" -c "$1"
-}
+echo "==> Installiere Zusatzpakete aus lokalem Repo (${REPO_NAME})..."
+pacman -S --noconfirm --needed "${PACKAGES[@]}"
 
-# yay bauen, falls noch nicht vorhanden
-if ! command -v yay &>/dev/null; then
-    echo "==> Baue yay..."
-    run_as_user "cd ${BUILD_DIR} && rm -rf yay && git clone https://aur.archlinux.org/yay.git && cd yay && makepkg -si --noconfirm"
-fi
-
-echo "==> Installiere Zusatzpakete via yay..."
-run_as_user "yay -S --noconfirm --needed xwaylandvideobridge pamac-all hyprshade hyprland-minimizer-git wvkbd"
-
-rm -rf "${BUILD_DIR}"
-echo "==> AUR-Zusatzpakete fertig installiert."
+echo "==> AUR-Zusatzpakete fertig installiert (offline, aus lokalem Repo)."

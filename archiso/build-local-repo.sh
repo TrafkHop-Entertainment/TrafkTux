@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# Baut Calamares (aus dem AUR) zu einem eigenen lokalen pacman-Repo.
-# Laeuft auf einer NORMALEN Arch-Maschine (nicht in mkarchiso!).
+# Baut Calamares + die AUR-Zusatzpakete zu einem eigenen lokalen
+# pacman-Repo. Laeuft auf einer NORMALEN Arch-Maschine (nicht in
+# mkarchiso!).
 #
-# Alle anderen AUR-Pakete (xwaylandvideobridge, pamac-all, hyprshade,
-# hyprland-minimizer-git, wvkbd) werden NICHT mehr hier vorgebaut -
-# die installiert Calamares selbst live per yay waehrend der
-# Installation (siehe install-aur-packages.sh).
+# Alle Pakete werden hier vorgebaut und landen als fertige .pkg.tar.zst
+# im Repo - waehrend der Installation braucht install-aur-packages.sh
+# dadurch KEIN Internet mehr, sondern installiert sie rein lokal aus
+# dem [trafktux]-Repo (siehe install-aur-packages.sh).
 #
 # Ergebnis landet in ./trafktux-repo/ - diesen Ordner packst du
 # anschliessend 1:1 nach airootfs/opt/trafktux-repo/ in dein Profil,
-# damit er auch im fertig installierten System (via unpackfs) verfuegbar
-# bleibt.
+# damit er auch im fertig installierten System verfuegbar bleibt.
 
 set -euo pipefail
 
@@ -20,6 +20,11 @@ BUILD_DIR="$(pwd)/aur-build"
 
 AUR_PACKAGES=(
   calamares
+  xwaylandvideobridge
+  pamac-all
+  hyprshade
+  hyprland-minimizer-git
+  wvkbd
 )
 
 mkdir -p "${REPO_DIR}" "${BUILD_DIR}"

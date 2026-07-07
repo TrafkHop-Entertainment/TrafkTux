@@ -25,11 +25,11 @@
       "icon": "system-shutdown",
       "exec": "systemctl poweroff"
     },
-    {
+        {
       "name": "Logout",
       "type": "action",
       "icon": "system-log-out",
-      "exec": "command -v hyprshutdown >/dev/null 2>&1 && hyprshutdown || hyprctl dispatch exit"
+      "exec": "loginctl terminate-session $XDG_SESSION_ID"
     },
     {
       "name": "Lock",
