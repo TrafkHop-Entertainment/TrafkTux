@@ -1,21 +1,22 @@
 #!/usr/bin/env bash
 # Baut Calamares + die AUR-Zusatzpakete zu einem eigenen lokalen
-# pacman-Repo. Laeuft auf einer NORMALEN Arch-Maschine (nicht in
-# mkarchiso!).
+# pacman-Repo. Das Repo wird direkt in das airootfs/opt/trafktux-repo
+# deines Profils abgelegt – es muss später nicht mehr kopiert werden.
 #
 # Alle Pakete werden hier vorgebaut und landen als fertige .pkg.tar.zst
 # im Repo - waehrend der Installation braucht install-aur-packages.sh
 # dadurch KEIN Internet mehr, sondern installiert sie rein lokal aus
 # dem [trafktux]-Repo (siehe install-aur-packages.sh).
-#
-# Ergebnis landet in ./trafktux-repo/ - diesen Ordner packst du
-# anschliessend 1:1 nach airootfs/opt/trafktux-repo/ in dein Profil,
-# damit er auch im fertig installierten System verfuegbar bleibt.
 
 set -euo pipefail
 
 REPO_NAME="trafktux"
-REPO_DIR="$(pwd)/trafktux-repo"
+
+# Zielverzeichnis: relativ zum Skriptort unter airootfs/opt/trafktux-repo
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_DIR="${SCRIPT_DIR}/airootfs/opt/${REPO_NAME}-repo"
+
+# Temporärer Build-Ordner (kann nach dem Lauf gelöscht werden)
 BUILD_DIR="$(pwd)/aur-build"
 
 AUR_PACKAGES=(
@@ -29,7 +30,7 @@ AUR_PACKAGES=(
 
 mkdir -p "${REPO_DIR}" "${BUILD_DIR}"
 
-# base-devel + git muessen vorhanden sein
+# base-devel + git müssen vorhanden sein
 sudo pacman -S --needed --noconfirm base-devel git
 
 for pkg in "${AUR_PACKAGES[@]}"; do
@@ -39,8 +40,8 @@ for pkg in "${AUR_PACKAGES[@]}"; do
     git clone "https://aur.archlinux.org/${pkg}.git" "${pkg_build_dir}"
     (
         cd "${pkg_build_dir}"
-        # -s: fehlende Build-Abhaengigkeiten mit pacman nachziehen
-        # -c: Build-Ordner danach aufraeumen
+        # -s: fehlende Build-Abhängigkeiten mit pacman nachziehen
+        # -c: Build-Ordner danach aufräumen
         makepkg -sc --noconfirm
         cp -v ./*.pkg.tar.zst "${REPO_DIR}/"
     )
@@ -52,9 +53,4 @@ repo-add "${REPO_NAME}.db.tar.gz" ./*.pkg.tar.zst
 
 echo ""
 echo "Fertig. Repo liegt in: ${REPO_DIR}"
-echo "Naechste Schritte:"
-echo "  1. Ordner nach airootfs/opt/trafktux-repo/ kopieren"
-echo "  2. In deiner pacman.conf folgendes ergaenzen (siehe pacman.conf.snippet):"
-echo "       [${REPO_NAME}]"
-echo "       SigLevel = Optional TrustAll"
-echo "       Server = file:///opt/trafktux-repo"
+echo "Der Ordner ist bereits am richtigen Platz für dein ISO-Profil."
