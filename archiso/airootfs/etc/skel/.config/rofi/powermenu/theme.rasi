@@ -12,13 +12,20 @@
  * Kann auch eigene Assets bekommen (einfach Pfade ändern).
  */
 
+configuration {
+    ml-row-right: "ScrollDown";
+    ml-row-left:  "ScrollUp";
+    ml-row-down:  "";
+    ml-row-up:    "";
+}
+
 * {
     bg-transparent:     rgba(0,0,0,0);
     text-normal:        rgba(220,210,255,1);
     text-selected:      rgba(255,255,255,1);
 
-    bubble-normal:      url("~/.config/rofi/assets/bubble-normal.png",   both);
-    bubble-selected:    url("~/.config/rofi/assets/bubble-selected.png", both);
+    bubble-normal:      url("/tmp/bubble-normal.png",   both);
+    bubble-selected:    url("/tmp/bubble-selected.png", both);
 
     cell-size:          1080px;
     cell-gap:           35px;
@@ -33,7 +40,7 @@ window {
     padding:            0px;
     /* 3 Spalten à cell-size (350px) + 2 Gaps à cell-gap (35px)
        + 2x mainbox-Padding (35px links/rechts) */
-    width: 650px;
+    width: 855px;
     max-width:          100%;
     location:           center;
     anchor:             center;
@@ -52,7 +59,7 @@ inputbar {
 
 listview {
     background-color:   @bg-transparent;
-    columns:            3;
+    columns:            4;
     lines:              3;
     flow:               horizontal;
     fixed-columns:      true;

@@ -46,12 +46,12 @@
     "custom/appmenu": {
         "format": "󱄅",
         "tooltip": "App Launcher",
-        "on-click": "setsid python3 ~/.config/rofi/bubble-menu.py --menu launcher --x11"
+        "on-click": "sh -c 'echo \"show\" > \"${XDG_RUNTIME_DIR:-/tmp}/rofi-bubble-launcher.fifo\"'"
     },
     "custom/powermenu": {
         "format": "⏻",
         "tooltip": "Power Menu",
-        "on-click": "setsid python3 ~/.config/rofi/bubble-menu.py --menu powermenu --x11"
+        "on-click": "sh -c 'echo \"show\" > \"${XDG_RUNTIME_DIR:-/tmp}/rofi-bubble-powermenu.fifo\"'"
     },
     "custom/workspaces-view": {
         "format": "󰙀",
@@ -127,7 +127,7 @@
     },
 
     "custom/akku": {
-        "format": "󰁹  Akku",
+        "format": "󰁹",
         "tooltip": "Akku-Info",
         "on-click": "socat - UNIX-CONNECT:/tmp/wb-daemon.sock <<< akku"
     },
@@ -148,7 +148,7 @@
     },
 
     "tray": {
-        "icon-size": 15,
+        "icon-size": 18,
         "spacing": 5,
         "ignored-items": ["nm-applet", "blueman", "blueman-tray", "xwaylandvideobridge", "XWaylandVideoBridge"]
     },

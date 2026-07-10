@@ -23,6 +23,13 @@
  * Passe CELL_SIZE unten an deine tatsächlichen Asset-Dimensionen an.
  */
 
+configuration {
+    ml-row-right: "ScrollDown";
+    ml-row-left:  "ScrollUp";
+    ml-row-down:  "";
+    ml-row-up:    "";
+}
+
 * {
     /* ── Farben ──────────────────────────────────── */
     bg-transparent:     rgba(0,0,0,0);
@@ -32,8 +39,8 @@
 
     /* ── Pfade ───────────────────────────────────── */
     /* HIER ANPASSEN falls deine Assets woanders liegen */
-    bubble-normal:      url("~/.config/rofi/assets/bubble-normal.png",   both);
-    bubble-selected:    url("~/.config/rofi/assets/bubble-selected.png", both);
+    bubble-normal:      url("/tmp/bubble-normal.png",   both);
+    bubble-selected:    url("/tmp/bubble-selected.png", both);
 
     /* ── Layout ──────────────────────────────────── */
     /* Zellgröße = Breite/Höhe einer Blase. Muss zu deinen PNGs passen. */
@@ -81,7 +88,7 @@ listview {
     fixed-height:       false;
     scrollbar:          false;
     spacing:            @cell-gap;
-    cycle:              true;
+    cycle:              false;
 }
 
 /* ── Jede Zelle (Blase) ──────────────────────────────── */

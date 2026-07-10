@@ -8,10 +8,40 @@
       "icon": "window-close"
     },
     {
-      "name": "Reboot",
+      "name": "Minimize",
       "type": "action",
-      "icon": "system-reboot",
-      "exec": "systemctl reboot"
+      "icon": "minimize",
+      "exec": "hyprland-minimizer"
+    },
+    {
+      "name": "Pin",
+      "type": "action",
+      "icon": "pin",
+      "exec": "~/.config/hypr/pip.sh"
+    },
+    {
+      "name": "Swap with Master",
+      "type": "action",
+      "icon": "swap",
+      "exec": "hyprctl dispatch 'hl.dsp.layout(\"swapwithmaster\", \"master\")'"
+    },
+    {
+      "name": "Border Fullscreen",
+      "type": "action",
+      "icon": "view-fullscreen",
+      "exec": "hyprctl dispatch 'hl.dsp.window.fullscreen({ mode = 1 })'"
+    },
+    {
+      "name": "Exclusive Fullscreen",
+      "type": "action",
+      "icon": "view-fullscreen",
+      "exec": "hyprctl dispatch 'hl.dsp.window.fullscreen({ mode = 0 })'"
+    },
+    {
+      "name": "Lock",
+      "type": "action",
+      "icon": "system-lock-screen",
+      "exec": "hyprlock"
     },
     {
       "name": "Suspend",
@@ -25,17 +55,17 @@
       "icon": "system-shutdown",
       "exec": "systemctl poweroff"
     },
+    {
+      "name": "Reboot",
+      "type": "action",
+      "icon": "system-reboot",
+      "exec": "systemctl reboot"
+    },
         {
       "name": "Logout",
       "type": "action",
       "icon": "system-log-out",
       "exec": "loginctl terminate-session $XDG_SESSION_ID"
-    },
-    {
-      "name": "Lock",
-      "type": "action",
-      "icon": "system-lock-screen",
-      "exec": "hyprlock"
     }
   ]
 }

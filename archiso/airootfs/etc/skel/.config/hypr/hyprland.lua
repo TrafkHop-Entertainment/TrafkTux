@@ -24,9 +24,9 @@ if not f then return default end
         local fileManager = "thunar"
         local menu        = "rofi -show drun"
         local openwindows = "rofi -show window"
-        -- --x11 ist wichtig: rofis natives Wayland-Backend implementiert nur
-        -- wl_pointer, kein wl_touch (offener Upstream-Bug). Über XWayland
-        -- emuliert Hyprland Touch->Pointer automatisch, deshalb hier fest an.
+        local launcher_cmd  = "sh -c 'echo \"show\" > \"${XDG_RUNTIME_DIR:-/tmp}/rofi-bubble-launcher.fifo\"'"
+        local powermenu_cmd = "sh -c 'echo \"show\" > \"${XDG_RUNTIME_DIR:-/tmp}/rofi-bubble-powermenu.fifo\"'"
+
         local launcher  = "python3 ~/.config/rofi/bubble-menu.py --menu launcher --x11"
         local powermenu = "python3 ~/.config/rofi/bubble-menu.py --menu powermenu --x11"
 
@@ -45,7 +45,6 @@ if not f then return default end
         hl.exec_cmd("bash -c 'hyprctl plugin list | grep -q hyprbars || (hyprpm reload -n && sleep 1 && hyprctl reload)'")
         hl.exec_cmd("bash ~/.config/hypr/random_wallpaper.sh")
         hl.exec_cmd("killall waybar; waybar")
-        hl.exec_cmd("killall waybar_autohide; ~/.config/waybar/scripts/waybar_autohide")
         hl.exec_cmd("dunst")
         hl.exec_cmd("hypridle")
         hl.exec_cmd("/usr/lib/polkit-kde-authentication-agent-1")
@@ -54,6 +53,11 @@ if not f then return default end
         hl.exec_cmd("wl-paste --watch cliphist store")
         hl.exec_cmd("wl-clip-persist --clipboard regular")
         hl.exec_cmd("swayosd-server")
+        hl.exec_cmd("systemctl --user start wb-daemon.service wb-autohide.service")
+        hl.exec_cmd("cp ~/.config/rofi/assets/bubble-normal.png /tmp/bubble-normal.png")
+        hl.exec_cmd("cp ~/.config/rofi/assets/bubble-selected.png /tmp/bubble-selected.png")
+        hl.exec_cmd("python3 ~/.config/rofi/bubble-menu.py --menu launcher --daemon --x11 &")
+        hl.exec_cmd("python3 ~/.config/rofi/bubble-menu.py --menu powermenu --daemon --x11 &")
         end)
 
         hl.config({
@@ -158,10 +162,10 @@ if not f then return default end
                 hl.config({
                     plugin = {
                         hyprbars = {
-                            bar_height            = 18,
+                            bar_height            = 15,
                             bar_color             = "rgba(fff495ee)",
                           ["col.text"]          = "rgba(111111ee)",
-                          bar_text_size         = 15,
+                          bar_text_size         = 12,
                           bar_text_font         = "Noto Sans",
                           bar_buttons_alignment = "right",
                         },
@@ -171,44 +175,44 @@ if not f then return default end
                 hl.plugin.hyprbars.add_button({
                     bg_color = "rgba(ff5555ee)",
                                               fg_color = "rgba(111111ee)",
-                                              size     = 15,
+                                              size     = 12,
                                               icon     = "✕",
                                               action   = "hyprctl dispatch 'hl.dsp.window.close()'",
                 })
                 hl.plugin.hyprbars.add_button({
                     bg_color = "rgba(ffffffee)",
                                               fg_color = "rgba(111111ee)",
-                                              size     = 15,
-                                              icon     = "FS1",
-                                              action   = "hyprctl dispatch 'hl.dsp.window.fullscreen({ mode = 1 })'",
-                })
-                hl.plugin.hyprbars.add_button({
-                    bg_color = "rgba(ffffffee)",
-                                              fg_color = "rgba(111111ee)",
-                                              size     = 15,
-                                              icon     = "FS0",
-                                              action   = "hyprctl dispatch 'hl.dsp.window.fullscreen({ mode = 0 })'",
-                })
-                hl.plugin.hyprbars.add_button({
-                    bg_color = "rgba(ffffffee)",
-                                              fg_color = "rgba(111111ee)",
-                                              size     = 15,
-                                              icon     = "⇆",
-                                              action   = "hyprctl dispatch 'hl.dsp.layout(\"swapwithmaster\", \"master\")'",
-                })
-                hl.plugin.hyprbars.add_button({
-                    bg_color = "rgba(ffffffee)",
-                                              fg_color = "rgba(111111ee)",
-                                              size     = 15,
+                                              size     = 12,
                                               icon     = "m",
                                               action   = "hyprctl dispatch 'hl.dsp.exec_cmd(\"hyprland-minimizer\")'",
                 })
                 hl.plugin.hyprbars.add_button({
                     bg_color = "rgba(ffffffee)",
                                               fg_color = "rgba(111111ee)",
-                                              size     = 15,
+                                              size     = 10,
+                                              icon     = "FS1",
+                                              action   = "hyprctl dispatch 'hl.dsp.window.fullscreen({ mode = 1 })'",
+                })
+                hl.plugin.hyprbars.add_button({
+                    bg_color = "rgba(ffffffee)",
+                                              fg_color = "rgba(111111ee)",
+                                              size     = 8,
+                                              icon     = "⇆",
+                                              action   = "hyprctl dispatch 'hl.dsp.layout(\"swapwithmaster\", \"master\")'",
+                })
+                hl.plugin.hyprbars.add_button({
+                    bg_color = "rgba(ffffffee)",
+                                              fg_color = "rgba(111111ee)",
+                                              size     = 12,
                                               icon     = "📌",
                                               action   = "hyprctl dispatch 'hl.dsp.exec_cmd(\"~/.config/hypr/pip.sh\")'",
+                })
+
+                hl.window_rule({
+                    name    = "rofi-hardcut",
+                    match   = { class = "^(Rofi|rofi)$" },
+                               no_anim = true,
+                               stay_focused = true,
                 })
 
                 hl.config({
@@ -228,12 +232,13 @@ if not f then return default end
 
                 hl.bind(mainMod .. " + space",           hl.dsp.exec_cmd(terminal))
                 hl.bind(mainMod .. " + F",               hl.dsp.exec_cmd(fileManager))
-                hl.bind(mainMod .. " + SHIFT + tab",     hl.dsp.exec_cmd(openwindows))
-                hl.bind(mainMod .. " + tab",             hl.dsp.exec_cmd(launcher))
-                hl.bind(mainMod .. " + escape",          hl.dsp.exec_cmd(powermenu))
+
+                hl.bind(mainMod .. " + tab",     hl.dsp.exec_cmd(launcher_cmd))
+                hl.bind(mainMod .. " + escape",  hl.dsp.exec_cmd(powermenu_cmd))
+
                 hl.bind(mainMod .. " + SHIFT + code:49", hl.dsp.window.fullscreen({ mode = 0 }))
                 hl.bind(mainMod .. " + code:49",         hl.dsp.window.fullscreen({ mode = 1 }))
-                hl.bind(mainMod .. " + ALT + tab",       hl.dsp.exec_cmd("hyprland-minimizer"))
+                hl.bind(mainMod .. " + ALT + code:49",       hl.dsp.exec_cmd("hyprland-minimizer"))
                 hl.bind(mainMod .. " + CTRL + code:49", hl.dsp.exec_cmd("hyprctl dispatch 'hl.dsp.exec_cmd(\"~/.config/hypr/pip.sh\")'"))
 
                 -- Waybar-Autohide sperren/entsperren (SUPER + STRG + ^):
@@ -241,7 +246,7 @@ if not f then return default end
                 -- egal was Maus/Touch tun - praktisch fürs Vollbild-Exit-Menü
                 -- (z.B. SimCity 4), das die Bar sonst blockieren würde.
                 -- Nochmal drücken entsperrt wieder normales Autohide.
-                hl.bind(mainMod .. " + ALT + code:49", hl.dsp.exec_cmd(
+                hl.bind(mainMod .. " + ALT + tab", hl.dsp.exec_cmd(
                     "bash -c 'p=/tmp/waybar-autohide.pid; [ -f \"$p\" ] && kill -RTMIN+1 $(cat \"$p\")'"
                 ), { description = "Waybar-Autohide sperren/entsperren" })
 
@@ -329,7 +334,7 @@ if not f then return default end
                                     hl.bind("XF86AudioPrev", hl.dsp.exec_cmd("playerctl previous"),   { locked = true })
 
                                     hl.bind(mainMod .. " + Print",         hl.dsp.exec_cmd('grim -g "$(slurp -d)" - | wl-copy'))
-                                    hl.bind(mainMod .. " + ALT + Print", hl.dsp.exec_cmd('bash -c "mkdir -p ~/Pictures && grim -g \\"$(slurp -d)\\" ~/Pictures/$(date +%Y%m%d_%H%M%S).png"'))
+                                    hl.bind(mainMod .. " + SHIFT + Print", hl.dsp.exec_cmd('bash -c "mkdir -p ~/Screenshots && grim -g \\"$(slurp -d)\\" ~/Pictures/$(date +%Y%m%d_%H%M%S).png"'))
 
                                     hl.window_rule({
                                         name           = "suppress-maximize-events",

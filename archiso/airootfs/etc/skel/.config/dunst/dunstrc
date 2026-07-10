@@ -1,0 +1,105 @@
+[global]
+    ### Display ###
+    monitor      = 0
+    follow       = none
+
+    ### Geometry ###
+    width        = (150, 0)
+    height       = (65, 95)
+    origin       = top-right
+    offset       = (15, 15)
+    scale        = 0
+
+    notification_limit = 0
+
+    ### Progress bar ###
+    progress_bar              = true
+    progress_bar_height       = 12
+    progress_bar_frame_width  = 1
+    progress_bar_min_width    = 100
+    progress_bar_max_width    = 300
+    progress_bar_corner_radius = 15
+    progress_bar_corners      = all
+
+    ### Icons ###
+    icon_position               = right
+    min_icon_size               = 15
+    max_icon_size               = 45
+    icon_corner_radius          = 8
+    icon_corners                = all
+    enable_recursive_icon_lookup = true
+    icon_theme                  = "Clay-Light, Clay"
+
+    ### Padding & Frame ###
+    indicate_hidden    = yes
+    transparency       = 35
+    separator_height   = 0
+    padding            = 6
+    horizontal_padding = 8
+    text_icon_padding  = 5
+    frame_width        = 5
+    frame_color        = "#23163B"
+    gap_size           = 15
+    separator_color    = frame
+    corner_radius      = 35
+    corners            = all
+
+    ### Text ###
+    font             = Monospace 8
+    line_height      = 1
+    markup           = full
+    format           = "<b>%s</b>\n%b"
+    alignment        = center
+    vertical_alignment = center
+    show_age_threshold = 15
+    ellipsize        = middle
+    ignore_newline   = no
+    stack_duplicates = false
+    hide_duplicate_count = false
+    show_indicators  = yes
+    enable_posix_regex = true
+
+    ### History ###
+    sticky_history = yes
+    history_length = 20
+
+    ### Misc ###
+    dmenu              = /usr/bin/dmenu -p dunst:
+    browser            = /usr/bin/xdg-open
+    always_run_script  = true
+    title              = Dunst
+    class              = Dunst
+    sort               = yes
+    ignore_dbusclose   = false
+
+    ### Wayland ###
+    force_xwayland = true
+
+    ### Mouse ###
+    mouse_left_click   = close_current
+    mouse_right_click  = do_action, close_current
+    mouse_middle_click = close_all
+
+[experimental]
+    per_monitor_dpi    = true
+    pause_on_mouse_over = false
+
+[urgency_low]
+    background = "#79659E"
+    foreground = "#f6f3d5"
+    timeout    = 5
+    default_icon = dialog-information
+
+[urgency_normal]
+    background = "#5a3998"
+    foreground = "#f6f3d5"
+    timeout    = 8
+    override_pause_level = 30
+    default_icon = dialog-information
+
+[urgency_critical]
+    background   = "#983939"
+    foreground   = "#f6f3d5"
+    timeout      = 65
+    override_pause_level = 65
+    default_icon = dialog-warning

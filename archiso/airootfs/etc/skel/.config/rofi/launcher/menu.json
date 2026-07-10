@@ -3,102 +3,115 @@
   "type": "folder",
   "children": [
     {
-      "name": "1 System",
+      "name": "System",
       "type": "folder",
       "icon": "computer",
       "children": [
         {
-          "name": "System Monitor",
-          "type": "app",
-          "icon": "utilities-system-monitor",
-          "exec": "kitty btop"
-        },
-        {
-          "name": "Terminal",
+          "name": "Kitty",
           "type": "app",
           "icon": "utilities-terminal",
           "exec": "kitty"
         },
         {
-          "name": "Disk Usage",
-          "type": "app",
-          "icon": "drive-harddisk",
-          "exec": "kitty dust"
-        }
-      ]
-    },
-    {
-      "name": "2 Work",
-      "type": "folder",
-      "icon": "folder",
-      "children": [
-        {
-          "name": "Files",
+          "name": "Thunar",
           "type": "app",
           "icon": "system-file-manager",
           "exec": "thunar"
         },
         {
-          "name": "Text Editor",
+          "name": "Ark",
           "type": "app",
-          "icon": "accessories-text-editor",
-          "exec": "gedit"
+          "icon": "ark",
+          "exec": "ark"
         }
       ]
     },
     {
-      "name": "3 Utilitys",
+      "name": "Creation",
       "type": "folder",
-      "icon": "folder",
+      "icon": "applications-graphics",
       "children": [
         {
-          "name": "Calculator",
+          "name": "Kolourpaint",
           "type": "app",
-          "icon": "accessories-calculator",
-          "exec": "gnome-calculator"
+          "icon": "kolourpaint",
+          "exec": "kolourpaint"
         },
         {
-          "name": "Screenshot",
+          "name": "Kate",
           "type": "app",
-          "icon": "applets-screenshooter",
-          "exec": "bash -c 'grim -g \"$(slurp -d)\" - | wl-copy'"
+          "icon": "kate",
+          "exec": "kate"
         }
       ]
     },
     {
-      "name": "4 Games",
+      "name": "Utilitys",
       "type": "folder",
-      "icon": "applications-games",
+      "icon": "applications-accessories",
       "children": [
         {
-          "name": "Steam",
+          "name": "Fastfetch",
           "type": "app",
-          "icon": "steam",
-          "exec": "steam"
+          "icon": "utilities-system-monitor",
+          "exec": "kitty --hold fastfetch"
         }
       ]
     },
     {
-      "name": "5 Multimedia",
+      "name": "Games",
+      "type": "folder",
+      "icon": "applications-games",
+      "children": []
+    },
+    {
+      "name": "Multimedia",
       "type": "folder",
       "icon": "applications-multimedia",
       "children": [
         {
-          "name": "Music Player",
+          "name": "VLC",
           "type": "app",
-          "icon": "audio-x-generic",
-          "exec": "rhythmbox"
+          "icon": "vlc",
+          "exec": "vlc"
         },
         {
-          "name": "Video Player",
+          "name": "Gwenview",
           "type": "app",
-          "icon": "video-x-generic",
-          "exec": "mpv"
+          "icon": "gwenview",
+          "exec": "gwenview"
         }
       ]
     },
     {
-      "name": "6 Settings",
+      "name": "Social",
+      "type": "folder",
+      "icon": "user-available",
+      "children": [
+        {
+          "name": "Firefox",
+          "type": "app",
+          "icon": "firefox",
+          "exec": "firefox"
+        }
+      ]
+    },
+    {
+      "name": "Stores",
+      "type": "folder",
+      "icon": "software-center",
+      "children": [
+          {
+          "name": "Pamac Manager",
+          "type": "app",
+          "icon": "package-x-generic",
+          "exec": "pamac-manager"
+        }
+      ]
+    },
+    {
+      "name": "Settings",
       "type": "folder",
       "icon": "preferences-system",
       "children": [
@@ -107,6 +120,24 @@
           "type": "app",
           "icon": "preferences-desktop-theme",
           "exec": "nwg-look"
+        },
+        {
+          "name": "Kvantum Manager",
+          "type": "app",
+          "icon": "preferences-desktop-theme",
+          "exec": "kvantummanager"
+        },
+        {
+          "name": "Qt5 Settings",
+          "type": "app",
+          "icon": "preferences-desktop-theme",
+          "exec": "qt5ct"
+        },
+        {
+          "name": "Qt6 Settings",
+          "type": "app",
+          "icon": "preferences-desktop-theme",
+          "exec": "qt6ct"
         },
         {
           "name": "Bluetooth",
@@ -119,54 +150,64 @@
           "type": "app",
           "icon": "preferences-system-network",
           "exec": "nm-connection-editor"
-        }
-      ]
-    },
-    {
-      "name": "7 Social",
-      "type": "folder",
-      "icon": "user-available",
-      "children": [
+        },
         {
-          "name": "Discord",
+          "name": "Pavucontrol",
           "type": "app",
-          "icon": "discord",
-          "exec": "discord"
+          "icon": "audio-card",
+          "exec": "pavucontrol"
+        },
+        {
+          "name": "Firewall",
+          "type": "app",
+          "icon": "security-high",
+          "exec": "gufw"
+        },
+        {
+          "name": "Printers",
+          "type": "app",
+          "icon": "printer",
+          "exec": "system-config-printer"
         }
       ]
     },
     {
-      "name": "8",
-      "type": "folder",
-      "icon": "folder",
-      "children": []
-    },
-    {
-      "name": "9 Drivers",
+      "name": "Administration",
       "type": "folder",
       "icon": "drive-harddisk",
       "children": [
         {
-          "name": "Driver Manager",
+          "name": "Btop",
           "type": "app",
-          "icon": "system-installer",
-          "exec": "kitty sudo mhwd-gtk"
+          "icon": "utilities-system-monitor",
+          "exec": "kitty btop"
+        },
+        {
+          "name": "GParted",
+          "type": "app",
+          "icon": "gparted",
+          "exec": "gparted"
+        },
+        {
+          "name": "GNOME Disks",
+          "type": "app",
+          "icon": "drive-harddisk",
+          "exec": "gnome-disks"
         }
       ]
     },
     {
-      "name": "Other",
-      "type": "folder",
-      "icon": "folder",
-      "children": []
+      "name": "Unordered Programs",
+      "type": "special-drun-filtered",
+      "icon": "applications-utilities"
     },
     {
-      "name": "All Apps",
+      "name": "All Programs",
       "type": "special-drun",
-      "icon": "application-x-executable"
+      "icon": "system-run"
     },
     {
-      "name": "App Packages",
+      "name": "All Packages",
       "type": "special-run",
       "icon": "package-x-generic"
     }
