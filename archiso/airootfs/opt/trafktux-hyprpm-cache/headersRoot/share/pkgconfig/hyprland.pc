@@ -1,0 +1,8 @@
+prefix=/var/cache/hyprpm/hopx/headersRoot/include
+
+Name: Hyprland
+URL: https://github.com/hyprwm/Hyprland
+Description: Hyprland header files
+Version: 0.55.4
+Requires: aquamarine >= 0.9.3, hyprcursor >= 0.1.7, hyprgraphics >= 0.5.1, hyprlang >= 0.6.7, hyprutils >= 0.13.1, libdrm, egl, cairo, xkbcommon >= 1.11.0, libinput >= 1.28, wayland-server >= 1.22.91, xcb, xcb-render, xcb-xfixes, xcb-icccm, xcb-composite, xcb-res, xcb-errors
+Cflags: -I${prefix} -I${prefix}/hyprland/protocols -I${prefix}/hyprland -I${prefix}/hyprland/src

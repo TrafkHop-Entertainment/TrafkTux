@@ -1,0 +1,40 @@
+# ~/.gtkrc-2.0
+# Globale Einstellungen für alle GTK2-Anwendungen.
+# Das eigentliche Farb-/Widget-Theme steckt in
+# ~/.themes/<Name>/gtk-2.0/{gtkrc,main.rc,apps.rc,hacks.rc}
+# -- diese Datei hier sagt GTK2-Programmen nur, WELCHES Theme sie
+# nehmen sollen.
+
+# Passe den Namen an den tatsächlichen Ordnernamen in ~/.themes/ an.
+# Für Dark-Mode-Setup (dein Standard):
+gtk-theme-name="TrafkTux-dark"
+# Für den hellen Zweig: gtk-theme-name="TrafkTux"
+
+# Aus deiner dunstrc (icon_theme = "Clay-Light, Clay") -- passe an,
+# falls du fürs Panel/Nautilus/etc ein anderes Icon-Set nutzt.
+gtk-icon-theme-name="Clay"
+
+# Aus kitty.conf (font_family JetBrainsMono Nerd Font)
+gtk-font-name="JetBrainsMono Nerd Font 10"
+
+# TODO: trag hier deinen tatsächlichen Cursor-Theme-Namen ein
+# (z.B. "Bibata-Modern-Ink", "Adwaita" o.ä.) - stand nirgends in
+# deinen Configs, konnte ich nicht ableiten.
+gtk-cursor-theme-name="Adwaita"
+gtk-cursor-theme-size=24
+
+# Verhalten / Look
+gtk-toolbar-style=GTK_TOOLBAR_BOTH_HORIZ
+gtk-toolbar-icon-size=GTK_ICON_SIZE_LARGE_TOOLBAR
+gtk-button-images=1
+gtk-menu-images=1
+gtk-enable-event-sounds=0
+gtk-enable-input-feedback-sounds=0
+gtk-primary-button-warps-slider=1
+gtk-auto-mnemonics=1
+
+# Schrift-Rendering (Standard für die meisten Wayland/Hyprland-Setups)
+gtk-xft-antialias=1
+gtk-xft-hinting=1
+gtk-xft-hintstyle="hintslight"
+gtk-xft-rgba="rgb"

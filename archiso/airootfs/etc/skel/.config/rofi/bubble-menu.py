@@ -14,6 +14,7 @@ import shlex
 import signal
 import time
 import stat
+import shutil
 
 # --- Konstanten ---
 ROFI_BASE        = os.path.expanduser("~/.config/rofi")
@@ -49,7 +50,44 @@ WASD_KB_ARGS = [
 ]
 
 _cached_desktop_apps = None
+_cached_desktop_apps_ts = 0.0
 _cached_path_binaries = None
+_cached_path_binaries_ts = 0.0
+
+# Wie lange der Scan-Cache für Desktop-Apps / PATH-Binaries gültig bleibt (Sekunden).
+# Der Daemon läuft dauerhaft, daher braucht es einen Ablauf, damit neu installierte
+# Programme automatisch auftauchen, ohne den Daemon manuell neu zu starten.
+SCAN_CACHE_TTL = 180  # 3 Minuten
+
+# --- Steam-Icon-Sync ---
+# Steam schreibt in .desktop-Dateien "Icon=steam_icon_<appid>", installiert das
+# passende Bild aber nur dann ins Icon-Theme (~/.local/share/icons/hicolor/...),
+# wenn man im Steam-Client manuell "Desktop-Verknüpfung erstellen" klickt.
+# Diese Funktion holt das fehlende Icon stattdessen automatisch aus Steams eigenem
+# librarycache (dort liegt es als kleine quadratische Datei mit Hash-Namen, z.B.
+# "80b57583....jpg", 32x32 groß) und installiert es selbst ins hicolor-Theme.
+STEAM_ICON_SYNC_TTL   = 300  # alle 5 Minuten neu prüfen
+STEAM_LIBRARYCACHE    = os.path.expanduser("~/.local/share/Steam/appcache/librarycache")
+STEAM_ICON_TARGET_DIR = os.path.expanduser("~/.local/share/icons/hicolor/128x128/apps")
+# Store-Artwork-Dateien, die NIE das App-Icon sind (auch wenn zufällig quadratisch)
+_STEAM_ARTWORK_NAMES = {
+    "header.jpg", "logo.png", "library_600x900.jpg",
+    "library_hero.jpg", "library_hero_blur.jpg", "capsule_231x87.jpg",
+    "capsule_616x353.jpg", "page_bg_raw.jpg", "page.bg.jpg",
+}
+_cached_steam_icon_sync_ts = 0.0
+
+# --- JetBrains-Toolbox-Icon-Sync ---
+# Toolbox erzeugt beim Anlegen/Aktualisieren einer .desktop-Datei ein SVG-Icon
+# unter dotDesktopIcons/<desktop-id>.icon.svg, verlinkt/kopiert es aber (aus
+# Gründen, z.B. abgebrochenes Update) nicht zuverlässig nach
+# ~/.local/share/icons/hicolor/scalable/apps/<Icon-Name>.svg, worauf die
+# .desktop-Datei via "Icon=" verweist. Diese Funktion holt das fehlende Icon
+# automatisch aus dotDesktopIcons nach.
+JETBRAINS_ICON_SYNC_TTL     = 300  # alle 5 Minuten neu prüfen
+JETBRAINS_DOT_DESKTOP_ICONS = os.path.expanduser("~/.local/share/JetBrains/Toolbox/dotDesktopIcons")
+JETBRAINS_ICON_TARGET_DIR   = os.path.expanduser("~/.local/share/icons/hicolor/scalable/apps")
+_cached_jetbrains_icon_sync_ts = 0.0
 
 # --- Hilfsfunktionen ---
 
@@ -285,9 +323,236 @@ def _current_desktop_names() -> set[str]:
     raw = os.environ.get("XDG_CURRENT_DESKTOP", "")
     return {p.strip() for p in raw.split(":") if p.strip()}
 
+def _find_steam_desktop_icon_ids() -> set[str]:
+    """Durchsucht alle .desktop-Dateien nach 'Icon=steam_icon_<appid>' Einträgen
+    und liefert die Menge der appids zurück."""
+    appids = set()
+    for data_dir in _xdg_data_dirs():
+        app_dir = os.path.join(data_dir, "applications")
+        if not os.path.isdir(app_dir):
+            continue
+        for dirpath, _dirnames, filenames in os.walk(app_dir):
+            for fname in filenames:
+                if not fname.endswith(".desktop"):
+                    continue
+                full_path = os.path.join(dirpath, fname)
+                cp = configparser.RawConfigParser(strict=False, interpolation=None)
+                try:
+                    cp.read(full_path, encoding="utf-8")
+                except (OSError, configparser.Error):
+                    continue
+                if "Desktop Entry" not in cp:
+                    continue
+                icon = cp["Desktop Entry"].get("Icon", "")
+                if icon.startswith("steam_icon_"):
+                    appid = icon[len("steam_icon_"):]
+                    if appid.isdigit():
+                        appids.add(appid)
+    return appids
+
+def _icon_already_resolvable(icon_name: str) -> bool:
+    """Prüft, ob rofi/GTK dieses Icon bereits irgendwo im Icon-Theme finden würde,
+    ohne dass wir GTK selbst importieren müssen (das wäre eine zusätzliche
+    Abhängigkeit) — wir schauen stattdessen direkt in den bekannten
+    hicolor/Papirus-Verzeichnissen nach, ob eine Datei mit diesem Namen existiert."""
+    search_dirs = [
+        os.path.expanduser("~/.local/share/icons"),
+        "/usr/share/icons",
+    ]
+    for base in search_dirs:
+        if not os.path.isdir(base):
+            continue
+        for dirpath, _dirnames, filenames in os.walk(base):
+            for fname in filenames:
+                stem, _ext = os.path.splitext(fname)
+                if stem == icon_name:
+                    return True
+    return False
+
+def _find_steam_app_icon_source(appid: str) -> str | None:
+    """Findet im Steam-librarycache für die gegebene appid die Datei, die das
+    echte quadratische App-Icon ist (Hash-Dateiname, exakt quadratisch, nicht in
+    der bekannten Artwork-Namensliste). Steam legt oft mehrere Auflösungen ab
+    (z.B. 32x32 und größere Varianten) — wir nehmen die größte quadratische."""
+    app_cache_dir = os.path.join(STEAM_LIBRARYCACHE, appid)
+    if not os.path.isdir(app_cache_dir):
+        return None
+
+    best_path = None
+    best_size = -1
+    for fname in os.listdir(app_cache_dir):
+        if fname in _STEAM_ARTWORK_NAMES:
+            continue
+        full_path = os.path.join(app_cache_dir, fname)
+        if not os.path.isfile(full_path):
+            continue
+        try:
+            result = subprocess.run(
+                ["identify", "-format", "%w %h", full_path],
+                capture_output=True, text=True, timeout=5,
+            )
+            if result.returncode != 0:
+                continue
+            w_str, h_str = result.stdout.strip().split()
+            w, h = int(w_str), int(h_str)
+        except Exception:
+            continue
+        if w != h:
+            continue  # nur echte (quadratische) Icons, kein Store-Artwork
+        if w > best_size:
+            best_size = w
+            best_path = full_path
+    return best_path
+
+def sync_steam_icons() -> int:
+    """Installiert fehlende steam_icon_<appid> Icons ins hicolor-Theme, indem das
+    passende quadratische Bild aus Steams librarycache konvertiert/kopiert wird.
+    Gibt die Anzahl neu installierter Icons zurück."""
+    if not os.path.isdir(STEAM_LIBRARYCACHE):
+        return 0
+
+    appids = _find_steam_desktop_icon_ids()
+    if not appids:
+        return 0
+
+    installed = 0
+    cache_needs_update = False
+
+    for appid in appids:
+        icon_name = f"steam_icon_{appid}"
+        if _icon_already_resolvable(icon_name):
+            continue
+
+        source = _find_steam_app_icon_source(appid)
+        if not source:
+            continue
+
+        os.makedirs(STEAM_ICON_TARGET_DIR, exist_ok=True)
+        target = os.path.join(STEAM_ICON_TARGET_DIR, f"{icon_name}.png")
+        try:
+            # Über ImageMagick nach PNG konvertieren, unabhängig vom Quellformat (jpg/png)
+            result = subprocess.run(
+                ["magick", source, target],
+                capture_output=True, timeout=15,
+            )
+            if result.returncode != 0:
+                continue
+            installed += 1
+            cache_needs_update = True
+        except Exception:
+            continue
+
+    if cache_needs_update:
+        try:
+            subprocess.run(
+                ["gtk-update-icon-cache", "-f", "-t",
+                 os.path.expanduser("~/.local/share/icons/hicolor")],
+                capture_output=True, timeout=15,
+            )
+        except Exception:
+            pass
+
+    return installed
+
+def maybe_sync_steam_icons(force: bool = False):
+    """Führt sync_steam_icons() nur aus, wenn STEAM_ICON_SYNC_TTL seit dem letzten
+    Lauf verstrichen ist (oder force=True), damit der Daemon nicht bei jedem
+    Menü-Öffnen den ganzen librarycache durchsucht."""
+    global _cached_steam_icon_sync_ts
+    now = time.monotonic()
+    if not force and (now - _cached_steam_icon_sync_ts) < STEAM_ICON_SYNC_TTL:
+        return
+    _cached_steam_icon_sync_ts = now
+    try:
+        n = sync_steam_icons()
+        if n:
+            print(f"[Steam-Icon-Sync] {n} neue(s) Icon(s) installiert.")
+    except Exception as e:
+        print(f"[Steam-Icon-Sync] Fehler: {e}")
+
+def sync_jetbrains_icons() -> int:
+    """Kopiert fehlende JetBrains-Toolbox-Icons aus dotDesktopIcons/ ins
+    hicolor-Theme. Der Dateiname dort entspricht exakt <desktop-id>.icon.svg
+    (siehe X-Icon-Name-Before-Sanitization in der .desktop-Datei), daher ist
+    hier kein Rätselraten wie bei Steam nötig — nur ein direkter Dateiabgleich.
+    Gibt die Anzahl neu installierter Icons zurück."""
+    if not os.path.isdir(JETBRAINS_DOT_DESKTOP_ICONS):
+        return 0
+
+    installed = 0
+    cache_needs_update = False
+
+    for data_dir in _xdg_data_dirs():
+        app_dir = os.path.join(data_dir, "applications")
+        if not os.path.isdir(app_dir):
+            continue
+        for fname in os.listdir(app_dir):
+            if not fname.startswith("jetbrains-") or not fname.endswith(".desktop"):
+                continue
+            full_path = os.path.join(app_dir, fname)
+            cp = configparser.RawConfigParser(strict=False, interpolation=None)
+            try:
+                cp.read(full_path, encoding="utf-8")
+            except (OSError, configparser.Error):
+                continue
+            if "Desktop Entry" not in cp:
+                continue
+            icon_name = cp["Desktop Entry"].get("Icon", "")
+            if not icon_name:
+                continue
+            if _icon_already_resolvable(icon_name):
+                continue
+
+            source = os.path.join(JETBRAINS_DOT_DESKTOP_ICONS, f"{fname}.icon.svg")
+            if not os.path.isfile(source):
+                continue
+
+            os.makedirs(JETBRAINS_ICON_TARGET_DIR, exist_ok=True)
+            target = os.path.join(JETBRAINS_ICON_TARGET_DIR, f"{icon_name}.svg")
+            try:
+                shutil.copyfile(source, target)
+                installed += 1
+                cache_needs_update = True
+            except OSError:
+                continue
+
+    if cache_needs_update:
+        try:
+            subprocess.run(
+                ["gtk-update-icon-cache", "-f", "-t",
+                 os.path.expanduser("~/.local/share/icons/hicolor")],
+                capture_output=True, timeout=15,
+            )
+        except Exception:
+            pass
+
+    return installed
+
+def maybe_sync_jetbrains_icons(force: bool = False):
+    """Führt sync_jetbrains_icons() nur aus, wenn JETBRAINS_ICON_SYNC_TTL seit
+    dem letzten Lauf verstrichen ist (oder force=True)."""
+    global _cached_jetbrains_icon_sync_ts
+    now = time.monotonic()
+    if not force and (now - _cached_jetbrains_icon_sync_ts) < JETBRAINS_ICON_SYNC_TTL:
+        return
+    _cached_jetbrains_icon_sync_ts = now
+    try:
+        n = sync_jetbrains_icons()
+        if n:
+            print(f"[JetBrains-Icon-Sync] {n} neue(s) Icon(s) installiert.")
+    except Exception as e:
+        print(f"[JetBrains-Icon-Sync] Fehler: {e}")
+
 def collect_desktop_apps() -> list[dict]:
-    global _cached_desktop_apps
-    if _cached_desktop_apps is not None:
+    global _cached_desktop_apps, _cached_desktop_apps_ts
+    # Eigene TTLs, unabhängig vom Desktop-App-Cache-TTL, damit fehlende
+    # Steam-/JetBrains-Icons auch dann synchronisiert werden, wenn der
+    # Desktop-App-Cache selbst noch gültig ist (spätestens beim nächsten
+    # Rescan werden sie dann sichtbar).
+    maybe_sync_steam_icons()
+    maybe_sync_jetbrains_icons()
+    now = time.monotonic()
+    if _cached_desktop_apps is not None and (now - _cached_desktop_apps_ts) < SCAN_CACHE_TTL:
         return _cached_desktop_apps
     current_desktop = _current_desktop_names()
     seen_ids = set()
@@ -349,11 +614,13 @@ def collect_desktop_apps() -> list[dict]:
     for a in apps:
         del a["_sort_key"]
     _cached_desktop_apps = apps
+    _cached_desktop_apps_ts = now
     return apps
 
 def collect_path_binaries() -> list[dict]:
-    global _cached_path_binaries
-    if _cached_path_binaries is not None:
+    global _cached_path_binaries, _cached_path_binaries_ts
+    now = time.monotonic()
+    if _cached_path_binaries is not None and (now - _cached_path_binaries_ts) < SCAN_CACHE_TTL:
         return _cached_path_binaries
     path_env = os.environ.get("PATH", "")
     seen_names = set()
@@ -380,6 +647,7 @@ def collect_path_binaries() -> list[dict]:
             })
     bins.sort(key=lambda b: b["name"].casefold())
     _cached_path_binaries = bins
+    _cached_path_binaries_ts = now
     return bins
 
 # --- Virtuelles Untermenü (ohne os.execv) ---

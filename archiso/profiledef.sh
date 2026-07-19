@@ -9,9 +9,10 @@ iso_version="$(date --date="@${SOURCE_DATE_EPOCH:-$(date +%s)}" +%Y.%m.%d)"
 install_dir="arch"
 buildmodes=('iso')
 
-# Nur noch UEFI, per GRUB (kein BIOS/Syslinux mehr - archiso bietet BIOS nur ueber Syslinux an)
-bootmodes=('uefi-x64.grub.esp'
-           'uefi-x64.grub.eltorito')
+# UEFI per GRUB + BIOS per Syslinux (archiso bietet Legacy-BIOS nur ueber
+# Syslinux an, nicht ueber GRUB - daher die Mischung aus beidem)
+bootmodes=('bios.syslinux'
+           'uefi.grub')
 
 pacman_conf="pacman.conf"
 airootfs_image_type="squashfs"

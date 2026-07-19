@@ -39,7 +39,8 @@
         "custom/akku",
         "custom/osk",
         "tray",
-        "clock"
+        "clock",
+        "custom/settings"
     ],
 
     // ── LEFT ──────────────────────────────────────────────
@@ -54,14 +55,17 @@
         "on-click": "sh -c 'echo \"show\" > \"${XDG_RUNTIME_DIR:-/tmp}/rofi-bubble-powermenu.fifo\"'"
     },
     "custom/workspaces-view": {
-        "format": "󰙀",
-        "tooltip": "Workspace Overview",
-        "on-click": ""
-    },
+    "format": "󰙀",
+    "tooltip": "Workspace Overview",
+    "on-click": "hyprctl eval 'hl.plugin.hyprexpo.expo(\"toggle\")' ; hyprctl eval 'hl.dispatch(hl.dsp.submap(\"hyprexpo\"))'"
+},
     "custom/hide-windows": {
         "format": "󰘿",
-        "tooltip": "Hide all Windows",
-        "on-click": ""
+        "tooltip": "Alle Fenster verstecken/wiederherstellen",
+        "interval": 1,
+        "exec": "~/.config/waybar/scripts/hideall.sh status",
+        "return-type": "json",
+        "on-click": "~/.config/waybar/scripts/hideall.sh toggle"
     },
     "custom/shortcut-kitty": {
         "format": "",
@@ -158,5 +162,11 @@
         "format-alt": "󰃭  {:%d.%m.%Y}",
         "tooltip": false,
         "on-click": "socat - UNIX-CONNECT:/tmp/wb-daemon.sock <<< clock"
+    },
+
+    "custom/settings": {
+        "format": "󰒓",
+        "tooltip": "Einstellungen",
+        "on-click": "socat - UNIX-CONNECT:/tmp/wb-daemon.sock <<< settings"
     }
 }

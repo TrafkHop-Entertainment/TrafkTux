@@ -47,6 +47,14 @@ BLACKLIST=(
 SYNC_ONCE_ONLY=(
     "etc/skel/.config/clay-icons"
     "etc/skel/.themes/Colloid-Light-Dracula"
+    # Kompletter hyprpm-State (Header + state.toml + .so, siehe
+    # build-hyprland-plugins.sh) ist dauerhaft im airootfs abgelegt und
+    # aendert sich nur wenn build-hyprland-plugins.sh neu laeuft - genau wie
+    # die Icon/Theme-Dumps oben nicht bei jedem Sync neu durchsucht werden muss.
+    "opt/trafktux-hyprpm-cache"
+    "etc/skel/.icons"
+    "etc/skel/.local/share/icons"
+    "etc/pacman.conf"
 )
 
 is_blacklisted() {
@@ -123,11 +131,11 @@ while read -r FILE; do
         $USE_SUDO mkdir -p "$TARGET_DIR"
     fi
 
-    $USE_SUDO cp "$FILE" "$TARGET_PATH"
+    $USE_SUDO cp -P "$FILE" "$TARGET_PATH"
 
     echo "Kopiert: $FILE -> $TARGET_PATH"
     COPIED=$((COPIED + 1))
-done < <(find "$AIROOTFS_DIR" -type f)
+done < <(find "$AIROOTFS_DIR" \( -type f -o -type l \))
 
 SKIPPED_MISSING=$((SKIPPED_MISSING - 3301))
 

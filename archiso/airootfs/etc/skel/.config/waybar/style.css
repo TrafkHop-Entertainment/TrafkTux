@@ -8,6 +8,31 @@
     font-size: 12px;
 }
 
+/* ── Kein animierter Fokusring ──────────────────────────────
+ * GTKs Standard-Fokusrahmen wird per CSS-Transition animiert
+ * ("marching ants") - bei Software-Rendering im Layer-Shell-Overlay
+ * ruckelt genau das sichtbar. set_can_focus(False) in Python
+ * verhindert es an der Quelle; das hier ist nur eine Absicherung,
+ * falls irgendein Widget trotzdem einen Fokusindikator zeichnet.
+ */
+*:focus {
+    outline-style: none;
+    box-shadow: none;
+    transition: none;
+}
+
+/* Auch der :hover/:active-Zustand des System-Themes zeichnet noch
+ * eigene Box-Shadows/Ränder unter unserem Blasen-Hintergrundbild -
+ * das war vermutlich der nach dem Fokus-Fix noch "leichter", aber
+ * weiter sichtbare Rahmen. */
+button, button:hover, button:active, button:checked,
+combobox, combobox button, combobox:hover, combobox button:hover {
+    outline-style: none;
+    box-shadow: none;
+    border: none;
+    transition: none;
+}
+
 #waybar {
 background:    #fff495;
 border-radius: 35px 35px 0 0;
@@ -35,6 +60,7 @@ padding-right: 15px;
 #custom-brightness,
 #custom-akku,
 #custom-osk,
+#custom-settings,
 #tray,
 #clock {
 background-image:  url("../rofi/assets/bubble-normal.png");
@@ -62,6 +88,7 @@ margin:            5px;
 #custom-brightness:hover,
 #custom-akku:hover,
 #custom-osk:hover,
+#custom-settings:hover,
 #tray:hover,
 #clock:hover {
 background-image: url("../rofi/assets/bubble-selected.png");
@@ -70,6 +97,12 @@ color:            #c8b800;
 
 /* ── OSK aktiv: dezent hervorheben, damit man sieht ob sie offen ist ── */
 #custom-osk.active {
+background-image: url("../rofi/assets/bubble-selected.png");
+color:            #c8b800;
+}
+
+/* ── Hideall aktiv: alle Fenster sind gerade versteckt ─────────────── */
+#custom-hide-windows.active {
 background-image: url("../rofi/assets/bubble-selected.png");
 color:            #c8b800;
 }

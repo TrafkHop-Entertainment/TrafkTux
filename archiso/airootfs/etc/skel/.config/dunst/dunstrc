@@ -4,7 +4,7 @@
     follow       = none
 
     ### Geometry ###
-    width        = (150, 0)
+    width        = (150, 1350)
     height       = (65, 95)
     origin       = top-right
     offset       = (15, 15)

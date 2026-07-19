@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=X-GNOME-Metatheme
+Name=TrafkTux-GTK-Theme
+Comment=An Flat Gtk+ theme based on Elegant Design and ThemeColloid-Light-Dracula
+Encoding=UTF-8
+
+[X-GNOME-Metatheme]
+GtkTheme=TrafkTux-GTK-Theme
+MetacityTheme=TrafkTux-GTK-Theme
+IconTheme=Clay-Light
+CursorTheme=Colloid-cursors
+ButtonLayout=close,minimize,maximize:menu

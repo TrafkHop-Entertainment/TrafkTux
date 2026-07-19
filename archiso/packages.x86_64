@@ -3,6 +3,7 @@
 # (brauchen ein eigenes lokales Repo, siehe Notiz am Dateiende).
 
 # --- Basis / Build ---
+syslinux
 base-devel
 linux
 linux-firmware

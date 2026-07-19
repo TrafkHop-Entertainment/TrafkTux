@@ -14,6 +14,9 @@
 #define PID_FILE "/tmp/waybar-autohide.pid"
 #define TRIG_PX 15
 #define HIDE_PX 65
+// Alle wie vielen 10ms-Loop-Durchlaeufen die Bildschirmhoehe neu
+// abgefragt wird (~2s) - siehe Kommentar bei refresh_counter in main().
+#define SCREEN_H_REFRESH_ITERS 200
 
 // ── Touch-Modus ─────────────────────────────────────────────────────
 // Maus-Logik oben bleibt unverändert (kontinuierliche cursorpos-Abfrage).
@@ -284,6 +287,14 @@ int main() {
 
     float screen_h = get_screen_height(sock_path);
     int visible = 0;
+    int refresh_counter = 0;
+    // Bildschirmhoehe wurde bisher NUR hier beim Start abgefragt und nie
+    // wieder - aendert sich die Aufloesung zur Laufzeit (z.B. ueber das
+    // neue Display-Settings-Widget), rechnet die Maus-Abstand-Logik
+    // unten fuer immer mit der alten, falschen Hoehe weiter. Das war
+    // vermutlich der Kern von "Autohide reagiert nach Aufloesungswechsel
+    // nicht mehr richtig, bis Waybar (und damit vermutlich auch dieser
+    // Prozess) neu gestartet wird".
 
     // Touch-Override: solange gesetzt, ignoriert die Loop die normale
     // Maus-Distanz-Logik (die würde sonst sofort wieder verstecken, weil
@@ -297,6 +308,22 @@ int main() {
     ts.tv_nsec = 10 * 1000000L; // 10 Millisekunden
 
     while (running) {
+        // Bildschirmhoehe periodisch neu abfragen statt fuer immer die
+        // Startwert-Kopie zu benutzen - siehe Kommentar oben.
+        refresh_counter++;
+        if (refresh_counter >= SCREEN_H_REFRESH_ITERS) {
+            refresh_counter = 0;
+            float new_h = get_screen_height(sock_path);
+            if (new_h != screen_h) {
+                char msg[96];
+                snprintf(msg, sizeof(msg),
+                         "Bildschirmhöhe aktualisiert: %.0f -> %.0f",
+                         screen_h, new_h);
+                do_log(msg);
+                screen_h = new_h;
+            }
+        }
+
         if (lock_trigger) {
             lock_trigger = 0;
             autohide_locked = !autohide_locked;

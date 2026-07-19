@@ -36,6 +36,18 @@ if [[ ! -f "${REPO_DIR}/trafktux.db" ]]; then
     exit 1
 fi
 
+# Hinweis (keine harte Voraussetzung): der komplette hyprpm-State liegt,
+# falls schonmal gebaut, dauerhaft unter airootfs/opt/trafktux-hyprpm-cache
+# und wird beim Post-Install-Schritt (install-hyprpm-plugins.sh) auf den
+# neuen Benutzer uebertragen. Braucht hier keine Sonderbehandlung, mkarchiso
+# packt den Ordner einfach mit airootfs mit ein.
+HYPRPM_CACHE_STAGE="${PROFILE_DIR}/airootfs/opt/trafktux-hyprpm-cache"
+if [[ ! -d "${HYPRPM_CACHE_STAGE}" ]] || [[ -z "$(ls -A "${HYPRPM_CACHE_STAGE}" 2>/dev/null)" ]]; then
+    echo "HINWEIS: ${HYPRPM_CACHE_STAGE} ist leer oder existiert nicht -" >&2
+    echo "ISO wird ohne Hyprland-Plugins gebaut. Falls gewuenscht, vorher" >&2
+    echo "./build-hyprland-plugins.sh ausfuehren." >&2
+fi
+
 TMP_PACMAN_CONF="$(mktemp)"
 trap 'rm -f "${TMP_PACMAN_CONF}"' EXIT
 sed "s#@@TRAFKTUX_REPO_DIR@@#${REPO_DIR}#g" "${PROFILE_DIR}/pacman.conf" > "${TMP_PACMAN_CONF}"

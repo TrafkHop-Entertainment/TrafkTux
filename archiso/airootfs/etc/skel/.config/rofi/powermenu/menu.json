@@ -10,7 +10,7 @@
     {
       "name": "Minimize",
       "type": "action",
-      "icon": "minimize",
+      "icon": "window-minimize",
       "exec": "hyprland-minimizer"
     },
     {
@@ -22,7 +22,7 @@
     {
       "name": "Swap with Master",
       "type": "action",
-      "icon": "swap",
+      "icon": "view-refresh",
       "exec": "hyprctl dispatch 'hl.dsp.layout(\"swapwithmaster\", \"master\")'"
     },
     {

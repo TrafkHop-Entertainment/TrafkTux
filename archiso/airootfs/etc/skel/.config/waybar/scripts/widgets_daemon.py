@@ -41,7 +41,7 @@ v5-Fixes gegenueber dem v4-Redesign (weiterhin gueltig):
   - Tote Code-Zeile in build_akku entfernt.
 """
 
-import gi, sys, os, signal, subprocess, json, threading, time, calendar
+import gi, sys, os, re, signal, subprocess, json, threading, time, calendar
 from datetime import datetime
 from pathlib import Path
 
@@ -68,6 +68,19 @@ except ImportError:
 HOME   = os.path.expanduser("~")
 B_NORM = f"file://{HOME}/.config/rofi/assets/bubble-normal.png"
 B_SEL  = f"file://{HOME}/.config/rofi/assets/bubble-selected.png"
+# Gleiches Skript, das hyprland.lua beim Autostart aufruft
+# (hl.exec_cmd("bash ~/.config/hypr/random_wallpaper.sh")) - hier per
+# Knopf erneut ausloesbar, um das Wallpaper manuell zu wechseln.
+WALLPAPER_SCRIPT = f"{HOME}/.config/hypr/random_wallpaper.sh"
+
+# Wetter-Standort ist konfigurierbar (siehe _fetch_weather weiter unten):
+# ~/.config/wb-daemon/weather.json  {"lat": .., "lon": .., "name": ".."}
+# Setzen per:
+#   python3 widgets_daemon.py --set-weather "Grazbachgasse, Graz"
+#   python3 widgets_daemon.py --set-weather-coords 47.0707 15.4395 "Graz Zentrum"
+# Fallback, falls noch nichts konfiguriert wurde (alter Ort aus v5/v6).
+WEATHER_CONF     = Path(HOME) / ".config" / "wb-daemon" / "weather.json"
+_DEFAULT_WEATHER_LOC = {"lat": 47.8121, "lon": 16.2506, "name": "Wiener Neustadt"}
 GOLD   = "#fff495"
 GOLD_H = "#c8b800"
 GOLD_DIM = "rgba(255,244,149,0.45)"
@@ -437,6 +450,12 @@ def btn(text: str, cb=None, tip: str = "",
     b = Gtk.Button(label=text)
     b.get_style_context().add_class("bubble")
     b.set_halign(Gtk.Align.CENTER)
+    # Kein Tastaturfokus -> GTK zeichnet nie den animierten Fokusring
+    # ("marching ants"). Bei Software-Rendering in diesem Layer-Shell-
+    # Overlay war genau diese Animation die spürbar ruckelige (~5fps)
+    # Auswahl-Umrandung beim Hovern - betraf JEDEN Button, nicht nur
+    # Settings, weil sie alle über diese eine Funktion laufen.
+    b.set_can_focus(False)
     if active:
         b.get_style_context().add_class("active")
     if tip: b.set_tooltip_text(tip)
@@ -457,6 +476,7 @@ def bslider(icon: str, lo: float, hi: float, step: float, val: float,
     s.set_value(val)
     s.set_hexpand(True)
     s.set_draw_value(show_val)
+    s.set_can_focus(False)
     if show_val:
         s.set_value_pos(Gtk.PositionType.RIGHT)
     if cb: s.connect("value-changed", cb)
@@ -526,8 +546,10 @@ def _get_inputs() -> list:
         res.append({"index": i.get("index",0), "name": name[:24], "vol": pct})
     return res
 
-def build_volume(win: Gtk.Window):
-    win.set_default_size(400, 1)
+def _volume_content() -> Gtk.Box:
+    """Wie bei Netzwerk/Akku: komplettes UI als eigene Funktion, damit
+    das Leisten-Icon und die spätere Settings-Unterseite ("Audio")
+    dasselbe Widget verwenden."""
     stack = Gtk.Stack()
     stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
     stack.set_transition_duration(120)
@@ -677,7 +699,11 @@ def build_volume(win: Gtk.Window):
     # Row die volle Fensterbreite und CENTER wirkt tatsaechlich.
     outer.pack_start(tab_row, True, False, 2)
     outer.pack_start(stack,   False, False, 0)
-    win.add(outer)
+    return outer
+
+def build_volume(win: Gtk.Window):
+    win.set_default_size(400, 1)
+    win.add(_volume_content())
 
 # ════════════════════════════════════════════════════════════
 #  NETWORK
@@ -735,8 +761,12 @@ def _pw_dialog(parent: Gtk.Window, ssid: str) -> str | None:
     dlg.destroy()
     return pw
 
-def build_network(win: Gtk.Window):
-    win.set_default_size(380, 1)
+def _network_content(win: Gtk.Window) -> Gtk.Box:
+    """Wie _akku_content(): baut das komplette Netzwerk-UI und gibt die
+    fertige Box zurück, ohne sie selbst ans Fenster zu haengen. `win`
+    wird weiterhin gebraucht (Passwort-/Fehler-Dialoge sind modal zu
+    diesem Fenster), aber build_network() und die Netzwerk-Unterseite
+    im Settings-Hub rufen jetzt dieselbe Funktion auf."""
     root = vbox(4); pad(root, h=10, v=8)
 
     scan_b = btn("󰑐  Scan")
@@ -848,7 +878,11 @@ def build_network(win: Gtk.Window):
 
     scan_b.connect("clicked", _do_scan)
     _do_load()
-    win.add(root)
+    return root
+
+def build_network(win: Gtk.Window):
+    win.set_default_size(380, 1)
+    win.add(_network_content(win))
 
 # ════════════════════════════════════════════════════════════
 #  BLUETOOTH
@@ -871,8 +905,7 @@ def _bt_devices(filter_arg: str = "") -> list:
             res.append({"mac": p[1], "name": p[2]})
     return res
 
-def build_bluetooth(win: Gtk.Window):
-    win.set_default_size(380, 1)
+def _bluetooth_content() -> Gtk.Box:
     root = vbox(4); pad(root, h=10, v=8)
     powered = [_bt_powered()]
 
@@ -988,7 +1021,11 @@ def build_bluetooth(win: Gtk.Window):
     pwr_b.connect("clicked",  _on_power)
     scan_b.connect("clicked", _on_scan)
     _refresh()
-    win.add(root)
+    return root
+
+def build_bluetooth(win: Gtk.Window):
+    win.set_default_size(380, 1)
+    win.add(_bluetooth_content())
 
 # ════════════════════════════════════════════════════════════
 #  BRIGHTNESS
@@ -996,6 +1033,19 @@ def build_bluetooth(win: Gtk.Window):
 _nl_proc   = None
 _nl_temp   = [3500]
 _nl_active = [False]
+# Sperre + Generation-Zaehler gegen die Racebedingung, die das
+# "Nachtlicht reagiert nach mehrfachem/schnellem Ziehen nicht mehr
+# richtig"-Problem verursacht hat: frueher startete JEDER Slider-Tick
+# sofort einen eigenen Hintergrund-Thread, der _nl_stop() + neu starten
+# macht. Beim schnellen Ziehen liefen mehrere solcher Threads
+# gleichzeitig, unsynchronisiert - welcher zuletzt fertig wurde (nicht
+# zwingend der mit dem neuesten Temperaturwert!), "gewann". Jetzt:
+# _nl_lock serialisiert den eigentlichen Start/Stop, _nl_generation
+# erlaubt einem wartenden/laufenden Aufruf zu erkennen, dass er
+# inzwischen veraltet ist, und sich sauber abzubrechen statt einen
+# veralteten Wert zu setzen.
+_nl_lock       = threading.Lock()
+_nl_generation = [0]
 
 def _bright_pct() -> int:
     try:
@@ -1009,23 +1059,8 @@ def _nl_available() -> str | None:
         if run(["which", cmd]): return cmd
     return None
 
-def _nl_start(temp: int):
-    global _nl_proc
-    _nl_stop()
-    for cmd in [["gammastep",  "-O", str(temp)],
-                ["hyprsunset", "-t", str(temp)],
-                ["wlsunset",   "-t", str(temp),
-                 "-T", "6500", "-l", "47.8", "-L", "16.2"]]:
-        try:
-            _nl_proc = subprocess.Popen(
-                cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            time.sleep(0.3)
-            if _nl_proc.poll() is None: return
-            _nl_proc = None
-        except FileNotFoundError:
-            continue
-
-def _nl_stop():
+def _nl_stop_locked():
+    """Nur mit _nl_lock gehalten aufrufen."""
     global _nl_proc
     if _nl_proc:
         try: _nl_proc.terminate()
@@ -1034,6 +1069,41 @@ def _nl_stop():
     for c in [["pkill","gammastep"],["pkill","hyprsunset"],["pkill","wlsunset"]]:
         try: subprocess.run(c, capture_output=True, timeout=2)
         except: pass
+
+def _nl_start(temp: int, gen: int = None):
+    global _nl_proc
+    if gen is None:
+        gen = _nl_generation[0]
+    with _nl_lock:
+        # Waehrend wir ggf. auf die Sperre gewartet haben, kann schon
+        # ein neuerer Wunsch (neuere Sliderposition) eingetroffen sein.
+        # Dann lohnt es nicht mehr, DIESEN veralteten Wert noch zu
+        # starten - einfach abbrechen und dem neueren Aufruf den
+        # Vortritt lassen.
+        if gen != _nl_generation[0]:
+            return
+        _nl_stop_locked()
+        for cmd in [["gammastep",  "-O", str(temp)],
+                    ["hyprsunset", "-t", str(temp)],
+                    ["wlsunset",   "-t", str(temp),
+                     "-T", "6500", "-l", "47.8", "-L", "16.2"]]:
+            try:
+                _nl_proc = subprocess.Popen(
+                    cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                time.sleep(0.3)
+                if gen != _nl_generation[0]:
+                    # Inzwischen veraltet - sauber wieder abraeumen statt
+                    # einen falschen Wert stehen zu lassen.
+                    _nl_stop_locked()
+                    return
+                if _nl_proc.poll() is None: return
+                _nl_proc = None
+            except FileNotFoundError:
+                continue
+
+def _nl_stop():
+    with _nl_lock:
+        _nl_stop_locked()
 
 # ── Tastatur-Beleuchtung: RGB/Backlight-Erkennung ──
 # Erkennt ein Keyboard-Backlight über brightnessctl (LED-Klasse) und
@@ -1064,11 +1134,23 @@ def _hue_to_hex(hue: float) -> str:
     r, g, b = colorsys.hsv_to_rgb((hue % 360) / 360, 1.0, 1.0)
     return f"{int(r*255):02x}{int(g*255):02x}{int(b*255):02x}"
 
-def build_brightness(win: Gtk.Window):
-    win.set_default_size(360, 1)
+def _brightness_content() -> Gtk.Box:
     root = vbox(4); pad(root, h=10, v=8)
 
-    root.pack_start(btitle("󰃠  Helligkeit"), False, False, 0)
+    def _on_wallpaper(_):
+        # nicht blockierend - genau der gleiche Aufruf wie beim
+        # Hyprland-Autostart, nur manuell erneut ausgeloest.
+        run_bg(["bash", WALLPAPER_SCRIPT])
+
+    wallpaper_b = btn("", cb=_on_wallpaper,
+                       tip="Wallpaper neu würfeln (random_wallpaper.sh)")
+    if not os.path.isfile(WALLPAPER_SCRIPT):
+        wallpaper_b.set_sensitive(False)
+        wallpaper_b.set_tooltip_text(
+            f"random_wallpaper.sh nicht gefunden ({WALLPAPER_SCRIPT})")
+    title_row = hrow(btitle("󰃠  Helligkeit"), wallpaper_b, sp=6)
+    title_row.set_halign(Gtk.Align.CENTER)
+    root.pack_start(title_row, False, False, 0)
     root.pack_start(sep(), False, False, 2)
 
     # Helligkeit-Slider
@@ -1124,10 +1206,24 @@ def build_brightness(win: Gtk.Window):
     temp_lbl.set_size_request(52, -1)
     temp_lbl.set_halign(Gtk.Align.END)
 
+    _nl_debounce_id = [0]
+
     def _on_temp(s):
         _nl_temp[0] = int(s.get_value())
         temp_lbl.set_label(f"{_nl_temp[0]} K")
-        if _nl_active[0]: in_thread(_nl_start, _nl_temp[0])
+        if not _nl_active[0]:
+            return
+        _nl_generation[0] += 1
+        gen = _nl_generation[0]
+        if _nl_debounce_id[0]:
+            GLib.source_remove(_nl_debounce_id[0])
+        def _fire():
+            _nl_debounce_id[0] = 0
+            in_thread(_nl_start, _nl_temp[0], gen)
+            return False
+        # 150ms warten, ob noch weiter gezogen wird, statt bei jedem
+        # einzelnen Drag-Tick sofort einen Thread loszuschicken.
+        _nl_debounce_id[0] = GLib.timeout_add(150, _fire)
 
     temp_box, temp_s = bslider(
         "󱠃", 1000, 6500, 100, _nl_temp[0],
@@ -1140,14 +1236,19 @@ def build_brightness(win: Gtk.Window):
         _nl_active[0] = not _nl_active[0]
         nl_b.set_label("  An" if _nl_active[0] else "  Aus")
         ctx = nl_b.get_style_context()
+        _nl_generation[0] += 1
+        gen = _nl_generation[0]
         if _nl_active[0]:
-            ctx.add_class("active"); in_thread(_nl_start, _nl_temp[0])
+            ctx.add_class("active"); in_thread(_nl_start, _nl_temp[0], gen)
         else:
             ctx.remove_class("active"); in_thread(_nl_stop)
 
-    temp_s.connect("value-changed", _on_temp)
     nl_b.connect("clicked", _on_nl)
-    win.add(root)
+    return root
+
+def build_brightness(win: Gtk.Window):
+    win.set_default_size(360, 1)
+    win.add(_brightness_content())
 
 # ════════════════════════════════════════════════════════════
 #  AKKU
@@ -1180,8 +1281,12 @@ def _ppd_available() -> list:
     out = run(["powerprofilesctl", "list"])
     return [p for p in ["power-saver","balanced","performance"] if p in out]
 
-def build_akku(win: Gtk.Window):
-    win.set_default_size(340, 1)
+def _akku_content() -> Gtk.Box:
+    """Baut das komplette Akku-UI und gibt die fertige Box zurück - OHNE
+    sie an ein Fenster zu haengen. So kann dieselbe Funktion sowohl vom
+    eigenstaendigen Akku-Widget (build_akku) als auch von der
+    Akku-Unterseite im Settings-Hub verwendet werden: exakt dasselbe
+    Widget an zwei Stellen, statt zweier gepflegter Kopien."""
     root = vbox(4); pad(root, h=10, v=8)
 
     # Titel
@@ -1225,16 +1330,6 @@ def build_akku(win: Gtk.Window):
     root.pack_start(sep(), False, False, 4)
 
     # ── Energieprofil ────────────────────────────────────────
-    # FIX (500ms-Delay): powerprofilesctl spricht per D-Bus mit dem
-    # power-profiles-daemon - das ist KEIN schneller lokaler Aufruf
-    # wie z.B. das sysfs-Lesen in _bat(), sondern ein Roundtrip, der
-    # auf diesem System durchgängig ~500ms braucht (siehe Messung).
-    # Vorher liefen "powerprofilesctl list" + "powerprofilesctl get"
-    # SYNCHRON im GTK-Main-Loop, bevor das Fenster sichtbar wurde -
-    # jeder Akku-Klick hat also erst 500ms gewartet, bevor überhaupt
-    # etwas gezeichnet wurde. Jetzt: Fenster sofort mit Platzhalter
-    # zeigen, Profile im Hintergrund-Thread nachladen (exakt das
-    # Muster, das _refresh_devices() in build_volume schon nutzt).
     pp_section = vbox(4)
     root.pack_start(bsec("ENERGIEPROFIL"), False, False, 0)
     root.pack_start(pp_section, False, False, 0)
@@ -1275,8 +1370,11 @@ def build_akku(win: Gtk.Window):
         GLib.idle_add(_build_pp_row, profiles, current)
 
     in_thread(_load_pp)
+    return root
 
-    win.add(root)
+def build_akku(win: Gtk.Window):
+    win.set_default_size(340, 1)
+    win.add(_akku_content())
 
 # ════════════════════════════════════════════════════════════
 #  CLOCK + KALENDER
@@ -1304,50 +1402,160 @@ _WCODE_ICON = {
 def _wicon(code) -> str:
     return _WCODE_ICON.get(str(code), "🌡️")
 
+# ── Open-Meteo WMO-Wettercodes → Icon/Beschreibung ─────────────
+# Open-Meteo nutzt (anders als wttr.in/WWO) den WMO-Code-Standard.
+_WMO_ICON = {
+    0: "☀️",
+    1: "🌤️", 2: "⛅", 3: "☁️",
+    45: "🌫️", 48: "🌫️",
+    51: "🌦️", 53: "🌦️", 55: "🌦️",
+    56: "🌧️", 57: "🌧️",
+    61: "🌧️", 63: "🌧️", 65: "🌧️",
+    66: "🌧️", 67: "🌧️",
+    71: "🌨️", 73: "🌨️", 75: "❄️", 77: "🌨️",
+    80: "🌦️", 81: "🌧️", 82: "🌧️",
+    85: "🌨️", 86: "❄️",
+    95: "⛈️", 96: "⛈️", 99: "⛈️",
+}
+_WMO_DESC_DE = {
+    0: "Klarer Himmel", 1: "Überwiegend klar", 2: "Teilweise bewölkt",
+    3: "Bedeckt", 45: "Nebel", 48: "Reifnebel",
+    51: "Leichter Nieselregen", 53: "Nieselregen", 55: "Starker Nieselregen",
+    56: "Gefrierender Nieselregen", 57: "Starker gefr. Nieselregen",
+    61: "Leichter Regen", 63: "Regen", 65: "Starker Regen",
+    66: "Gefrierender Regen", 67: "Starker gefrierender Regen",
+    71: "Leichter Schneefall", 73: "Schneefall", 75: "Starker Schneefall",
+    77: "Schneegriesel",
+    80: "Leichte Regenschauer", 81: "Regenschauer", 82: "Starke Regenschauer",
+    85: "Leichte Schneeschauer", 86: "Starke Schneeschauer",
+    95: "Gewitter", 96: "Gewitter mit Hagel", 99: "Schweres Gewitter",
+}
+def _wicon_wmo(code) -> str:
+    try: return _WMO_ICON.get(int(code), "🌡️")
+    except (TypeError, ValueError): return "🌡️"
+
+def _load_weather_location() -> dict:
+    """Liest den konfigurierten Wetter-Standort. Ohne Konfiguration
+    greift der alte Default (Wiener Neustadt) - siehe --set-weather /
+    --set-weather-coords weiter unten, um das selbst zu setzen."""
+    try:
+        data = json.loads(WEATHER_CONF.read_text())
+        if "lat" in data and "lon" in data:
+            return data
+    except Exception:
+        pass
+    return _DEFAULT_WEATHER_LOC
+
+def _save_weather_location(lat: float, lon: float, name: str) -> None:
+    WEATHER_CONF.parent.mkdir(parents=True, exist_ok=True)
+    WEATHER_CONF.write_text(json.dumps(
+        {"lat": lat, "lon": lon, "name": name}, ensure_ascii=False, indent=2))
+
+def _geocode(query: str) -> list:
+    """Open-Meteo-Geocoding: Ortsname -> Liste moeglicher Treffer mit
+    exakten Koordinaten. Getrennt von der eigentlichen Wetterabfrage,
+    wird nur beim --set-weather-Aufruf gebraucht."""
+    import urllib.request, urllib.parse, json as _json
+    url = ("https://geocoding-api.open-meteo.com/v1/search?" +
+           urllib.parse.urlencode({"name": query, "count": 5, "language": "de"}))
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "wb-daemon/1.0"})
+        with urllib.request.urlopen(req, timeout=6) as resp:
+            data = _json.loads(resp.read().decode())
+        return data.get("results") or []
+    except Exception:
+        return []
+
 def _fetch_weather() -> dict:
-    """Holt Wetter über die wttr.in JSON-API (format=j1).
-    FIX ggü. vorher: die alte 'format=3'-Abfrage liefert wttr.in-seitig
-    IMMER nur eine einzelne Zeile (aktuelles Wetter) — es gab also nie
-    echte Vorhersagen für Tag+1/Tag+2, das konnte gar nicht funktionieren.
-    Die JSON-API liefert echte Tages-Wettercodes für heute/morgen/übermorgen."""
+    """Holt Wetter ueber die Open-Meteo-Forecast-API statt wttr.in.
+
+    Warum das genauer ist:
+      - wttr.in loest den uebergebenen Ortsnamen selbst per Geocoding
+        auf und liefert dann Daten aus einem relativ groben globalen
+        Wettermodell (~11-25km Gitterweite) fuer DIESEN einen Punkt.
+      - Open-Meteo bekommt hier stattdessen feste lat/lon (siehe
+        _load_weather_location) und waehlt mit models=best_match
+        automatisch das hoechstaufloesende verfuegbare *regionale*
+        Modell fuer genau diese Koordinaten - in Mitteleuropa i.d.R.
+        ICON-D2 vom DWD mit ~2km Gitterweite statt ~11-25km. Das ist
+        der eigentliche Hebel gegen "sau inakkurat": nicht ein anderer
+        Anbieter an sich, sondern spuerbar mehr Aufloesung an genau
+        dem Punkt, den man selbst gewaehlt hat (siehe --set-weather /
+        --set-weather-coords), statt am Zentrum einer ganzen Stadt.
+      - Faellt Open-Meteo aus, greift als Fallback die alte
+        wttr.in-Abfrage (jetzt ebenfalls mit lat/lon statt Ortsname).
+    """
     r = {"icon": "🌡️", "desc": "–", "temp": "–",
          "humidity": "–", "precip": "–",
-         "day1_icon": "–", "day2_icon": "–"}
+         "day1_icon": "–", "day2_icon": "–", "location": "–"}
+    loc = _load_weather_location()
+    r["location"] = loc.get("name", "–")
     try:
-        import urllib.request, json as _json
-        req = urllib.request.Request(
-            "https://wttr.in/WienerNeustadt?format=j1&lang=de",
-            headers={"User-Agent": "curl/8.0"})
+        import urllib.request, urllib.parse, json as _json
+        params = {
+            "latitude": loc["lat"], "longitude": loc["lon"],
+            "current": "temperature_2m,relative_humidity_2m,"
+                       "precipitation,weather_code",
+            "daily": "weather_code",
+            "timezone": "auto",
+            "forecast_days": 3,
+            "models": "best_match",
+        }
+        url = "https://api.open-meteo.com/v1/forecast?" + urllib.parse.urlencode(params)
+        req = urllib.request.Request(url, headers={"User-Agent": "wb-daemon/1.0"})
         with urllib.request.urlopen(req, timeout=6) as resp:
             data = _json.loads(resp.read().decode())
 
-        cur = data["current_condition"][0]
-        r["icon"] = _wicon(cur.get("weatherCode", ""))
-        desc = cur.get("lang_de") or cur.get("weatherDesc") or []
-        r["desc"] = desc[0]["value"] if desc else "–"
-        r["temp"] = f'{cur.get("temp_C", "–")}°C'
-        r["humidity"] = f'{cur.get("humidity", "–")}%'
-        r["precip"] = f'{cur.get("precipMM", "0.0")} mm'
+        cur = data.get("current", {})
+        code = cur.get("weather_code")
+        r["icon"] = _wicon_wmo(code)
+        r["desc"] = _WMO_DESC_DE.get(int(code), "–") if code is not None else "–"
+        temp = cur.get("temperature_2m")
+        r["temp"] = f"{round(temp)}°C" if temp is not None else "–"
+        hum = cur.get("relative_humidity_2m")
+        r["humidity"] = f"{round(hum)}%" if hum is not None else "–"
+        precip = cur.get("precipitation")
+        r["precip"] = f"{precip} mm" if precip is not None else "–"
 
-        def _midday_code(day: dict) -> str:
-            hrs = day.get("hourly", [])
-            if len(hrs) > 4: return hrs[4].get("weatherCode", "")
-            if hrs: return hrs[len(hrs)//2].get("weatherCode", "")
-            return ""
-
-        days = data.get("weather", [])
-        if len(days) > 1: r["day1_icon"] = _wicon(_midday_code(days[1]))
-        if len(days) > 2: r["day2_icon"] = _wicon(_midday_code(days[2]))
+        daily_codes = data.get("daily", {}).get("weather_code", [])
+        if len(daily_codes) > 1: r["day1_icon"] = _wicon_wmo(daily_codes[1])
+        if len(daily_codes) > 2: r["day2_icon"] = _wicon_wmo(daily_codes[2])
     except Exception:
-        pass
+        # Fallback: alte wttr.in-Abfrage, aber mit lat/lon statt
+        # Ortsname (funktioniert ohne wttr.in-seitiges Geocoding).
+        try:
+            import urllib.request, json as _json
+            req = urllib.request.Request(
+                f"https://wttr.in/{loc['lat']},{loc['lon']}?format=j1&lang=de",
+                headers={"User-Agent": "curl/8.0"})
+            with urllib.request.urlopen(req, timeout=6) as resp:
+                data = _json.loads(resp.read().decode())
+            cur = data["current_condition"][0]
+            r["icon"] = _wicon(cur.get("weatherCode", ""))
+            desc = cur.get("lang_de") or cur.get("weatherDesc") or []
+            r["desc"] = desc[0]["value"] if desc else "–"
+            r["temp"] = f'{cur.get("temp_C", "–")}°C'
+            r["humidity"] = f'{cur.get("humidity", "–")}%'
+            r["precip"] = f'{cur.get("precipMM", "0.0")} mm'
+
+            def _midday_code(day: dict) -> str:
+                hrs = day.get("hourly", [])
+                if len(hrs) > 4: return hrs[4].get("weatherCode", "")
+                if hrs: return hrs[len(hrs)//2].get("weatherCode", "")
+                return ""
+
+            days = data.get("weather", [])
+            if len(days) > 1: r["day1_icon"] = _wicon(_midday_code(days[1]))
+            if len(days) > 2: r["day2_icon"] = _wicon(_midday_code(days[2]))
+        except Exception:
+            pass
     return r
 
 MONTHS_DE = ["Januar","Februar","März","April","Mai","Juni",
              "Juli","August","September","Oktober","November","Dezember"]
 DAYS_DE   = ["So","Mo","Di","Mi","Do","Fr","Sa"]
 
-def build_clock(win: Gtk.Window):
-    win.set_default_size(460, 1)
+def _clock_content() -> Gtk.Box:
     root = vbox(4); pad(root, h=10, v=8)
 
     # ── 1. Wetter: große Heute-Karte + 2 Tage nur mit Icon ───
@@ -1540,12 +1748,463 @@ def build_clock(win: Gtk.Window):
             rain_lbl.set_label(f'☔ {w["precip"]}')
             d1_lbl.set_label(w["day1_icon"])
             d2_lbl.set_label(w["day2_icon"])
+            loc_tip = (f'Standort: {w["location"]}\n'
+                       f'Ändern: widgets_daemon.py --set-weather "<Ort>"')
+            today_card.set_tooltip_text(loc_tip)
         GLib.idle_add(_apply)
 
     in_thread(_load_weather)
     add_timer(600_000, lambda: in_thread(_load_weather) or True)
+    return root
 
-    win.add(root)
+def build_clock(win: Gtk.Window):
+    win.set_default_size(460, 1)
+    win.add(_clock_content())
+
+# ════════════════════════════════════════════════════════════
+#  SETTINGS — Staging/Apply-System
+# ════════════════════════════════════════════════════════════
+# Kernidee: KEINE Unterseite schreibt jemals sofort in eine Config-
+# Datei. Jede Änderung registriert sich unter einem eindeutigen Key
+# im PENDING-Dict (spätere Änderung am selben Key überschreibt die
+# vorherige, statt sich zu stapeln). Erst der globale "Übernehmen"-
+# Button im Settings-Fenster ruft nacheinander alle apply()-
+# Funktionen auf. "Verwerfen" ruft stattdessen reset() auf jeder
+# offenen Unterseite auf, damit die UI wieder den Ist-Zustand zeigt.
+#
+# Bekannte Grenze v1: schließt man das Settings-Fenster (Fokusverlust)
+# und öffnet es neu, BEVOR man übernommen/verworfen hat, bleiben die
+# PENDING-Einträge technisch aktiv (ihre apply()-Closures halten die
+# alten, jetzt unsichtbaren Widgets am Leben und funktionieren beim
+# Übernehmen weiterhin) - die NEU aufgebaute Unterseite zeigt aber
+# wieder den Live-Systemzustand statt der noch ausstehenden Auswahl.
+# Für v1 bewusst in Kauf genommen; sauberer Fix wäre, PENDING-Werte
+# beim Neuaufbau einer Seite als Vorbelegung zu lesen.
+BACKUP_DIR = Path(HOME) / ".config" / "wb-daemon" / "backups"
+
+class PendingChange:
+    __slots__ = ("key", "desc", "apply", "reset")
+    def __init__(self, key: str, desc: str, apply_fn, reset_fn=None):
+        self.key   = key
+        self.desc  = desc
+        self.apply = apply_fn    # callable() -> None; darf Exception werfen
+        self.reset = reset_fn    # callable() -> None; stellt UI-Widgets zurück
+
+PENDING: dict[str, PendingChange] = {}
+# Wird von build_settings() gesetzt, damit stage_change()/unstage_change()
+# aus jeder Unterseite heraus die Apply-Leiste live aktualisieren können.
+_apply_bar_refresh = [lambda: None]
+
+def stage_change(key: str, desc: str, apply_fn, reset_fn=None) -> None:
+    PENDING[key] = PendingChange(key, desc, apply_fn, reset_fn)
+    _apply_bar_refresh[0]()
+
+def unstage_change(key: str) -> None:
+    PENDING.pop(key, None)
+    _apply_bar_refresh[0]()
+
+def backup_file(path: Path) -> None:
+    """Legt vor dem ersten Schreiben eine Zeitstempel-Kopie an. Best-
+    effort - ein fehlgeschlagenes Backup blockiert das Schreiben nicht,
+    aber wir versuchen es immer zuerst."""
+    if not path.exists():
+        return
+    try:
+        BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        (BACKUP_DIR / f"{path.name}.{stamp}.bak").write_bytes(path.read_bytes())
+    except Exception:
+        pass
+
+def apply_all() -> list[str]:
+    """Wendet alle PENDING-Changes der Reihe nach an. Erfolgreiche
+    Changes werden aus PENDING entfernt, fehlgeschlagene bleiben stehen
+    (damit man es nach dem Beheben nochmal versuchen kann). Gibt eine
+    Liste von Fehlermeldungen zurück (leer = alles ok).
+    AUFRUF NUR AUS EINEM HINTERGRUND-THREAD (siehe apply_all_async) -
+    ch.apply() kann hyprctl-Aufrufe oder Datei-I/O enthalten, die
+    spürbar dauern; synchron im GTK-Hauptthread ausgeführt, blockiert
+    das GENAU DEN Mainloop, der auch das SIGUSR1-Autohide-Signal
+    dieses Daemons behandelt - Waybar/Autohide reagieren dann so lange
+    gar nicht mehr. Das war vermutlich der Kern des gemeldeten
+    "Waybar bleibt nach Übernehmen hängen"-Problems."""
+    errors = []
+    for key in list(PENDING.keys()):
+        ch = PENDING[key]
+        try:
+            ch.apply()
+            del PENDING[key]
+        except Exception as e:
+            errors.append(f"{ch.desc}: {e}")
+    GLib.idle_add(_apply_bar_refresh[0])
+    return errors
+
+def apply_all_async(on_done) -> None:
+    """Fuehrt apply_all() in einem Hintergrund-Thread aus und ruft
+    on_done(errors) per GLib.idle_add im GTK-Hauptthread auf, sobald
+    fertig. Immer diese Variante aus der UI heraus aufrufen, nie
+    apply_all() direkt."""
+    def _worker():
+        errors = apply_all()
+        GLib.idle_add(on_done, errors)
+    in_thread(_worker)
+
+def discard_all() -> None:
+    for ch in PENDING.values():
+        if ch.reset:
+            try: ch.reset()
+            except Exception: pass
+    PENDING.clear()
+    _apply_bar_refresh[0]()
+
+def _settings_category_row(icon: str, label: str, desc: str, cb) -> Gtk.Button:
+    b = Gtk.Button()
+    b.get_style_context().add_class("bubble")
+    b.get_style_context().add_class("item")
+    b.set_can_focus(False)
+    # Standard-Buttons haben halign=FILL - in einer vertikalen Box
+    # heisst das "so breit wie die Box", nicht "so breit wie der
+    # Inhalt". CENTER lässt die Blase auf ihre tatsächliche Inhaltsgröße
+    # schrumpfen und mittig stehen, statt die volle Fensterbreite
+    # einzunehmen.
+    b.set_halign(Gtk.Align.CENTER)
+    row = hbox(10)
+    icon_l = Gtk.Label(label=icon)
+    icon_l.get_style_context().add_class("icon-lg")
+    txt = vbox(0)
+    title_l = Gtk.Label(label=label)
+    title_l.get_style_context().add_class("value-md")
+    title_l.set_halign(Gtk.Align.CENTER)
+    title_l.set_justify(Gtk.Justification.CENTER)
+    desc_l = Gtk.Label(label=desc)
+    desc_l.get_style_context().add_class("caption")
+    desc_l.set_halign(Gtk.Align.CENTER)
+    desc_l.set_justify(Gtk.Justification.CENTER)
+    desc_l.set_opacity(0.6)
+    txt.pack_start(title_l, False, False, 0)
+    txt.pack_start(desc_l, False, False, 0)
+    row.pack_start(icon_l, False, False, 0)
+    row.pack_start(txt, False, False, 0)
+    b.add(row)
+    b.connect("clicked", cb)
+    return b
+
+def _build_settings_placeholder(page: Gtk.Box, key: str, label: str, win: Gtk.Window) -> None:
+    page.pack_start(
+        bitem(f"{label}: noch nicht implementiert — kommt in einer "
+              f"der nächsten Ausbaustufen.", dim=True),
+        False, False, 0)
+
+def _build_settings_network(page: Gtk.Box, key: str, label: str, win: Gtk.Window) -> None:
+    # Exakt dasselbe Widget wie das eigenständige Netzwerk-Icon in der
+    # Leiste - keine zweite Implementierung. Der eigene Titel
+    # ("Netzwerk") kommt dadurch doppelt (einmal vom Settings-Header,
+    # einmal vom Widget selbst) - bewusst so belassen statt den
+    # gemeinsamen Baustein dafür zu verbiegen.
+    page.pack_start(_network_content(win), True, True, 0)
+
+def _build_settings_battery(page: Gtk.Box, key: str, label: str, win: Gtk.Window) -> None:
+    page.pack_start(_akku_content(), True, True, 0)
+
+# ── Display: erste komplett funktionierende Unterseite, dient auch
+#    als Referenzimplementierung für alle weiteren Kategorien ──
+def _hypr_lua_path() -> Path:
+    return Path(HOME) / ".config" / "hypr" / "hyprland.lua"
+
+def _hypr_monitors_live() -> list:
+    return jrun(["hyprctl", "monitors", "-j"]) or []
+
+def _parse_modes(modes: list) -> dict:
+    """['1920x1080@60.00Hz', '1920x1080@144.00Hz', ...]
+    -> {'1920x1080': ['60.00', '144.00'], ...}"""
+    out: dict = {}
+    for m in modes:
+        try:
+            res, hz = m.split("@")
+            out.setdefault(res, []).append(hz.rstrip("Hz"))
+        except ValueError:
+            continue
+    return out
+
+def _build_settings_display(page: Gtk.Box, key: str, label: str, win: Gtk.Window) -> None:
+    monitors = _hypr_monitors_live()
+    if not monitors:
+        page.pack_start(
+            bitem("Keine Monitore über hyprctl gefunden (läuft Hyprland?)",
+                  dim=True), False, False, 0)
+        return
+
+    lua_path = _hypr_lua_path()
+    if not lua_path.is_file():
+        page.pack_start(
+            bitem(f"hyprland.lua nicht gefunden ({lua_path}) — Auflösung "
+                  f"wird nur live per hyprctl gesetzt, nicht dauerhaft "
+                  f"gespeichert.", dim=True), False, False, 0)
+
+    for mon in monitors:
+        page.pack_start(bsec(mon.get("name", "?").upper()), False, False, 0)
+        row = _build_monitor_row(mon, lua_path)
+        page.pack_start(row, False, False, 0)
+        page.pack_start(sep(), False, False, 4)
+
+def _build_monitor_row(mon: dict, lua_path: Path) -> Gtk.Box:
+    """Eigene Funktion PRO Monitor-Aufruf (nicht Schleifenkörper!) - so
+    bekommt jeder Monitor seine eigenen, isolierten lokalen Variablen.
+    Würde man das alles direkt im for-Loop von _build_settings_display
+    verschachteln, würden sich _fill_hz/modes/res_combo/hz_combo über
+    alle verschachtelten Funktionen hinweg dieselbe (jeweils letzte)
+    Schleifeniteration teilen - klassischer Late-Binding-Closure-Bug,
+    der bei genau einem Monitor unsichtbar bleibt, bei zwei oder mehr
+    aber dazu führt, dass Monitor A's Dropdown Monitor B's Werte liest."""
+    name    = mon.get("name", "?")
+    cur_res = f'{mon.get("width")}x{mon.get("height")}'
+    cur_hz  = f'{mon.get("refreshRate", 0):.2f}'
+    modes   = _parse_modes(mon.get("availableModes", []))
+    res_list = sorted(modes.keys(), key=lambda r: -int(r.split("x")[0]))
+
+    res_combo = Gtk.ComboBoxText()
+    res_combo.get_style_context().add_class("bubble")
+    res_combo.get_style_context().add_class("item")
+    res_combo.set_can_focus(False)
+    for r in res_list:
+        res_combo.append_text(r)
+
+    hz_combo = Gtk.ComboBoxText()
+    hz_combo.get_style_context().add_class("bubble")
+    hz_combo.get_style_context().add_class("item")
+    hz_combo.set_can_focus(False)
+
+    def _fill_hz(res: str, preselect: str = None):
+        hz_combo.remove_all()
+        hzs = sorted(set(modes.get(res, [])), key=lambda h: -float(h))
+        for h in hzs:
+            hz_combo.append_text(f"{h} Hz")
+        if preselect in hzs:
+            hz_combo.set_active(hzs.index(preselect))
+        elif hzs:
+            hz_combo.set_active(0)
+
+    if cur_res in res_list:
+        res_combo.set_active(res_list.index(cur_res))
+    _fill_hz(cur_res if cur_res in res_list
+             else (res_list[0] if res_list else ""), preselect=cur_hz)
+
+    orig_res, orig_hz = cur_res, cur_hz  # für reset() beim Verwerfen
+
+    def _apply():
+        res = res_combo.get_active_text()
+        hzt = hz_combo.get_active_text()
+        if not res or not hzt:
+            return
+        mode = f'{res}@{hzt.replace(" Hz", "")}'
+        # Position/Skalierung des Monitors beibehalten statt "auto,1" -
+        # letzteres hat Position UND Skalierung jedes Mal zurückgesetzt,
+        # was bei einem non-trivialen Layout (mehrere Monitore, eigene
+        # Skalierung) den ganzen Monitor-Layout-Reload durcheinander
+        # gebracht hat.
+        pos_x = mon.get("x", 0)
+        pos_y = mon.get("y", 0)
+        scale = mon.get("scale", 1)
+        # 1) sofort live setzen
+        # WICHTIG: run() verschluckt Exitcode + stderr komplett - lehnt
+        # Hyprland das Kommando ab (z.B. Modus/Skalierung inkompatibel),
+        # dachten wir bisher trotzdem "erfolgreich", obwohl live NICHTS
+        # passiert ist. Das erklärt vermutlich auch, warum ein erneuter
+        # Wechsel zur selben (in Wahrheit nie verlassenen) Auflösung wie
+        # "keine Änderung" aussah. Jetzt: run_ec() + Fehler tatsächlich
+        # werfen, damit apply_all() ihn im Status-Text anzeigt.
+        out, err, rc = run_ec(["hyprctl", "keyword", "monitor",
+                                f"{name},{mode},{pos_x}x{pos_y},{scale}"])
+        if rc != 0 or "err" in (out or "").lower() or err:
+            raise RuntimeError(
+                f"hyprctl lehnte den Monitor-Befehl ab: {(err or out or 'unbekannter Fehler')[:120]}")
+        # 2) dauerhaft in hyprland.lua sichern — nur die "mode"-Zeile
+        #    IM BLOCK DIESES OUTPUTS ersetzen, position/scale bleiben
+        #    unangetastet.
+        if lua_path.is_file():
+            backup_file(lua_path)
+            txt = lua_path.read_text()
+            block_re = re.compile(
+                r'hl\.monitor\(\{[^}]*output\s*=\s*"' +
+                re.escape(name) + r'"[^}]*\}\)', re.S)
+            m = block_re.search(txt)
+            if m:
+                new_block = re.sub(r'mode\s*=\s*"[^"]*"',
+                                    f'mode     = "{mode}"', m.group(0))
+                txt = txt[:m.start()] + new_block + txt[m.end():]
+                lua_path.write_text(txt)
+
+    def _reset():
+        if orig_res in res_list:
+            res_combo.set_active(res_list.index(orig_res))
+        _fill_hz(orig_res, preselect=orig_hz)
+
+    def _stage_or_unstage():
+        res = res_combo.get_active_text()
+        hz = (hz_combo.get_active_text() or "").replace(" Hz", "")
+        if res == orig_res and hz == orig_hz:
+            unstage_change(f"display.{name}")
+        else:
+            stage_change(f"display.{name}", f"{name}: {res}@{hz}Hz",
+                         _apply, _reset)
+
+    # WICHTIG: res_combo und hz_combo brauchen GETRENNTE Handler.
+    # Vorherige Version rief bei JEDER Änderung (auch der von hz_combo
+    # selbst ausgelösten) _fill_hz() auf, was hz_combo neu befüllt,
+    # dessen "changed"-Signal auslöst, den selben Handler erneut
+    # aufruft, der wieder _fill_hz() aufruft ... Endlosrekursion, die
+    # das ganze Widget einfrieren ließ. Jetzt: nur res_combo baut
+    # hz_combo neu auf; hz_combo selbst wertet nur noch aus.
+    def _on_res_change(_w):
+        _fill_hz(res_combo.get_active_text())
+        _stage_or_unstage()
+
+    def _on_hz_change(_w):
+        _stage_or_unstage()
+
+    res_combo.connect("changed", _on_res_change)
+    hz_combo.connect("changed", _on_hz_change)
+    return hrow(res_combo, hz_combo, sp=8)
+
+SETTINGS_CATEGORIES = [
+    ("display",    "󰍹", "Display",       "Auflösung, Framerate"),
+    ("brightness", "󰃟", "Helligkeit",    "Bildschirm, Tastatur-RGB, Nachtlicht"),
+    ("audio",      "󰕾", "Audio",         "Lautstärke, Geräte, Apps"),
+    ("network",    "󰤨", "Netzwerk",      "LAN, WLAN, Mesh Connect"),
+    ("bluetooth",  "󰂯", "Bluetooth",     "Geräte koppeln & verbinden"),
+    ("battery",    "󰁹", "Akku",          "Erweiterte Energieoptionen"),
+    ("calendar",   "󰃭", "Kalender",      "Wetter, Uhrzeit, Termine"),
+    ("appearance", "󰉼", "Aussehen",      "Farbschema, Kvantum, nwg-look"),
+    ("language",   "󰗊", "Sprache",       "Systemsprache"),
+    ("apps",       "󱁤", "Apps & Editor", "Launcher-Editor, Konfig-Dateien"),
+]
+
+def _build_settings_brightness(page: Gtk.Box, key: str, label: str, win: Gtk.Window) -> None:
+    page.pack_start(_brightness_content(), True, True, 0)
+
+def _build_settings_audio(page: Gtk.Box, key: str, label: str, win: Gtk.Window) -> None:
+    page.pack_start(_volume_content(), True, True, 0)
+
+def _build_settings_bluetooth(page: Gtk.Box, key: str, label: str, win: Gtk.Window) -> None:
+    page.pack_start(_bluetooth_content(), True, True, 0)
+
+def _build_settings_calendar(page: Gtk.Box, key: str, label: str, win: Gtk.Window) -> None:
+    page.pack_start(_clock_content(), True, True, 0)
+
+SETTINGS_BUILDERS = {
+    "display":    _build_settings_display,
+    "brightness": _build_settings_brightness,
+    "audio":      _build_settings_audio,
+    "network":    _build_settings_network,
+    "bluetooth":  _build_settings_bluetooth,
+    "battery":    _build_settings_battery,
+    "calendar":   _build_settings_calendar,
+}
+
+def build_settings(win: Gtk.Window):
+    win.set_default_size(380, 1)
+    outer = vbox(0)
+
+    stack = Gtk.Stack()
+    # Keine Animation: dieses Fenster laeuft als Layer-Shell-Overlay,
+    # vermutlich ohne GPU-Beschleunigung fuer den Compositing-Pfad -
+    # ein animierter Uebergang zeichnet mehrfach pro Sekunde neu und
+    # ruckelt genau deshalb. Passt auch zur Devise des restlichen
+    # Daemons (siehe Header-Kommentar ueber die 35-50ms-Klick-Ziele):
+    # lieber sofort und sauber als hübsch und langsam.
+    stack.set_transition_type(Gtk.StackTransitionType.NONE)
+
+    hub = vbox(4); pad(hub, h=10, v=8)
+    hub.pack_start(btitle("󰒓  Einstellungen"), False, False, 0)
+    hub.pack_start(sep(), False, False, 2)
+    for cat_key, icon, cat_label, cat_desc in SETTINGS_CATEGORIES:
+        hub.pack_start(
+            _settings_category_row(
+                icon, cat_label, cat_desc,
+                lambda _b, k=cat_key: stack.set_visible_child_name(k)),
+            False, False, 0)
+    stack.add_named(hub, "hub")
+
+    # Netzwerk/Akku bringen als wiederverwendete Widgets bereits ihren
+    # eigenen Titel + Trenner mit - hier nicht nochmal davorsetzen,
+    # sonst steht "Netzwerk" zweimal übereinander.
+    _reused_widget_categories = {"network", "battery", "audio", "bluetooth",
+                                  "calendar", "brightness"}
+
+    for cat_key, icon, cat_label, cat_desc in SETTINGS_CATEGORIES:
+        page = vbox(4); pad(page, h=10, v=8)
+        back_row = hbox(6); back_row.set_halign(Gtk.Align.START)
+        back_row.pack_start(
+            btn("←  Zurück",
+                cb=lambda _b: stack.set_visible_child_name("hub")),
+            False, False, 0)
+        page.pack_start(back_row, False, False, 0)
+        if cat_key not in _reused_widget_categories:
+            page.pack_start(btitle(f"{icon}  {cat_label}"), False, False, 0)
+            page.pack_start(sep(), False, False, 2)
+        SETTINGS_BUILDERS.get(cat_key, _build_settings_placeholder)(
+            page, cat_key, cat_label, win)
+        stack.add_named(page, cat_key)
+
+    outer.pack_start(stack, True, True, 0)
+    outer.pack_start(sep(), False, False, 2)
+
+    # ── Apply-Leiste: immer sichtbar (auf Wunsch), Buttons nur aktiv,
+    #    wenn es tatsächlich etwas zu übernehmen/verwerfen gibt ──
+    apply_bar = vbox(4); pad(apply_bar, h=10, v=6)
+    status_lbl = Gtk.Label(label="Keine ausstehenden Änderungen")
+    status_lbl.get_style_context().add_class("caption")
+    status_lbl.set_opacity(0.75)
+    status_lbl.set_line_wrap(True)
+    btn_row = hbox(6); btn_row.set_halign(Gtk.Align.CENTER)
+
+    discard_b = btn("Verwerfen")
+    apply_b   = btn("✓  Übernehmen")
+
+    def _do_apply(_b):
+        apply_b.set_sensitive(False)
+        discard_b.set_sensitive(False)
+        status_lbl.set_label("Wird übernommen…")
+        def _done(errors):
+            apply_b.set_sensitive(True)
+            discard_b.set_sensitive(True)
+            status_lbl.set_label(
+                "Fehler: " + "; ".join(errors)[:140] if errors
+                else "Übernommen ✓")
+        apply_all_async(_done)
+
+    def _do_discard(_b):
+        discard_all()
+        status_lbl.set_label("Verworfen")
+
+    discard_b.connect("clicked", _do_discard)
+    apply_b.connect("clicked", _do_apply)
+    btn_row.pack_start(discard_b, False, False, 0)
+    btn_row.pack_start(apply_b, False, False, 0)
+    apply_bar.pack_start(status_lbl, False, False, 0)
+    apply_bar.pack_start(btn_row, False, False, 0)
+    outer.pack_start(apply_bar, False, False, 0)
+
+    def _refresh_bar():
+        n = len(PENDING)
+        if n:
+            status_lbl.set_label(f"{n} ausstehende Änderung"
+                                  f"{'en' if n != 1 else ''}: " +
+                                  ", ".join(c.desc for c in PENDING.values())[:140])
+        else:
+            status_lbl.set_label("Keine ausstehenden Änderungen")
+        return False
+
+    _apply_bar_refresh[0] = lambda: GLib.idle_add(_refresh_bar)
+    _refresh_bar()
+
+    # Auf Wunsch: offene, noch nicht übernommene Änderungen automatisch
+    # verwerfen, sobald das Settings-Fenster geschlossen wird (Fokus-
+    # verlust -> _cleanup() in toggle_widget ruft win.destroy() auf,
+    # was dieses Signal auslöst). Kein manuelles "Verwerfen" nötig.
+    win.connect("destroy", lambda _w: PENDING.clear())
+
+    win.add(outer)
 
 # ════════════════════════════════════════════════════════════
 #  MAIN
@@ -1557,6 +2216,7 @@ BUILDERS = {
     "brightness": build_brightness,
     "akku":       build_akku,
     "clock":      build_clock,
+    "settings":   build_settings,
 }
 
 # ════════════════════════════════════════════════════════════
@@ -1664,5 +2324,81 @@ def main():
     print(f"widgets_daemon: bereit, höre auf {SOCK_PATH}", file=sys.stderr)
     Gtk.main()
 
+# ════════════════════════════════════════════════════════════
+#  CLI: Wetter-Standort setzen — laeuft als einmaliger, kurzer
+#  Aufruf ohne Socket-Server/Gtk.main() zu starten und OHNE den
+#  laufenden Daemon anzufassen. Schreibt nur
+#  ~/.config/wb-daemon/weather.json; der laufende Daemon liest die
+#  Datei beim naechsten Timer-Tick (alle 10 Min) bzw. beim naechsten
+#  Oeffnen des Kalender-Widgets automatisch neu ein.
+# ════════════════════════════════════════════════════════════
+def _cli_set_weather(query: str) -> int:
+    results = _geocode(query)
+    if not results:
+        print(f"Keine Treffer für '{query}' gefunden.", file=sys.stderr)
+        return 1
+    if len(results) > 1:
+        print(f"Mehrere Treffer für '{query}', bitte eindeutiger "
+              f"angeben oder eine Nummer waehlen:", file=sys.stderr)
+        for i, res in enumerate(results, 1):
+            admin   = res.get("admin1", "")
+            country = res.get("country", "")
+            print(f"  {i}. {res['name']} ({admin}, {country}) "
+                  f"— lat={res['latitude']}, lon={res['longitude']}",
+                  file=sys.stderr)
+        print("\nEntweder praeziser aufrufen, z.B. "
+              '"--set-weather \\"Ort, Region\\"" ,'
+              " oder direkt Koordinaten setzen mit:\n"
+              "  widgets_daemon.py --set-weather-coords <lat> <lon> \"<Name>\"",
+              file=sys.stderr)
+        return 1
+    res = results[0]
+    _save_weather_location(res["latitude"], res["longitude"], res["name"])
+    print(f"Wetterstandort gesetzt: {res['name']} "
+          f"(lat={res['latitude']}, lon={res['longitude']})")
+    print(f"Gespeichert in {WEATHER_CONF}")
+    return 0
+
+def _cli_show_weather_location() -> int:
+    loc = _load_weather_location()
+    print(f"Aktueller Wetterstandort: {loc.get('name', '?')} "
+          f"(lat={loc['lat']}, lon={loc['lon']})")
+    print(f"Konfigurationsdatei: {WEATHER_CONF}")
+    return 0
+
+def _print_cli_usage() -> None:
+    print(
+        "widgets_daemon.py [--set-weather \"<Ort>\" | "
+        "--set-weather-coords <lat> <lon> \"<Name>\" | "
+        "--show-weather]\n"
+        "Ohne Argumente: startet den Daemon (normalerweise per "
+        "systemd --user wb-daemon.service).",
+        file=sys.stderr)
+
 if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] == "--set-weather":
+        if len(sys.argv) < 3:
+            _print_cli_usage()
+            sys.exit(1)
+        sys.exit(_cli_set_weather(" ".join(sys.argv[2:])))
+    elif len(sys.argv) > 1 and sys.argv[1] == "--set-weather-coords":
+        if len(sys.argv) < 5:
+            _print_cli_usage()
+            sys.exit(1)
+        try:
+            _lat, _lon = float(sys.argv[2]), float(sys.argv[3])
+        except ValueError:
+            print("lat/lon müssen Zahlen sein, z.B. 47.0707 15.4395",
+                  file=sys.stderr)
+            sys.exit(1)
+        _name = " ".join(sys.argv[4:])
+        _save_weather_location(_lat, _lon, _name)
+        print(f"Wetterstandort gesetzt: {_name} (lat={_lat}, lon={_lon})")
+        print(f"Gespeichert in {WEATHER_CONF}")
+        sys.exit(0)
+    elif len(sys.argv) > 1 and sys.argv[1] in ("--show-weather", "--weather-status"):
+        sys.exit(_cli_show_weather_location())
+    elif len(sys.argv) > 1 and sys.argv[1] in ("-h", "--help"):
+        _print_cli_usage()
+        sys.exit(0)
     main()
