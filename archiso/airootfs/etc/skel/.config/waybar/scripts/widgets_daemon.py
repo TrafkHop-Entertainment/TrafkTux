@@ -345,6 +345,7 @@ def make_win(name: str) -> Gtk.Window:
     if visual: win.set_visual(visual)
     if HAS_LS:
         GtkLayerShell.init_for_window(win)
+        GtkLayerShell.set_namespace(win, "wb-daemon")
         GtkLayerShell.set_layer(win, GtkLayerShell.Layer.OVERLAY)
         GtkLayerShell.set_anchor(win, GtkLayerShell.Edge.BOTTOM, True)
         GtkLayerShell.set_anchor(win, GtkLayerShell.Edge.RIGHT,  True)
@@ -1989,14 +1990,15 @@ def _build_monitor_row(mon: dict, lua_path: Path) -> Gtk.Box:
     _fill_hz(cur_res if cur_res in res_list
              else (res_list[0] if res_list else ""), preselect=cur_hz)
 
-    orig_res, orig_hz = cur_res, cur_hz  # für reset() beim Verwerfen
+    orig = [cur_res, cur_hz]  # [0]=res, [1]=hz - siehe Kommentar unten
 
     def _apply():
         res = res_combo.get_active_text()
         hzt = hz_combo.get_active_text()
         if not res or not hzt:
             return
-        mode = f'{res}@{hzt.replace(" Hz", "")}'
+        hz = hzt.replace(" Hz", "")
+        mode = f'{res}@{hz}'
         # Position/Skalierung des Monitors beibehalten statt "auto,1" -
         # letzteres hat Position UND Skalierung jedes Mal zurückgesetzt,
         # was bei einem non-trivialen Layout (mehrere Monitore, eigene
@@ -2018,6 +2020,19 @@ def _build_monitor_row(mon: dict, lua_path: Path) -> Gtk.Box:
         if rc != 0 or "err" in (out or "").lower() or err:
             raise RuntimeError(
                 f"hyprctl lehnte den Monitor-Befehl ab: {(err or out or 'unbekannter Fehler')[:120]}")
+
+        # Genau derselbe Befehl wie beim Hyprland-Autostart (siehe
+        # hyprland.lua: hl.exec_cmd("killall waybar; waybar")) - nicht
+        # eine eigene Variante mit setsid/eigenem Log erfinden, damit
+        # Waybar exakt so hochkommt wie beim normalen Start. Der
+        # Autohide-Daemon muss danach ebenfalls neu starten, sonst denkt
+        # er noch mit dem Sichtbarkeits-Stand der ALTEN Waybar-Instanz
+        # weiter (die neue startet aber immer sichtbar) - genau das war
+        # der Grund fuer "Waybar geht danach nicht mehr weg/zeigt sich
+        # nicht mehr" (siehe hyprland.lua: wb-autohide.service).
+        run_bg(["bash", "-c",
+                "killall waybar; waybar; "
+                "systemctl --user restart wb-autohide.service"])
         # 2) dauerhaft in hyprland.lua sichern — nur die "mode"-Zeile
         #    IM BLOCK DIESES OUTPUTS ersetzen, position/scale bleiben
         #    unangetastet.
@@ -2034,15 +2049,26 @@ def _build_monitor_row(mon: dict, lua_path: Path) -> Gtk.Box:
                 txt = txt[:m.start()] + new_block + txt[m.end():]
                 lua_path.write_text(txt)
 
+        # WICHTIG: nach erfolgreichem Übernehmen ist DIESER Wert jetzt
+        # der neue Ist-Zustand. Vorher blieb orig_res/orig_hz für immer
+        # auf dem Stand von "als die Seite geöffnet wurde" eingefroren -
+        # ging man danach zurück auf genau diesen (mittlerweile längst
+        # verlassenen) Ursprungswert, sah das wie "keine Änderung" aus
+        # und wurde stillschweigend NICHT übernommen. Deshalb ging z.B.
+        # "erst runter, dann wieder hoch auf die höchste Auflösung" im
+        # selben Fenster nicht - erst ein Schließen+Neuöffnen (frischer
+        # Seitenaufbau mit aktuellem Ist-Zustand) hat es "repariert".
+        orig[0], orig[1] = res, hz
+
     def _reset():
-        if orig_res in res_list:
-            res_combo.set_active(res_list.index(orig_res))
-        _fill_hz(orig_res, preselect=orig_hz)
+        if orig[0] in res_list:
+            res_combo.set_active(res_list.index(orig[0]))
+        _fill_hz(orig[0], preselect=orig[1])
 
     def _stage_or_unstage():
         res = res_combo.get_active_text()
         hz = (hz_combo.get_active_text() or "").replace(" Hz", "")
-        if res == orig_res and hz == orig_hz:
+        if res == orig[0] and hz == orig[1]:
             unstage_change(f"display.{name}")
         else:
             stage_change(f"display.{name}", f"{name}: {res}@{hz}Hz",

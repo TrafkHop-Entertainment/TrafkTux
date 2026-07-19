@@ -386,6 +386,12 @@ if hl.plugin.hyprglass then
 
             layers = { enabled = true },
     })
+
+    -- wb-daemon: die kleinen Bubble-Widgets (Settings, Lautstärke,
+    -- Netzwerk, ...) aus widgets_daemon.py sollen den Glass-Effekt
+    -- NICHT bekommen - der sichtbare "Rahmen" darauf war genau dieser
+    -- Effekt, nicht ein GTK-Fokus-/Hover-Rahmen.
+    hg.layer("wb-daemon", { exclude = true })
 end
 
 -- hypr-dynamic-cursors: physikalisch simulierter Cursor + Shake-to-Find
