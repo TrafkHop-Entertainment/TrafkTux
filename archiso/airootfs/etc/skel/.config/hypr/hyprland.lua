@@ -26,10 +26,17 @@ local terminal       = "kitty"
 local fileManager    = "thunar"
 local menu           = "rofi -show drun"
 local openwindows    = "rofi -show window"
-local launcher_cmd   = "sh -c 'echo \"show\" > \"${XDG_RUNTIME_DIR:-/tmp}/rofi-bubble-launcher.fifo\"'"
-local powermenu_cmd  = "sh -c 'echo \"show\" > \"${XDG_RUNTIME_DIR:-/tmp}/rofi-bubble-powermenu.fifo\"'"
-local launcher       = "python3 ~/.config/rofi/bubble-menu.py --menu launcher --x11"
-local powermenu      = "python3 ~/.config/rofi/bubble-menu.py --menu powermenu --x11"
+-- Rofi Script Mode: EIN dauerhaftes Rofi-Fenster statt Neustart pro Klick.
+-- bubble-menu.py wird von Rofi selbst bei jeder Auswahl erneut aufgerufen
+-- (liest Info/State über ROFI_INFO/ROFI_DATA), kein Fenster-Schließen mehr
+-- beim Blättern -> kein hyprfocus-Trigger mehr, kein Daemon/FIFO mehr nötig.
+-- WICHTIG: -show-icons, -no-custom, -x11 und alle -kb-* Bindungen müssen
+-- HIER auf der echten rofi-Kommandozeile stehen (nicht mehr in Python),
+-- da Rofi jetzt direkt von Hyprland gestartet wird statt von bubble-menu.py.
+-- $HOME statt ~, da ~ innerhalb der verschachtelten -modi-Anführungszeichen
+-- von Bash nicht expandiert wird, $HOME aber schon.
+local launcher_cmd   = "rofi -show bubble -modi \"bubble:python3 $HOME/.config/rofi/bubble-menu.py --menu launcher --x11\" -theme $HOME/.config/rofi/launcher/theme.rasi -show-icons -no-custom -x11 -kb-row-up 'Up,Control+p,w' -kb-row-down 'Down,Control+n,s' -kb-row-left 'Control+Page_Up,a' -kb-row-right 'Control+Page_Down,d' -kb-accept-entry 'Control+j,Control+m,Return,KP_Enter,space,less' -kb-custom-1 'q' -kb-custom-2 'e' -kb-custom-3 'x'"
+local powermenu_cmd  = "rofi -show bubble -modi \"bubble:python3 $HOME/.config/rofi/bubble-menu.py --menu powermenu --x11\" -theme $HOME/.config/rofi/powermenu/theme.rasi -show-icons -no-custom -x11 -kb-row-up 'Up,Control+p,w' -kb-row-down 'Down,Control+n,s' -kb-row-left 'Control+Page_Up,a' -kb-row-right 'Control+Page_Down,d' -kb-accept-entry 'Control+j,Control+m,Return,KP_Enter,space,less' -kb-custom-1 'q' -kb-custom-2 'e' -kb-custom-3 'x'"
 
 -- Cursor-Umgebungsvariablen
 hl.env("XCURSOR_THEME", "TrafkTuxCursorLegacy")
@@ -59,8 +66,8 @@ hl.on("hyprland.start", function()
         hl.exec_cmd("systemctl --user start wb-daemon.service wb-autohide.service")
         hl.exec_cmd("cp ~/.config/rofi/assets/bubble-normal.png /tmp/bubble-normal.png")
         hl.exec_cmd("cp ~/.config/rofi/assets/bubble-selected.png /tmp/bubble-selected.png")
-        hl.exec_cmd("python3 ~/.config/rofi/bubble-menu.py --menu launcher --daemon --x11 &")
-        hl.exec_cmd("python3 ~/.config/rofi/bubble-menu.py --menu powermenu --daemon --x11 &")
+        -- Kein Daemon-Autostart mehr nötig: launcher_cmd/powermenu_cmd starten
+        -- Rofi im Script-Mode jetzt bei jedem Aufruf direkt selbst.
 end)
 
 -- Allgemeines Aussehen & Verhalten
@@ -228,6 +235,7 @@ hl.config({
         input = {
             kb_layout    = "de",
             follow_mouse = 0,
+            float_switch_override_focus = 0,
             sensitivity  = 0,
             touchpad = {
                 natural_scroll = true,
@@ -428,10 +436,10 @@ if hl.plugin.dynamic_cursors then
                         speed     = 1.0,
                         influence = 1.0,
                         limit     = 0.0,
-                        timeout   = 650,
+                        timeout   = 3500,
 
                         effects = true,
-                        ipc     = false,
+                        ipc     = true,
                     },
 
                     hyprcursor = {
@@ -526,3 +534,11 @@ if hl.plugin.hyprexpo then
             hl.dispatch(hl.dsp.submap("hyprexpo"))
     end)
 end
+
+hl.window_rule({
+    match = {
+        class = "widgets_daemon.py",
+    },
+    float = true,
+    pin = true,
+})

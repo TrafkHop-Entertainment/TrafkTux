@@ -61,11 +61,11 @@
       "icon": "system-reboot",
       "exec": "systemctl reboot"
     },
-        {
+    {
       "name": "Logout",
       "type": "action",
       "icon": "system-log-out",
-      "exec": "loginctl terminate-session $XDG_SESSION_ID"
+      "exec": "hyprctl dispatch 'hl.dsp.exit()'"
     }
   ]
 }

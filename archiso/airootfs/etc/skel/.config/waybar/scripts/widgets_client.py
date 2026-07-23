@@ -1,24 +1,13 @@
 #!/usr/bin/env python3
 """
-widgets_client.py — dünner Client für widgets_daemon.py
+widgets_client.py — thin client for widgets_daemon.py
 
-Das ist absichtlich das einzige, was Waybar bei jedem Klick startet.
-KEIN "import gi", KEIN Gtk-Import - genau das ist der Punkt: der alte
-150-300ms-Kostenblock kam fast vollständig aus dem GTK-Import. Dieses
-Skript importiert nur Python-Bordmittel (socket, sys) und beendet sich
-sofort wieder, nachdem es dem Daemon über den Unix-Socket gesagt hat,
-welches Widget getoggelt werden soll. Übrig bleibt nur noch der reine
-Python-Interpreter-Start (üblicherweise 10-20ms) + Socket-Rundreise
-(<1ms) — das erreicht das 35-50ms-Ziel.
+This is intentionally the only script Waybar launches on click.
+NO "import gi", NO GTK imports — keeping overhead strictly minimal (10-20ms).
 
-Aufruf:  python3 widgets_client.py <widget>
-Beispiel-Waybar-Config:
-  "on-click": "python3 /pfad/zu/widgets_client.py volume"
-
-Noch schneller (kein Python-Interpreter-Start nötig, falls installiert):
-  "on-click": "socat - UNIX-CONNECT:/tmp/wb-daemon.sock <<< volume"
-oder mit ncat:
-  "on-click": "echo volume | ncat -U /tmp/wb-daemon.sock"
+Usage:  python3 widgets_client.py <widget>
+Example Waybar config:
+  "on-click": "python3 /path/to/widgets_client.py volume"
 """
 import os
 import socket
@@ -29,7 +18,7 @@ SOCK_PATH = os.environ.get("WB_DAEMON_SOCK", "/tmp/wb-daemon.sock")
 
 def main() -> int:
     if len(sys.argv) != 2:
-        print("Verwendung: widgets_client.py <widget>", file=sys.stderr)
+        print("Usage: widgets_client.py <widget>", file=sys.stderr)
         return 1
     widget = sys.argv[1]
 
@@ -39,8 +28,6 @@ def main() -> int:
         s.connect(SOCK_PATH)
         s.sendall(widget.encode())
         s.shutdown(socket.SHUT_WR)
-        # Antwort ist optional (nur fürs Debuggen relevant); falls der
-        # Daemon nicht sofort antwortet, blockieren wir dafür nicht.
         try:
             reply = s.recv(64).decode().strip()
             if reply.startswith("error"):
@@ -50,12 +37,12 @@ def main() -> int:
         s.close()
         return 0
     except (FileNotFoundError, ConnectionRefusedError):
-        print(f"widgets_daemon läuft nicht (Socket {SOCK_PATH} fehlt). "
-              f"Läuft die systemd --user Unit 'wb-daemon.service'?",
+        print(f"widgets_daemon is not running (Socket {SOCK_PATH} missing). "
+              f"Is the systemd --user unit 'wb-daemon.service' running?",
               file=sys.stderr)
         return 1
     except Exception as e:
-        print(f"Fehler beim Ansprechen des Daemons: {e}", file=sys.stderr)
+        print(f"Error communicating with daemon: {e}", file=sys.stderr)
         return 1
 
 

@@ -89,6 +89,7 @@ sudo mv /opt/resolve/libs/libgobject-2.0.so* /opt/resolve/libs/disabled-librarie
 * waydroid (pacman)
 * gamemode (pacman)
 * lsfg-vk-bin (aur)
+* bedrock-on-linux-bin (aur) 
 
 ### aur:
 * openttd (pacman)
@@ -103,7 +104,6 @@ sudo mv /opt/resolve/libs/libgobject-2.0.so* /opt/resolve/libs/disabled-librarie
 ### flatpak
 * flatpak install flathub org.vinegarhq.Sober
 * flatpak install flathub org.vinegarhq.Vinegar
-* flatpak install flathub io.mrarm.mcpelauncher
 
 ### Emulators (aur):
 * stella (aur)
@@ -138,6 +138,9 @@ http://localhost:3000/#/
 
 ## AI
 ollama, ollama-cuda
+
+## OBS
+* obs-pipewire-audio-capture-bin (aur)
   
 # Features + Theming:
 
@@ -248,23 +251,37 @@ We have themed a lot of apps:
 * Optional Package Installer
 * App Menu Folder Settings App (python + gtk)
 
+## Widgets
 * Add advanced brighness control to individual monitors and add a second tab for other devices with an openrgb integration wich will only open on a button press. either you can already detect all of the glowing devices and can control the brightness and color with an already running daemon or you start the app in the background when you press a button or we just implement a button wich will launch the app wich will open in the widget as a fixed object (1. preferred 3. last chance)
 * Add for the calender an integration with a calender app for fast appointments, etc. and also add a button for UI location change.
-* *Check Network for LAN and other methods of connectivity and implement snowfoxOS's Mesh connect.
-* *Fix Brightness Nightlight mode, wich does not display after dragging the slider more than a tiny vit or multiple tomes
+* *Check Network for LAN and other methods of connectivity and implement snowfoxOS's Mesh connect when released (wich it has not).
 * Maybe advanced battery options
-* Change everything to english or system language
 * Add another widget called settings where you can access all of those widgets and other apps like the to be made app launcher editor and files like the hyprland.lua and some other settings like system language, preffered colour sceme and some other important apps and qol improvments that automaticly edits some system files like kvantum and nwg look or something else.
 OK so the settings app is also a widget that will be at the right of the waybar. this widget will open many other widgets, the ones on the desktop and many new widgets for more advanced settings.
 
 Some settings:
-Display:
+1. Display: {
 Resolution (some base res and a custom one)
 Framerate
 hdr
 terring
-other screeen options
+other screeen options }
 
 Just think yourself......... idk settings, you can and should ask me, give me a list and ill think.
 
 End of Notes
+
+
+## FIXES
+1. Waybar hintergrund ist zu, naja, 2d. Da muss noch ein effekt drauf, damit es 3d artig ausschaut, farbunterschiede von unten nach oben oder was besseres.
+
+2. Widgets UI redesign (siehe Bild)
+
+3. Akku probleme, also waybar autohide und widgets, beheben (und vielleicht die pyhton sachen in C umschreiben)
+
+## POWER PROBLEM
+5 % in 6 Minuten ist absolut brutal – das sind hochgerechnet knapp 2 Stunden Laufzeit. Kein Wunder, dass du durchdrehst!Hier ist die gnadenlose Zusammenfassung der drei massiven Akku-Fresser, die dein Setup gerade parallel grillen:1. Die Zombie-Apokalypse im Python-Daemon (widgets_daemon.py)Der Effekt: 6 bis 12 % konstante CPU-Last in btop, was bei deinem Ryzen 7 8845HS bedeutet, dass 1 bis 2 komplette CPU-Threads permanent auf 100 % laufen.Die Ursache: Ein Logik-Fehler beim dynamischen Laden (Lazy-Loading) der Settings-Unterseiten. Sobald ein Tab gebaut wird, werden per add_timer neue Hintergrund-Aktualisierungen gestartet. Da in diesem speziellen Ladevorgang die globale Fenster-Variable kurzzeitig None ist, werden die Timer nicht registriert.  Das Resultat: Beim Schließen der Settings räumt die _cleanup-Funktion diese Timer nicht ab. Mit jedem Klick in den Settings spawnst du unsterbliche Hintergrund-Schleifen, die exponentiell anwachsen und im Sekundentakt Subprozesse abfeuern.  2. Das IPC-Dauerfeuer im C-Skript (waybar_autohide.c)Der Effekt: Die CPU kommt nie in die tiefen, stromsparenden Schlafmodi (C8+) und verbringt stattdessen 75 % der Zeit im extrem aktiven C3-Zustand.Die Ursache: Eine viel zu aggressive Polling-Rate. Die Hauptschleife deines C-Skripts pausiert per nanosleep exakt 10 Millisekunden (10 * 1000000L).  Das Resultat: Das Skript zwingt das System, 100-mal pro Sekunde über den Unix-Socket mit Hyprland zu kommunizieren, um die cursorpos abzufragen. Dieser permanente Traffic hält den kompletten Bus und die CPU gnadenlos wach. Ein Ändern auf 100ms (10-mal pro Sekunde) reicht völlig und killt 90 % der Wakeups.  3. Deaktiviertes Hardware-Power-Management (PCIe ASPM)Der Effekt: Hardware-Komponenten werden durchgehend mit voller Energie versorgt, selbst wenn du nichts tust.Die Ursache: Im Gegensatz zu GNOME oder KDE bringt ein reines Hyprland-Setup out-of-the-box keinen Dienst mit, der das Power-Management (Runtime PM) der Schnittstellen verwaltet.Das Resultat: Wie dein Powertop-Screenshot gezeigt hat, laufen deine NVMe-SSD, der WLAN/Bluetooth-Chip, die USB-Controller und der interne AMD Data Fabric konstant auf 100,0 % Nutzung. Zwar hast du das per --auto-tune manuell auf "Good" gesetzt, aber ohne einen installierten Hintergrunddienst wie TLP oder einen Powertop-Systemd-Service ist dieser extrem wichtige Stromsparmodus beim nächsten Reboot sofort wieder weg.
+
+
+(nur zur info, ich hab schon power profiles daemon installiert, vielleicht greifts hald nur nicht ganz???) (ne greift nicht, performance und power saver ist bei mri das selbe....... bruh)
+

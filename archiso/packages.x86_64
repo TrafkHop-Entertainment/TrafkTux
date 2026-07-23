@@ -154,6 +154,7 @@ flatpak
 btop
 nano
 bash-completion
+khal
 
 # --- Anzeigemanager ---
 sddm

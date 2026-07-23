@@ -16,7 +16,17 @@
 #define HIDE_PX 65
 // Alle wie vielen 10ms-Loop-Durchlaeufen die Bildschirmhoehe neu
 // abgefragt wird (~2s) - siehe Kommentar bei refresh_counter in main().
-#define SCREEN_H_REFRESH_ITERS 200
+#define SCREEN_H_REFRESH_ITERS 500
+
+// ── Adaptives Polling ────────────────────────────────────────────────
+// Siehe ausführlichen Kommentar in main() - schnelles Polling nur, wenn
+// es auf Reaktionsgeschwindigkeit ankommt (Bar sichtbar / Maus nah am
+// Rand), sonst langsames Polling. FAST_ZONE_PX liegt bewusst über
+// HIDE_PX, damit auf schnelles Polling umgeschaltet wird, BEVOR die
+// Maus den eigentlichen Trigger erreicht.
+#define FAST_POLL_MS  35
+#define SLOW_POLL_MS  350
+#define FAST_ZONE_PX  (HIDE_PX * 2)
 
 // ── Touch-Modus ─────────────────────────────────────────────────────
 // Maus-Logik oben bleibt unverändert (kontinuierliche cursorpos-Abfrage).
@@ -25,7 +35,7 @@
 // siehe hyprland.lua), und statt "Cursor weit weg" entscheidet ein reiner
 // Timeout, wann die Bar wieder verschwindet.
 #define TOUCH_SHOW_SIGNAL SIGRTMIN
-#define TOUCH_TIMEOUT_SEC 4
+#define TOUCH_TIMEOUT_SEC 5
 
 // ── Manuelles Sperren (z.B. fürs Vollbild-Spiel) ─────────────────────
 // Per Knopfdruck (siehe hyprland.lua) wird SIGRTMIN+1 geschickt und
@@ -147,6 +157,12 @@ int get_cursor_y(const char *sock_path, int *y) {
 }
 
 // ── Bildschirmhöhe (skaliert) extrahieren ──────────────────────────
+// Rueckgabe ist in LOGISCHEN Pixeln (Aufloesung / Scale) - genau die
+// gleiche Einheit, in der auch "hyprctl cursorpos" seine Koordinaten
+// liefert (laut Hyprland-Doku "global layout coordinates", also
+// bereits logisch, nicht die physische Panel-Aufloesung). Deshalb
+// duerfen "dist" unten und TRIG_PX/HIDE_PX direkt und OHNE weitere
+// Skalierung gegeneinander verglichen werden.
 float get_screen_height(const char *sock_path) {
     char *out = hypr_cmd(sock_path, "j/monitors");
     if (!out) {
@@ -302,10 +318,31 @@ int main() {
     int touch_override_active = 0;
     time_t touch_override_until = 0;
 
-    // 10ms Takt
-    struct timespec ts;
-    ts.tv_sec = 0;
-    ts.tv_nsec = 10 * 1000000L; // 10 Millisekunden
+    // ── Adaptives Polling ────────────────────────────────────────────
+    // Feste 10ms-Rate (100 hyprctl-IPC-Calls/Sekunde, UNABHÄNGIG davon
+    // ob sich überhaupt was tut) verhinderte laut Powertop-Analyse
+    // tiefe CPU-Schlafzustände (C8+) und hielt die CPU permanent im
+    // aktiven C3-Zustand - einer von drei identifizierten Haupt-
+    // Akkufressern. Einfach pauschal auf z.B. 100ms hochzusetzen würde
+    // das Problem zwar lösen, aber die Bar spürbar träger machen -
+    // 100ms Verzögerung ist an der Trigger-Kante durchaus spürbar.
+    //
+    // Stattdessen: schnelles Polling (10ms, wie bisher) nur GENAU DANN,
+    // wenn es tatsächlich auf Reaktionsgeschwindigkeit ankommt:
+    //   - die Bar ist gerade sichtbar (muss ggf. zügig wieder
+    //     verschwinden, sobald die Maus wegbewegt wird)
+    //   - ODER die Maus ist bereits nah genug am Rand, dass sie den
+    //     Trigger bald auslösen könnte (FAST_ZONE_PX - großzügiger
+    //     Puffer über TRIG_PX, damit das schnelle Polling schon
+    //     einsetzt BEVOR der Trigger selbst greift, nicht erst danach)
+    // In jeder anderen Situation (Maus irgendwo mitten im Bildschirm,
+    // Bar unsichtbar) reicht langsames Polling (100ms) völlig - dort
+    // kommt es auf ein Zehntel der Reaktionszeit nicht an, niemand
+    // merkt den Unterschied zwischen "Trigger nach 10ms" und "Trigger
+    // nach 100ms", wenn man erst noch den ganzen Bildschirm zur Kante
+    // hin durchqueren muss.
+    struct timespec ts_fast = { .tv_sec = 0, .tv_nsec = FAST_POLL_MS * 1000000L };
+    struct timespec ts_slow = { .tv_sec = 0, .tv_nsec = SLOW_POLL_MS * 1000000L };
 
     while (running) {
         // Bildschirmhoehe periodisch neu abfragen statt fuer immer die
@@ -345,9 +382,11 @@ int main() {
         if (autohide_locked) {
             // Trigger, die während der Sperre reinkommen, verwerfen wir -
             // sonst würde die Bar sofort wieder auftauchen, sobald man
-            // entsperrt, auch wenn man das gar nicht wollte.
+            // entsperrt, auch wenn man das gar nicht wollte. Waehrend
+            // der Sperre gibt's nichts zu reagieren -> langsames Polling
+            // reicht hier immer, unabhaengig vom sonstigen Zustand.
             touch_trigger = 0;
-            nanosleep(&ts, NULL);
+            nanosleep(&ts_slow, NULL);
             continue;
         }
 
@@ -361,6 +400,8 @@ int main() {
             touch_override_active = 1;
             touch_override_until = time(NULL) + TOUCH_TIMEOUT_SEC;
         }
+
+        int use_fast_poll = visible || touch_override_active;
 
         if (touch_override_active) {
             if (time(NULL) >= touch_override_until) {
@@ -382,9 +423,18 @@ int main() {
                     send_signal(SIGUSR1);
                     visible = 0;
                 }
+                // Schon nah genug an der Randzone -> ab jetzt schnell
+                // pollen, auch wenn der Trigger selbst noch nicht
+                // gefeuert hat. FAST_ZONE_PX liegt bewusst über
+                // HIDE_PX/TRIG_PX, damit das schnelle Polling schon
+                // einsetzt, BEVOR die Maus die eigentliche Kante
+                // erreicht - sonst würde genau im kritischen letzten
+                // Stück (wo Reaktionsgeschwindigkeit zählt) noch mit
+                // der langsamen 100ms-Rate gepollt.
+                if (dist <= FAST_ZONE_PX) use_fast_poll = 1;
             }
         }
-        nanosleep(&ts, NULL);
+        nanosleep(use_fast_poll ? &ts_fast : &ts_slow, NULL);
     }
 
     remove(PID_FILE);

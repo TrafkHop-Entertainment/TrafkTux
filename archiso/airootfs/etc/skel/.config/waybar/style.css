@@ -34,10 +34,26 @@ combobox, combobox button, combobox:hover, combobox button:hover {
 }
 
 #waybar {
-background:    #fff495;
+background-color: #fff495;
 border-radius: 35px 35px 0 0;
 min-height:    45px;
 padding:       0px 15px;
+/* ── Oberer Rand dunkler ("3D"-Effekt) ────────────────────
+ * Erster Versuch war ein heller inset-box-shadow-Ring rundum - auf
+ * Wunsch jetzt umgedreht: NUR die obere Hälfte bekommt einen Effekt,
+ * größer als vorher, und dunkler statt heller als die Grundfarbe
+ * #fff495. box-shadow kann nicht auf eine Seite beschränkt werden
+ * (der Blur legt sich immer rundum um die Form), deshalb hier
+ * stattdessen ein linear-gradient als background-image: er startet
+ * oben dunkler und geht bei ca. 60% der Bar-Höhe in die normale
+ * Grundfarbe über. background-image folgt genau wie box-shadow der
+ * border-radius-Form (wird an den oberen Ecken automatisch
+ * mitgerundet), macht also unten (eckige Kante) keinen Unterschied.
+ * #b3990a ist #fff495 mit reduzierter Helligkeit (kein neuer
+ * Farbton, nur dunklere Variante desselben Gelbs) - Prozentsatz bei
+ * 60% steuert, wie weit der dunkle Bereich nach unten reicht.
+ */
+background-image: linear-gradient(to bottom, #C7C07F 0%, #ede59f 8%, #fff495 15%);
 }
 
 #waybar > box {

@@ -1,19 +1,21 @@
 #!/usr/bin/env python3
 """
 bubble-menu.py — Generische Rofi Bubble-Menü-Engine
-(Version mit Daemon-Modus und persistenter Schleife)
+(Version als Rofi "Script Mode" — EIN dauerhaftes Rofi-Fenster,
+ kein Neustart/Fenster-Zerstören mehr pro Seitenwechsel, daher
+ auch keine hyprfocus-Animation mehr beim Blättern. Kein Daemon/FIFO
+ mehr nötig, Rofi selbst hält den Prozess offen und ruft das Skript
+ bei jeder Auswahl erneut auf; der Navigations-State (Pfad/Seite/
+ Untermodus) wird dabei über ROFI_DATA transportiert.)
 """
 
-import sys
 import os
 import json
 import subprocess
 import argparse
 import configparser
 import shlex
-import signal
 import time
-import stat
 import shutil
 
 # --- Konstanten ---
@@ -28,6 +30,15 @@ RAW_EXIT = "EXIT"
 RAW_NEXT = "NEXT"
 RAW_PREV = "PREV"
 RAW_NOOP = "NOOP"
+
+# Rofi Script-Mode: ROFI_RETV in der Umgebung sagt uns, WARUM das Skript
+# gerade neu aufgerufen wurde. 1 = normale Auswahl (Enter/Klick).
+# 10/11/12 = -kb-custom-1/2/3 (q/e/x) wurden gedrückt — exaktes Gegenstück
+# zu den bisherigen Prozess-Exitcodes 10/11/12 im Dmenu-Modus.
+RETV_SELECT   = "1"
+RETV_CUSTOM_1 = "10"  # q -> PREV_PAGE
+RETV_CUSTOM_2 = "11"  # e -> NEXT_PAGE
+RETV_CUSTOM_3 = "12"  # x -> BACK_EXIT
 
 CONTENT_COLUMNS = 4
 CONTENT_ROWS    = 3
@@ -243,46 +254,41 @@ def build_powermenu_entries(node: dict) -> list[tuple[str, str, str, bool]]:
 
     return entries
 
-def run_rofi(entries: list[tuple[str, str, str, bool]], theme_path: str,
-             x11: bool = False) -> str | None:
-    stdin_lines = []
+def emit_entries(entries: list[tuple[str, str, str, bool]], state: dict) -> None:
+    """
+    Schreibt die Eintragsliste im Rofi-Script-Mode-Format auf stdout und
+    hängt den Navigations-State (Pfad/Seite/Untermodus) als ROFI_DATA-Zeile
+    an. Rofi hält dabei sein EINES Fenster offen — kein neuer Prozess, kein
+    Fenster-Schließen/Neuerzeugen, also auch kein hyprfocus-Trigger.
+
+    Jede Zeile trägt zusätzlich ein "info"-Feld mit dem raw-Wert (Index /
+    NEXT / PREV / BACK / EXIT / NOOP). Das Skript wertet beim nächsten
+    Aufruf dieses info-Feld aus (über ROFI_INFO), nicht den sichtbaren Text
+    — robust auch bei doppelten Namen.
+    """
+    # WICHTIG: Ohne diese beiden Steuerzeilen funktionieren die q/e/x
+    # Custom-Keybindings NICHT — Rofi liefert ROFI_RETV=10-28 (unsere
+    # kb-custom-1/2/3) im Script-Mode nur, wenn das Skript "use-hot-keys"
+    # explizit freischaltet (siehe rofi-script(5)). no-custom sorgt dafür,
+    # dass nur echte Listeneinträge ausgewählt werden können (kein
+    # Freitext-Submit), analog zum alten "-no-custom" CLI-Flag.
+    print("\0use-hot-keys\x1ftrue")
+    print("\0no-custom\x1ftrue")
+
     for display, icon, raw, nonselectable in entries:
-        extras = []
+        extras = ["info", raw]
         if icon:
             extras += ["icon", icon]
         if nonselectable:
             extras += ["nonselectable", "true"]
-        line = f"{display}\0" + "\x1f".join(extras) if extras else display
-        stdin_lines.append(line)
-    stdin_data = "\n".join(stdin_lines) + "\n"
+        line = f"{display}\0" + "\x1f".join(extras)
+        print(line)
 
-    cmd = [
-        "rofi",
-        "-dmenu",
-        "-format", "i",
-        "-show-icons",
-        "-theme", theme_path,
-        "-no-custom",
-        *WASD_KB_ARGS,
-    ]
-    if x11:
-        cmd.append("-x11")
-
-    result = subprocess.run(
-        cmd,
-        input=stdin_data,
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode == 10:
-        return "PREV_PAGE"
-    if result.returncode == 11:
-        return "NEXT_PAGE"
-    if result.returncode == 12:
-        return "BACK_EXIT"
-    if result.returncode != 0:
-        return None
-    return result.stdout.strip()
+    data_json = json.dumps(state, separators=(",", ":"))
+    # \0data\x1f<json>\n ist Rofis eigenes Steuerprotokoll, um uns den State
+    # beim nächsten Aufruf automatisch als ROFI_DATA-Umgebungsvariable
+    # zurückzugeben — ganz ohne temporäre Dateien.
+    print(f"\0data\x1f{data_json}")
 
 # --- Desktop-Apps & PATH-Binaries (unverändert) ---
 
@@ -650,276 +656,268 @@ def collect_path_binaries() -> list[dict]:
     _cached_path_binaries_ts = now
     return bins
 
-# --- Virtuelles Untermenü (ohne os.execv) ---
+# --- State-Maschine für Rofi Script Mode ---
+#
+# Statt einer blockierenden while-True-Schleife mit eigenem rofi-Subprozess
+# pro Iteration (das alte Prinzip, das jedes Mal Rofis X11-Fenster zerstört
+# und neu erzeugt hat -> hyprfocus-Flackern), macht dieser Teil jetzt GENAU
+# EINEN Übergang pro Skript-Aufruf. Rofi selbst bleibt die ganze Zeit offen
+# und ruft uns bei jeder Auswahl / jedem kb-custom-Tastendruck erneut auf.
+#
+# Der State wird zwischen den Aufrufen über ROFI_DATA (siehe emit_entries)
+# transportiert. Struktur:
+#   {"path": "<index/index/...>", "page": <int>,
+#    "vmode": null | "drun" | "drun-filtered" | "run"}
+# "vmode" markiert, dass wir gerade in einer virtuellen Liste (App-/Binary-
+# Übersicht) stecken statt im echten Menübaum — das Gegenstück zum früheren
+# separaten run_virtual_menu()-Prozess, jetzt aber im selben State-Automaten.
 
-def run_virtual_menu(entries_data: list[dict], menu_name: str, theme_path: str,
-                     x11: bool = False) -> str:
+VMODE_DRUN          = "drun"
+VMODE_DRUN_FILTERED = "drun-filtered"
+VMODE_RUN           = "run"
+
+def default_state() -> dict:
+    return {"path": "", "page": 0, "vmode": None}
+
+def build_virtual_entries_data(vmode: str, root: dict) -> list[dict]:
+    """Liefert die Datenliste für einen virtuellen Modus (App-/Binary-Liste)."""
+    if vmode == VMODE_DRUN:
+        return collect_desktop_apps()
+    if vmode == VMODE_DRUN_FILTERED:
+        apps = collect_desktop_apps()
+        used_names, used_execs = collect_used_identifiers(root)
+        return [
+            a for a in apps
+            if a["name"].strip().casefold() not in used_names
+            and _extract_binary(a.get("exec", "")).casefold() not in used_execs
+        ]
+    if vmode == VMODE_RUN:
+        return collect_path_binaries()
+    return []
+
+def current_entries_for_state(menu_name: str, root: dict, state: dict) -> list[tuple[str, str, str, bool]]:
+    """Baut die Eintragsliste, die dem aktuellen State entspricht (echter
+    Menübaum ODER virtuelle Liste)."""
+    vmode = state.get("vmode")
+    page = state.get("page", 0)
+    if vmode:
+        entries_data = build_virtual_entries_data(vmode, root)
+        fake_node = {"children": entries_data}
+        return build_entries(fake_node, True, page)
+
+    path_str = state.get("path", "")
+    node = resolve_path(root, path_str)
+    has_parent = bool(path_str)
+    if menu_name == "powermenu":
+        return build_powermenu_entries(node)
+    return build_entries(node, has_parent, page, root_split=not has_parent)
+
+def handle_step(menu_name: str, x11: bool, retv: str, info: str | None) -> None:
     """
-    Zeigt eine virtuelle Liste (Apps/Binaries) an.
-    Rückgabewerte:
-      "back"   → Benutzer hat ← Zurück gewählt
-      "exit"   → Benutzer hat Exit gewählt
-      "app"    → App wurde gestartet (dann kehrt der Aufrufer zur Warteschleife zurück)
-      "abort"  → Abbruch (Escape)
+    Wertet GENAU EINE Rofi-Interaktion aus (Auswahl oder kb-custom-Taste)
+    und emittiert entweder die neue Eintragsliste (Menü bleibt offen) oder
+    startet eine Aktion/App und gibt nichts aus (Rofi schließt sich dann
+    von selbst, da keine neuen Zeilen kommen).
     """
-    fake_node = {"children": entries_data}
-    page = 0
+    root = load_menu(menu_name)
 
-    while True:
-        entries = build_entries(fake_node, True, page)
-        chosen_raw = run_rofi(entries, theme_path, x11=x11)
-        if chosen_raw is None:
-            return "abort"
-        if chosen_raw == "PREV_PAGE":
-            page = max(0, page - 1)
-            continue
-        if chosen_raw == "NEXT_PAGE":
-            total_pages = max(1, -(-len(entries_data) // PAGE_SIZE))
-            page = min(total_pages - 1, page + 1)
-            continue
-        if chosen_raw == "BACK_EXIT":
-            # x-Taste: immer "zurück", da virtuelle Menüs stets einen Parent haben
-            return "back"
+    raw_state = os.environ.get("ROFI_DATA", "")
+    try:
+        state = json.loads(raw_state) if raw_state else default_state()
+    except (ValueError, TypeError):
+        state = default_state()
+    # Fehlende Felder robust auffüllen (z.B. falls ROFI_DATA mal leer/kaputt ist)
+    state = {**default_state(), **state}
 
-        chosen_idx = int(chosen_raw)
-        _, _, raw, _ = entries[chosen_idx]
+    path_str = state["path"]
+    page = state["page"]
+    vmode = state["vmode"]
 
-        if raw == RAW_EXIT:
-            return "exit"
-        if raw == RAW_BACK:
-            return "back"
-        if raw == RAW_NEXT:
-            page += 1
-            continue
-        if raw == RAW_PREV:
-            page -= 1
-            continue
-        if raw == RAW_NOOP:
-            continue
+    def emit_current():
+        entries = current_entries_for_state(menu_name, root, state)
+        emit_entries(entries, state)
 
-        child = entries_data[int(raw)]
+    # --- kb-custom Tasten (q/e/x) — exaktes Gegenstück zu den alten
+    # Prozess-Exitcodes 10/11/12 im Dmenu-Modus ---
+    if retv == RETV_CUSTOM_1:  # q -> vorherige Seite
+        state["page"] = max(0, page - 1)
+        emit_current()
+        return
+
+    if retv == RETV_CUSTOM_2:  # e -> nächste Seite
+        if vmode:
+            total = len(build_virtual_entries_data(vmode, root))
+        else:
+            node = resolve_path(root, path_str)
+            total = len(node.get("children", []))
+        total_pages = max(1, -(-total // PAGE_SIZE))
+        state["page"] = min(total_pages - 1, page + 1)
+        emit_current()
+        return
+
+    if retv == RETV_CUSTOM_3:  # x -> zurück/exit, seitenunabhängig
+        if vmode:
+            # virtuelle Listen haben immer einen Parent -> zurück ins Hauptmenü
+            state["vmode"] = None
+            state["page"] = 0
+            emit_current()
+            return
+        if path_str:
+            state["path"] = "/".join(path_str.split("/")[:-1])
+            state["page"] = 0
+            emit_current()
+            return
+        # kein Parent mehr -> wie Exit
+        cleanup()
+        return
+
+    # --- Erstaufruf ohne Argument: Startliste anzeigen ---
+    if info is None:
+        emit_current()
+        return
+
+    # --- normale Auswahl (Enter/Klick) ---
+    if info == RAW_EXIT:
+        cleanup()
+        return  # Rofi schließt sich (keine neue Ausgabe)
+    if info == RAW_BACK:
+        if vmode:
+            state["vmode"] = None
+        else:
+            state["path"] = "/".join(path_str.split("/")[:-1])
+        state["page"] = 0
+        emit_current()
+        return
+    if info == RAW_NEXT:
+        state["page"] = page + 1
+        emit_current()
+        return
+    if info == RAW_PREV:
+        state["page"] = page - 1
+        emit_current()
+        return
+    if info == RAW_NOOP:
+        # nonselectable Platzhalter — sollte eigentlich nie ausgewählt werden,
+        # aber sicherheitshalber die aktuelle Liste einfach erneut anzeigen
+        emit_current()
+        return
+
+    # --- Auswahl innerhalb einer virtuellen Liste (App/Binary starten) ---
+    if vmode:
+        entries_data = build_virtual_entries_data(vmode, root)
+        child = entries_data[int(info)]
         exec_cmd = child.get("exec", "")
         if exec_cmd:
             exec_detached(exec_cmd)
-            return "app"
-        return "abort"
+            cleanup()
+        return
 
-# --- Haupt-Menü-Schleife (persistent) ---
+    # --- Auswahl im echten Menübaum ---
+    node = resolve_path(root, path_str)
+    child_idx = int(info)
+    child = node["children"][child_idx]
+    entry_type = child.get("type", "app")
 
-def run_menu_session(menu_name: str, initial_path: str, initial_page: int,
-                     x11: bool = False) -> str:
-    """
-    Führt die gesamte Menü-Navigation durch, bis eine der Aktionen
-    "exit", "abort" oder "app" eintritt.
-    Rückgabewerte:
-      "exit"   → Benutzer hat Exit gewählt → Daemon beenden
-      "abort"  → Abbruch (Escape) → Daemon bleibt, Menü schließen
-      "app"    → App wurde gestartet → Daemon bleibt
-    """
-    root = load_menu(menu_name)
-    path_str = initial_path
-    page = initial_page
+    if entry_type == "folder":
+        state["path"] = (path_str + "/" + info).lstrip("/")
+        state["page"] = 0
+        emit_current()
+        return
 
-    while True:
-        node = resolve_path(root, path_str)
-        has_parent = bool(path_str)
-
-        if menu_name == "powermenu":
-            entries = build_powermenu_entries(node)
-        else:
-            entries = build_entries(node, has_parent, page, root_split=not has_parent)
-
-        chosen_raw = run_rofi(entries, os.path.join(ROFI_BASE, menu_name, "theme.rasi"), x11=x11)
-        if chosen_raw is None:
-            return "abort"
-        if chosen_raw == "PREV_PAGE":
-            page = max(0, page - 1)
-            continue
-        if chosen_raw == "NEXT_PAGE":
-            total_pages = max(1, -(-len(node.get("children", [])) // PAGE_SIZE))
-            page = min(total_pages - 1, page + 1)
-            continue
-        if chosen_raw == "BACK_EXIT":
-            # x-Taste: wie Back/Exit-Eintrag, aber unabhängig von der aktuellen Seite
-            if has_parent:
-                path_str = "/".join(path_str.split("/")[:-1])
-                page = 0
-            else:
-                return "exit"
-            continue
-
-        chosen_idx = int(chosen_raw)
-        _, _, raw, _ = entries[chosen_idx]
-
-        if raw == RAW_EXIT:
-            return "exit"
-        if raw == RAW_BACK:
-            # eine Ebene zurück
-            path_str = "/".join(path_str.split("/")[:-1])
-            page = 0
-            continue
-        if raw == RAW_NEXT:
-            page += 1
-            continue
-        if raw == RAW_PREV:
-            page -= 1
-            continue
-        if raw == RAW_NOOP:
-            continue
-
-        child_idx = int(raw)
-        child = node["children"][child_idx]
-        entry_type = child.get("type", "app")
-
-        if entry_type == "folder":
-            new_path = (path_str + "/" + raw).lstrip("/")
-            path_str = new_path
-            page = 0
-            continue
-
-        # Aktionen, die das Menü beenden (App starten, Fenster schließen, etc.)
-        if entry_type == "close-prev-window":
-            addr = ""
-            if os.path.exists(PREV_WINDOW_FILE):
-                with open(PREV_WINDOW_FILE) as f:
-                    addr = f.read().strip()
-            if addr:
-                lua_expr = f"hl.dsp.window.close({{ window = \"address:{addr}\" }})"
-                exec_detached_argv(["hyprctl", "dispatch", lua_expr])
-            return "app"
-
-        if entry_type == "special-drun":
-            apps = collect_desktop_apps()
-            ret = run_virtual_menu(apps, menu_name,
-                                   os.path.join(ROFI_BASE, menu_name, "theme.rasi"), x11)
-            if ret == "exit":
-                return "exit"
-            if ret == "abort" or ret == "app":
-                return ret  # abort oder app → Daemon bleibt
-            # ret == "back" → wir bleiben im Hauptmenü (Schleife fortsetzen)
-            continue
-
-        if entry_type == "special-drun-filtered":
-            apps = collect_desktop_apps()
-            used_names, used_execs = collect_used_identifiers(root)
-            filtered_apps = [
-                a for a in apps
-                if a["name"].strip().casefold() not in used_names
-                and _extract_binary(a.get("exec", "")).casefold() not in used_execs
-            ]
-            ret = run_virtual_menu(filtered_apps, menu_name,
-                                   os.path.join(ROFI_BASE, menu_name, "theme.rasi"), x11)
-            if ret == "exit":
-                return "exit"
-            if ret == "abort" or ret == "app":
-                return ret
-            continue
-
-        if entry_type == "special-run":
-            bins = collect_path_binaries()
-            ret = run_virtual_menu(bins, menu_name,
-                                   os.path.join(ROFI_BASE, menu_name, "theme.rasi"), x11)
-            if ret == "exit":
-                return "exit"
-            if ret == "abort" or ret == "app":
-                return ret
-            continue
-
-        if entry_type == "special-window":
-            # Rofi im Window-Modus starten (unabhängiger Prozess)
-            wasd_flags = " ".join(shlex.quote(a) for a in WASD_KB_ARGS)
-            x11_flag = "-x11 " if x11 else ""
-            theme_path = os.path.join(ROFI_BASE, menu_name, "theme.rasi")
-            exec_detached(f"rofi -show window {x11_flag}-theme {shlex.quote(theme_path)} {wasd_flags}")
-            return "app"
-
-        if entry_type in ("action", "app"):
-            exec_cmd = child.get("exec", "")
-            if exec_cmd:
-                exec_detached(exec_cmd)
-                return "app"
-            return "abort"
-
-        # Fallback
-        return "abort"
-
-# --- Daemon-Modus ---
-
-def daemon_loop(menu_name: str, x11: bool):
-    # Nutze das User-Runtime-Verzeichnis anstatt /tmp (meistens /run/user/1000)
-    runtime_dir = os.environ.get("XDG_RUNTIME_DIR", "/tmp")
-    fifo_path = os.path.join(runtime_dir, f"rofi-bubble-{menu_name}.fifo")
-
-    def ensure_fifo():
-        """Stellt sicher, dass die FIFO existiert und WIRKLICH eine FIFO ist."""
-        if os.path.exists(fifo_path):
-            # Wenn z.B. echo versehentlich eine normale Textdatei erstellt hat, löschen!
-            if not stat.S_ISFIFO(os.stat(fifo_path).st_mode):
-                os.remove(fifo_path)
-                os.mkfifo(fifo_path, 0o600)
-        else:
-            os.mkfifo(fifo_path, 0o600)
-
-    def sigterm_handler(signum, frame):
+    if entry_type == "close-prev-window":
+        addr = ""
+        if os.path.exists(PREV_WINDOW_FILE):
+            with open(PREV_WINDOW_FILE) as f:
+                addr = f.read().strip()
+        if addr:
+            lua_expr = f"hl.dsp.window.close({{ window = \"address:{addr}\" }})"
+            exec_detached_argv(["hyprctl", "dispatch", lua_expr])
         cleanup()
-        if os.path.exists(fifo_path):
-            os.remove(fifo_path)
-        sys.exit(0)
+        return
 
-    signal.signal(signal.SIGTERM, sigterm_handler)
+    if entry_type == "special-drun":
+        state["vmode"] = VMODE_DRUN
+        state["page"] = 0
+        emit_current()
+        return
 
-    print(f"[Daemon] Gestartet für Menü '{menu_name}'. Warte auf 'show' in {fifo_path}")
+    if entry_type == "special-drun-filtered":
+        state["vmode"] = VMODE_DRUN_FILTERED
+        state["page"] = 0
+        emit_current()
+        return
 
-    while True:
-        try:
-            ensure_fifo() # Immer checken, bevor wir lesen!
-            with open(fifo_path, "r") as fifo:
-                cmd = fifo.read().strip()
-        except KeyboardInterrupt:
-            break
-        except OSError:
-            # Falls die Datei exakt im Moment des Öffnens gelöscht wird,
-            # nicht abstürzen (break), sondern kurz warten und neu versuchen (continue)
-            time.sleep(0.5)
-            continue
+    if entry_type == "special-run":
+        state["vmode"] = VMODE_RUN
+        state["page"] = 0
+        emit_current()
+        return
 
-        if cmd == "show":
-            save_active_window()
-            run_menu_session(menu_name, "", 0, x11)
-        elif cmd == "exit":
-            break
+    if entry_type == "special-window":
+        # Window-Liste ändert sich laufend (offene Fenster) — dafür bleibt es
+        # ein eigener, unabhängiger rofi-Prozess statt Teil des State-Baums.
+        wasd_flags = " ".join(shlex.quote(a) for a in WASD_KB_ARGS)
+        x11_flag = "-x11 " if x11 else ""
+        theme_path = os.path.join(ROFI_BASE, menu_name, "theme.rasi")
+        exec_detached(f"rofi -show window {x11_flag}-theme {shlex.quote(theme_path)} {wasd_flags}")
+        cleanup()
+        return
 
+    if entry_type in ("action", "app"):
+        exec_cmd = child.get("exec", "")
+        if exec_cmd:
+            exec_detached(exec_cmd)
+            cleanup()
+        return
+
+    # Fallback: nichts ausgeben -> Rofi schließt sich
     cleanup()
-    if os.path.exists(fifo_path):
-        os.remove(fifo_path)
 
 # --- Hauptprogramm ---
+#
+# Aufruf als Rofi Script-Mode-Backend:
+#   rofi -show bubble -modi "bubble:python3 ~/.config/rofi/bubble-menu.py --menu launcher --x11"
+#
+# Rofi ruft dieses Skript für JEDE Interaktion neu auf (das ist sehr schnell,
+# reiner Python-Start + State-Auswertung, kein neues X11-Fenster). Dabei
+# bekommen wir mit:
+#   - sys.argv[1]           : gewählter sichtbarer Text (wir nutzen das NICHT
+#                              zur Auswertung, siehe ROFI_INFO unten)
+#   - ROFI_INFO (Umgebung)  : das "info"-Feld des gewählten Eintrags — das
+#                              werten wir aus (robust, unabhängig vom Text)
+#   - ROFI_RETV (Umgebung)  : 1 = normale Auswahl, 10/11/12 = kb-custom-1/2/3
+#   - ROFI_DATA (Umgebung)  : unser eigener State von der letzten Ausgabe
+#
+# Da Rofi durchgehend offen bleibt, entfällt der bisherige Daemon/FIFO-
+# Mechanismus komplett — Hyprland ruft jetzt direkt "rofi -show bubble ..."
+# auf, kein Trigger-Skript mehr nötig.
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--menu", required=True,
                         help="Menü-Name (Unterordner in ~/.config/rofi/)")
-    parser.add_argument("--path", default="",
-                        help="Index-Pfad im JSON-Baum (nur für einmaligen Aufruf)")
-    parser.add_argument("--page", type=int, default=0,
-                        help="Seiten-Index (für einmaligen Aufruf)")
     parser.add_argument("--x11", action="store_true",
-                        help="Rofi über XWayland starten (Touch-Unterstützung)")
-    parser.add_argument("--daemon", action="store_true",
-                        help="Als Daemon starten (wartet auf FIFO-Befehle)")
-    args = parser.parse_args()
+                        help="Rofi über XWayland starten (Touch-Unterstützung), "
+                             "wird an special-window-Untermenüs weitergereicht")
+    # WICHTIG: Rofi hängt bei jeder Auswahl den sichtbaren Text des gewählten
+    # Eintrags als zusätzliches Argument an (sys.argv[1]). Wir werten diesen
+    # Text NICHT aus (siehe ROFI_INFO/ROFI_DATA weiter unten), aber argparse
+    # muss ihn trotzdem ignorieren dürfen, statt mit "unrecognized arguments"
+    # abzubrechen. Deshalb parse_known_args() statt parse_args().
+    args, _unknown = parser.parse_known_args()
 
-    if args.daemon:
-        daemon_loop(args.menu, args.x11)
-    else:
-        # Einmaliger Aufruf (wie bisher, aber ohne os.execv)
+    retv = os.environ.get("ROFI_RETV", "")
+    info = os.environ.get("ROFI_INFO")  # None beim allerersten Aufruf (kein Eintrag gewählt)
+
+    # Beim allerersten Aufruf (Menü geht gerade erst auf) einmalig das zuvor
+    # aktive Fenster merken, für "close-prev-window"-Einträge. WICHTIG: Laut
+    # rofi-script(5) ist ROFI_RETV beim Erstaufruf "0" (nicht leer!) — das
+    # war zuvor falsch geprüft, wodurch save_active_window() nie lief und
+    # "close-prev-window" (der Close-Eintrag im Powermenü) folgenlos blieb.
+    if info is None and retv in ("0", ""):
         save_active_window()
-        ret = run_menu_session(args.menu, args.path, args.page, args.x11)
-        cleanup()
-        if ret == "exit":
-            sys.exit(0)
-        # bei abort/app ebenfalls beenden
-        sys.exit(0)
+
+    handle_step(args.menu, args.x11, retv, info)
 
 if __name__ == "__main__":
     main()
