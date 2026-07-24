@@ -20,6 +20,7 @@ import shutil
 
 # --- Konstanten ---
 ROFI_BASE        = os.path.expanduser("~/.config/rofi")
+BLANK_ICON_PATH  = os.path.join(ROFI_BASE, ".bubble-menu-blank.png")
 BACK_LABEL       = "← Zurück"
 EXIT_LABEL       = "Exit"
 EXIT_ICON        = "application-exit"
@@ -133,6 +134,38 @@ def exec_detached_argv(argv: list[str]):
         stderr=subprocess.DEVNULL,
     )
 
+def ensure_blank_icon() -> str:
+    """Stellt sicher, dass eine winzige, vollständig transparente PNG-Datei
+    existiert, und gibt ihren Pfad zurück.
+
+    Hintergrund: Platzhalter-Einträge (leere Grid-Slots, sowie Next/Prev,
+    wenn es keine weitere Seite gibt) hatten bisher icon="". Ohne gesetztes
+    Icon reserviert Rofi für das Icon-Widget aber keinen Platz -> die ganze
+    "Blase" verschwindet komplett statt leer/unsichtbar an ihrer Position zu
+    bleiben, was das restliche Grid-Layout durcheinanderbringt (genau das
+    "es fehlen 2 Blasen"-Problem). Mit einem echten, aber transparenten Icon
+    reserviert Rofi ganz normal Platz, die Blase bleibt nur eben leer."""
+    if not os.path.exists(BLANK_ICON_PATH):
+        os.makedirs(os.path.dirname(BLANK_ICON_PATH), exist_ok=True)
+        import struct
+        import zlib
+
+        def _chunk(chunk_type: bytes, data: bytes) -> bytes:
+            c = chunk_type + data
+            return struct.pack("!I", len(data)) + c + struct.pack("!I", zlib.crc32(c) & 0xffffffff)
+
+        width, height = 1, 1
+        raw_scanline = b"\x00\x00\x00\x00\x00"  # Filter-Byte + 1 transparentes RGBA-Pixel
+        png = (
+            b"\x89PNG\r\n\x1a\n"
+            + _chunk(b"IHDR", struct.pack("!IIBBBBB", width, height, 8, 6, 0, 0, 0))
+            + _chunk(b"IDAT", zlib.compress(raw_scanline))
+            + _chunk(b"IEND", b"")
+        )
+        with open(BLANK_ICON_PATH, "wb") as f:
+            f.write(png)
+    return BLANK_ICON_PATH
+
 def cleanup():
     if os.path.exists(PREV_WINDOW_FILE):
         os.remove(PREV_WINDOW_FILE)
@@ -166,13 +199,24 @@ def build_entries(node: dict, has_parent: bool, page: int = 0,
     for i, child in enumerate(page_children):
         content.append((child.get("name", ""), child.get("icon", ""), str(start + i), False))
     while len(content) < PAGE_SIZE:
-        content.append(("", "", RAW_NOOP, True))
+        # WICHTIG: Anzeigetext darf NICHT "" sein! Rofis Script-Mode-Protokoll
+        # erkennt eine Zeile als Steuerzeile (z.B. "\0data\x1f...", analog zu
+        # den Zeilen in emit_entries), sobald die Zeile mit \0 beginnt - also
+        # genau dann, wenn kein Anzeigetext vor dem \0 steht. Mit display=""
+        # wuerde die Zeile "\0info\x1fNOOP..." lauten und faelschlich als
+        # (unbekannte) Steuerzeile interpretiert und komplett verworfen -> das
+        # war der eigentliche Grund, warum die Platzhalter-Blasen nie
+        # auftauchten. Ein einzelnes Leerzeichen umgeht das zuverlaessig.
+        content.append((" ", ensure_blank_icon(), RAW_NOOP, True))
 
     has_next = page < total_pages - 1
     has_prev = page > 0
 
-    nav_next = (NEXT_LABEL, NEXT_ICON, RAW_NEXT, False) if has_next else ("", "", RAW_NOOP, True)
-    nav_prev = (PREV_LABEL, PREV_ICON, RAW_PREV, False) if has_prev else ("", "", RAW_NOOP, True)
+    # (siehe Kommentar oben bei "while len(content) < PAGE_SIZE": display=""
+    # wuerde die Zeile als Steuerzeile misinterpretieren und die Blase komplett
+    # verschwinden lassen -> deshalb hier ebenfalls ein Leerzeichen statt "".)
+    nav_next = (NEXT_LABEL, NEXT_ICON, RAW_NEXT, False) if has_next else (" ", ensure_blank_icon(), RAW_NOOP, True)
+    nav_prev = (PREV_LABEL, PREV_ICON, RAW_PREV, False) if has_prev else (" ", ensure_blank_icon(), RAW_NOOP, True)
     nav_back_exit = (
         (BACK_LABEL, "go-previous", RAW_BACK, False)
         if has_parent else

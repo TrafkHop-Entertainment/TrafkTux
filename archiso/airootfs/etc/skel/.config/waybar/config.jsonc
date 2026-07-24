@@ -47,12 +47,12 @@
     "custom/appmenu": {
         "format": "󱄅",
         "tooltip": "App Launcher",
-        "on-click": "sh -c 'echo \"show\" > \"${XDG_RUNTIME_DIR:-/tmp}/rofi-bubble-launcher.fifo\"'"
+        "on-click": "rofi -show bubble -modi \"bubble:python3 $HOME/.config/rofi/bubble-menu.py --menu launcher --x11\" -theme $HOME/.config/rofi/launcher/theme.rasi -show-icons -no-custom -x11 -kb-row-up 'Up,Control+p,w' -kb-row-down 'Down,Control+n,s' -kb-row-left 'Control+Page_Up,a' -kb-row-right 'Control+Page_Down,d' -kb-accept-entry 'Control+j,Control+m,Return,KP_Enter,space,less' -kb-custom-1 'q' -kb-custom-2 'e' -kb-custom-3 'x'"
     },
     "custom/powermenu": {
         "format": "⏻",
         "tooltip": "Power Menu",
-        "on-click": "sh -c 'echo \"show\" > \"${XDG_RUNTIME_DIR:-/tmp}/rofi-bubble-powermenu.fifo\"'"
+        "on-click": "rofi -show bubble -modi \"bubble:python3 $HOME/.config/rofi/bubble-menu.py --menu powermenu --x11\" -theme $HOME/.config/rofi/powermenu/theme.rasi -show-icons -no-custom -x11 -kb-row-up 'Up,Control+p,w' -kb-row-down 'Down,Control+n,s' -kb-row-left 'Control+Page_Up,a' -kb-row-right 'Control+Page_Down,d' -kb-accept-entry 'Control+j,Control+m,Return,KP_Enter,space,less' -kb-custom-1 'q' -kb-custom-2 'e' -kb-custom-3 'x'"
     },
     "custom/workspaces-view": {
     "format": "󰙀",
@@ -69,8 +69,8 @@
     },
     "custom/shortcut-kitty": {
         "format": "",
-        "tooltip": "Kitty Terminal",
-        "on-click": "setsid kitty"
+        "tooltip": "Xfce4 Terminal",
+        "on-click": "setsid xfce4-terminal"
     },
     "custom/shortcut-thunar": {
         "format": "󰉋",

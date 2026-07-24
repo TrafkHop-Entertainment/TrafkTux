@@ -985,12 +985,221 @@ def _kbd_bright_pct(device: str) -> int:
 def _openrgb_available() -> bool:
     return bool(run(["which", "openrgb"]))
 
-def _hue_to_hex(hue: float) -> str:
-    import colorsys
-    r, g, b = colorsys.hsv_to_rgb((hue % 360) / 360, 1.0, 1.0)
-    return f"{int(r*255):02x}{int(g*255):02x}{int(b*255):02x}"
+# ════════════════════════════════════════════════════════════
+#  ddcutil (externe Monitor-Helligkeit per DDC/CI)
+# ════════════════════════════════════════════════════════════
+# Laptop-Panels unterstützen kein DDC/CI (bestätigt in ddcutils
+# eigener FAQ - eDP-Displays implementieren nur die EDID-Leseadresse
+# x50, nicht die DDC-Kommandoadresse x37), deshalb bleibt das interne
+# Display bei brightnessctl (siehe _bright_pct/_on_bright oben) -
+# ddcutil kommt NUR für extern angeschlossene Monitore zum Einsatz.
+_DDCUTIL_CACHE = {"available": None}
 
-def _brightness_content() -> Gtk.Box:
+def _ddcutil_available() -> bool:
+    if _DDCUTIL_CACHE["available"] is None:
+        import shutil
+        _DDCUTIL_CACHE["available"] = shutil.which("ddcutil") is not None
+    return _DDCUTIL_CACHE["available"]
+
+def _ddcutil_detect() -> list[dict]:
+    """Liste externer DDC-fähiger Monitore via 'ddcutil detect --brief'
+    (maschinell parsebares Format, siehe ddcutil-Doku). WICHTIG:
+    Display-Nummern UND I2C-Busnummern sind nicht über Reboots stabil
+    - deshalb wird hier bei JEDEM Öffnen des Widgets frisch erkannt,
+    nie eine Nummer dauerhaft gespeichert. 'ddcutil detect' kann
+    mehrere Sekunden dauern (DDC/CI-Kommunikation ist von Natur aus
+    langsam laut ddcutil-Doku) - MUSS also aus einem Hintergrund-
+    Thread aufgerufen werden, nie direkt im GTK-Main-Thread."""
+    if not _ddcutil_available():
+        return []
+    out = run(["ddcutil", "detect", "--brief"], timeout=15)
+    if not out:
+        return []
+    monitors = []
+    cur: dict = {}
+    for line in out.splitlines():
+        line = line.strip()
+        m = re.match(r'^Display (\d+)$', line)
+        if m:
+            if cur:
+                monitors.append(cur)
+            cur = {"display_num": int(m.group(1))}
+            continue
+        m = re.match(r'^Monitor:\s*(.+)$', line)
+        if m and cur:
+            parts = m.group(1).split(":")
+            cur["name"] = parts[1] if len(parts) > 1 and parts[1] else parts[0]
+    if cur:
+        monitors.append(cur)
+    return monitors
+
+def _ddcutil_get_brightness(display_num: int) -> int | None:
+    """Aktuelle Helligkeit (VCP-Code 10 = Brightness) via --brief
+    abfragen. Laut ddcutil-Doku zeigt --brief/--terse für ein
+    kontinuierliches Feature wie Brightness "both the current value
+    (in decimal) and maximum value (in decimal)" - das genaue Prefix-
+    Format variiert leicht zwischen ddcutil-Versionen, daher robust
+    über "letzte zwei Dezimalzahlen im Output = current, max" statt
+    über eine feste Spaltenposition geparst. None bei Kommunikations-
+    fehler (Monitor reagiert nicht auf DDC, auch wenn er in detect
+    auftauchte - laut FAQ nicht ungewöhnlich)."""
+    out = run(["ddcutil", "--display", str(display_num),
+               "getvcp", "10", "--brief"], timeout=8)
+    if not out:
+        return None
+    nums = [p for p in out.split() if p.isdigit()]
+    return int(nums[-2]) if len(nums) >= 2 else None
+
+def _ddcutil_set_brightness(display_num: int, pct: int) -> bool:
+    """Setzt Helligkeit (VCP 10) auf einen externen Monitor. Gibt
+    False zurück statt eine Exception hochzureichen, falls der Monitor
+    nicht antwortet - DDC/CI-Fehler bei einzelnen Monitoren sind laut
+    ddcutil-Doku normal genug, dass die UI das ruhig wegstecken muss,
+    statt das ganze Widget zum Absturz zu bringen."""
+    _out, _err, ec = run_ec(
+        ["ddcutil", "--display", str(display_num), "setvcp", "10", str(pct)],
+        timeout=8)
+    return ec == 0
+
+# ════════════════════════════════════════════════════════════
+#  OpenRGB (pro-Gerät Helligkeit + Farbe für alle erkannten
+#  RGB-Geräte - Tastatur, Maus, Mainboard, GPU, RAM, ...)
+# ════════════════════════════════════════════════════════════
+# Ersetzt den alten, einzelnen globalen Hue-Regler: openrgb-python
+# verbindet sich mit dem OpenRGB-SDK-Server und liefert strukturierte
+# Geräteobjekte (Name, Typ, Modi) statt CLI-Text parsen zu müssen.
+# API-Verhalten unten wurde gegen die tatsächlich installierte
+# openrgb-python-Bibliothek verifiziert (Quellcode gelesen), nicht nur
+# aus der Doku übernommen - insbesondere: device.active_mode ist ein
+# INDEX in device.modes, kein Objekt; Helligkeit wird nicht über eine
+# eigene Methode gesetzt, sondern indem man das ModeData-Objekt des
+# aktiven Modus mit geändertem .brightness erneut über
+# device.set_mode() schickt.
+_ORGB_CLIENT = {"client": None}
+_ORGB_PORT = 6742
+
+def _openrgb_server_running() -> bool:
+    """Prüft, ob der SDK-Server bereits lauscht, per einfachem TCP-
+    Connect-Versuch (kein extra Tool/Paket nötig dafür)."""
+    import socket as _socket
+    s = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+    s.settimeout(0.5)
+    try:
+        s.connect(("127.0.0.1", _ORGB_PORT))
+        return True
+    except OSError:
+        return False
+    finally:
+        s.close()
+
+def _openrgb_ensure_server() -> bool:
+    """Startet den OpenRGB-SDK-Server bei Bedarf selbst im Hintergrund
+    ('openrgb --server', minimiert/ohne GUI) - bewusst NICHT als
+    dauerhafter systemd-Service, damit nichts unnötig im Hintergrund
+    läuft, wenn man das Brightness-Widget gar nicht öffnet. Wartet
+    kurz auf den Verbindungsaufbau, da der Serverstart selbst nicht
+    synchron ist."""
+    if _openrgb_server_running():
+        return True
+    if not _openrgb_available():
+        return False
+    run_bg(["openrgb", "--server", "--server-port", str(_ORGB_PORT)])
+    for _ in range(20):  # bis zu ~4s warten
+        time.sleep(0.2)
+        if _openrgb_server_running():
+            return True
+    return False
+
+def _openrgb_client():
+    """Liefert einen verbundenen OpenRGBClient, oder None bei
+    Fehler. Cached NICHT über mehrere Widget-Öffnungen hinweg (anders
+    als z.B. _khal_available) - eine tote/abgelaufene Verbindung vom
+    letzten Mal würde sonst bei jedem weiteren Öffnen sofort wieder
+    fehlschlagen, ohne dass ein Neuverbindungsversuch stattfindet."""
+    try:
+        from openrgb import OpenRGBClient
+    except ImportError:
+        return None
+    if not _openrgb_ensure_server():
+        return None
+    try:
+        client = OpenRGBClient(address="127.0.0.1", port=_ORGB_PORT,
+                                name="wb-daemon")
+        return client
+    except Exception:
+        return None
+
+def _openrgb_device_info(dev) -> dict:
+    """Extrahiert die für die UI relevanten Infos aus einem
+    openrgb-python Device-Objekt: aktueller Modus, ob der aktuell
+    aktive Modus Helligkeit unterstützt (ModeFlags.HAS_BRIGHTNESS -
+    NICHT jeder Modus tut das, z.B. reine "Direct"-Modi bei manchen
+    Geräten haben kein Brightness-Flag, andere wie "Static" oft
+    schon), und die aktuelle Farbe fürs Vorbelegen des Farbreglers."""
+    from openrgb.utils import ModeFlags
+    mode = dev.modes[dev.active_mode] if dev.modes else None
+    has_brightness = bool(mode and mode.flags & ModeFlags.HAS_BRIGHTNESS)
+    cur_color = dev.colors[0] if dev.colors else None
+    return {
+        "name": dev.name,
+        "type": dev.type.name if hasattr(dev.type, "name") else str(dev.type),
+        "has_brightness": has_brightness,
+        "brightness": mode.brightness if has_brightness else None,
+        "brightness_min": mode.brightness_min if has_brightness else 0,
+        "brightness_max": mode.brightness_max if has_brightness else 100,
+        "color_hex": (f"{cur_color.red:02x}{cur_color.green:02x}{cur_color.blue:02x}"
+                      if cur_color else "ffffff"),
+    }
+
+def _openrgb_find_device(client, name: str):
+    """Sucht ein Gerät über seinen NAMEN statt über einen rohen Index -
+    laut openrgb-python-Doku ist der Listenindex "not ideal ... because
+    the device's index could change if a new device is added, or the
+    order of OpenRGB's detectors is changed". Name ist innerhalb einer
+    laufenden Widget-Sitzung stabil genug (die Hardware ändert sich
+    nicht während das Fenster offen ist)."""
+    for d in client.devices:
+        if d.name == name:
+            return d
+    return None
+
+def _openrgb_set_brightness(dev_name: str, value: int) -> None:
+    """Läuft in einem Hintergrund-Thread (siehe _debounced() im UI-
+    Code) - öffnet dafür eine EIGENE, kurzlebige Verbindung statt die
+    UI-Ladeverbindung wiederzuverwenden, da diese in einem anderen
+    Thread lief und openrgb-python-Verbindungen nicht als thread-safe
+    dokumentiert sind."""
+    client = _openrgb_client()
+    if client is None:
+        return
+    dev = _openrgb_find_device(client, dev_name)
+    if dev is None or not dev.modes:
+        return
+    mode = dev.modes[dev.active_mode]
+    mode.brightness = value
+    try:
+        dev.set_mode(mode)
+    except Exception:
+        pass  # z.B. Gerät kurz nicht erreichbar - UI zeigt einfach weiter den zuletzt gesetzten Wert
+
+def _openrgb_set_color(dev_name: str, hex_color: str) -> None:
+    """Wie _openrgb_set_brightness, für Farbe. Setzt die Farbe des
+    gesamten Geräts (alle LEDs gleich) - reicht für ein einfaches
+    Brightness/Color-Widget; Zonen-/Pro-LED-Steuerung wäre eine
+    eigene, deutlich komplexere Erweiterung."""
+    from openrgb.utils import RGBColor
+    client = _openrgb_client()
+    if client is None:
+        return
+    dev = _openrgb_find_device(client, dev_name)
+    if dev is None:
+        return
+    try:
+        dev.set_color(RGBColor.fromHEX(hex_color))
+    except Exception:
+        pass
+
+def _brightness_content(win: Gtk.Window) -> Gtk.Box:
     root = vbox(4); pad(root, h=10, v=8)
 
     def _on_wallpaper(_):
@@ -1007,32 +1216,204 @@ def _brightness_content() -> Gtk.Box:
     root.pack_start(title_row, False, False, 0)
     root.pack_start(sep(), False, False, 2)
 
-    root.pack_start(bsec("SCREEN"), False, False, 0)
+    root.pack_start(bsec("INTERNAL DISPLAY"), False, False, 0)
 
     def _on_bright(s):
         in_thread(run, ["brightnessctl", "set", f"{int(s.get_value())}%"])
     bright_box, _ = bslider("󰃟", 5, 100, 1, _bright_pct(), cb=_on_bright)
     root.pack_start(bright_box, False, False, 0)
 
+    # ── Externe Monitore (DDC/CI via ddcutil) ────────────────────────
+    # Laptop-Displays unterstützen kein DDC/CI (siehe Kommentar bei
+    # den ddcutil-Helpern oben), deshalb komplett getrennter Pfad vom
+    # brightnessctl-Regler oben. Erkennung ('ddcutil detect') kann
+    # laut ddcutil-Doku mehrere Sekunden dauern - läuft deshalb IMMER
+    # asynchron im Hintergrund-Thread, nie blockierend beim Öffnen des
+    # Widgets. Wird kein externer Monitor gefunden (z.B. nur Laptop-
+    # Display angeschlossen), erscheint dieser Bereich einfach gar
+    # nicht - kein leerer/verwirrender UI-Abschnitt.
+    ext_section = vbox(4)
+    root.pack_start(ext_section, False, False, 0)
+
+    def _build_external_monitor_row(mon: dict, cur_val: int | None) -> Gtk.Box:
+        """Ein Regler pro extern erkanntem Monitor. Debounced wie der
+        Night-Light-Regler weiter unten - DDC/CI-Schreibvorgänge sind
+        laut ddcutil-Doku inhärent langsam (I2C-Bus-Kommunikation),
+        ein Slider, der bei jedem einzelnen Pixel-Drag sofort einen
+        ddcutil-Aufruf feuert, würde die Anfragen stauen und spürbar
+        hinterherhinken bzw. den Regler ruckeln lassen. cur_val kommt
+        bereits FERTIG ABGEFRAGT von _load_external_monitors() - ein
+        Lesevorgang hier (im GTK-Main-Thread, da diese Funktion via
+        GLib.idle_add aufgerufen wird) wäre genauso blockierend wie
+        ein Schreibvorgang."""
+        display_num = mon["display_num"]
+        debounce_id = [0]
+
+        def _on_ext_bright(s):
+            val = int(s.get_value())
+            if debounce_id[0]:
+                GLib.source_remove(debounce_id[0])
+            def _fire():
+                debounce_id[0] = 0
+                in_thread(_ddcutil_set_brightness, display_num, val)
+                return False
+            debounce_id[0] = GLib.timeout_add(200, _fire)
+
+        box, _ = bslider("󰍹", 0, 100, 1, cur_val if cur_val is not None else 50,
+                          cb=_on_ext_bright)
+        if cur_val is None:
+            # Monitor wurde erkannt, antwortet aber nicht auf DDC-
+            # Anfragen (laut FAQ nicht ungewöhnlich, auch bei
+            # eigentlich unterstützten Monitoren) - Regler bleibt
+            # sichtbar (man kann es trotzdem versuchen), aber mit
+            # Hinweis statt einem stillen Rätsel, warum der Wert
+            # "50" zeigt statt dem echten Stand.
+            box.set_tooltip_text(
+                f'{mon.get("name", "Monitor")}: aktueller Wert nicht lesbar '
+                f'(DDC antwortet nicht zuverlässig) - Regler funktioniert '
+                f'trotzdem versuchsweise.')
+        else:
+            box.set_tooltip_text(mon.get("name", "Monitor"))
+        return box
+
+    def _load_external_monitors():
+        monitors = _ddcutil_detect()
+        # Helligkeit für JEDEN Monitor hier im Hintergrund-Thread
+        # vorab abfragen (siehe Docstring oben) - (Monitor, aktueller
+        # Wert)-Paare, damit _apply() unten nur noch fertige Werte in
+        # die UI einsetzen muss, ohne selbst eine DDC-Anfrage zu
+        # blockieren.
+        monitors_with_val = [(mon, _ddcutil_get_brightness(mon["display_num"]))
+                              for mon in monitors]
+        def _apply():
+            if not monitors_with_val:
+                return
+            ext_section.pack_start(sep(), False, False, 2)
+            ext_section.pack_start(bsec("EXTERNAL MONITORS"), False, False, 0)
+            for mon, cur_val in monitors_with_val:
+                row = _build_external_monitor_row(mon, cur_val)
+                ext_section.pack_start(row, False, False, 0)
+            ext_section.show_all()
+        GLib.idle_add(_apply)
+
+    if _ddcutil_available():
+        in_thread(_load_external_monitors)
+
     kbd_dev     = _kbd_backlight_device()
-    has_openrgb = _openrgb_available()
-    if kbd_dev or has_openrgb:
+    if kbd_dev:
         root.pack_start(sep(), False, False, 4)
         root.pack_start(bsec("KEYBOARD BACKLIGHT"), False, False, 0)
-        if kbd_dev:
-            def _on_kbd(s):
-                in_thread(run, ["brightnessctl", "-d", kbd_dev,
-                                 "set", f"{int(s.get_value())}%"])
-            kbd_box, _ = bslider("⌨", 0, 100, 1,
-                                  _kbd_bright_pct(kbd_dev), cb=_on_kbd)
-            root.pack_start(kbd_box, False, False, 0)
-        if has_openrgb:
-            def _on_hue(s):
-                in_thread(run, ["openrgb", "--mode", "static",
-                                 "--color", _hue_to_hex(s.get_value())])
-            hue_box, _ = bslider("󰸌", 0, 359, 1, 0,
-                                  cb=_on_hue, show_val=False)
-            root.pack_start(hue_box, False, False, 0)
+        def _on_kbd(s):
+            in_thread(run, ["brightnessctl", "-d", kbd_dev,
+                             "set", f"{int(s.get_value())}%"])
+        kbd_box, _ = bslider("⌨", 0, 100, 1,
+                              _kbd_bright_pct(kbd_dev), cb=_on_kbd)
+        root.pack_start(kbd_box, False, False, 0)
+
+    # ── OpenRGB: ein Regler-Set PRO ERKANNTEM GERÄT ──────────────────
+    # Ersetzt den früheren einzelnen globalen Hue-Regler. Jedes Gerät
+    # bekommt nur die Regler, die es laut seinem aktuell aktiven Modus
+    # tatsächlich unterstützt - Farbe ist praktisch immer verfügbar,
+    # Helligkeit nur wenn ModeFlags.HAS_BRIGHTNESS gesetzt ist (siehe
+    # _openrgb_device_info oben). Erkennung + SDK-Serverstart laufen
+    # komplett asynchron - openrgb-python macht synchrone Netzwerk-
+    # Aufrufe, ein direkter Aufruf im GTK-Main-Thread würde das Fenster
+    # einfrieren, bis der Server geantwortet hat (oder der Verbindungs-
+    # Timeout abläuft, falls kein OpenRGB installiert ist).
+    rgb_section = vbox(4)
+    root.pack_start(rgb_section, False, False, 0)
+
+    def _build_rgb_device_row(info: dict) -> Gtk.Box:
+        dev_name = info["name"]  # stabiler Schlüssel statt Listenindex,
+                                  # siehe _openrgb_find_device()-Kommentar
+        box = vbox(3)
+        box.get_style_context().add_class("bubble")
+        pad(box, h=8, v=6)
+        name_lbl = Gtk.Label(label=f'{info["name"]} ({info["type"].title()})')
+        name_lbl.set_halign(Gtk.Align.START)
+        name_lbl.get_style_context().add_class("caption")
+        box.pack_start(name_lbl, False, False, 0)
+
+        debounce_id = [0]
+
+        def _debounced(fn, *args, delay=200):
+            if debounce_id[0]:
+                GLib.source_remove(debounce_id[0])
+            def _fire():
+                debounce_id[0] = 0
+                in_thread(fn, *args)
+                return False
+            debounce_id[0] = GLib.timeout_add(delay, _fire)
+
+        if info["has_brightness"]:
+            def _on_bri(s, n=dev_name):
+                _debounced(_openrgb_set_brightness, n, int(s.get_value()))
+            bri_box, _ = bslider(
+                "󰃟", info["brightness_min"], info["brightness_max"], 1,
+                info["brightness"] or 0, cb=_on_bri)
+            box.pack_start(bri_box, False, False, 0)
+
+        swatch_css = Gtk.CssProvider()
+
+        def _apply_swatch_color(hexcol: str):
+            swatch_css.load_from_data(
+                f"#swatch{id(swatch_css)} {{ background-color: #{hexcol}; "
+                f"min-width: 22px; min-height: 14px; border-radius: 4px; }}"
+                .encode())
+
+        def _on_color(_w, n=dev_name):
+            dlg = Gtk.ColorChooserDialog(title="Farbe wählen", transient_for=win)
+            dlg.set_use_alpha(False)
+            resp = dlg.run()
+            if resp == Gtk.ResponseType.OK:
+                rgba = dlg.get_rgba()
+                hexcol = "{:02x}{:02x}{:02x}".format(
+                    int(rgba.red * 255), int(rgba.green * 255), int(rgba.blue * 255))
+                _apply_swatch_color(hexcol)
+                _debounced(_openrgb_set_color, n, hexcol, delay=0)
+            dlg.destroy()
+
+        color_row = hbox(6)
+        color_lbl = Gtk.Label(label="Farbe:")
+        color_lbl.get_style_context().add_class("caption")
+        color_btn = Gtk.Button()
+        color_btn.get_style_context().add_class("bubble")
+        color_btn.set_can_focus(False)
+        swatch = Gtk.Label(label="")
+        swatch.set_name(f"swatch{id(swatch_css)}")
+        swatch.get_style_context().add_provider(
+            swatch_css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+        _apply_swatch_color(info["color_hex"])
+        color_btn.add(swatch)
+        color_btn.connect("clicked", _on_color)
+        color_row.pack_start(color_lbl, False, False, 0)
+        color_row.pack_start(color_btn, False, False, 0)
+        box.pack_start(color_row, False, False, 0)
+
+        return box
+
+    def _load_rgb_devices():
+        client = _openrgb_client()
+        if client is None:
+            return
+        try:
+            devices = [_openrgb_device_info(d) for d in client.devices]
+        except Exception:
+            devices = []
+
+        def _apply():
+            if not devices:
+                return
+            rgb_section.pack_start(sep(), False, False, 2)
+            rgb_section.pack_start(bsec("RGB DEVICES"), False, False, 0)
+            for info in devices:
+                row = _build_rgb_device_row(info)
+                rgb_section.pack_start(row, False, False, 0)
+            rgb_section.show_all()
+        GLib.idle_add(_apply)
+
+    if _openrgb_available():
+        in_thread(_load_rgb_devices)
 
     root.pack_start(sep(), False, False, 4)
 
@@ -1096,7 +1477,7 @@ def _brightness_content() -> Gtk.Box:
 
 def build_brightness(win: Gtk.Window):
     win.set_default_size(360, 1)
-    win.add(_brightness_content())
+    win.add(_brightness_content(win))
 
 # ════════════════════════════════════════════════════════════
 #  BATTERY
@@ -2454,7 +2835,7 @@ SETTINGS_CATEGORIES = [
 ]
 
 def _build_settings_brightness(page: Gtk.Box, key: str, label: str, win: Gtk.Window) -> None:
-    page.pack_start(_brightness_content(), True, True, 0)
+    page.pack_start(_brightness_content(win), True, True, 0)
 
 def _build_settings_audio(page: Gtk.Box, key: str, label: str, win: Gtk.Window) -> None:
     page.pack_start(_volume_content(), True, True, 0)

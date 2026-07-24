@@ -1,0 +1,17 @@
+Der Menü-Eintrag (z. B. für dein bubble-menu.py oder Bash-Array):
+Python
+
+# Wenn es ein Python-Dictionary ist:
+"󰕰 Layout": "bash -c 'c=$(cat ~/.cache/hypr/layout_switcher_state 2>/dev/null); case \"$c\" in master) n=dwindle;; dwindle) n=scroller;; scroller) n=floating;; floating) n=bigscreen;; *) n=master;; esac; bash ~/.config/hypr/layout_switcher.sh \"$n\"'"
+
+(Falls du das Powermenü über ein Bash-Skript steuerst, nimmst du einfach den Text ab bash -c ... als Exec-Command für den ausgewählten Rofi-String).
+📝 Notizen: Was du noch anpassen musst
+
+    Spaltenzahl (Columns) erhöhen:
+    Du musst Rofi sagen, dass es jetzt breiter rendern soll. Suche in deiner Powermenü-Konfiguration (oft eine .rasi-Theme-Datei oder direkt in den Rofi-Startparametern als -theme-str 'listview { columns: X; }') nach columns und erhöhe den Wert (z. B. von 3 auf 4 oder entsprechend deines Grid-Aufbaus).
+
+    Dummy-Einträge für die 2 freien Plätze:
+    Damit dein Grid bis zu deiner nächsten Idee symmetrisch bleibt, solltest du vorübergehend zwei leere Platzhalter-Einträge hinzufügen (z. B. " ": "true"), damit das Layout nicht unschön umbricht.
+
+    Visuelles Feedback (Optional):
+    Da sich das Rofi-Menü nach dem Klick schließt, siehst du nicht direkt, welches Layout jetzt aktiv ist. Du kannst ganz am Ende des Einzeilers (vor dem allerletzten ') noch ein && notify-send "Layout:" "$n" anhängen, um eine kurze Desktop-Benachrichtigung aufpoppen zu lassen.

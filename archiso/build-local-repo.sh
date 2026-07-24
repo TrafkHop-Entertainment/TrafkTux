@@ -26,6 +26,7 @@ AUR_PACKAGES=(
   hyprshade
   hyprland-minimizer-git
   wvkbd
+  python-openrgb-git
 )
 
 mkdir -p "${REPO_DIR}" "${BUILD_DIR}"

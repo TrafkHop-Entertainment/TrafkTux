@@ -1,0 +1,15 @@
+<?xml version="1.1" encoding="UTF-8"?>
+
+<channel name="xfce4-terminal" version="1.0">
+  <property name="font-use-system" type="bool" value="true"/>
+  <property name="background-mode" type="string" value="TERMINAL_BACKGROUND_SOLID"/>
+  <property name="background-darkness" type="double" value="1"/>
+  <property name="color-use-theme" type="bool" value="true"/>
+  <property name="color-background-vary" type="bool" value="false"/>
+  <property name="color-cursor-use-default" type="bool" value="true"/>
+  <property name="misc-menubar-default" type="bool" value="false"/>
+  <property name="scrolling-unlimited" type="bool" value="true"/>
+  <property name="misc-cursor-shape" type="string" value="TERMINAL_CURSOR_SHAPE_IBEAM"/>
+  <property name="misc-cursor-blinks" type="bool" value="false"/>
+  <property name="overlay-scrolling" type="bool" value="true"/>
+</channel>

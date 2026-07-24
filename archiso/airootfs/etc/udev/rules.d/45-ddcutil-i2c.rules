@@ -1,0 +1,10 @@
+# Ziel im Archiso-Profil: airootfs/etc/udev/rules.d/45-ddcutil-i2c.rules
+#
+# Identisch zu der Regel-Datei, die das ddcutil-Paket selbst unter
+# /usr/share/ddcutil/data/45-ddcutil-i2c.rules mitbringt - hier als
+# eigene Kopie im Profil, damit sie GARANTIERT schon beim ersten Boot
+# des installierten Systems aktiv ist (sonst muesste man sie nach der
+# Installation erst manuell kopieren). Gibt der Gruppe "i2c" Lese-/
+# Schreibrechte auf /dev/i2c-* - ohne das braeuchte ddcutil root, was
+# fuer ein Widget, das als normaler User laeuft, nicht praktikabel ist.
+KERNEL=="i2c-[0-9]*", GROUP="i2c", MODE="0660"

@@ -17,6 +17,7 @@ PACKAGES=(
   hyprshade
   hyprland-minimizer-git
   wvkbd
+  python-openrgb-git
 )
 
 if [[ ! -d "${REPO_DIR}" ]]; then

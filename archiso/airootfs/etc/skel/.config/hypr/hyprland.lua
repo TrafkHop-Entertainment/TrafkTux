@@ -22,7 +22,7 @@ hl.monitor({
 })
 
 -- Programme & Befehle
-local terminal       = "kitty"
+local terminal       = "xfce4-terminal"
 local fileManager    = "thunar"
 local menu           = "rofi -show drun"
 local openwindows    = "rofi -show window"
@@ -265,7 +265,7 @@ hl.bind(mainMod .. " + ALT + tab", hl.dsp.exec_cmd(
         "bash -c 'p=/tmp/waybar-autohide.pid; [ -f \"$p\" ] && kill -RTMIN+1 $(cat \"$p\")'"
     ), { description = "Waybar-Autohide sperren/entsperren" })
 
-hl.bind(mainMod .. " + R", hl.dsp.exec_cmd('kitty -e bash -c "/run/media/hopx/HopxSSD/TrafkSite/Projects/TrafkTux/TrafkTux/syncwithsystem.sh"'), { description = "Sync with system" })
+hl.bind(mainMod .. " + R", hl.dsp.exec_cmd('xfce4-terminal -x bash -c "/run/media/hopx/HopxSSD/TrafkSite/Projects/TrafkTux/TrafkTux/SyncMainConfigs.sh"'), { description = "Sync with system" })
 
 hl.bind(mainMod .. " + H", hl.dsp.exec_cmd("bash ~/.config/waybar/scripts/hideall.sh toggle"), { description = "Alle Fenster verstecken/wiederherstellen" })
 
@@ -542,3 +542,104 @@ hl.window_rule({
     float = true,
     pin = true,
 })
+
+
+
+
+
+-- ============================================================
+-- Dynamische Fenster-Snaps (Floating)
+-- ============================================================
+
+-- Prüft, ob das aktuelle Fenster im Floating-Modus ist
+local function is_window_floating()
+local win = hl.get_active_window()
+return win and win.floating or false
+end
+
+-- Holt die Geometrie des Monitors, auf dem das aktive Fenster liegt
+local function get_active_monitor_geometry()
+local win = hl.get_active_window()
+if not win then return nil end
+    local mon_id = win.monitor
+    local monitors = hl.get_monitors()
+    for _, mon in ipairs(monitors) do
+        if mon.id == mon_id then
+            return { x = mon.x, y = mon.y, width = mon.width, height = mon.height }
+            end
+            end
+            return nil
+            end
+
+            -- Snap: bewegt und resized das aktive Fenster auf Bruchteile des Monitors
+            local function snap_window_fraction(x_frac, y_frac, w_frac, h_frac)
+            local geo = get_active_monitor_geometry()
+            if not geo then return end
+                local x = math.floor(geo.x + geo.width * x_frac)
+                local y = math.floor(geo.y + geo.height * y_frac)
+                local w = math.floor(geo.width * w_frac)
+                local h = math.floor(geo.height * h_frac)
+
+                if w < 1 then w = 1 end
+                    if h < 1 then h = 1 end
+
+                        -- BEHOBEN: os.execute führt den Befehl aus der Lua-Funktion direkt an die Shell weiter.
+                        -- BEHOBEN: "movewindowpixel" und "resizewindowpixel" verwenden, wenn es um exakte Koordinaten geht.
+                        os.execute(string.format("hyprctl dispatch movewindowpixel exact %d %d,active", x, y))
+                        os.execute(string.format("hyprctl dispatch resizewindowpixel exact %d %d,active", w, h))
+                        end
+
+                        -- ============================================================
+                        -- 1. Fenster resize mit SUPER + SHIFT + wasd (50 px Schritte)
+                        -- ============================================================
+                        -- BEHOBEN: repeating = true hinzugefügt, damit man die Taste gedrückt halten kann
+                        hl.bind(mainMod .. " + SHIFT + w", hl.dsp.exec_cmd("hyprctl dispatch resizeactive 0 -50"), { repeating = true })
+                        hl.bind(mainMod .. " + SHIFT + s", hl.dsp.exec_cmd("hyprctl dispatch resizeactive 0 50"), { repeating = true })
+                        hl.bind(mainMod .. " + SHIFT + a", hl.dsp.exec_cmd("hyprctl dispatch resizeactive -50 0"), { repeating = true })
+                        hl.bind(mainMod .. " + SHIFT + d", hl.dsp.exec_cmd("hyprctl dispatch resizeactive 50 0"), { repeating = true })
+
+                        -- ============================================================
+                        -- 2. Fensterposition tauschen (swap) mit SUPER + CTRL + wasd
+                        --    (Tiling → swapwindow, Floating → Seiten-Snap)
+                        -- ============================================================
+                        -- BEHOBEN: os.execute verwendet und u, d, l, r als Parameter für swapwindow
+                        hl.bind(mainMod .. " + CTRL + w", function()
+                        if is_window_floating() then
+                            snap_window_fraction(0, 0, 1, 0.5)   -- oben (volle Breite, halbe Höhe)
+                        else
+                            os.execute("hyprctl dispatch swapwindow u")
+                            end
+                            end)
+
+                        hl.bind(mainMod .. " + CTRL + s", function()
+                        if is_window_floating() then
+                            snap_window_fraction(0, 0.5, 1, 0.5) -- unten
+                            else
+                                os.execute("hyprctl dispatch swapwindow d")
+                                end
+                                end)
+
+                        hl.bind(mainMod .. " + CTRL + a", function()
+                        if is_window_floating() then
+                            snap_window_fraction(0, 0, 0.5, 1)   -- links (halbe Breite, volle Höhe)
+                        else
+                            os.execute("hyprctl dispatch swapwindow l")
+                            end
+                            end)
+
+                        hl.bind(mainMod .. " + CTRL + d", function()
+                        if is_window_floating() then
+                            snap_window_fraction(0.5, 0, 0.5, 1) -- rechts
+                            else
+                                os.execute("hyprctl dispatch swapwindow r")
+                                end
+                                end)
+
+                        -- ============================================================
+                        -- 3. Floating-Snaps für die 4 Ecken mit SUPER + CTRL + q/e/y/c
+                        -- ============================================================
+                        -- BEHOBEN: "w + a" etc. war ungültig. Auf DE-Tastatur optimierte Einzeltasten gelegt.
+                        hl.bind(mainMod .. " + CTRL + q", function() snap_window_fraction(0, 0, 0.5, 0.5) end)   -- oben links
+                        hl.bind(mainMod .. " + CTRL + e", function() snap_window_fraction(0.5, 0, 0.5, 0.5) end) -- oben rechts
+                        hl.bind(mainMod .. " + CTRL + x", function() snap_window_fraction(0, 0.5, 0.5, 0.5) end) -- unten links
+                        hl.bind(mainMod .. " + CTRL + less", function() snap_window_fraction(0.5, 0.5, 0.5, 0.5) end) -- unten rechts

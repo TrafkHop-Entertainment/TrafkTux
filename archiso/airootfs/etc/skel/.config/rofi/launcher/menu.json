@@ -8,10 +8,10 @@
       "icon": "computer",
       "children": [
         {
-          "name": "Kitty",
+          "name": "Xfce4 Terminal",
           "type": "app",
           "icon": "utilities-terminal",
-          "exec": "kitty"
+          "exec": "xfce4-terminal"
         },
         {
           "name": "Thunar",
@@ -55,7 +55,7 @@
           "name": "Fastfetch",
           "type": "app",
           "icon": "utilities-system-monitor",
-          "exec": "kitty --hold fastfetch"
+          "exec": "xfce4-terminal --hold fastfetch"
         }
       ]
     },
@@ -180,7 +180,7 @@
           "name": "Btop",
           "type": "app",
           "icon": "utilities-system-monitor",
-          "exec": "kitty btop"
+          "exec": "sfce4-terminal btop"
         },
         {
           "name": "GParted",
