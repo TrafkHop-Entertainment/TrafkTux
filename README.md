@@ -2,14 +2,13 @@
 Copyright © 2026 TrafkHop Entertainment™
 All rights reserved.
 # TrafkTux
-An Arch + Hyprland based Distibution, designed soly for TrafkHop Entertainment and more specificly HoppiTex.
-TrafkTux is not light weight by any means, it leans mroe on the maximalistic side, featuring many pictures as essential parts of the OS.
+TrafkTux is a maximalistic Arch + Hyprland Distribution with a very specific style. Created by HoppiTex in 2026, designed to his exact liking. This Distro is designed for HoppiTex and TrafkHop fans / people that think this distro looks very nice!
 
 # Programms
-The Preinstalled apps are:
+The Core apps that are always preinstalled are:
 * pamac software manager
 * Ark
-* Kitty
+* xfce4-terminal
 * Thunar
 * Kolourpaint
 * Kate
@@ -21,6 +20,9 @@ The Preinstalled apps are:
 * Btop, GParted, Gnome Disks
 
 # Optional packages
+
+Optional Packages is a very long list of apps that HoppiTex uses and approves of). 
+They can be installed in the settings menu under the App launcher editor.
 
 ## Social
 * discord (pacman)
@@ -145,7 +147,7 @@ ollama, ollama-cuda
 # Features + Theming:
 
 ### Keyboard Shortcuts:
-* SUPER + Space = Kitty
+* SUPER + Space = xfce4-terminal
 * Super + F = Thunar
 * Super + ^ Fullscreeen 1
 * Super + Shift + ^ = Fullscreen 0
@@ -157,20 +159,64 @@ ollama, ollama-cuda
 * Super + Druck = Screenshot in cliphist
 * Super + Shift + Druck = Screenshot in ~/Screenshots
 * Super + WASD = Change active window
+* Super + Shift + WASD = change active window size
+* Super + CTRL + WASD = Swap windows
+* Super + CTRL + WASDQEX< = snap window to one of 8 points on active display on floating environment
 * Super + ALT + 12345 = Dwindle,Master, Scroller, Floating, Monocycle
 + Super + 1-9 = Switch workspace
 + Super + Shift + 1-9 = move active window to workspace
 * Laptop Keys also work
 
+## Performance
+
+TrafkTux may not be the most optimised Distribution out there, but it is still leightweight compared to some other OS's!
+(credits to xr7-code)
+
+ISO size: 3.0GB
+
+### Stats
+
+| State | ~ RAM |
+|---|---|
+| Desktop no open Apps | ~1,35 GB |
+| + Firefox (1–5 Tabs) | + ~ 1,35 GB |
+| + Firefox (many Tabs; ~30) | + ~ 1,98 GB |
+| + Thunar + Xfce4-terminal open | + ~ 0,02 GB |
+| + Discord + Steam open | + ~ 1,35 GB |
+
+## Comparison
+
+| System | Idle RAM (approx.) |
+|---|---|
+| Windows 11 | ~3.5 GB |
+| Ubuntu (GNOME) | ~1.5 GB |
+| **TrafkTux** | **~1,35 GB** |
+| KDE Plasma | ~900 MB |
+| Arch Linux with i3 | ~400–500 MB |
+| SnowFoxOS | ~350–420 MB |
+
+
+## Minimum Requirements:
+A somewhat modern CPU+GPU
+4GB of ram
+8GB of Disk Space
+
+## Reccomended Specs
+A mid tier cpu+gpu
+16GB of ram
+Enough Disk Space for yourself (8+GB)
+Internet + Bluetooth + ETC capable Device
+
+
 ## Hyprland
 Hyprland is styled with a light yellow shadow and a hyprbar where you can close, minimize, fullscreen, switch master and pin apps.
 We have 5 Desktop Layouts that can be switched wich SUPER + ALT + 1-5: Dwindle, Master, Scroller, Floating, Monocle
-There is Touchscreen support, but do not expect a great experience.
+There is full Touchscreen support! Rofi Menus, waybar, everything, even an onscreen keyboard.
 There are nice snappy animation that wobble a bit.
 
 ## Waybar
 We have a nice Waybar, that autohides itself as long as the mouse is up enough. You can block the waybar from showing up with SUPER + ALT + ^, wich is useful in many games and programs.
-On the Left side you can activate the ROfi app and Power Menu, a workspace overview, a hide all windows button and configurable shortcuts to apps. On the Middle there you can switch between all open workspaces and apps. On the right side there are 6 custom python widgets for audio, wifi, bluetooth, brightness, power and time. There is also a on screen keyboard button and a tray of background apps, where you can also put any app in to free up some space. With the left click you can switch to the app, right click sends it into the tray and middle click closes it.
+On the Left side you can activate the ROfi app and Power Menu, a workspace overview, a hide all windows button and configurable shortcuts to apps. On the Middle there you can switch between all open workspaces and apps. On the right side there are standardly 7 custom python widgets for audio, wifi, bluetooth, brightness, power/system time/calender/weather and settings. There is also a on screen keyboard button and a tray of background apps, where you can also put any app in to free up some space. With the left click you can switch to the app, right click sends it into the tray and middle click closes it.
 
 ### Widgets
 1. Audio
@@ -184,11 +230,17 @@ Here you can select all internet access points (password is not stored, you need
 3. Bluetooth
 Connect, disconnect, sync and delete all of your bluetooth devicces
 4. Brightness
-Control you screens brightness, your keyboard brightness and Nightlight intensitivity aswell (wip)
-5. Battery
-Look at your percentage and change the Energyprofile
+Control you screens brightness, your keyboard brightness and Nightlight intensitivity aswell (wip).
+Also control every one of you rgb devices with built in openrgb!
+Multimonitor support?!
+5. Battery/System
+Look at your percentage, Watts and change the Energyprofile.
+Also some key system overview like ram, cpu, gpu, disk size, swap, etc.
 6. Calender
-Here you have a overview of the date, the month and so on. Also you can view the weather (can be changed to a better location) (wip)
+Here you have a overview of the date, the month and so on. You can insert appointsments. The Weather is displayed above, with 2 days in advance as well and it also has a button to change the weather location.
+7. Settings
+Here are all of the previosly mentioned settings + extra ones, like Display, where you can change the resolution to anything you desire; want 4:3, sure, want a 144p diplay? sure! Want to downscale? please do!
+Here also lies (will lie) the App Launcher Editor and also a color sceme changer and many more settings!
 
 ## Rofi
 We have 2 Manus:
@@ -199,6 +251,7 @@ The Power Menu, as the name says, is where you can
 * Swap apps with master
 * Border Fullscreen apps
 * Exclusive Fullascreen apps
+* change the layout (all 5 of them)
 * Lock the PC
 * Suspend the PC
 * Shut it down
@@ -219,7 +272,7 @@ x for leaving the folder/menu
 It also has touch support!
 
 ## Hyprpaper
-* On every Startup you get a randomly selected backgroundimage from a folder in ~./config/hypr/wallpapers
+* On every Startup you get a randomly selected backgroundimage from a folder in ~./config/hypr/wallpapers. you can rerandomize it in the brightness menu.
 
 ## Calamares
 * For now a very barebones installer of the base Distro
@@ -234,11 +287,10 @@ The Installer is completely offline! No Internet required!
 
 ## Theming
 We have themed a lot of apps:
-* kitty
 * Dunst
-* GTK
+* GTK 2-3-4
 * Kvantum (Kate, Kolourpaint, KDE apps)
-* HyprCursor
+* HyprCursor v1
 * HyprLock
 * Fastfetch
 
@@ -246,12 +298,19 @@ We have themed a lot of apps:
 * SDDM
 * GRUB
 * PLYMOUTH
-* GTK*
-* CALAMARES*
+* CALAMARES
 * Optional Package Installer
 * App Menu Folder Settings App (python + gtk)
+* Mouse Cursor redesign
+* Widgets Redesign!!
 
-## Widgets
+# Unfinished features:
+* App Editor
+Rofi App Menu apps editor, autostarted apps, waybar shortcuts, add custom things as apps to rofi
+* new Kernel + security things (optimisation somewhat done)
+
+
+### Widgets (in progress and a bit outdated as some of those features are already in place) (From now on only Developer Notes, do not take this into account)
 * Add advanced brighness control to individual monitors and add a second tab for other devices with an openrgb integration wich will only open on a button press. either you can already detect all of the glowing devices and can control the brightness and color with an already running daemon or you start the app in the background when you press a button or we just implement a button wich will launch the app wich will open in the widget as a fixed object (1. preferred 3. last chance)
 * Add for the calender an integration with a calender app for fast appointments, etc. and also add a button for UI location change.
 * *Check Network for LAN and other methods of connectivity and implement snowfoxOS's Mesh connect when released (wich it has not).
@@ -270,18 +329,3 @@ other screeen options }
 Just think yourself......... idk settings, you can and should ask me, give me a list and ill think.
 
 End of Notes
-
-
-## FIXES
-1. Waybar hintergrund ist zu, naja, 2d. Da muss noch ein effekt drauf, damit es 3d artig ausschaut, farbunterschiede von unten nach oben oder was besseres.
-
-2. Widgets UI redesign (siehe Bild)
-
-3. Akku probleme, also waybar autohide und widgets, beheben (und vielleicht die pyhton sachen in C umschreiben)
-
-## POWER PROBLEM
-5 % in 6 Minuten ist absolut brutal – das sind hochgerechnet knapp 2 Stunden Laufzeit. Kein Wunder, dass du durchdrehst!Hier ist die gnadenlose Zusammenfassung der drei massiven Akku-Fresser, die dein Setup gerade parallel grillen:1. Die Zombie-Apokalypse im Python-Daemon (widgets_daemon.py)Der Effekt: 6 bis 12 % konstante CPU-Last in btop, was bei deinem Ryzen 7 8845HS bedeutet, dass 1 bis 2 komplette CPU-Threads permanent auf 100 % laufen.Die Ursache: Ein Logik-Fehler beim dynamischen Laden (Lazy-Loading) der Settings-Unterseiten. Sobald ein Tab gebaut wird, werden per add_timer neue Hintergrund-Aktualisierungen gestartet. Da in diesem speziellen Ladevorgang die globale Fenster-Variable kurzzeitig None ist, werden die Timer nicht registriert.  Das Resultat: Beim Schließen der Settings räumt die _cleanup-Funktion diese Timer nicht ab. Mit jedem Klick in den Settings spawnst du unsterbliche Hintergrund-Schleifen, die exponentiell anwachsen und im Sekundentakt Subprozesse abfeuern.  2. Das IPC-Dauerfeuer im C-Skript (waybar_autohide.c)Der Effekt: Die CPU kommt nie in die tiefen, stromsparenden Schlafmodi (C8+) und verbringt stattdessen 75 % der Zeit im extrem aktiven C3-Zustand.Die Ursache: Eine viel zu aggressive Polling-Rate. Die Hauptschleife deines C-Skripts pausiert per nanosleep exakt 10 Millisekunden (10 * 1000000L).  Das Resultat: Das Skript zwingt das System, 100-mal pro Sekunde über den Unix-Socket mit Hyprland zu kommunizieren, um die cursorpos abzufragen. Dieser permanente Traffic hält den kompletten Bus und die CPU gnadenlos wach. Ein Ändern auf 100ms (10-mal pro Sekunde) reicht völlig und killt 90 % der Wakeups.  3. Deaktiviertes Hardware-Power-Management (PCIe ASPM)Der Effekt: Hardware-Komponenten werden durchgehend mit voller Energie versorgt, selbst wenn du nichts tust.Die Ursache: Im Gegensatz zu GNOME oder KDE bringt ein reines Hyprland-Setup out-of-the-box keinen Dienst mit, der das Power-Management (Runtime PM) der Schnittstellen verwaltet.Das Resultat: Wie dein Powertop-Screenshot gezeigt hat, laufen deine NVMe-SSD, der WLAN/Bluetooth-Chip, die USB-Controller und der interne AMD Data Fabric konstant auf 100,0 % Nutzung. Zwar hast du das per --auto-tune manuell auf "Good" gesetzt, aber ohne einen installierten Hintergrunddienst wie TLP oder einen Powertop-Systemd-Service ist dieser extrem wichtige Stromsparmodus beim nächsten Reboot sofort wieder weg.
-
-
-(nur zur info, ich hab schon power profiles daemon installiert, vielleicht greifts hald nur nicht ganz???) (ne greift nicht, performance und power saver ist bei mri das selbe....... bruh)
-

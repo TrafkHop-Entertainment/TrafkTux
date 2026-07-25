@@ -1,9 +1,8 @@
 /**
- * Bubble Power-Menü Theme — 3×3 Grid
+ * Bubble Power-Menü Theme — 6×3 Grid
  *
- * Zeile 1-2: Close/Reboot/Suspend/Shutdown/Logout/Lock (aus menu.json)
- * Zeile 3:   [leer] Exit [leer] — Exit mittig, automatisch von
- *            bubble-menu.py angehängt (build_powermenu_entries()).
+ * 16 Aktionen + Exit + 1 Platzhalter (menu.json) füllen das Grid exakt
+ * (18 Slots = 6 Spalten x 3 Zeilen).
  *
  * Nutzt dieselben Assets wie der Launcher:
  *   ~/.config/rofi/assets/bubble-normal.png
@@ -38,9 +37,10 @@ window {
     background-color:   rgba(0,0,0,0);
     border:             0px;
     padding:            0px;
-    /* 3 Spalten à cell-size (350px) + 2 Gaps à cell-gap (35px)
-       + 2x mainbox-Padding (35px links/rechts) */
-    width: 855px;
+    /* 6 Spalten + 5 Gaps à cell-gap (35px) + 2x mainbox-Padding (35px
+       links/rechts) — gleiche effektive Spaltenbreite wie zuvor (170px
+       pro Spalte), nur um zwei Spalten erweitert. */
+    width: 1265px;
     max-width:          100%;
     location:           center;
     anchor:             center;
@@ -59,7 +59,7 @@ inputbar {
 
 listview {
     background-color:   @bg-transparent;
-    columns:            4;
+    columns:            6;
     lines:              3;
     flow:               horizontal;
     fixed-columns:      true;

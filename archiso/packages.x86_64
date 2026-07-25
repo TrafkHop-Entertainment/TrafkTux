@@ -156,6 +156,7 @@ btop
 nano
 bash-completion
 khal
+python-psutil
 
 # --- Anzeigemanager ---
 sddm

@@ -1492,6 +1492,184 @@ def _bat() -> dict | None:
         return {"cap": cap, "status": status}
     except: return None
 
+def _battery_present() -> bool:
+    """Reine Existenzprüfung (kein Wert-Parsing nötig) - Grundlage für
+    den Akku-Tab-vs-System-Monitor-Umschalter im Settings-Widget.
+    Bewusst dieselbe Quelle wie _bat() (BAT*-Glob unter sysfs), nicht
+    z.B. 'upower -e', damit beide Funktionen bei "hat/hat keinen Akku"
+    niemals auseinanderlaufen können."""
+    return bool(list(Path("/sys/class/power_supply").glob("BAT*")))
+
+def _bat_power_info() -> dict:
+    """Aktueller Verbrauch (Watt) + Restlaufzeit über 'upower -i',
+    NICHT über rohes sysfs-Parsen (power_now/current_now) - upower
+    normalisiert bereits bekannte Treiber-Eigenheiten (manche Treiber
+    liefern gar kein power_now, manche liefern negative Werte je nach
+    Kernel-Version), das selbst nachzubauen wäre fehleranfälliger als
+    ein bereits etabliertes Tool zu nutzen. Rückgabe: {"watts": float
+    | None, "time_str": str | None} - beide None, falls upower fehlt
+    oder das Gerät gerade keine Rate ausweist (z.B. "fully-charged")."""
+    path = run(["bash", "-c", "upower -e 2>/dev/null | grep -i battery | head -1"])
+    if not path:
+        return {"watts": None, "time_str": None}
+    out = run(["upower", "-i", path])
+    watts = None
+    time_str = None
+    for line in out.splitlines():
+        line = line.strip()
+        if line.startswith("energy-rate:"):
+            m = re.search(r'([\d.,]+)\s*W', line)
+            if m:
+                try: watts = float(m.group(1).replace(",", "."))
+                except ValueError: pass
+        elif line.startswith("time to empty:") or line.startswith("time to full:"):
+            time_str = line.split(":", 1)[1].strip()
+            time_str += " bis leer" if "empty" in line else " bis voll"
+    return {"watts": watts, "time_str": time_str}
+
+# ════════════════════════════════════════════════════════════
+#  System-Monitor (Ersatz für den Akku-Tab auf Geräten ohne Akku,
+#  z.B. Desktop-PCs - siehe _battery_present())
+# ════════════════════════════════════════════════════════════
+_POWER_HELPER_CACHE = {"path": None, "checked": False}
+
+def _power_helper_path() -> str | None:
+    """Pfad zum SUID-root-Helper (wb-power-helper), der NUR die RAPL-
+    Datei liest - siehe dessen ausführlichen Kommentar für den
+    Hintergrund (PLATYPUS-CVE, amd_energy-Treiber entfernt, udev
+    hilft hier nicht). Sucht an einem festen Installationsort UND im
+    PATH, damit sowohl eine System-Paketinstallation als auch ein
+    manuell abgelegtes Binary funktionieren. Ergebnis wird gecacht -
+    ändert sich nicht zur Laufzeit."""
+    if not _POWER_HELPER_CACHE["checked"]:
+        _POWER_HELPER_CACHE["checked"] = True
+        candidates = ["/usr/local/bin/wb-power-helper",
+                      "/usr/bin/wb-power-helper"]
+        for c in candidates:
+            if os.path.isfile(c) and os.access(c, os.X_OK):
+                _POWER_HELPER_CACHE["path"] = c
+                break
+        else:
+            which = run(["which", "wb-power-helper"])
+            if which:
+                _POWER_HELPER_CACHE["path"] = which
+    return _POWER_HELPER_CACHE["path"]
+
+def _cpu_watts() -> float | None:
+    """Liefert CPU-Package-Watt über den SUID-Helper, oder None falls
+    der Helper fehlt/nicht ausführbar ist/RAPL nicht lesbar war -
+    NIEMALS eine geschätzte Zahl (siehe Diskussion: eine Schätzung von
+    CPU% auf Watt wäre irreführend, keine echte Messung). Der Helper
+    braucht ca. 200ms (siehe SAMPLE_MS im C-Code) - deshalb IMMER aus
+    einem Hintergrund-Thread aufrufen, nie direkt im GTK-Main-Thread."""
+    helper = _power_helper_path()
+    if not helper:
+        return None
+    out, _err, ec = run_ec([helper], timeout=2)
+    if ec != 0 or not out:
+        return None
+    try:
+        return float(out.strip())
+    except ValueError:
+        return None
+
+def _amdgpu_paths() -> dict:
+    """Findet den ersten amdgpu-Kartenordner + dessen hwmon-Unterordner
+    (Nummer wie 'hwmon3' ist nicht vorhersagbar, wird pro Boot vom
+    Kernel vergeben - deshalb hier per glob statt fest kodiert
+    gesucht). Gecacht wäre riskant, falls sich das zwischen Boots
+    ändert und der Daemon lange läuft - deshalb bewusst NICHT gecacht,
+    trotz des kleinen wiederkehrenden glob-Aufwands."""
+    for card in sorted(Path("/sys/class/drm").glob("card*")):
+        vendor_f = card / "device" / "vendor"
+        if not vendor_f.is_file():
+            continue
+        try:
+            if vendor_f.read_text().strip() != "0x1002":  # AMD PCI Vendor-ID
+                continue
+        except Exception:
+            continue
+        hwmon_dirs = list((card / "device" / "hwmon").glob("hwmon*")) \
+            if (card / "device" / "hwmon").is_dir() else []
+        return {"card": card, "hwmon": hwmon_dirs[0] if hwmon_dirs else None}
+    return {}
+
+def _gpu_stats() -> dict:
+    """AMD-GPU Auslastung/Temperatur/Watt rein über sysfs, kein extra
+    Tool (radeontop/rocm-smi) nötig. gpu_busy_percent und die hwmon-
+    Werte sind normalerweise world-readable (im Gegensatz zu RAPL),
+    daher hier explizit NICHT über den SUID-Helper, sondern direkt
+    gelesen. Nvidia/Intel-GPUs werden hier bewusst nicht unterstützt -
+    dieses Projekt ist auf AMD-Hardware (Ryzen mit integrierter AMD-
+    GPU) ausgelegt, siehe restlicher Code."""
+    paths = _amdgpu_paths()
+    if not paths:
+        return {}
+    result = {}
+    try:
+        busy_f = paths["card"] / "device" / "gpu_busy_percent"
+        if busy_f.is_file():
+            result["busy_pct"] = int(busy_f.read_text().strip())
+    except Exception:
+        pass
+    hwmon = paths.get("hwmon")
+    if hwmon:
+        try:
+            temp_f = hwmon / "temp1_input"
+            if temp_f.is_file():
+                result["temp_c"] = int(temp_f.read_text().strip()) / 1000.0
+        except Exception:
+            pass
+        for power_file in ("power1_average", "power1_input"):
+            try:
+                p_f = hwmon / power_file
+                if p_f.is_file():
+                    result["watts"] = int(p_f.read_text().strip()) / 1e6
+                    break
+            except Exception:
+                pass
+    return result
+
+def _cpu_temp() -> float | None:
+    """CPU-Temperatur über psutil (kapselt bereits das Suchen im
+    richtigen hwmon/coretemp-Sensor-Eintrag plattformübergreifend) -
+    kein eigenes hwmon-Parsing nötig, im Gegensatz zu Watt (dafür gibt
+    es keine vergleichbar simple, permission-freie Quelle)."""
+    try:
+        import psutil
+        temps = psutil.sensors_temperatures()
+    except Exception:
+        return None
+    # Reihenfolge nach Häufigkeit bei AMD-Systemen: k10temp ist der
+    # Standard-Sensortreiber für Ryzen-CPUs.
+    for key in ("k10temp", "coretemp", "zenpower"):
+        if key in temps and temps[key]:
+            return temps[key][0].current
+    # Fallback: irgendeinen verfügbaren Sensor nehmen, besser als gar
+    # keine Temperatur zu zeigen.
+    for entries in temps.values():
+        if entries:
+            return entries[0].current
+    return None
+
+def _sysmon_snapshot() -> dict:
+    """Ein Aufruf, der ALLE System-Monitor-Metriken auf einmal liefert
+    - wird IMMER aus einem Hintergrund-Thread aufgerufen (siehe
+    _cpu_watts()-Kommentar zur Helper-Laufzeit), nie direkt im GTK-
+    Main-Thread. psutil.cpu_percent(interval=0.3) blockiert selbst
+    schon absichtlich kurz (misst über ein Zeitfenster), das allein
+    wäre schon ein Grund für Async, auch ohne den RAPL-Helper."""
+    import psutil
+    return {
+        "cpu_pct":  psutil.cpu_percent(interval=0.3),
+        "ram":      psutil.virtual_memory(),
+        "swap":     psutil.swap_memory(),
+        "disk":     psutil.disk_usage("/"),
+        "cpu_temp": _cpu_temp(),
+        "cpu_watts": _cpu_watts(),
+        "gpu":      _gpu_stats(),
+    }
+
 def _bat_icon(cap: int, status: str) -> str:
     if "Charging" in status: return "󰂄"
     if cap >= 95: return "󰁹"
@@ -1534,16 +1712,43 @@ def _akku_content() -> Gtk.Box:
     bat_box.pack_start(bat_status_lbl, False, False, 0)
     root.pack_start(bat_box, False, False, 0)
 
+    power_lbl = Gtk.Label(label="")
+    power_lbl.get_style_context().add_class("caption")
+    power_lbl.set_opacity(0.7)
+    power_lbl.set_halign(Gtk.Align.CENTER)
+    power_lbl.set_no_show_all(True)
+    root.pack_start(power_lbl, False, False, 0)
+
     def _refresh_bat():
         info = _bat()
         if info:
             bat_icon_lbl.set_label(_bat_icon(info["cap"], info["status"]))
             bat_pct_lbl.set_label(f'  {info["cap"]} %')
             bat_status_lbl.set_label(f'   {info["status"]}')
+            # Watt/Restlaufzeit separat asynchron laden (upower-
+            # Subprozess-Aufruf, siehe _bat_power_info-Docstring) -
+            # NICHT hier direkt aufrufen, das würde den GTK-Main-
+            # Thread blockieren.
+            def _fetch_power():
+                p = _bat_power_info()
+                def _apply():
+                    parts = []
+                    if p["watts"] is not None:
+                        parts.append(f'{p["watts"]:.1f} W')
+                    if p["time_str"]:
+                        parts.append(p["time_str"])
+                    if parts:
+                        power_lbl.set_label("  ·  ".join(parts))
+                        power_lbl.show()
+                    else:
+                        power_lbl.hide()
+                GLib.idle_add(_apply)
+            in_thread(_fetch_power)
         else:
             bat_icon_lbl.set_label("󰂑")
             bat_pct_lbl.set_label("  No Battery")
             bat_status_lbl.set_label("")
+            power_lbl.hide()
         return True
 
     add_timer(10000, _refresh_bat)
@@ -1593,9 +1798,139 @@ def _akku_content() -> Gtk.Box:
     in_thread(_load_pp)
     return root
 
+def _sysmon_content() -> Gtk.Box:
+    """System-Monitor-Tab für Geräte OHNE Akku (Desktop-PCs) - ersetzt
+    dort komplett den Akku-Tab, siehe build_akku()-Umschaltlogik
+    unten. Zeigt CPU (Auslastung, Temperatur, Watt via SUID-Helper),
+    RAM, Swap, Disk, und AMD-GPU-Stats (falls erkannt)."""
+    root = vbox(4); pad(root, h=10, v=8)
+    root.pack_start(btitle("󰍹  System Monitor"), False, False, 0)
+    root.pack_start(sep(), False, False, 2)
+
+    def _stat_row(icon: str, label_text: str) -> tuple[Gtk.Box, Gtk.Label]:
+        row = hbox(8)
+        row.get_style_context().add_class("bubble")
+        row.get_style_context().add_class("item")
+        icon_l = Gtk.Label(label=icon)
+        icon_l.set_opacity(0.8)
+        name_l = Gtk.Label(label=label_text)
+        name_l.set_halign(Gtk.Align.START)
+        name_l.set_hexpand(True)
+        val_l = Gtk.Label(label="–")
+        val_l.get_style_context().add_class("caption")
+        row.pack_start(icon_l, False, False, 0)
+        row.pack_start(name_l, True, True, 0)
+        row.pack_start(val_l, False, False, 0)
+        return row, val_l
+
+    root.pack_start(bsec("CPU"), False, False, 0)
+    cpu_row, cpu_val = _stat_row("󰻠", "Usage")
+    root.pack_start(cpu_row, False, False, 0)
+    temp_row, temp_val = _stat_row("󰔏", "Temperature")
+    root.pack_start(temp_row, False, False, 0)
+    watt_row, watt_val = _stat_row("󱐋", "Power")
+    root.pack_start(watt_row, False, False, 0)
+    watt_row.set_no_show_all(True)  # nur einblenden, wenn der Helper tatsächlich Werte liefert
+
+    root.pack_start(sep(), False, False, 4)
+    root.pack_start(bsec("MEMORY"), False, False, 0)
+    ram_row, ram_val = _stat_row("󰘚", "RAM")
+    root.pack_start(ram_row, False, False, 0)
+    swap_row, swap_val = _stat_row("󰋊", "Swap")
+    root.pack_start(swap_row, False, False, 0)
+
+    root.pack_start(sep(), False, False, 4)
+    root.pack_start(bsec("STORAGE"), False, False, 0)
+    disk_row, disk_val = _stat_row("󰆼", "Disk (/)")
+    root.pack_start(disk_row, False, False, 0)
+
+    gpu_section = vbox(4)
+    root.pack_start(gpu_section, False, False, 0)
+    gpu_widgets = {}  # wird bei erster erfolgreicher GPU-Erkennung befüllt
+
+    def _fmt_bytes(n: int) -> str:
+        for unit in ("B", "KB", "MB", "GB", "TB"):
+            if n < 1024:
+                return f"{n:.1f} {unit}"
+            n /= 1024
+        return f"{n:.1f} PB"
+
+    def _apply_snapshot(snap: dict):
+        cpu_val.set_label(f'{snap["cpu_pct"]:.0f} %')
+        if snap["cpu_temp"] is not None:
+            temp_val.set_label(f'{snap["cpu_temp"]:.0f} °C')
+        else:
+            temp_val.set_label("n/v")
+        if snap["cpu_watts"] is not None:
+            watt_val.set_label(f'{snap["cpu_watts"]:.1f} W')
+            watt_row.set_visible(True)
+        # sonst: Zeile bleibt versteckt (kein SUID-Helper installiert
+        # oder RAPL nicht lesbar) - siehe wb-power-helper.c/README für
+        # den Hintergrund, warum das nicht einfach geschätzt wird.
+
+        ram = snap["ram"]
+        ram_val.set_label(f'{ram.percent:.0f} %  ·  {_fmt_bytes(ram.used)} / {_fmt_bytes(ram.total)}')
+        sw = snap["swap"]
+        if sw.total > 0:
+            swap_val.set_label(f'{sw.percent:.0f} %  ·  {_fmt_bytes(sw.used)} / {_fmt_bytes(sw.total)}')
+            swap_row.set_visible(True)
+        else:
+            swap_row.set_visible(False)
+        d = snap["disk"]
+        disk_val.set_label(f'{d.percent:.0f} %  ·  {_fmt_bytes(d.used)} / {_fmt_bytes(d.total)}')
+
+        gpu = snap["gpu"]
+        if gpu and not gpu_widgets:
+            # GPU-Sektion erst beim ERSTEN erfolgreichen Snapshot mit
+            # Daten aufbauen (nicht schon leer vorab), da wir bis
+            # dahin nicht wissen, ob überhaupt eine AMD-GPU im System
+            # steckt.
+            gpu_section.pack_start(sep(), False, False, 2)
+            gpu_section.pack_start(bsec("GPU"), False, False, 0)
+            if "busy_pct" in gpu:
+                r, v = _stat_row("󰢮", "Usage")
+                gpu_section.pack_start(r, False, False, 0)
+                gpu_widgets["busy"] = v
+            if "temp_c" in gpu:
+                r, v = _stat_row("󰔏", "Temperature")
+                gpu_section.pack_start(r, False, False, 0)
+                gpu_widgets["temp"] = v
+            if "watts" in gpu:
+                r, v = _stat_row("󱐋", "Power")
+                gpu_section.pack_start(r, False, False, 0)
+                gpu_widgets["watts"] = v
+            gpu_section.show_all()
+        if gpu_widgets:
+            if "busy" in gpu_widgets and "busy_pct" in gpu:
+                gpu_widgets["busy"].set_label(f'{gpu["busy_pct"]} %')
+            if "temp" in gpu_widgets and "temp_c" in gpu:
+                gpu_widgets["temp"].set_label(f'{gpu["temp_c"]:.0f} °C')
+            if "watts" in gpu_widgets and "watts" in gpu:
+                gpu_widgets["watts"].set_label(f'{gpu["watts"]:.1f} W')
+
+    def _refresh():
+        def _fetch():
+            snap = _sysmon_snapshot()
+            GLib.idle_add(_apply_snapshot, snap)
+        in_thread(_fetch)
+        return True
+
+    add_timer(2000, _refresh)
+    _refresh()
+    return root
+
 def build_akku(win: Gtk.Window):
     win.set_default_size(340, 1)
-    win.add(_akku_content())
+    # Akku-Tab nur zeigen, wenn tatsächlich ein Akku im System steckt
+    # (Laptop) - sonst komplett durch den System-Monitor ersetzen
+    # (Desktop-PC, für den ein Akku-Tab schlicht nutzlos wäre). Beide
+    # Zweige greifen bewusst auf _battery_present() zurück, dieselbe
+    # Quelle wie _bat() selbst nutzt, damit sich UI-Auswahl und
+    # tatsächliche Datenverfügbarkeit nie widersprechen können.
+    if _battery_present():
+        win.add(_akku_content())
+    else:
+        win.add(_sysmon_content())
 
 # ════════════════════════════════════════════════════════════
 #  CLOCK + CALENDAR
@@ -2479,7 +2814,8 @@ def _build_settings_network(page: Gtk.Box, key: str, label: str, win: Gtk.Window
     page.pack_start(_network_content(win), True, True, 0)
 
 def _build_settings_battery(page: Gtk.Box, key: str, label: str, win: Gtk.Window) -> None:
-    page.pack_start(_akku_content(), True, True, 0)
+    content = _akku_content() if _battery_present() else _sysmon_content()
+    page.pack_start(content, True, True, 0)
 
 def _hypr_lua_path() -> Path:
     return Path(HOME) / ".config" / "hypr" / "hyprland.lua"

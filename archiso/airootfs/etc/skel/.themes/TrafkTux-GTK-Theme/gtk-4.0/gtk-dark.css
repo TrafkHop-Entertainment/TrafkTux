@@ -49,10 +49,6 @@
   }
 }
 
-vte-terminal {
-  padding: 15px;
-}
-
 @keyframes ripple-on-slider {
   to {
     background-size: auto, 1000% 1000%;

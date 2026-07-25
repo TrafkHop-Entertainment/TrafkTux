@@ -184,6 +184,36 @@ def save_active_window():
     except Exception:
         pass
 
+def read_prev_window_addr() -> str:
+    """Liest die beim Menü-Start gemerkte Fenster-Adresse (falls vorhanden)."""
+    if os.path.exists(PREV_WINDOW_FILE):
+        try:
+            with open(PREV_WINDOW_FILE) as f:
+                return f.read().strip()
+        except Exception:
+            pass
+    return ""
+
+def refocus_prev_window():
+    """UNGENUTZT / veraltet (siehe handle_step, entry_type "action"): ein
+    synchrones focuswindow VOR dem exec_detached der eigentlichen Aktion
+    hält nicht, solange Rofi als Layer-Surface mit exklusivem Keyboard-
+    Fokus noch gemappt ist - Hyprland zieht den Fokus sofort wieder auf
+    Rofi zurück. Der Fokuswechsel wird deshalb jetzt zusammen mit der
+    Aktion selbst als EINE Kette (focuswindow && sleep && <action>) in
+    einem einzigen detached Befehl ausgeführt, der erst feuert, nachdem
+    Rofi tatsächlich geschlossen ist. Diese Funktion bleibt nur als
+    Referenz stehen."""
+    addr = read_prev_window_addr()
+    if addr:
+        try:
+            subprocess.run(
+                ["hyprctl", "dispatch", "focuswindow", f"address:{addr}"],
+                capture_output=True, text=True,
+            )
+        except Exception:
+            pass
+
 # --- Rofi-Aufruf & Eintragsbau ---
 
 def build_entries(node: dict, has_parent: bool, page: int = 0,
@@ -293,6 +323,13 @@ def collect_used_identifiers(root: dict) -> tuple[set[str], set[str]]:
 def build_powermenu_entries(node: dict) -> list[tuple[str, str, str, bool]]:
     entries = []
     for i, child in enumerate(node.get("children", [])):
+        if child.get("type") == "placeholder":
+            # leerer, nicht auswählbarer Grid-Slot (siehe ensure_blank_icon:
+            # ohne echtes Icon würde Rofi keinen Platz reservieren und die
+            # Blase komplett verschwinden statt leer an ihrer Position zu
+            # bleiben)
+            entries.append((" ", ensure_blank_icon(), RAW_NOOP, True))
+            continue
         entries.append((child.get("name", ""), child.get("icon", ""), str(i), False))
     entries.append((EXIT_LABEL, EXIT_ICON, RAW_EXIT, False))
 
@@ -869,10 +906,7 @@ def handle_step(menu_name: str, x11: bool, retv: str, info: str | None) -> None:
         return
 
     if entry_type == "close-prev-window":
-        addr = ""
-        if os.path.exists(PREV_WINDOW_FILE):
-            with open(PREV_WINDOW_FILE) as f:
-                addr = f.read().strip()
+        addr = read_prev_window_addr()
         if addr:
             lua_expr = f"hl.dsp.window.close({{ window = \"address:{addr}\" }})"
             exec_detached_argv(["hyprctl", "dispatch", lua_expr])
@@ -910,6 +944,48 @@ def handle_step(menu_name: str, x11: bool, retv: str, info: str | None) -> None:
     if entry_type in ("action", "app"):
         exec_cmd = child.get("exec", "")
         if exec_cmd:
+            if entry_type == "action":
+                # WICHTIG: hyprctl-dispatch-Befehle (fullscreen, swapwith-
+                # master, minimize, pin, ...) wirken implizit auf das
+                # "aktive Fenster". Solange Rofi als Layer-Surface mit
+                # exklusivem Keyboard-Fokus noch gemappt ist, zieht
+                # Hyprland den Fokus quasi sofort wieder auf Rofi zurück -
+                # ein VORAB per subprocess.run() synchron ausgeführtes
+                # "focuswindow" hält also nicht, weil Rofi zu diesem
+                # Zeitpunkt noch offen ist (das Skript läuft ja noch,
+                # Rofi schließt sich erst NACHDEM es beendet ist). Die
+                # Aktion traf dadurch Rofi statt das zuletzt aktive
+                # Fenster ("beide fullscreen").
+                #
+                # Fix: Fokussieren + Aktion als EINE Kette in einem
+                # einzigen detached Shell-Befehl, mit kurzer Pause dazwischen,
+                # damit Rofi garantiert schon zu ist, wenn die eigentliche
+                # Aktion feuert.
+                addr = read_prev_window_addr()
+                if addr:
+                    # Statt eines blinden sleep aktiv pollen, bis der Fokus
+                    # WIRKLICH beim Zielfenster angekommen ist (Rofi gibt
+                    # seinen exklusiven Fokus nicht sofort/garantiert
+                    # innerhalb von 150ms her). Wichtig für Aktionen wie
+                    # pip.sh, die selbst per "hyprctl activewindow -j" den
+                    # pinned/floating-Status abfragen - lief der Fokus-
+                    # Wechsel noch nicht durch, liest das Skript den
+                    # falschen Ausgangszustand und landet im Zwischen-
+                    # stadium (floatet, pinnt aber nicht richtig/verkleinert
+                    # nicht). Timeout (~20 x 20ms = 400ms) als Sicherheits-
+                    # netz, falls die Adresse aus irgendeinem Grund nie
+                    # erreicht wird - dann läuft die Aktion trotzdem noch.
+                    poll = (
+                        "for i in $(seq 1 20); do "
+                        f'cur=$(hyprctl activewindow -j 2>>/tmp/bubble-menu-action.log | '
+                        f"jq -r .address 2>>/tmp/bubble-menu-action.log); "
+                        f'[ "$cur" = "{addr}" ] && break; '
+                        f"hyprctl dispatch focuswindow address:{addr} "
+                        f">>/tmp/bubble-menu-action.log 2>&1; "
+                        f"sleep 0.02; "
+                        f"done"
+                    )
+                    exec_cmd = f"{poll}; {exec_cmd} 2>>/tmp/bubble-menu-action.log"
             exec_detached(exec_cmd)
             cleanup()
         return

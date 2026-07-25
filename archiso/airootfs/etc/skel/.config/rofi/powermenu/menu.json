@@ -38,6 +38,36 @@
       "exec": "hyprctl dispatch 'hl.dsp.window.fullscreen({ mode = 0 })'"
     },
     {
+      "name": "Layout: Master",
+      "type": "action",
+      "icon": "view-grid",
+      "exec": "bash -c 'bash ~/.config/hypr/layout_switcher.sh master; notify-send \"Layout\" \"Master\"'"
+    },
+    {
+      "name": "Layout: Dwindle",
+      "type": "action",
+      "icon": "view-grid",
+      "exec": "bash -c 'bash ~/.config/hypr/layout_switcher.sh dwindle; notify-send \"Layout\" \"Dwindle\"'"
+    },
+    {
+      "name": "Layout: Scroller",
+      "type": "action",
+      "icon": "view-continuous",
+      "exec": "bash -c 'bash ~/.config/hypr/layout_switcher.sh scroller; notify-send \"Layout\" \"Scroller\"'"
+    },
+    {
+      "name": "Layout: Floating",
+      "type": "action",
+      "icon": "preferences-system-windows",
+      "exec": "bash -c 'bash ~/.config/hypr/layout_switcher.sh floating; notify-send \"Layout\" \"Floating\"'"
+    },
+    {
+      "name": "Layout: Bigscreen",
+      "type": "action",
+      "icon": "view-fullscreen",
+      "exec": "bash -c 'bash ~/.config/hypr/layout_switcher.sh bigscreen; notify-send \"Layout\" \"Bigscreen\"'"
+    },
+    {
       "name": "Lock",
       "type": "action",
       "icon": "system-lock-screen",
@@ -66,6 +96,10 @@
       "type": "action",
       "icon": "system-log-out",
       "exec": "hyprctl dispatch 'hl.dsp.exit()'"
+    },
+    {
+      "name": " ",
+      "type": "placeholder"
     }
   ]
 }
