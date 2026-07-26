@@ -53,7 +53,7 @@ padding:       0px 15px;
  * Farbton, nur dunklere Variante desselben Gelbs) - Prozentsatz bei
  * 60% steuert, wie weit der dunkle Bereich nach unten reicht.
  */
-background-image: linear-gradient(to bottom, #C7C07F 0%, #ede59f 8%, #fff495 15%);
+background-image: linear-gradient(to bottom, #ede59f 1%, #C7C07F 5%, #ede59f 12%, #fff495 13%);
 }
 
 #waybar > box {

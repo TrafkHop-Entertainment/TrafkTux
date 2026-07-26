@@ -157,7 +157,11 @@ fi
 # Zu durchsuchende Wurzeln: immer etc/skel, im vollen Modus zusaetzlich
 # die tatsaechlich existierenden Grub/Plymouth/Boot-Pfade.
 # ---------------------------------------------------------------------
-SCAN_ROOTS=("$AIROOTFS_DIR/etc/skel")
+SCAN_ROOTS=(
+    "$AIROOTFS_DIR/etc/skel"
+    "$AIROOTFS_DIR/etc/xdg"
+    "$AIROOTFS_DIR/usr/share"
+)
 if [[ $WITH_FULL -eq 1 ]]; then
     for prefix in "${SENSITIVE_PREFIXES[@]}"; do
         SRC_PATH="$AIROOTFS_DIR/$prefix"

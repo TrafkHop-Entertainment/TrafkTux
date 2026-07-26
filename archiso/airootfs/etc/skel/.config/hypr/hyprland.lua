@@ -696,3 +696,11 @@ if layout == "scrolling" and (direction == "left" or direction == "right") then
         hl.bind(mainMod .. " + CTRL + e", function() snap_window_fraction(0.5, 0, 0.5, 0.5) end) -- oben rechts
         hl.bind(mainMod .. " + CTRL + less", function() snap_window_fraction(0, 0.5, 0.5, 0.5) end) -- unten links
         hl.bind(mainMod .. " + CTRL + x", function() snap_window_fraction(0.5, 0.5, 0.5, 0.5) end) -- unten rechts
+
+
+        hl.window_rule({
+            name     = "dunst-no-focus",
+            match    = { class = "^(Dunst|dunst)$" },
+                       float    = true,
+                       no_focus = true,
+        })

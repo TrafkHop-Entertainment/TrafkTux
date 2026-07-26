@@ -158,6 +158,12 @@ bash-completion
 khal
 python-psutil
 
+tumbler
+ffmpegthumbnailer
+gst-plugins-base
+gst-plugins-good
+totem
+
 # --- Anzeigemanager ---
 sddm
 

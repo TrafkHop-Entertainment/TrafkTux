@@ -1,9 +1,14 @@
 ### THe Project is NOT Open Source, READ THE LICENSE for more!
 Copyright © 2026 TrafkHop Entertainment™
 All rights reserved.
+<div align=center>
 # TrafkTux
-TrafkTux is a maximalistic Arch + Hyprland Distribution with a very specific style. Created by HoppiTex in 2026, designed to his exact liking. This Distro is designed for HoppiTex and TrafkHop fans / people that think this distro looks very nice!
-
+An Arch based Hyprland Distribution with a maximalistic Vision and many qol features!
+![Version](https://img.shields.io/badge/version-v0.7-9B59B6?style=flat-square)
+![Arch](https://img.shields.io/badge/base-Arch%2012-A81D33?style=flat-square&logo=debian&logoColor=white)
+![Hyprland](https://img.shields.io/badge/desktop-Hyprland%2FX11-3a86ff?style=flat-square)
+![License](https://img.shields.io/badge/license-TrafkHop%20Entertainment%20Source%20Availavle%20License%20v4-9B59B6?style=flat-square)
+</div>
 # Programms
 The Core apps that are always preinstalled are:
 * pamac software manager
@@ -18,6 +23,7 @@ The Core apps that are always preinstalled are:
 * Firefox
 * Many settings
 * Btop, GParted, Gnome Disks
+* other system related packages
 
 # Optional packages
 
@@ -162,6 +168,8 @@ ollama, ollama-cuda
 * Super + Shift + WASD = change active window size
 * Super + CTRL + WASD = Swap windows
 * Super + CTRL + WASDQEX< = snap window to one of 8 points on active display on floating environment
+* Super + leftklick = Move Window
+* Super + rightclick resize window
 * Super + ALT + 12345 = Dwindle,Master, Scroller, Floating, Monocycle
 + Super + 1-9 = Switch workspace
 + Super + Shift + 1-9 = move active window to workspace
@@ -197,7 +205,7 @@ ISO size: 3.0GB
 
 
 ## Minimum Requirements:
-A somewhat modern CPU+GPU
+A somewhat modern CPU+GPU / integrated graphics
 4GB of ram
 8GB of Disk Space
 
@@ -239,7 +247,7 @@ Also some key system overview like ram, cpu, gpu, disk size, swap, etc.
 6. Calender
 Here you have a overview of the date, the month and so on. You can insert appointsments. The Weather is displayed above, with 2 days in advance as well and it also has a button to change the weather location.
 7. Settings
-Here are all of the previosly mentioned settings + extra ones, like Display, where you can change the resolution to anything you desire; want 4:3, sure, want a 144p diplay? sure! Want to downscale? please do!
+Here are all of the previosly mentioned settings + extra ones, like Display, where you can change the resolution to anything you desire; want 4:3, sure, want a 144p diplay? sure! Want to downscale from 8k? please do!
 Here also lies (will lie) the App Launcher Editor and also a color sceme changer and many more settings!
 
 ## Rofi
@@ -293,6 +301,7 @@ We have themed a lot of apps:
 * HyprCursor v1
 * HyprLock
 * Fastfetch
+* Clay Icon Theme (we changed the blue to yellow)
 
 # What Still has to be Themed:
 * SDDM
@@ -308,6 +317,10 @@ We have themed a lot of apps:
 * App Editor
 Rofi App Menu apps editor, autostarted apps, waybar shortcuts, add custom things as apps to rofi
 * new Kernel + security things (optimisation somewhat done)
+
+## Known Bugs:
+* widgets-daemon.py has a huge performance bug, where it uses 100% if one CPU Core. Will be fixed shortly
+* The ISO does not boot at the moment....
 
 
 ### Widgets (in progress and a bit outdated as some of those features are already in place) (From now on only Developer Notes, do not take this into account)

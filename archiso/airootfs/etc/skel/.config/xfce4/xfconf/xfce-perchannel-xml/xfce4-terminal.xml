@@ -12,4 +12,5 @@
   <property name="misc-cursor-shape" type="string" value="TERMINAL_CURSOR_SHAPE_IBEAM"/>
   <property name="misc-cursor-blinks" type="bool" value="false"/>
   <property name="overlay-scrolling" type="bool" value="true"/>
+  <property name="misc-show-unsafe-paste-dialog" type="bool" value="false"/>
 </channel>

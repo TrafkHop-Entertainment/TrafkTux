@@ -1,0 +1,2 @@
+pkill -9 kate
+sudo mv /usr/lib/qt6/plugins/kf6/ktexteditor/kateprojectplugin.so /usr/lib/qt6/plugins/kf6/ktexteditor/kateprojectplugin.so.disabled

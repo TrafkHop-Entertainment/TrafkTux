@@ -9,12 +9,12 @@ Show Tab Bar=true
 Show Url Nav Bar=true
 
 [KDE]
-widgetStyle=kvantum-dark
+widgetStyle=kvantum
 
 [KTextEditor Renderer]
 Animate Bracket Matching=false
 Auto Color Theme Selection=false
-Color Theme=TrafkTux Dark
+Color Theme=TrafkTux
 Line Height Multiplier=1
 Show Indentation Lines=false
 Show Whole Bracket Expression=false

@@ -68,16 +68,8 @@
       "exec": "bash -c 'bash ~/.config/hypr/layout_switcher.sh bigscreen; notify-send \"Layout\" \"Bigscreen\"'"
     },
     {
-      "name": "Lock",
-      "type": "action",
-      "icon": "system-lock-screen",
-      "exec": "hyprlock"
-    },
-    {
-      "name": "Suspend",
-      "type": "action",
-      "icon": "system-suspend",
-      "exec": "hyprlock & sleep 1 && systemctl suspend"
+      "name": " ",
+      "type": "placeholder"
     },
     {
       "name": "Shutdown",
@@ -98,8 +90,16 @@
       "exec": "hyprctl dispatch 'hl.dsp.exit()'"
     },
     {
-      "name": " ",
-      "type": "placeholder"
+      "name": "Lock",
+      "type": "action",
+      "icon": "system-lock-screen",
+      "exec": "hyprlock"
+    },
+    {
+      "name": "Suspend",
+      "type": "action",
+      "icon": "system-suspend",
+      "exec": "hyprlock & sleep 1 && systemctl suspend"
     }
   ]
 }
