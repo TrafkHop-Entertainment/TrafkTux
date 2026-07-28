@@ -3,7 +3,7 @@
  <path style="opacity:0.2" d="m 13.5,6.00035 c -4.6944204,0 -8.5,3.8055796 -8.5,8.5 0,4.69442 3.8055796,8.5 8.5,8.5 0.491758,0 0.970555,-0.05069 1.439453,-0.130859 l 6.695313,6.695312 a 4.9000001,4.9000001 0 0 0 6.929687,0 4.9000001,4.9000001 0 0 0 0,-6.929687 L 21.869141,15.939803 C 21.949308,15.470905 22,14.992108 22,14.50035 c 0,-4.6944204 -3.80558,-8.5 -8.5,-8.5 z"/>
  <path style="fill:none;stroke:#e52030;stroke-width:9.8;stroke-linecap:round;stroke-linejoin:round" d="M 13.2,13.2 25.1,25.1"/>
  <path style="fill:#c6c6c6" d="M 5,2 A 3,3 0 1 0 8,5 3,3 0 0 0 5,2 Z M 4.9633786,3.5 A 1.5,1.5 0 0 1 5,3.5 1.5,1.5 0 1 1 3.5,5 1.5,1.5 0 0 1 4.9633786,3.5 Z"/>
- <path style="opacity:0.2;fill:none;stroke:#000000;stroke-width:4;stroke-linecap:round;stroke-linejoin:round" d="M 13,14 25,26"/>
+ <path style="opacity:0.2;fill:none;stroke:#fff495;stroke-width:4;stroke-linecap:round;stroke-linejoin:round" d="M 13,14 25,26"/>
  <path style="fill:none;stroke:#fcfcfc;stroke-width:4;stroke-linecap:round;stroke-linejoin:round" d="M 13,13 25,25"/>
  <circle style="fill:#929292" cx="7.5" cy="7.5" r="1.5"/>
  <circle style="fill:#e52030" cx="13.5" cy="13.5" r="8.5"/>

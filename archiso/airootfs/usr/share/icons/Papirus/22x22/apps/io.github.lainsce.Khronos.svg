@@ -4,7 +4,7 @@
  <path style="fill:#aaa9a3" d="m 9,14 h 8 v 1 H 9 Z m 0,0"/>
  <path style="fill:#aaa9a3" d="m 9,17 h 8 v 1 H 9 Z m 0,0"/>
  <path stroke="#949390" stroke-width=".667" style="fill:none;stroke-linecap:round" d="M 11,11 8.35,7.75"/>
- <path stroke="#3d3846" stroke-width=".668" style="fill:none;stroke-linecap:round" d="M 11,11 15.5,6.5"/>
+ <path stroke="#fff495" stroke-width=".668" style="fill:none;stroke-linecap:round" d="M 11,11 15.5,6.5"/>
  <path stroke="#c061cb" stroke-width=".668" style="fill:none;stroke-linecap:round" d="M 11,11 8.5,17.5"/>
  <path style="opacity:0.2" d="m 11.913412,11.092278 c 0.224609,0.504557 -0.0019,1.095703 -0.50586,1.320963 -0.504557,0.224609 -1.095703,-0.0019 -1.320963,-0.505859 -0.22461,-0.504558 0.002,-1.095704 0.505859,-1.320964 0.504557,-0.224609 1.095703,0.0019 1.320964,0.50586 z m 0,0"/>
  <path style="fill:#ffffff" d="m 11.913412,10.592448 c 0.224609,0.504557 -0.0019,1.095703 -0.50586,1.320963 -0.504557,0.22461 -1.095703,-0.002 -1.320963,-0.505859 -0.22461,-0.504557 0.002,-1.095703 0.505859,-1.320963 0.504557,-0.22461 1.095703,0.002 1.320964,0.505859 z m 0,0"/>

@@ -20,7 +20,7 @@
   <rect transform="rotate(90)" x="5" y="-29" width="1" height="26"/>
  </g>
  <path d="m8 52.602v2c0 1.33 1.338 2.398 3 2.398h42c1.662 0 3-1.068 3-2.398v-2c0 1.33-1.338 2.398-3 2.398h-42c-1.662 0-3-1.068-3-2.398z" style="opacity:.2"/>
- <rect transform="matrix(0,-1,-1,0,0,0)" x="-56" y="-56" width="48" height="48" rx="2.4" ry="3" style="fill:#4f4f4f"/>
+ <rect transform="matrix(0,-1,-1,0,0,0)" x="-56" y="-56" width="48" height="48" rx="2.4" ry="3" style="fill:#fff495"/>
  <path d="m11 8c-1.662 0-3 1.0688375-3 2.398438v1c0-1.329601 1.338-2.398438 3-2.398438h42c1.662 0 3 1.068838 3 2.398438v-1c0-1.3296005-1.338-2.398438-3-2.398438h-42z" style="fill:#ffffff;opacity:.1"/>
  <rect transform="matrix(0,-1,-1,0,0,0)" x="-53" y="-52.001953" width="40" height="40" rx="20" ry="20" style="opacity:.2"/>
  <rect transform="matrix(0,-1,-1,0,0,0)" x="-52" y="-52.001953" width="40" height="40" rx="20" ry="20" style="fill:#e62f2f"/>

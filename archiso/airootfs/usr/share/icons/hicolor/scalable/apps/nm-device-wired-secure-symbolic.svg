@@ -66,7 +66,7 @@
        overflow="visible"
        font-family="sans-serif"
        font-weight="400"
-       style="line-height:normal;font-variant-ligatures:normal;font-variant-position:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-alternates:normal;font-feature-settings:normal;text-indent:0;text-align:start;text-decoration-line:none;text-decoration-style:solid;text-decoration-color:#000;text-transform:none;text-orientation:mixed;shape-padding:0;isolation:auto;mix-blend-mode:normal;marker:none"
+       style="line-height:normal;font-variant-ligatures:normal;font-variant-position:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-alternates:normal;font-feature-settings:normal;text-indent:0;text-align:start;text-decoration-line:none;text-decoration-style:solid;text-decoration-color:#fff495;text-transform:none;text-orientation:mixed;shape-padding:0;isolation:auto;mix-blend-mode:normal;marker:none"
        d="M7 1C5.355 1 4 2.355 4 4v6c0 1.645 1.355 3 3 3h2c1.645 0 3-1.355 3-3V4c0-1.645-1.355-3-3-3zm0 2h2c.571 0 1 .429 1 1v6c0 .571-.429 1-1 1H7c-.571 0-1-.429-1-1V4c0-.571.429-1 1-1z" />
   </g>
 </svg>

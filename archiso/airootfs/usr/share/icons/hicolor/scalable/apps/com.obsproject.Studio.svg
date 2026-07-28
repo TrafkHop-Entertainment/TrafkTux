@@ -13,8 +13,8 @@
 	.st7{fill:url(#SVGID_00000109020757643166282930000006684795936706346369_);}
 </style>
 <radialGradient id="SVGID_1_" cx="514.5" cy="477.5" r="496.5" gradientTransform="matrix(1 0 0 -1 -18 974)" gradientUnits="userSpaceOnUse">
-	<stop  offset="0.9134" style="stop-color:#000000"/>
-	<stop  offset="1" style="stop-color:#000000;stop-opacity:0"/>
+	<stop  offset="0.9134" style="stop-color:#fff495"/>
+	<stop  offset="1" style="stop-color:#fff495;stop-opacity:0"/>
 </radialGradient>
 <path class="st0" d="M496.5,0C770.7,0,993,222.3,993,496.5S770.7,993,496.5,993S0,770.7,0,496.5S222.3,0,496.5,0"/>
 <radialGradient id="SVGID_00000163033830155146975860000008434547654242457221_" cx="512.0591" cy="481.8788" r="486.2727" gradientTransform="matrix(1 0 0 -1 -18 974)" gradientUnits="userSpaceOnUse">
@@ -28,8 +28,8 @@
 <path style="fill:url(#SVGID_00000163033830155146975860000008434547654242457221_);" d="M494.1,5.8
 	c268.6,0,486.3,217.7,486.3,486.3S762.6,978.4,494.1,978.4S7.8,760.7,7.8,492.1S225.5,5.8,494.1,5.8"/>
 <radialGradient id="SVGID-2_00000052072577768947982130000002178866272689676469_" cx="512.0615" cy="481.8788" r="444.1224" gradientTransform="matrix(1 0 0 -1 -18 974)" gradientUnits="userSpaceOnUse">
-	<stop  offset="0.99" style="stop-color:#000000;stop-opacity:0.5"/>
-	<stop  offset="1" style="stop-color:#000000;stop-opacity:0"/>
+	<stop  offset="0.99" style="stop-color:#fff495;stop-opacity:0.5"/>
+	<stop  offset="1" style="stop-color:#fff495;stop-opacity:0"/>
 </radialGradient>
 <path id="SVGID-2" style="fill:url(#SVGID-2_00000052072577768947982130000002178866272689676469_);" d="M49.9,492.1
 	c0,245.3,198.8,444.1,444.1,444.1s444.1-198.8,444.1-444.1C938.2,246.8,739.3,48,494.1,48S49.9,246.8,49.9,492.1"/>
@@ -44,8 +44,8 @@
 	<g style="clip-path:url(#SVGID_00000089541126356498003530000018124973888634789552_);">
 		
 			<radialGradient id="SVGID_00000150812931774303044310000016741052045410067889_" cx="494.0614" cy="501.8788" r="444.1224" gradientTransform="matrix(1 0 0 -1 0 994)" gradientUnits="userSpaceOnUse">
-			<stop  offset="0.99" style="stop-color:#000000;stop-opacity:0.5"/>
-			<stop  offset="1" style="stop-color:#000000;stop-opacity:0"/>
+			<stop  offset="0.99" style="stop-color:#fff495;stop-opacity:0.5"/>
+			<stop  offset="1" style="stop-color:#fff495;stop-opacity:0"/>
 		</radialGradient>
 		
 			<rect x="49.9" y="48" style="fill:url(#SVGID_00000150812931774303044310000016741052045410067889_);" width="888.2" height="888.2"/>
@@ -62,7 +62,7 @@
 	<g style="clip-path:url(#SVGID_00000071558824708772608600000007232665395714776193_);">
 		
 			<radialGradient id="SVGID_00000075157454629254526220000014209612016984828065_" cx="433.7207" cy="-472.889" r="4.6533" gradientTransform="matrix(94.6543 0 0 94.6543 -40559.457 45253.0898)" gradientUnits="userSpaceOnUse">
-			<stop  offset="0" style="stop-color:#000000"/>
+			<stop  offset="0" style="stop-color:#fff495"/>
 			<stop  offset="1" style="stop-color:#322F32"/>
 		</radialGradient>
 		

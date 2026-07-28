@@ -11,11 +11,11 @@
  <path style="fill:#2aa0ea" d="m5 17c0-0.540676 0.4443054-1 1-1h6v10h-6c-0.5309938 0-1-0.490246-1-1z"/>
  <rect style="fill:#4ec353" width="6" height="10" x="12" y="16"/>
  <rect style="fill:#fecd38" width="6" height="10" x="18" y="16"/>
- <path style="opacity:0.1;fill:none;stroke:#000000;stroke-width:2;stroke-linecap:square;stroke-linejoin:round" d="M 18,30 H 34 V 22 H 31"/>
+ <path style="opacity:0.1;fill:none;stroke:#fff495;stroke-width:2;stroke-linecap:square;stroke-linejoin:round" d="M 18,30 H 34 V 22 H 31"/>
  <path style="fill:none;stroke:#afafb1;stroke-width:2;stroke-linecap:square;stroke-linejoin:round" d="M 18,33 V 29 H 34 V 21 H 30"/>
  <path style="fill:#e14134" d="m24 16h6c0.555695 0 1 0.399249 1 1v8c0 0.570713-0.444305 1-1 1h-6z"/>
  <rect style="opacity:0.2" width="4" height="12" x="16" y="33" rx="1" ry="1.2"/>
- <rect style="fill:#4f4f4f" width="4" height="12" x="16" y="32" rx="1" ry="1"/>
+ <rect style="fill:#fff495" width="4" height="12" x="16" y="32" rx="1" ry="1"/>
  <circle style="opacity:0.2" cx="18" cy="42" r="1"/>
  <path style="fill:#ffffff;opacity:0.2" d="m5 17c0-0.525684 0.4383658-1 1-1h24c0.594713 0 1 0.437147 1 1v1c0-0.584093-0.453076-1-1-1h-24c-0.4885143 0-1 0.474316-1 1z"/>
  <path style="fill:#ffffff;opacity:0.1" d="m16 33c0-0.546009 0.4375-1 1-1h2c0.554687 0 1 0.429687 1 1v1c0-0.539063-0.464844-1-1-1h-2c-0.550781 0-1 0.460937-1 1z"/>

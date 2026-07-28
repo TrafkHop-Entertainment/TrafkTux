@@ -2,7 +2,7 @@
  <rect style="opacity:0.2" width="20" height="20" x="2" y="2.5" rx="1" ry="1"/>
  <rect style="fill:#6b9fff" width="17" height="17" x="5" y="2" rx="1" ry="1"/>
  <path style="fill:#446191" d="M 5,18 V 21 L 6,22 H 21 C 21.554,22 22,21.554 22,21 V 18 Z"/>
- <path style="fill:#29353b" d="M 3 2 C 2.446 2 2 2.446 2 3 L 2 21 C 2 21.554 2.446 22 3 22 L 6 22 L 6 2 L 3 2 z"/>
+ <path style="fill:#fff495" d="M 3 2 C 2.446 2 2 2.446 2 3 L 2 21 C 2 21.554 2.446 22 3 22 L 6 22 L 6 2 L 3 2 z"/>
  <rect style="opacity:0.2" width="2" height="2" x="3" y="4.5"/>
  <rect style="fill:#ffffff" width="2" height="2" x="3" y="4"/>
  <rect style="opacity:0.2" width="2" height="2" x="3" y="7.5"/>

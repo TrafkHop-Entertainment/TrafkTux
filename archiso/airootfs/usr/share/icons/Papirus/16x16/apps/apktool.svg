@@ -5,7 +5,7 @@
  <path d="m0 8v2h2v6h2v-6h2v-2z" style="fill:#0c91fa"/>
  <path d="m4 10v6h4v-8h-2v2z" style="fill:#0470c5"/>
  <path d="m8 8v8h4v-8z" style="fill:#034d87"/>
- <path d="m12 8v8h4v-2h-2v-6z" style="fill:#02355f"/>
+ <path d="m12 8v8h4v-2h-2v-6z" style="fill:#fff495"/>
  <rect x="3" y="2" width="1" height="3" style="fill:#ffffff"/>
  <rect x="3" y="6" width="1" height="2" style="fill:#ffffff"/>
  <rect x="9" y="2" width="1" height="3" style="fill:#ffffff"/>

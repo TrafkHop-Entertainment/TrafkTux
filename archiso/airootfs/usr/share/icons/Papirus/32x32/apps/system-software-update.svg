@@ -1,14 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" version="1">
  <g style="opacity:0.2">
   <circle cx="16" cy="17" r="14"/>
-  <path style="fill:none;stroke:#000000;stroke-linejoin:round" d="M 29.5,20.5 H 23.5 L 29.5,26.5 Z"/>
+  <path style="fill:none;stroke:#fff495;stroke-linejoin:round" d="M 29.5,20.5 H 23.5 L 29.5,26.5 Z"/>
  </g>
  <path style="fill:#fbc02d" d="M 3.9,9 A 14,14 0 0 1 23,3.9 14,14 0 0 1 28.1,23 L 16,16 Z"/>
  <path style="fill:#ff9932" d="M 28.1,23 A 14,14 0 0 1 16,30 14,14 0 0 1 3.9,23 14,14 0 0 1 3.9,9"/>
- <circle style="fill:#3f3f3f" cx="16" cy="16" r="11"/>
- <path style="stroke:#000000;stroke-linejoin:round;opacity:0.2" d="M 2.5,7.5 V 13.5 H 8.5 Z"/>
+ <circle style="fill:#fff495" cx="16" cy="16" r="11"/>
+ <path style="stroke:#fff495;stroke-linejoin:round;opacity:0.2" d="M 2.5,7.5 V 13.5 H 8.5 Z"/>
  <path style="opacity:0.2" d="M 16 5 A 11 11 0 0 0 5 16 A 11 11 0 0 0 5.0352 16.5 A 11 11 0 0 1 16 6 A 11 11 0 0 1 26.977 16.328 A 11 11 0 0 0 27 16 A 11 11 0 0 0 16 5 z"/>
- <rect style="fill:none;stroke:#000000;stroke-linejoin:round;opacity:0.2" width="11" height="3" x="10.5" y="15.5" rx="1.5" ry="1.5"/>
+ <rect style="fill:none;stroke:#fff495;stroke-linejoin:round;opacity:0.2" width="11" height="3" x="10.5" y="15.5" rx="1.5" ry="1.5"/>
  <rect style="fill:#fac02d" width="6" height="2" x="11" y="15" rx="1" ry="1"/>
  <path style="fill:#ff9932;stroke:#ff9932;stroke-linejoin:round" d="M 29.5,19.5 H 23.5 L 29.5,25.5 Z"/>
  <path style="fill:#fbc02d;stroke:#fbc02d;stroke-linejoin:round" d="M 2.5,6.5 V 12.5 H 8.5 Z"/>

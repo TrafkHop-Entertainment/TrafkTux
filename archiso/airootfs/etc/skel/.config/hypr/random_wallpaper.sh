@@ -30,7 +30,7 @@ cat > "$HYPRPAPER_CONF" <<EOF
 preload = $RANDOM_IMAGE
 
 wallpaper {
-    monitor = eDP-1
+    monitor = 
     path = $RANDOM_IMAGE
     fit_mode = cover
 }

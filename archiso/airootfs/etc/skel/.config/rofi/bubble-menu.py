@@ -31,6 +31,7 @@ RAW_EXIT = "EXIT"
 RAW_NEXT = "NEXT"
 RAW_PREV = "PREV"
 RAW_NOOP = "NOOP"
+RAW_SYNC_ICONS = "SYNC_ICONS"
 
 # Rofi Script-Mode: ROFI_RETV in der Umgebung sagt uns, WARUM das Skript
 # gerade neu aufgerufen wurde. 1 = normale Auswahl (Enter/Klick).
@@ -49,6 +50,10 @@ NEXT_LABEL = "Next Page"
 NEXT_ICON  = "go-next"
 PREV_LABEL = "Last Page"
 PREV_ICON  = "go-previous"
+# Ersetzt den (in der Wurzelebene sonst immer leeren/funktionslosen) NEXT_PAGE-
+# Slot - siehe build_entries(root_split-Zweig) und entry_type "sync-icons".
+SYNC_ICONS_LABEL = "Icons synchronisieren"
+SYNC_ICONS_ICON  = "view-refresh"
 
 WASD_KB_ARGS = [
     "-kb-row-up", "Up,Control+p,w",
@@ -87,7 +92,6 @@ _STEAM_ARTWORK_NAMES = {
     "library_hero.jpg", "library_hero_blur.jpg", "capsule_231x87.jpg",
     "capsule_616x353.jpg", "page_bg_raw.jpg", "page.bg.jpg",
 }
-_cached_steam_icon_sync_ts = 0.0
 
 # --- JetBrains-Toolbox-Icon-Sync ---
 # Toolbox erzeugt beim Anlegen/Aktualisieren einer .desktop-Datei ein SVG-Icon
@@ -99,7 +103,6 @@ _cached_steam_icon_sync_ts = 0.0
 JETBRAINS_ICON_SYNC_TTL     = 300  # alle 5 Minuten neu prüfen
 JETBRAINS_DOT_DESKTOP_ICONS = os.path.expanduser("~/.local/share/JetBrains/Toolbox/dotDesktopIcons")
 JETBRAINS_ICON_TARGET_DIR   = os.path.expanduser("~/.local/share/icons/hicolor/scalable/apps")
-_cached_jetbrains_icon_sync_ts = 0.0
 
 # --- Hilfsfunktionen ---
 
@@ -184,6 +187,38 @@ def save_active_window():
     except Exception:
         pass
 
+def focused_monitor_name() -> str | None:
+    """Fragt Hyprland ab, welcher Monitor gerade fokussiert ist, und gibt dessen
+    Output-Namen zurück (z.B. "DP-1", "HDMI-A-1").
+
+    Hintergrund zum Zentrierungs-Bug: Rofi im nativen Wayland-Modus kennt den
+    Output, auf dem es rendert, laut Upstream-Doku erst NACHDEM die erste
+    Layer-Surface gemappt wurde - die "location: center"-Positionierung wird
+    aber schon VOR diesem Zeitpunkt berechnet (mit welchem Output auch immer
+    Rofi zu diesem Moment als Default kennt). Deshalb ist ausgerechnet der
+    ALLERERSTE Aufruf eines neuen Rofi-Prozesses potenziell falsch zentriert,
+    waehrend ein zweites Rendern im selben, bereits laufenden Prozess (z.B.
+    durch einen Seitenwechsel im Script-Mode) korrekt sitzt - das deckt sich
+    genau mit der Beobachtung, dass ausnahmslos der erste Start (ob per
+    Hyprland-Bind oder per Waybar-Klick) betroffen ist, nicht ein bestimmter
+    Startweg.
+
+    Fix: Wir raten nicht, sondern sagen Rofi von Anfang an explizit, auf
+    welchem Output es sich zentrieren soll (-monitor <name>), statt uns auf
+    Rofis eigene (racy) Output-Erkennung beim ersten Frame zu verlassen."""
+    try:
+        result = subprocess.run(
+            ["hyprctl", "monitors", "-j"],
+            capture_output=True, text=True, timeout=2,
+        )
+        monitors = json.loads(result.stdout)
+        for m in monitors:
+            if m.get("focused"):
+                return m.get("name")
+    except Exception:
+        pass
+    return None
+
 def read_prev_window_addr() -> str:
     """Liest die beim Menü-Start gemerkte Fenster-Adresse (falls vorhanden)."""
     if os.path.exists(PREV_WINDOW_FILE):
@@ -245,7 +280,17 @@ def build_entries(node: dict, has_parent: bool, page: int = 0,
     # (siehe Kommentar oben bei "while len(content) < PAGE_SIZE": display=""
     # wuerde die Zeile als Steuerzeile misinterpretieren und die Blase komplett
     # verschwinden lassen -> deshalb hier ebenfalls ein Leerzeichen statt "".)
-    nav_next = (NEXT_LABEL, NEXT_ICON, RAW_NEXT, False) if has_next else (" ", ensure_blank_icon(), RAW_NOOP, True)
+    if root_split:
+        # Die Wurzelebene hat IMMER genau eine Seite (has_next/has_prev sind
+        # hier strukturell immer False) - die NEXT_PAGE-Position (nav_column[0])
+        # wäre also sowieso nur eine leere, funktionslose NOOP-Blase. Diesen
+        # ungenutzten Slot fest mit einem echten Menüpunkt belegen, statt ihn
+        # leer zu lassen (User-Vorgabe: manueller Sync-Trigger statt Daemon/
+        # Hintergrundprozess, siehe run_manual_icon_sync() / entry_type
+        # "sync-icons" in handle_step()).
+        nav_next = (SYNC_ICONS_LABEL, SYNC_ICONS_ICON, RAW_SYNC_ICONS, False)
+    else:
+        nav_next = (NEXT_LABEL, NEXT_ICON, RAW_NEXT, False) if has_next else (" ", ensure_blank_icon(), RAW_NOOP, True)
     nav_prev = (PREV_LABEL, PREV_ICON, RAW_PREV, False) if has_prev else (" ", ensure_blank_icon(), RAW_NOOP, True)
     nav_back_exit = (
         (BACK_LABEL, "go-previous", RAW_BACK, False)
@@ -437,11 +482,28 @@ def _find_steam_desktop_icon_ids() -> set[str]:
                         appids.add(appid)
     return appids
 
-def _icon_already_resolvable(icon_name: str) -> bool:
-    """Prüft, ob rofi/GTK dieses Icon bereits irgendwo im Icon-Theme finden würde,
-    ohne dass wir GTK selbst importieren müssen (das wäre eine zusätzliche
-    Abhängigkeit) — wir schauen stattdessen direkt in den bekannten
-    hicolor/Papirus-Verzeichnissen nach, ob eine Datei mit diesem Namen existiert."""
+_cached_icon_stems: set[str] | None = None
+
+def _all_resolvable_icon_stems() -> set[str]:
+    """Baut EINMAL pro Prozesslauf die Menge aller Icon-Dateinamen (ohne
+    Endung) über alle Icon-Theme-Verzeichnisse.
+
+    Das ersetzt das vorherige _icon_already_resolvable(), das für JEDES
+    einzelne zu prüfende Icon (z.B. jede Steam-App) sein eigenes komplettes
+    os.walk() über ~/.local/share/icons UND /usr/share/icons gestartet hat.
+    Bei mehreren installierten Icon-Themes (hicolor, Papirus, ...) mit
+    zusammen oft zehntausenden Dateien ist das rein I/O-gebunden (kaum CPU-
+    Last, aber spuerbare Wartezeit) - und stark davon abhaengig, ob diese
+    Verzeichnisse gerade im OS-Pagecache "warm" sind oder (z.B. nachdem
+    zwischenzeitlich andere Programme viel Speicher/Dateicache belegt haben)
+    erst wieder von der Platte gelesen werden muessen. Das erklaert die
+    beobachtete, stark schwankende Verzoegerung ohne nennenswerten CPU-
+    Verbrauch. Fix: nur noch EIN Walk pro Sync-Lauf, Ergebnis in einem Set
+    zwischengespeichert."""
+    global _cached_icon_stems
+    if _cached_icon_stems is not None:
+        return _cached_icon_stems
+    stems: set[str] = set()
     search_dirs = [
         os.path.expanduser("~/.local/share/icons"),
         "/usr/share/icons",
@@ -449,12 +511,18 @@ def _icon_already_resolvable(icon_name: str) -> bool:
     for base in search_dirs:
         if not os.path.isdir(base):
             continue
-        for dirpath, _dirnames, filenames in os.walk(base):
+        for _dirpath, _dirnames, filenames in os.walk(base):
             for fname in filenames:
                 stem, _ext = os.path.splitext(fname)
-                if stem == icon_name:
-                    return True
-    return False
+                stems.add(stem)
+    _cached_icon_stems = stems
+    return stems
+
+def _icon_already_resolvable(icon_name: str) -> bool:
+    """Prüft, ob rofi/GTK dieses Icon bereits irgendwo im Icon-Theme finden würde
+    (siehe _all_resolvable_icon_stems() für den teuren Teil, der jetzt nur
+    einmal pro Sync-Lauf passiert statt einmal pro Icon)."""
+    return icon_name in _all_resolvable_icon_stems()
 
 def _find_steam_app_icon_source(appid: str) -> str | None:
     """Findet im Steam-librarycache für die gegebene appid die Datei, die das
@@ -542,20 +610,14 @@ def sync_steam_icons() -> int:
     return installed
 
 def maybe_sync_steam_icons(force: bool = False):
-    """Führt sync_steam_icons() nur aus, wenn STEAM_ICON_SYNC_TTL seit dem letzten
-    Lauf verstrichen ist (oder force=True), damit der Daemon nicht bei jedem
-    Menü-Öffnen den ganzen librarycache durchsucht."""
-    global _cached_steam_icon_sync_ts
-    now = time.monotonic()
-    if not force and (now - _cached_steam_icon_sync_ts) < STEAM_ICON_SYNC_TTL:
-        return
-    _cached_steam_icon_sync_ts = now
-    try:
-        n = sync_steam_icons()
-        if n:
-            print(f"[Steam-Icon-Sync] {n} neue(s) Icon(s) installiert.")
-    except Exception as e:
-        print(f"[Steam-Icon-Sync] Fehler: {e}")
+    """Automatischer Auto-Sync wurde bewusst entfernt (weder TTL-Polling noch
+    Hintergrundprozess) - der User möchte explizit KEINEN dauerhaft/beiläufig
+    laufenden Prozess dafür. Der Sync passiert jetzt ausschließlich über den
+    manuellen "Icons synchronisieren"-Menüpunkt (siehe run_manual_icon_sync()
+    und entry_type "sync-icons" in handle_step()). Diese Funktion bleibt als
+    No-Op stehen, damit collect_desktop_apps() sie weiterhin aufrufen kann,
+    ohne dass an der Aufrufstelle etwas geändert werden muss."""
+    pass
 
 def sync_jetbrains_icons() -> int:
     """Kopiert fehlende JetBrains-Toolbox-Icons aus dotDesktopIcons/ ins
@@ -616,28 +678,37 @@ def sync_jetbrains_icons() -> int:
     return installed
 
 def maybe_sync_jetbrains_icons(force: bool = False):
-    """Führt sync_jetbrains_icons() nur aus, wenn JETBRAINS_ICON_SYNC_TTL seit
-    dem letzten Lauf verstrichen ist (oder force=True)."""
-    global _cached_jetbrains_icon_sync_ts
-    now = time.monotonic()
-    if not force and (now - _cached_jetbrains_icon_sync_ts) < JETBRAINS_ICON_SYNC_TTL:
-        return
-    _cached_jetbrains_icon_sync_ts = now
-    try:
-        n = sync_jetbrains_icons()
-        if n:
-            print(f"[JetBrains-Icon-Sync] {n} neue(s) Icon(s) installiert.")
-    except Exception as e:
-        print(f"[JetBrains-Icon-Sync] Fehler: {e}")
+    """Siehe maybe_sync_steam_icons() - bewusst kein Auto-Sync mehr, weder per
+    TTL noch per Hintergrundprozess. Nur noch über den manuellen Menüpunkt."""
+    pass
+
+def run_manual_icon_sync() -> tuple[int, int]:
+    """Führt Steam- UND JetBrains-Icon-Sync synchron aus - ausgelöst durch den
+    manuellen "Icons synchronisieren"-Menüpunkt im Launcher-Root, NIE
+    automatisch beim normalen Öffnen/Blättern.
+
+    Bewusste Design-Entscheidung (User-Vorgabe): kein Hintergrundprozess,
+    kein Daemon, kein TTL-Polling. Stattdessen macht der User das genau dann,
+    wenn er weiß, dass sich was geändert hat (z.B. neues Steam-Spiel
+    installiert) - dafür läuft der (in der Praxis seltene) teure Scan auch
+    nur dann, mit sichtbarem Ergebnis, statt lautlos alle paar Minuten im
+    Hintergrund. Gibt (installierte Steam-Icons, installierte JetBrains-
+    Icons) zurück, damit handle_step() ein Ergebnis anzeigen kann."""
+    global _cached_icon_stems, _cached_desktop_apps
+    # Icon-Stem-Cache verwerfen: nach dem Sync liegen ggf. neue Dateien in den
+    # Icon-Verzeichnissen, der alte (jetzt veraltete) Cache aus
+    # _all_resolvable_icon_stems() darf nicht weiterverwendet werden.
+    _cached_icon_stems = None
+    n_steam = sync_steam_icons()
+    _cached_icon_stems = None  # nach Steam-Sync erneut invalidieren, vor JetBrains
+    n_jetbrains = sync_jetbrains_icons()
+    # Desktop-App-Cache ebenfalls verwerfen, damit neu installierte Icons
+    # sofort (nächster Menü-Aufruf) sichtbar sind, statt erst nach SCAN_CACHE_TTL.
+    _cached_desktop_apps = None
+    return n_steam, n_jetbrains
 
 def collect_desktop_apps() -> list[dict]:
     global _cached_desktop_apps, _cached_desktop_apps_ts
-    # Eigene TTLs, unabhängig vom Desktop-App-Cache-TTL, damit fehlende
-    # Steam-/JetBrains-Icons auch dann synchronisiert werden, wenn der
-    # Desktop-App-Cache selbst noch gültig ist (spätestens beim nächsten
-    # Rescan werden sie dann sichtbar).
-    maybe_sync_steam_icons()
-    maybe_sync_jetbrains_icons()
     now = time.monotonic()
     if _cached_desktop_apps is not None and (now - _cached_desktop_apps_ts) < SCAN_CACHE_TTL:
         return _cached_desktop_apps
@@ -793,6 +864,25 @@ def current_entries_for_state(menu_name: str, root: dict, state: dict) -> list[t
         return build_powermenu_entries(node)
     return build_entries(node, has_parent, page, root_split=not has_parent)
 
+def run_manual_icon_sync_and_notify():
+    """Führt run_manual_icon_sync() aus und zeigt das Ergebnis per
+    Desktop-Notification an (dunst läuft laut Autostart bereits). Gemeinsam
+    genutzt von der Root-Maus-Blase (RAW_SYNC_ICONS) und der "e"-Taste in
+    der Root, die sonst wirkungslos wäre (siehe RETV_CUSTOM_2)."""
+    n_steam, n_jetbrains = run_manual_icon_sync()
+    total = n_steam + n_jetbrains
+    if total:
+        msg = f"{n_steam} Steam-Icon(s), {n_jetbrains} JetBrains-Icon(s) installiert."
+    else:
+        msg = "Keine fehlenden Icons gefunden - alles schon aktuell."
+    try:
+        subprocess.run(
+            ["notify-send", "-a", "Bubble-Menu", "Icons synchronisiert", msg],
+            capture_output=True, timeout=5,
+        )
+    except Exception:
+        pass
+
 def handle_step(menu_name: str, x11: bool, retv: str, info: str | None) -> None:
     """
     Wertet GENAU EINE Rofi-Interaktion aus (Auswahl oder kb-custom-Taste)
@@ -825,7 +915,15 @@ def handle_step(menu_name: str, x11: bool, retv: str, info: str | None) -> None:
         emit_current()
         return
 
-    if retv == RETV_CUSTOM_2:  # e -> nächste Seite
+    if retv == RETV_CUSTOM_2:  # e -> nächste Seite (in der Root: Icons synchronisieren)
+        if not vmode and not path_str:
+            # In der Root gibt es strukturell immer nur eine Seite - die
+            # NEXT_PAGE-Taste "e" wäre hier sonst wirkungslos (page+1 wird
+            # unten sowieso auf 0 geklemmt). Konsistent zur Maus-Blase (siehe
+            # RAW_SYNC_ICONS) macht "e" in der Root stattdessen den Icon-Sync.
+            run_manual_icon_sync_and_notify()
+            emit_current()
+            return
         if vmode:
             total = len(build_virtual_entries_data(vmode, root))
         else:
@@ -882,6 +980,18 @@ def handle_step(menu_name: str, x11: bool, retv: str, info: str | None) -> None:
         # aber sicherheitshalber die aktuelle Liste einfach erneut anzeigen
         emit_current()
         return
+    if info == RAW_SYNC_ICONS:
+        # Bewusst manuell statt automatisch/Hintergrundprozess (User-Vorgabe:
+        # kein Daemon, kein TTL-Polling). Läuft synchron GENAU dann, wenn der
+        # User diese Blase anklickt - typischerweise 1-2 Sekunden, was hier
+        # völlig in Ordnung ist (bewusster, seltener Klick statt etwas, das
+        # beim normalen Menü-Öffnen im Weg steht).
+        run_manual_icon_sync_and_notify()
+        # Zurück zur (unveränderten) aktuellen Ansicht - der User bleibt
+        # genau da, wo er war (in der Root, da dieser Eintrag nur dort
+        # existiert), Rofi bleibt offen.
+        emit_current()
+        return
 
     # --- Auswahl innerhalb einer virtuellen Liste (App/Binary starten) ---
     if vmode:
@@ -934,10 +1044,15 @@ def handle_step(menu_name: str, x11: bool, retv: str, info: str | None) -> None:
     if entry_type == "special-window":
         # Window-Liste ändert sich laufend (offene Fenster) — dafür bleibt es
         # ein eigener, unabhängiger rofi-Prozess statt Teil des State-Baums.
+        # Wie beim Hauptmenü gilt: ein frisch gestarteter Rofi-Prozess kennt
+        # seinen Output beim ersten Frame noch nicht sicher (siehe
+        # focused_monitor_name()) -> Monitor explizit mitgeben.
         wasd_flags = " ".join(shlex.quote(a) for a in WASD_KB_ARGS)
         x11_flag = "-x11 " if x11 else ""
         theme_path = os.path.join(ROFI_BASE, menu_name, "theme.rasi")
-        exec_detached(f"rofi -show window {x11_flag}-theme {shlex.quote(theme_path)} {wasd_flags}")
+        monitor = focused_monitor_name()
+        monitor_flag = f"-monitor {shlex.quote(monitor)} " if monitor else ""
+        exec_detached(f"rofi -show window {x11_flag}{monitor_flag}-theme {shlex.quote(theme_path)} {wasd_flags}")
         cleanup()
         return
 

@@ -6,8 +6,8 @@
  <path style="fill:none;stroke:#7a7a7a;stroke-width:2;stroke-linecap:round;stroke-linejoin:round" d="m 12,24 6,-13 6,13"/>
  <rect style="fill:#7a7a7a" width="8" height="2" x="14" y="19"/>
  <path style="fill:none;stroke:#7a7a7a;stroke-width:2;stroke-linecap:round;stroke-linejoin:round" d="M 24,24 28,34 31.5,24 35,34 39,24"/>
- <path style="fill:none;stroke:#404040;stroke-width:1px;stroke-linecap:round" d="M 13.5,33.5 24,24"/>
- <path style="fill:none;stroke:#404040;stroke-width:2;stroke-linecap:round" d="m 24,24 6,-7"/>
+ <path style="fill:none;stroke:#fff495;stroke-width:1px;stroke-linecap:round" d="M 13.5,33.5 24,24"/>
+ <path style="fill:none;stroke:#fff495;stroke-width:2;stroke-linecap:round" d="m 24,24 6,-7"/>
  <circle style="opacity:0.1" cx="24" cy="25" r="3"/>
- <circle style="fill:#595959" cx="24" cy="24" r="3"/>
+ <circle style="fill:#fff495" cx="24" cy="24" r="3"/>
 </svg>

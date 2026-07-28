@@ -6,6 +6,6 @@
  <path style="opacity:0.2;fill:#ffffff" d="M 12.75 4 C 11.2265 4 10 5.2495812 10 6.8007812 L 10 7.8007812 C 10 6.2495813 11.2265 5 12.75 5 L 36 5 L 36 4 L 12.75 4 z"/>
  <path style="opacity:0.1" d="m 18,28 v 29 h 3 3 V 54 H 21 V 31 h 3 v -3 h -3 z m 23,0 v 3 h 3 v 23 h -3 v 3 h 3 3 V 28 h -3 z m -16,6 v 3 h 6 v 16 h 3 V 37 h 6 v -3 z"/>
  <path style="fill:#9c4221" d="m 41,27 v 3 h 3 v 23 h -3 v 3 h 3 3 V 27 h -3 z"/>
- <path style="fill:#3f3f3f" d="m 25,33 v 3 h 6 v 16 h 3 V 36 h 6 v -3 z"/>
+ <path style="fill:#fff495" d="m 25,33 v 3 h 6 v 16 h 3 V 36 h 6 v -3 z"/>
  <path style="fill:#9c4221" d="m 18,27 v 29 h 3 3 V 53 H 21 V 30 h 3 v -3 h -3 z"/>
 </svg>

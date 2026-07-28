@@ -6,6 +6,6 @@
   <path fill="#fff" opacity=".2" d="m2 3c-0.554 0-1 0.446-1 1v0.5c0-0.554 0.446-1 1-1h18c0.554 0 1 0.446 1 1v-0.5c0-0.554-0.446-1-1-1h-18z"/>
   <rect fill="#faff84" width="14" height="11" x="4" y="6" rx=".945" ry="1.001"/>
   <rect opacity=".2" width="6" height="2" x="8" y="10.5" rx=".992" ry=".912"/>
-  <rect fill="#4e4e4e" width="6" height="2" x="8" y="10" rx=".992" ry=".912"/>
+  <rect fill="#fff495" width="6" height="2" x="8" y="10" rx=".992" ry=".912"/>
  </g>
 </svg>

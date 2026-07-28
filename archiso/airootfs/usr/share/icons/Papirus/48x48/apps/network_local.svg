@@ -5,9 +5,9 @@
  <g opacity=".2">
   <path d="m22 31v4h-11v4h26v-4h-11v-4h-4z"/>
  </g>
- <g style="fill:#3f3f3f">
-  <rect style="fill:#3f3f3f" width="4" height="6" x="22" y="30"/>
-  <rect style="fill:#3f3f3f" width="26" height="4" x="11" y="34"/>
+ <g style="fill:#fff495">
+  <rect style="fill:#fff495" width="4" height="6" x="22" y="30"/>
+  <rect style="fill:#fff495" width="26" height="4" x="11" y="34"/>
  </g>
  <g opacity=".2" transform="translate(0,1)">
   <circle cx="10" cy="36" r="4"/>

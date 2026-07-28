@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" version="1.1">
  <g transform="translate(0,-1090.5197)">
   <path style="opacity:0.2" d="m 15.5,1095.3434 -11.5,5.75 v 0.9257 11.9278 l 10,5 v 0.072 h 0.144531 l 1.355469,0.6778 1.355469,-0.6778 H 17 v -0.072 l 10,-5 v -12.8535 z m -1.5,4.1035 v 5.9238 l -5.3867188,-3.2305 z m 3,0 5.384766,2.6933 L 17,1105.3707 Z M 7,1104.6695 12.384766,1107.9 7,1110.5934 Z m 17,0 v 5.9239 L 18.615234,1107.9 Z m -10,5.7774 v 5.1465 l -5.1464844,-2.5743 z m 3,0 5.146484,2.5722 L 17,1115.5934 Z"/>
-  <path style="fill:none;stroke:#364451;stroke-width:3" d="m 15.499944,1096.02 v 11"/>
-  <path style="fill:none;stroke:#364451;stroke-width:3" d="m 5.4999442,1112.02 9.9999998,-5 10,5"/>
+  <path style="fill:none;stroke:#fff495;stroke-width:3" d="m 15.499944,1096.02 v 11"/>
+  <path style="fill:none;stroke:#fff495;stroke-width:3" d="m 5.4999442,1112.02 9.9999998,-5 10,5"/>
   <path style="fill:none;stroke:#7e8f99;stroke-width:3" d="m 5.4999442,1101.02 9.9999998,6 10,-6"/>
   <path style="fill:none;stroke:#7e8f99;stroke-width:3" d="m 15.499944,1118.02 v -11"/>
   <path style="fill:none;stroke:#53626c;stroke-width:3" d="m 5.4999442,1101.02 9.9999998,-5 9.999925,4.9999 v 11 l -9.999925,5.0001 -9.9999998,-5 z"/>

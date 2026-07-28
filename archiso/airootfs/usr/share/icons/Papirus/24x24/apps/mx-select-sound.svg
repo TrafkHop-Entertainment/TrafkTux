@@ -15,7 +15,7 @@
    <rect x="18" y="16" width="2" height="3"/>
    <rect x="20.5" y="16" width="2" height="3"/>
   </g>
-  <rect x="11" y="8" width="5" height="5" rx="1" ry="1" style="fill:#4e4e4e"/>
+  <rect x="11" y="8" width="5" height="5" rx="1" ry="1" style="fill:#fff495"/>
   <g style="fill:#b7b7b7">
    <rect x="12" y="7" width="1" height="1.5"/>
    <rect x="14" y="7" width="1" height="1.5"/>
@@ -26,7 +26,7 @@
    <rect transform="rotate(90)" x="9" y="-11.5" width="1" height="1.5"/>
    <rect transform="rotate(90)" x="11" y="-11.5" width="1" height="1.5"/>
   </g>
-  <path d="m3 5h2v15.5" style="fill:none;opacity:.2;stroke-linecap:round;stroke-linejoin:round;stroke-width:2;stroke:#000000"/>
+  <path d="m3 5h2v15.5" style="fill:none;opacity:.2;stroke-linecap:round;stroke-linejoin:round;stroke-width:2;stroke:#fff495"/>
   <path d="m3 4h2v16" style="fill:none;stroke-linecap:round;stroke-linejoin:round;stroke-width:2;stroke:#b7b7b7"/>
   <path d="m3 3a1.0001 1.0001 0 0 0-0.9805 1.2461 1.0001 1.0001 0 0 1 0.9805-0.7461h2a1.0001 1.0001 0 0 1 1 1v-0.5a1.0001 1.0001 0 0 0-1-1z" style="fill:#ffffff;opacity:.2"/>
  </g>

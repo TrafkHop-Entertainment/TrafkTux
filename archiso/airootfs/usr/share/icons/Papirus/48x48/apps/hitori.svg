@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" version="1">
- <rect fill="#4f4f4f" width="8" height="8" x="5" y="5" rx=".407" ry=".477"/>
+ <rect fill="#fff495" width="8" height="8" x="5" y="5" rx=".407" ry=".477"/>
  <rect fill="#e4e4e4" width="8" height="8" x="15" y="5" rx=".407" ry=".477"/>
  <rect fill="#ff5757" width="8" height="8" x="25" y="5" rx=".407" ry=".477"/>
  <rect fill="#e4e4e4" width="8" height="8" x="35" y="5" rx=".407" ry=".477"/>
@@ -8,7 +8,7 @@
  <rect fill="#ff5757" width="8" height="8" x="25" y="15" rx=".407" ry=".477"/>
  <rect fill="#e4e4e4" width="8" height="8" x="35" y="15" rx=".407" ry=".477"/>
  <rect fill="#e4e4e4" width="8" height="8" x="5" y="25" rx=".407" ry=".477"/>
- <rect fill="#4f4f4f" width="8" height="8" x="15" y="25" rx=".407" ry=".477"/>
+ <rect fill="#fff495" width="8" height="8" x="15" y="25" rx=".407" ry=".477"/>
  <rect fill="#e4e4e4" width="8" height="8" x="25" y="25" rx=".407" ry=".477"/>
  <rect fill="#4ac73e" width="8" height="8" x="35" y="25" rx=".407" ry=".477"/>
  <rect fill="#e4e4e4" width="8" height="8" x="5" y="35" rx=".407" ry=".477"/>

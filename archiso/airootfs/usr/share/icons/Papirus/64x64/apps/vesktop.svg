@@ -6,11 +6,11 @@
  <rect x="4" y="22" width="56" height="10" style="fill:#facf50"/>
  <rect x="4" y="32" width="56" height="9" style="fill:#3cc86d"/>
  <path d="m4 41v7.800781c0 0.405519 0.0208842 0.80509 0.0625 1.199219h55.875c0.041616-0.394129 0.0625-0.7937 0.0625-1.199219v-7.800781h-56z" style="fill:#5498f2"/>
- <path d="m14 17v13.547221l0.615234 1.479169 7 6.97361h2.969532l6.799617-6.97361 0.615234-1.479169v-13.547221h-3.999617v12.680967l-4.9 5.081033-5.1-5.081033v-12.680967z" style="fill:none;opacity:.1;stroke-linecap:square;stroke-width:6;stroke:#000000"/>
- <path d="m14 16v13.547221l0.615234 1.479169 7 6.97361h2.969532l6.799617-6.97361 0.615234-1.479169v-13.547221h-3.999617v12.680967l-4.9 5.081033-5.1-5.081033v-12.680967z" style="fill:none;stroke-linecap:square;stroke-width:6;stroke:#555555"/>
+ <path d="m14 17v13.547221l0.615234 1.479169 7 6.97361h2.969532l6.799617-6.97361 0.615234-1.479169v-13.547221h-3.999617v12.680967l-4.9 5.081033-5.1-5.081033v-12.680967z" style="fill:none;opacity:.1;stroke-linecap:square;stroke-width:6;stroke:#fff495"/>
+ <path d="m14 16v13.547221l0.615234 1.479169 7 6.97361h2.969532l6.799617-6.97361 0.615234-1.479169v-13.547221h-3.999617v12.680967l-4.9 5.081033-5.1-5.081033v-12.680967z" style="fill:none;stroke-linecap:square;stroke-width:6;stroke:#fff495"/>
  <path d="m14 16v13.547221l0.615234 1.479169 7 6.97361h2.969532l6.799617-6.97361 0.615234-1.479169v-13.547221h-3.999617v12.680967l-4.9 5.081033-5.1-5.081033v-12.680967z" style="fill:#ffffff"/>
- <path d="m32 26v4h-4v14h4v4h14v-4h4v-4h-7v4h-8v-14h8v4h7v-4h-4v-4z" style="fill:none;opacity:.1;stroke-width:6;stroke:#000000"/>
- <path d="m32 25v4h-4v14h4v4h14v-4h4v-4h-7v4h-8v-14h8v4h7v-4h-4v-4z" style="fill:none;stroke-width:6;stroke:#555555"/>
+ <path d="m32 26v4h-4v14h4v4h14v-4h4v-4h-7v4h-8v-14h8v4h7v-4h-4v-4z" style="fill:none;opacity:.1;stroke-width:6;stroke:#fff495"/>
+ <path d="m32 25v4h-4v14h4v4h14v-4h4v-4h-7v4h-8v-14h8v4h7v-4h-4v-4z" style="fill:none;stroke-width:6;stroke:#fff495"/>
  <path d="m32 25v4h-4v14h4v4h14v-4h4v-4h-7v4h-8v-14h8v4h7v-4h-4v-4z" style="fill:#ecb2c3"/>
  <path d="M 15.199219 4 C 8.9944189 4 4 8.9944189 4 15.199219 L 4 16.199219 C 4 9.9944189 8.9944189 5 15.199219 5 L 48.800781 5 C 55.005581 5 60 9.9944189 60 16.199219 L 60 15.199219 C 60 8.9944189 55.005581 4 48.800781 4 L 15.199219 4 z " style="fill:#ffffff;opacity:.2"/>
 </svg>

@@ -2,12 +2,12 @@
  <rect style="fill:#959595" width="6" height="16.8" x="29" y="40.4"/>
  <rect style="opacity:0.2" width="6" height="22" x="55" y="-43" rx="3" ry="2.75" transform="rotate(90)"/>
  <rect style="opacity:0.2" width="34" height="42" x="-49" y="5" rx="2.125" ry="2.1" transform="scale(-1,1)"/>
- <rect style="fill:#4f4f4f" width="6" height="22" x="54" y="-43" rx="3" ry="2.75" transform="rotate(90)"/>
+ <rect style="fill:#fff495" width="6" height="22" x="54" y="-43" rx="3" ry="2.75" transform="rotate(90)"/>
  <rect style="fill:#83562d" width="34" height="42" x="-49" y="4" rx="2.125" ry="2.1" transform="scale(-1,1)"/>
- <circle style="fill:#3f3f3f" cx="32" cy="21" r="13"/>
+ <circle style="fill:#fff495" cx="32" cy="21" r="13"/>
  <circle style="opacity:0.2" cx="32" cy="22" r="10"/>
  <circle style="fill:#636363" cx="32" cy="21" r="10"/>
- <circle style="fill:#3f3f3f" cx="32" cy="21" r="4"/>
+ <circle style="fill:#fff495" cx="32" cy="21" r="4"/>
  <circle style="opacity:0.4" cx="19.5" cy="8.5" r="1.5"/>
  <circle style="opacity:0.4" cx="44.5" cy="8.5" r="1.5"/>
  <circle style="opacity:0.4" cx="19.5" cy="41.5" r="1.5"/>

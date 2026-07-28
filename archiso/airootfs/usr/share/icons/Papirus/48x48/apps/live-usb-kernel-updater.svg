@@ -1,7 +1,7 @@
 <svg width="48" height="48" version="1.1" xmlns="http://www.w3.org/2000/svg">
  <g>
   <path d="m9 6h30v14h-30z" style="fill:#b7b7b7"/>
-  <rect x="4" y="18" width="40" height="24" rx="2" ry="2" style="fill:#4f4f4f"/>
+  <rect x="4" y="18" width="40" height="24" rx="2" ry="2" style="fill:#fff495"/>
   <rect x="12" y="23" width="24" height="4" style="opacity:.4"/>
   <rect x="14" y="29" width="20" height="4" style="opacity:.4"/>
   <rect x="16" y="35" width="16" height="4" style="opacity:.4"/>

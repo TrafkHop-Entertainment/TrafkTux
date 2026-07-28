@@ -94,7 +94,6 @@ dosfstools
 mtools
 fuse2
 gparted
-gnome-disk-utility
 gvfs
 gvfs-mtp
 gvfs-smb
@@ -118,9 +117,9 @@ hplip
 firefox
 vlc
 vlc-plugins-all
-kate
-kolourpaint
-gwenview
+xed
+pinta
+loupe
 ark
 gparted
 fastfetch
@@ -153,6 +152,7 @@ cmake
 ffmpeg
 flatpak
 btop
+htop
 nano
 bash-completion
 khal

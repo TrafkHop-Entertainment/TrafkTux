@@ -1,7 +1,7 @@
 [global]
     ### Display ###
     monitor      = 0
-    follow       = none
+    follow       = mouse
 
     ### Geometry ###
     width        = (150, 1350)
@@ -18,17 +18,17 @@
     progress_bar_frame_width  = 1
     progress_bar_min_width    = 100
     progress_bar_max_width    = 300
-    progress_bar_corner_radius = 15
+    progress_bar_corner_radius = 8
     progress_bar_corners      = all
 
     ### Icons ###
     icon_position               = right
     min_icon_size               = 15
     max_icon_size               = 45
-    icon_corner_radius          = 8
+    icon_corner_radius          = 5
     icon_corners                = all
     enable_recursive_icon_lookup = true
-    icon_theme                  = "Clay-Light, Clay"
+    icon_theme                  = "TrafkClay-Light, TrafkClay"
 
     ### Padding & Frame ###
     indicate_hidden    = yes
@@ -41,7 +41,7 @@
     frame_color        = "#23163B"
     gap_size           = 15
     separator_color    = frame
-    corner_radius      = 35
+    corner_radius      = 23
     corners            = all
 
     ### Text ###

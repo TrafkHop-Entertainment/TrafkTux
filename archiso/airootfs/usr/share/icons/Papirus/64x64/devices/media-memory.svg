@@ -16,7 +16,7 @@
   <rect width="2" height="40" x="-54" y="12" transform="rotate(-90)"/>
  </g>
  <rect style="opacity:0.2" width="36" height="48" x="14" y="9" rx="2.5" ry="2.5"/>
- <rect style="fill:#4f4f4f" width="36" height="48" x="14" y="8" rx="2.5" ry="2.5"/>
+ <rect style="fill:#fff495" width="36" height="48" x="14" y="8" rx="2.5" ry="2.5"/>
  <g style="opacity:0.4;fill:#ffffff">
   <rect width="2" height="6" x="23" y="14"/>
   <rect width="2" height="6" x="23" y="22"/>

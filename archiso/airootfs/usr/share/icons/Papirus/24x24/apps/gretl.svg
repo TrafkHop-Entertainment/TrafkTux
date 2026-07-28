@@ -8,9 +8,9 @@
   <circle cx="27" cy="26" r="3"/>
   <circle cx="37" cy="18" r="3"/>
  </g>
- <circle style="fill:#3f3f3f" cx="5.5" cy="14.5" r="1.5"/>
- <circle style="fill:#3f3f3f" cx="9.5" cy="10" r="1.5"/>
- <circle style="fill:#3f3f3f" cx="13.5" cy="12.5" r="1.5"/>
- <circle style="fill:#3f3f3f" cx="18.5" cy="8.5" r="1.5"/>
+ <circle style="fill:#fff495" cx="5.5" cy="14.5" r="1.5"/>
+ <circle style="fill:#fff495" cx="9.5" cy="10" r="1.5"/>
+ <circle style="fill:#fff495" cx="13.5" cy="12.5" r="1.5"/>
+ <circle style="fill:#fff495" cx="18.5" cy="8.5" r="1.5"/>
  <path style="fill:#ffffff;opacity:0.2" d="M 3 3 C 2.446 3 2 3.446 2 4 L 2 4.5 C 2 3.946 2.446 3.5 3 3.5 L 21 3.5 C 21.554 3.5 22 3.946 22 4.5 L 22 4 C 22 3.446 21.554 3 21 3 L 3 3 z"/>
 </svg>

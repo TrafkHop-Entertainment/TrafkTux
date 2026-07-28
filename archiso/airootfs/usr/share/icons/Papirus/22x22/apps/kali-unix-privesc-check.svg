@@ -16,9 +16,9 @@
   <circle cx="7.5" cy="7" r="1.5" style="opacity:.1"/>
   <circle cx="14.5" cy="7.5" r="3.5" style="fill:#e2bf56"/>
   <circle cx="14.5" cy="7" r="1.5" style="opacity:.1"/>
-  <circle cx="7.5" cy="6.5" r="1.5" style="fill:#3f3f3f"/>
-  <circle cx="14.5" cy="6.5" r="1.5" style="fill:#3f3f3f"/>
-  <path style="opacity:.1;stroke-linejoin:round;stroke:#000000;stroke-linecap:round;fill:none" d="m6.5042925 16s1.5 2 4.5000005 2c3 0 4.499999-2 4.499999-2"/>
-  <path style="stroke-linejoin:round;stroke:#3f3f3f;stroke-linecap:round;fill:none" d="m6.5042925 15.5s1.5 2 4.5000005 2c3 0 4.499999-2 4.499999-2"/>
+  <circle cx="7.5" cy="6.5" r="1.5" style="fill:#fff495"/>
+  <circle cx="14.5" cy="6.5" r="1.5" style="fill:#fff495"/>
+  <path style="opacity:.1;stroke-linejoin:round;stroke:#fff495;stroke-linecap:round;fill:none" d="m6.5042925 16s1.5 2 4.5000005 2c3 0 4.499999-2 4.499999-2"/>
+  <path style="stroke-linejoin:round;stroke:#fff495;stroke-linecap:round;fill:none" d="m6.5042925 15.5s1.5 2 4.5000005 2c3 0 4.499999-2 4.499999-2"/>
  </g>
 </svg>

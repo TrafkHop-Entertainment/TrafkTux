@@ -6,7 +6,7 @@
  <circle style="fill:#ffbd15" cx="16.5" cy="15.5" r="11.5"/>
  <path style="opacity:0.1" d="M 19.5,21 H 23 v 3 h -3.5 z"/>
  <path style="opacity:0.1" d="M 19.388889,9.000001 10,24 h 3.611111 L 23,9.000001 Z"/>
- <path style="fill:#5c4200" d="M 19.388889,8 10,22.999999 h 3.611111 L 23,8 Z"/>
+ <path style="fill:#fff495" d="M 19.388889,8 10,22.999999 h 3.611111 L 23,8 Z"/>
  <path style="fill:#956b00" d="M 19.5,20 H 23 v 3 h -3.5 z"/>
  <path style="opacity:0.1" d="M 13.5,9.000001 11,10.467636 19.5,24 21,21.000001 Z"/>
  <path style="fill:#715100" d="M 13.5,8 11,9.4676349 19.5,22.999999 21,20 Z"/>

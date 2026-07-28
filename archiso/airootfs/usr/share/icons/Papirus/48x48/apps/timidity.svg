@@ -9,10 +9,10 @@
  <rect style="fill:#ffffff" width="4" height="18" x="25" y="23" rx="1.5" ry="1.5"/>
  <rect style="fill:#ffffff" width="4" height="18" x="31" y="23" rx="1.5" ry="1.5"/>
  <rect style="fill:#ffffff" width="4" height="18" x="37" y="23" rx="1.5" ry="1.5"/>
- <rect style="fill:#4f4f4f" width="4" height="10" x="10" y="23" rx="1.5" ry="1.5"/>
- <rect style="fill:#4f4f4f" width="4" height="10" x="16" y="23" rx="1.5" ry="1.5"/>
- <rect style="fill:#4f4f4f" width="4" height="10" x="22" y="23" rx="1.5" ry="1.5"/>
- <rect style="fill:#4f4f4f" width="4" height="10" x="34" y="23" rx="1.5" ry="1.5"/>
+ <rect style="fill:#fff495" width="4" height="10" x="10" y="23" rx="1.5" ry="1.5"/>
+ <rect style="fill:#fff495" width="4" height="10" x="16" y="23" rx="1.5" ry="1.5"/>
+ <rect style="fill:#fff495" width="4" height="10" x="22" y="23" rx="1.5" ry="1.5"/>
+ <rect style="fill:#fff495" width="4" height="10" x="34" y="23" rx="1.5" ry="1.5"/>
  <rect style="fill:#17d4e4" width="8" height="14" x="14" y="7"/>
  <rect style="fill:#17d4e4" width="8" height="14" x="7" y="-25" transform="rotate(90)"/>
  <rect style="fill:#17d4e4" width="8" height="9" x="29" y="12"/>

@@ -12,7 +12,7 @@
  <path d="m19 11a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3zm10 0a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3z" style="fill:#ffffff"/>
  <path d="m24 26c-3 0-6-1-6-1s4 3 6 3 6-3 6-3-3 1-6 1z" style="opacity:.1"/>
  <path d="m24 25c-3 0-6-1-6-1s4 3 6 3 6-3 6-3-3 1-6 1z" style="fill:#e43a31"/>
- <circle cx="19" cy="14" r="1" style="fill:#323232"/>
- <circle cx="29" cy="14" r="1" style="fill:#323232"/>
+ <circle cx="19" cy="14" r="1" style="fill:#fff495"/>
+ <circle cx="29" cy="14" r="1" style="fill:#fff495"/>
  <path d="m15 29c-4 0-4 4-4 4v1s0-4 4-4c3.399346 0 5 2 9 2s5.600654-2 9-2c4 0 4 4 4 4v-1s0-4-4-4c-3.399346 0-5 2-9 2s-5.600654-2-9-2z" style="fill:#ffffff;opacity:.2"/>
 </svg>

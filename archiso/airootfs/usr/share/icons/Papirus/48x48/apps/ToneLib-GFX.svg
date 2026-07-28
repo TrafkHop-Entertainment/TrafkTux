@@ -13,7 +13,7 @@
  <circle style="fill:#ffffff" cx="34" cy="13" r="2"/>
  <circle style="opacity:0.2" cx="22" cy="14" r="2"/>
  <circle style="fill:#ffffff" cx="22" cy="13" r="2"/>
- <rect style="fill:#4f4f4f" width="3" height="4" x="12" y="11"/>
+ <rect style="fill:#fff495" width="3" height="4" x="12" y="11"/>
  <rect style="opacity:0.2" width="3" height="2" x="12" y="13"/>
  <rect style="opacity:0.2" width="34" height="1" x="7" y="24"/>
  <rect style="opacity:0.2;fill:#ffffff" width="28" height="1" x="10" y="10"/>

@@ -6,6 +6,6 @@
  <circle fill="#fff" cx="16" cy="22" r="3"/>
  <circle opacity=".2" cx="25" cy="23" r="3"/>
  <circle fill="#fff" cx="25" cy="22" r="3"/>
- <circle fill="#4d4d4d" cx="7" cy="22" r="3"/>
- <circle fill="#4d4d4d" cx="16" cy="10" r="3"/>
+ <circle fill="#fff495" cx="7" cy="22" r="3"/>
+ <circle fill="#fff495" cx="16" cy="10" r="3"/>
 </svg>

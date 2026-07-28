@@ -8,7 +8,7 @@
  <circle style="fill:#ffffff" cx="18.5" cy="10.5" r="1.5"/>
  <circle style="opacity:0.2" cx="18.5" cy="7" r="1.5"/>
  <circle style="fill:#ffffff" cx="18.5" cy="6.5" r="1.5"/>
- <path style="fill:#323232" d="m 17,16 v 1 h 3 v -1 z"/>
- <path style="fill:#323232" d="m 17,14 v 1 h 3 v -1 z"/>
+ <path style="fill:#fff495" d="m 17,16 v 1 h 3 v -1 z"/>
+ <path style="fill:#fff495" d="m 17,14 v 1 h 3 v -1 z"/>
  <path style="opacity:0.2;fill:#ffffff" d="M 9,5 C 4.3333,5 2,5.4615 2,11 2,11.08827 2.00663,11.164289 2.00781,11.25 2.0810022,5.9578702 4.4076767,5.5 9,5.5 c 4.592619,0 6.919007,0.4578702 6.992188,5.75 C 15.993373,11.16429 16,11.088271 16,11 16,5.4615 13.667,5 9,5 Z"/>
 </svg>

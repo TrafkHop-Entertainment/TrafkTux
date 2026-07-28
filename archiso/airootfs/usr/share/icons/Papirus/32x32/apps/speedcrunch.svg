@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" version="1">
  <rect style="opacity:0.2" width="22" height="28" x="5" y="3" rx="1.6" ry="1.6"/>
- <rect style="fill:#4a1a3a" width="22" height="28" x="5" y="2" rx="1.6" ry="1.6"/>
+ <rect style="fill:#fff495" width="22" height="28" x="5" y="2" rx="1.6" ry="1.6"/>
  <rect style="opacity:0.2" width="14" height="1" x="8" y="7"/>
  <rect style="fill:#e4e4e4" width="14" height="1" x="8" y="6"/>
  <rect style="opacity:0.2" width="12" height="1" x="10" y="9"/>
@@ -9,7 +9,7 @@
  <rect style="fill:#e4e4e4" width="14" height="1" x="8" y="11"/>
  <rect style="opacity:0.2" width="12" height="1" x="10" y="14"/>
  <rect style="fill:#667b9e" width="12" height="1" x="10" y="13"/>
- <path style="fill:#3b1530" d="M 5 23 L 5 28.4 C 5 29.287 5.7132 30 6.5996 30 L 25.4 30 C 26.287 30 27 29.287 27 28.4 L 27 23 L 5 23 z"/>
+ <path style="fill:#fff495" d="M 5 23 L 5 28.4 C 5 29.287 5.7132 30 6.5996 30 L 25.4 30 C 26.287 30 27 29.287 27 28.4 L 27 23 L 5 23 z"/>
  <rect style="opacity:0.2" width="14" height="1" x="8" y="17"/>
  <rect style="fill:#e4e4e4" width="14" height="1" x="8" y="16"/>
  <rect style="opacity:0.2" width="12" height="1" x="10" y="19"/>

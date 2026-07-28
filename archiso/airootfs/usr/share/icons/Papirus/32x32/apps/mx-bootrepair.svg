@@ -6,7 +6,7 @@
  <path d="m7 2c-1.108 0-2 0.892-2 2v1c0-1.108 0.892-2 2-2h18c1.108 0 2 0.892 2 2v-1c0-1.108-0.892-2-2-2z" style="fill:#ffffff;opacity:.2"/>
  <path d="m5 28v1c0 1.108 0.892 2 2 2h18c1.108 0 2-0.892 2-2v-1c0 1.108-0.892 2-2 2h-18c-1.108 0-2-0.892-2-2z" style="opacity:.2"/>
  <circle cx="24.5" cy="29.5" r=".5" style="opacity:.2"/>
- <rect x="7" y="28" width="11" height="1" ry=".5" style="fill:#3b3a36"/>
+ <rect x="7" y="28" width="11" height="1" ry=".5" style="fill:#fff495"/>
  <circle cx="21.5" cy="29.5" r=".5" style="opacity:.2"/>
  <circle cx="24.5" cy="28.5" r=".5" style="fill:#b7b7b7"/>
  <circle cx="21.5" cy="28.5" r=".5" style="fill:#b7b7b7"/>

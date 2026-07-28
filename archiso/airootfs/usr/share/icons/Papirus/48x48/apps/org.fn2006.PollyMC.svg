@@ -3,8 +3,8 @@
  <rect x="4" y="5" width="8" height="8" style="opacity:.2"/>
  <rect x="20" y="5" width="8" height="8" style="opacity:.2"/>
  <path d="m40 20h-4l-1-1h-6l-1 1h-8l-1-1h-6l-1 1h-4v24h8l1-1v-14h22l1-1z" style="fill:#91d136"/>
- <path d="m24 28h16v14h-16l-1-1v-12z" style="fill:#4f4f4f"/>
- <path d="m16 28h8v8l-1 1h-6l-1-1z" style="fill:#2f2f2f"/>
+ <path d="m24 28h16v14h-16l-1-1v-12z" style="fill:#fff495"/>
+ <path d="m16 28h8v8l-1 1h-6l-1-1z" style="fill:#fff495"/>
  <rect x="16" y="36" width="8" height="8" style="fill:#d4deac"/>
  <rect x="4" y="4" width="8" height="8" style="fill:#7bb429"/>
  <rect x="20" y="4" width="8" height="8" style="fill:#7bb429"/>

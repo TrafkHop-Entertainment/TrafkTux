@@ -9,7 +9,7 @@
  <rect x="34" y="18" width="4" height="24" rx="3" ry="3" style="opacity:.2"/>
  <rect x="34" y="17" width="4" height="24" rx="3" ry="3" style="fill:#37bdbd"/>
  <ellipse cx="24" cy="30" rx="4" ry="5" style="opacity:.1"/>
- <ellipse cx="24" cy="29" rx="4" ry="5" style="fill:#4f4f4f"/>
+ <ellipse cx="24" cy="29" rx="4" ry="5" style="fill:#fff495"/>
  <path d="m12 17c-1.108 0-2 1.338-2 3v1c0-1.662 0.892-3 2-3s2 1.338 2 3v-1c0-1.662-0.892-3-2-3z" style="fill:#ffffff;opacity:.2"/>
  <path d="m36 17c-1.108 0-2 1.338-2 3v1c0-1.662 0.892-3 2-3s2 1.338 2 3v-1c0-1.662-0.892-3-2-3z" style="fill:#ffffff;opacity:.2"/>
 </svg>

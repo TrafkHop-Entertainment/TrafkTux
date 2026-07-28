@@ -1,0 +1,13 @@
+[Unit]
+Description=Example Service
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/myapp --config /etc/myapp/config.toml
+Restart=on-failure
+User=nobody
+Group=nogroup
+
+[Install]
+WantedBy=multi-user.target

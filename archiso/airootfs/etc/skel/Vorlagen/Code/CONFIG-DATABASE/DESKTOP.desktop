@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=My Application
+Comment=Edit this description
+Exec=/opt/myapp/myapp %F
+Icon=/opt/myapp/icon.png
+Terminal=false
+Categories=Utility;
+MimeType=text/plain;

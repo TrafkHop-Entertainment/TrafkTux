@@ -3,10 +3,10 @@
  <path style="fill:#616161;fill-rule:evenodd" d="M 31,15.5 C 31,23.508451 24.507789,30 16.5,30 8.4915484,30 2,23.507789 2,15.5 2,7.4915485 8.4922111,1.0000001 16.5,1.0000001 24.508451,1.0000001 31,7.4922112 31,15.5"/>
  <circle style="opacity:0.2" cx="16.5" cy="13.5" r="8.5"/>
  <circle style="fill:#ffffff" cx="16.5" cy="12.5" r="8.5"/>
- <path style="fill:none;stroke:#3f3f3f;stroke-width:3;stroke-linecap:round" d="M 16.5,12.6 V 7"/>
- <path style="fill:none;stroke:#3f3f3f;stroke-width:3;stroke-linecap:round" d="M 16.5,12.49985 H 22"/>
+ <path style="fill:none;stroke:#fff495;stroke-width:3;stroke-linecap:round" d="M 16.5,12.6 V 7"/>
+ <path style="fill:none;stroke:#fff495;stroke-width:3;stroke-linecap:round" d="M 16.5,12.49985 H 22"/>
  <circle style="fill:#818181" cx="16.5" cy="12.5" r="2.5"/>
- <path style="fill:none;stroke:#444444;stroke-width:3;stroke-linecap:round;stroke-linejoin:round" d="m 9.2499999,21.5 c 0,0 2.1750001,2.9 7.2500001,2.9 5.075,0 7.095668,-2.9 7.095668,-2.9"/>
+ <path style="fill:none;stroke:#fff495;stroke-width:3;stroke-linecap:round;stroke-linejoin:round" d="m 9.2499999,21.5 c 0,0 2.1750001,2.9 7.2500001,2.9 5.075,0 7.095668,-2.9 7.095668,-2.9"/>
  <path style="opacity:0.2" d="m 24,22.145876 c -0.07129,0.0367 -0.14392,0.06719 -0.215332,0.103369 -1.351405,1.253427 -3.731947,2.800879 -7.284668,2.800879 -3.660383,0 -6.132699,-1.629064 -7.5,-2.888672 V 29.1 c 0,1.6066 1.338,2.9 3,2.9 h 9 c 1.662,0 3,-1.2934 3,-2.9 z"/>
  <path style="fill:#ffa746" d="m 24,21.145876 c -0.07129,0.0367 -0.14392,0.06719 -0.215332,0.103369 -1.351405,1.253427 -3.731947,2.800879 -7.284668,2.800879 -3.660383,0 -6.132699,-1.629064 -7.5,-2.888672 V 28.1 c 0,1.6066 1.338,2.9 3,2.9 h 9 c 1.662,0 3,-1.2934 3,-2.9 z"/>
  <rect style="opacity:0.3" width="10" height="1" x="11" y="25"/>

@@ -1,14 +1,14 @@
 <svg width="48" height="48" version="1.1" xmlns="http://www.w3.org/2000/svg">
  <path d="m4.0000012 45 4-18h7.9999988l4 18z" style="opacity:.2"/>
- <path d="m4.0000012 44 4-18h7.9999988l4 18z" style="fill:#5c5c5c"/>
+ <path d="m4.0000012 44 4-18h7.9999988l4 18z" style="fill:#fff495"/>
  <path d="m28 45 4-18h8l3.999999 18z" style="opacity:.2"/>
- <path d="m28 44 4-18h8l3.999999 18z" style="fill:#5c5c5c"/>
+ <path d="m28 44 4-18h8l3.999999 18z" style="fill:#fff495"/>
  <rect x="3.9999995" y="12.999999" width="15.999999" height="18" ry="2" style="opacity:.2"/>
- <rect x="9.999999" y="3.9999998" width="7.9999995" height="10" ry="2" style="fill:#5c5c5c"/>
+ <rect x="9.999999" y="3.9999998" width="7.9999995" height="10" ry="2" style="fill:#fff495"/>
  <rect x="27.999998" y="12.999999" width="15.999999" height="18" ry="2" style="opacity:.2"/>
  <rect x="3.9999995" y="11.999999" width="15.999999" height="18" ry="2" style="fill:#838181"/>
  <rect x="21.999998" y="14.999999" width="3.9999998" height="14" ry="2" style="opacity:.2"/>
- <rect x="29.999998" y="3.9999998" width="7.9999995" height="10" ry="2" style="fill:#5c5c5c"/>
+ <rect x="29.999998" y="3.9999998" width="7.9999995" height="10" ry="2" style="fill:#fff495"/>
  <rect x="12" y="17" width="24" height="10" ry="2" style="opacity:.2"/>
  <rect x="27.999998" y="11.999999" width="15.999999" height="18" ry="2" style="fill:#838181"/>
  <rect x="21.999998" y="13.999999" width="3.9999998" height="14" ry="2" style="fill:#674f4f"/>

@@ -2,7 +2,7 @@
  <rect style="opacity:0.2" width="56" height="56" x="-61" y="-60" rx="2.8" ry="2.8" transform="matrix(0,-1,-1,0,0,0)"/>
  <rect style="fill:#419d45" width="56" height="56" x="-60" y="-60" rx="2.8" ry="2.8" transform="matrix(0,-1,-1,0,0,0)"/>
  <rect style="opacity:0.2" width="20" height="20" x="22" y="23" rx="4.8" ry="4.8"/>
- <rect style="fill:#37474f" width="20" height="20" x="22" y="22" rx="4.8" ry="4.8"/>
+ <rect style="fill:#fff495" width="20" height="20" x="22" y="22" rx="4.8" ry="4.8"/>
  <g style="opacity:0.2" transform="matrix(2,0,0,2,0,1)">
   <circle cx="8" cy="8" r="1"/>
   <circle cx="11" cy="8" r="1"/>

@@ -8,6 +8,6 @@
  <circle cx="32" cy="54" r="3" style="fill:#ffffff"/>
  <circle cx="42" cy="53" r="3" style="opacity:.2"/>
  <circle cx="42" cy="52" r="3" style="fill:#ffffff"/>
- <rect x="20" y="18" width="24" height="24" rx="3" ry="3" style="fill:#333333"/>
+ <rect x="20" y="18" width="24" height="24" rx="3" ry="3" style="fill:#fff495"/>
  <path d="M 32 4 C 22 4 9 17 9 34 C 9 34.183037 9.0091809 34.359835 9.0117188 34.541016 C 9.2440148 17.767761 22.090668 5 32 5 C 40.924996 5 54.75819 17.786533 54.988281 34.578125 C 54.99088 34.384378 55 34.196118 55 34 C 55 17 41 4 32 4 z " style="fill:#ffffff;opacity:.2"/>
 </svg>

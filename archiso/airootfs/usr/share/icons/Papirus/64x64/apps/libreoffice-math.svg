@@ -4,8 +4,8 @@
  <path style="fill:#d12a67" d="M 42,4 H 54 V 16 Z"/>
  <path style="fill:#ffffff;opacity:0.2" d="M 42 4 L 43 5 L 54 5 L 54 4 L 42 4 z"/>
  <path style="opacity:0.2;fill:#ffffff" d="M 18 4 C 13.568 4 10 7.568 10 12 L 10 13 C 10 8.568 13.568 5 18 5 L 38 5 L 54 21 L 54 20 L 38 4 L 18 4 z"/>
- <path style="fill:none;stroke:#000000;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;opacity:0.2" d="M 41,50 H 47 M 29,50 H 35 M 17,50 H 23 M 17,36 H 20 L 23,43 30,26 H 47"/>
+ <path style="fill:none;stroke:#fff495;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;opacity:0.2" d="M 41,50 H 47 M 29,50 H 35 M 17,50 H 23 M 17,36 H 20 L 23,43 30,26 H 47"/>
  <path style="fill:none;stroke:#f8d3de;stroke-width:2;stroke-linecap:round;stroke-linejoin:round" d="M 41,49 H 47 M 29,49 H 35 M 17,49 H 23 M 17,35 H 20 L 23,42 30,25 H 47"/>
- <path style="fill:none;stroke:#000000;stroke-width:4;stroke-linecap:round;stroke-linejoin:round;opacity:0.2" d="M 44,33 36,41 M 36,33 44,41"/>
+ <path style="fill:none;stroke:#fff495;stroke-width:4;stroke-linecap:round;stroke-linejoin:round;opacity:0.2" d="M 44,33 36,41 M 36,33 44,41"/>
  <path style="fill:none;stroke:#fca7b2;stroke-width:4;stroke-linecap:round;stroke-linejoin:round" d="M 44,32 36,40 M 36,32 44,40"/>
 </svg>

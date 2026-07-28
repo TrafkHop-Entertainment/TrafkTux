@@ -13,9 +13,9 @@
   <rect x="35" y="33" width="4" height="6" style="fill:#f8c44e"/>
   <rect x="40" y="34" width="4" height="6" style="opacity:.2"/>
   <rect x="40" y="33" width="4" height="6" style="fill:#f8c44e"/>
-  <path d="m4 8h4v33" style="fill:none;opacity:.2;stroke-linecap:round;stroke-linejoin:round;stroke-width:4;stroke:#000000"/>
+  <path d="m4 8h4v33" style="fill:none;opacity:.2;stroke-linecap:round;stroke-linejoin:round;stroke-width:4;stroke:#fff495"/>
   <path d="m4 7h4v33" style="fill:none;stroke-linecap:round;stroke-linejoin:round;stroke-width:4;stroke:#b7b7b7"/>
-  <rect x="22" y="17" width="10" height="10" rx="2" ry="2" style="fill:#4e4e4e"/>
+  <rect x="22" y="17" width="10" height="10" rx="2" ry="2" style="fill:#fff495"/>
   <g style="fill:#b7b7b7">
    <rect x="24" y="15" width="2" height="3"/>
    <rect x="28" y="15" width="2" height="3"/>

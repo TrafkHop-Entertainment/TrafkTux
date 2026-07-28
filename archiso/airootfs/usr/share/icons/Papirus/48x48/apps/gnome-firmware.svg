@@ -7,7 +7,7 @@
  <path style="fill:#347937" d="M 19,9 V 16 H 21 V 9 Z M 23,9 V 16 H 25 V 9 Z M 27,9 V 16 H 29 V 9 Z M 40,13 V 19 H 32 V 21 H 41 C 42,21 42,20 42,20 V 13 M 7,13 V 15 H 9 V 20 C 9,20 9,21 10,21 H 16 V 19 H 11 V 14 C 11,13 10,13 10,13 Z M 7,23 V 25 H 16 V 23 Z M 32,23 V 25 H 41 V 23 Z M 7,27 C 6,27 6,28 6,28 V 35 H 8 V 29 H 16 V 27 Z M 32,27 V 29 H 37 V 34 C 37,35 38,35 38,35 H 41 V 33 H 39 V 28 C 39,28 39,27 38,27 Z M 19,32 V 39 H 21 V 32 Z M 23,32 V 39 H 25 V 32 Z M 27,32 V 39 H 29 V 32 Z"/>
  <path style="fill:#fbd14e" d="M 19,13 V 18 H 21 V 13 Z M 23,13 V 18 H 25 V 13 Z M 27,13 V 18 H 29 V 13 Z M 13,19 V 21 H 18 V 19 Z M 30,19 V 21 H 35 V 19 Z M 13,23 V 25 H 18 V 23 Z M 30,23 V 25 H 35 V 23 Z M 13,27 V 29 H 18 V 27 Z M 30,27 V 29 H 35 V 27 Z M 19,30 V 35 H 21 V 30 Z M 23,30 V 35 H 25 V 30 Z M 27,30 V 35 H 29 V 30 Z"/>
  <rect style="opacity:0.2" width="14" height="14" x="17" y="18"/>
- <rect style="fill:#414141" width="14" height="14" x="17" y="17"/>
+ <rect style="fill:#fff495" width="14" height="14" x="17" y="17"/>
  <circle style="fill:#fbd14e" cx="41" cy="13" r="1"/>
  <circle style="fill:#fbd14e" cx="41" cy="34" r="1"/>
  <circle style="fill:#fbd14e" cx="7" cy="24" r="1"/>

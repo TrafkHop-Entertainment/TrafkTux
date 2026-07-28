@@ -8,7 +8,7 @@
  <path d="m4 11a2.0002 2.0002 0 1 0 0 4h24a2.0002 2.0002 0 1 0 0-4z" style="opacity:.2"/>
  <path d="m4 12h24" style="fill:none;stroke-linecap:round;stroke-linejoin:round;stroke-width:4;stroke:#fb8e00"/>
  <circle cx="22" cy="19" r="2" style="opacity:.1"/>
- <circle cx="22" cy="18" r="2" style="fill:#4f4f4f"/>
+ <circle cx="22" cy="18" r="2" style="fill:#fff495"/>
  <path d="m13.111328 16.966797a3.0003 3.0003 0 0 0-2.683594 4.576172l1.695313 2.826172c0.668955-0.898727 1.323962-1.986664 1.876953-3.369141 0.816916-0.816916 1.456639-1.280975 2.076172-1.703125l-0.503906-0.839844a3.0003 3.0003 0 0 0-2.460938-1.490234z" style="opacity:.2"/>
  <path d="m16 24-3-5" style="fill:none;stroke-linecap:round;stroke-linejoin:round;stroke-width:6;stroke:#e7c3b9"/>
  <path d="m4 10a2.0002 2.0002 0 0 0-1.9628906 2.5 2.0002 2.0002 0 0 1 1.9628906-1.5h24a2.0002 2.0002 0 0 1 1.962891 1.5 2.0002 2.0002 0 0 0-1.962891-2.5h-24z" style="fill:#ffffff;opacity:.2"/>

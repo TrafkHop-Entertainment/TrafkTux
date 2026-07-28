@@ -15,11 +15,11 @@ The Core apps that are always preinstalled are:
 * Ark
 * xfce4-terminal
 * Thunar
-* Kolourpaint
-* Kate
+* pinta
+* xed (texteditor)
 * Fastfetch
 * VLC Media Player
-* Qwenview
+* loupe
 * Firefox
 * Many settings
 * Btop, GParted, Gnome Disks
@@ -303,7 +303,7 @@ We have themed a lot of apps:
 * Fastfetch
 * Clay Icon Theme (we changed the blue to yellow)
 
-# What Still has to be Themed:
+# What Still has to be Themed/Done:
 * SDDM
 * GRUB
 * PLYMOUTH
@@ -312,15 +312,13 @@ We have themed a lot of apps:
 * App Menu Folder Settings App (python + gtk)
 * Mouse Cursor redesign
 * Widgets Redesign!!
-
-# Unfinished features:
 * App Editor
 Rofi App Menu apps editor, autostarted apps, waybar shortcuts, add custom things as apps to rofi
 * new Kernel + security things (optimisation somewhat done)
 
 ## Known Bugs:
-* widgets-daemon.py has a huge performance bug, where it uses 100% if one CPU Core. Will be fixed shortly
 * The ISO does not boot at the moment....
+* The apply button and other things in the widgetc cause massive performance issues. The fix is almost done though!
 
 
 ### Widgets (in progress and a bit outdated as some of those features are already in place) (From now on only Developer Notes, do not take this into account)

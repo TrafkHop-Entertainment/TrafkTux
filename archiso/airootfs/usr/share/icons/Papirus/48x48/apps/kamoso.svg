@@ -1,9 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" version="1">
  <path style="opacity:0.2" d="m24 36s12 3 12 5v2c0 1.108-0.892 2-2 2h-20c-1.108 0-2-0.892-2-2v-2c0-2 12-5 12-5z"/>
- <path style="fill:#4f4f4f" d="m24 35s12 3 12 5v2c0 1.108-0.892 2-2 2h-20c-1.108 0-2-0.892-2-2v-2c0-2 12-5 12-5z"/>
+ <path style="fill:#fff495" d="m24 35s12 3 12 5v2c0 1.108-0.892 2-2 2h-20c-1.108 0-2-0.892-2-2v-2c0-2 12-5 12-5z"/>
  <circle style="opacity:0.2" cx="24" cy="23" r="18"/>
  <circle style="fill:#8e8e8e" cx="24" cy="22" r="18"/>
- <circle style="fill:#4f4f4f" cx="24" cy="22" r="13"/>
+ <circle style="fill:#fff495" cx="24" cy="22" r="13"/>
  <circle style="opacity:0.2" cx="24" cy="23" r="10"/>
  <circle style="fill:#00b1c4" cx="24" cy="22" r="10"/>
  <circle style="opacity:0.2" cx="24" cy="23" r="6"/>

@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" x="0" y="0" version="1.1">
  <defs>
   <linearGradient id="linearGradient4282" x1="409.57" x2="409.57" y1="540.8" y2="506.8" gradientTransform="matrix(0.11765,0,0,0.11765,-79.193198,-70.766586)" gradientUnits="userSpaceOnUse">
-   <stop offset="0" stop-color="#2a2c2f"/>
-   <stop offset="1" stop-color="#424649"/>
+   <stop offset="0" stop-color="#fff495"/>
+   <stop offset="1" stop-color="#fff495"/>
   </linearGradient>
  </defs>
  <rect style="opacity:0.2" width="34" height="40" x="7" y="5" rx="2" ry="2"/>

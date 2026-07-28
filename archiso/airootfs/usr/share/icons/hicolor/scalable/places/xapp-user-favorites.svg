@@ -38,11 +38,11 @@
        id="linearGradient7722"
        osb:paint="gradient">
       <stop
-         style="stop-color:#000000;stop-opacity:1;"
+         style="stop-color:#fff495;stop-opacity:1;"
          offset="0"
          id="stop7718" />
       <stop
-         style="stop-color:#000000;stop-opacity:0;"
+         style="stop-color:#fff495;stop-opacity:0;"
          offset="1"
          id="stop7720" />
     </linearGradient>

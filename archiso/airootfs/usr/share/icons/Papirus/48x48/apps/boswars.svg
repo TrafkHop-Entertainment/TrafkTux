@@ -3,7 +3,7 @@
  <path style="fill:#afafb1" d="m20 11a9 7 0 0 0 -9 7 9 7 0 0 0 0.104 1h17.794a9 7 0 0 0 0.102 -1 9 7 0 0 0 -0.383 -2h15.383v-2h-16.627a9 7 0 0 0 -7.373 -3z"/>
  <rect style="fill:#8e8e8e" width="38" height="12" x="4" y="19" rx="2" ry="2"/>
  <path opacity=".2" d="m4 29v1c0 1.108 0.892 2 2 2h34c1.108 0 2-0.892 2-2v-1c0 1.108-0.892 2-2 2h-34c-1.108 0-2-0.892-2-2z"/>
- <rect fill="#4f4f4f" width="34" height="10" x="6" y="27" rx="5" ry="5"/>
+ <rect fill="#fff495" width="34" height="10" x="6" y="27" rx="5" ry="5"/>
  <g opacity=".2" transform="translate(0,1)">
   <circle cx="11" cy="32" r="3"/>
   <circle cx="19" cy="32" r="3"/>

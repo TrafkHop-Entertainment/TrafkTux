@@ -15,9 +15,9 @@
  <circle cx="22" cy="16" r="1" style="opacity:.1"/>
  <circle cx="19" cy="15" r="1" style="fill:#966ecb"/>
  <circle cx="22" cy="15" r="1" style="fill:#7975f1"/>
- <path d="m13 10v12" style="fill:none;opacity:.1;stroke-linecap:round;stroke-linejoin:round;stroke-width:2;stroke:#000000"/>
- <path d="m10 15v2" style="fill:none;opacity:.1;stroke-linecap:round;stroke-linejoin:round;stroke-width:2;stroke:#000000"/>
- <path d="m16 14v4" style="fill:none;opacity:.1;stroke-linecap:round;stroke-linejoin:round;stroke-width:2;stroke:#000000"/>
+ <path d="m13 10v12" style="fill:none;opacity:.1;stroke-linecap:round;stroke-linejoin:round;stroke-width:2;stroke:#fff495"/>
+ <path d="m10 15v2" style="fill:none;opacity:.1;stroke-linecap:round;stroke-linejoin:round;stroke-width:2;stroke:#fff495"/>
+ <path d="m16 14v4" style="fill:none;opacity:.1;stroke-linecap:round;stroke-linejoin:round;stroke-width:2;stroke:#fff495"/>
  <path d="m10 14v2" style="fill:none;stroke-linecap:round;stroke-linejoin:round;stroke-width:2;stroke:#d86079"/>
  <path d="m13 9v12" style="fill:none;stroke-linecap:round;stroke-linejoin:round;stroke-width:2;stroke:#c26493"/>
  <path d="m16 13v4" style="fill:none;stroke-linecap:round;stroke-linejoin:round;stroke-width:2;stroke:#ac68ae"/>

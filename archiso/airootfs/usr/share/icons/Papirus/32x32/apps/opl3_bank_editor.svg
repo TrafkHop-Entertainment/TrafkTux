@@ -19,7 +19,7 @@
   <rect transform="rotate(90)" x="8" y="-29" width="1" height="26"/>
   <rect transform="rotate(90)" x="5" y="-29" width="1" height="26"/>
  </g>
- <rect transform="matrix(0,-1,-1,0,0,0)" x="-28" y="-28" width="24" height="24" rx="1.2" ry="1.5" style="fill:#4f4f4f"/>
+ <rect transform="matrix(0,-1,-1,0,0,0)" x="-28" y="-28" width="24" height="24" rx="1.2" ry="1.5" style="fill:#fff495"/>
  <path d="m5.5 4c-0.831 0-1.5 0.5344-1.5 1.1992v1c0-0.6648 0.669-1.1992 1.5-1.1992h21c0.831 0 1.5 0.5344 1.5 1.1992v-1c0-0.6648-0.669-1.1992-1.5-1.1992h-21z" fill="#fff" style="opacity:.1"/>
  <path d="m4 26.801v1c0 0.665 0.669 1.199 1.5 1.199h21c0.831 0 1.5-0.534 1.5-1.199v-1c0 0.665-0.669 1.199-1.5 1.199h-21c-0.831 0-1.5-0.534-1.5-1.199z" opacity=".2"/>
  <rect transform="matrix(0,-1,-1,0,0,0)" x="-27" y="-26" width="20" height="20" rx="10" ry="10" style="opacity:.2"/>

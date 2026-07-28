@@ -2,8 +2,8 @@
  <rect style="fill:#e4e4e4" width="24" height="56" x="20" y="4" rx="3" ry="2.8"/>
  <rect style="fill:#e4e4e4" width="24" height="56" x="20" y="-60" rx="3" ry="2.8" transform="matrix(0,1,-1,0,0,0)"/>
  <rect style="opacity:0.2" width="4" height="22" x="31" y="-54" rx="2" ry="2.75" transform="matrix(0,1,-1,0,0,0)"/>
- <rect style="fill:#3e3e3e" width="4" height="22" x="30" y="10" rx="2" ry="2.75"/>
- <rect style="fill:#3e3e3e" width="4" height="22" x="30" y="-54" rx="2" ry="2.75" transform="matrix(0,1,-1,0,0,0)"/>
+ <rect style="fill:#fff495" width="4" height="22" x="30" y="10" rx="2" ry="2.75"/>
+ <rect style="fill:#fff495" width="4" height="22" x="30" y="-54" rx="2" ry="2.75" transform="matrix(0,1,-1,0,0,0)"/>
  <circle style="opacity:0.2" cx="32" cy="33" r="8"/>
  <circle style="fill:#df574d" cx="32" cy="32" r="8"/>
  <path style="opacity:0.2" d="m 4,41 0,1 c 0,1.662063 1.2495812,3 2.8007812,3 L 20,45 20,44 6.8007812,44 C 5.2495812,44 4,42.662063 4,41 Z m 56,0 c 0,1.662063 -1.250781,3 -2.800781,3 L 44,44 l 0,1 13.199219,0 C 58.749219,45 60,43.662063 60,42 l 0,-1 z m -40,16.199219 0,1 C 20,59.749279 21.337999,61 23,61 l 18,0 c 1.662001,0 3,-1.249501 3,-2.800781 l 0,-1 C 44,58.750499 42.662001,60 41,60 l -18,0 c -1.662001,0 -3,-1.250721 -3,-2.800781 z"/>

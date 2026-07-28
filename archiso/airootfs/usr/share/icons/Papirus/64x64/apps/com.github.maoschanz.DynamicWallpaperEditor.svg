@@ -2,8 +2,8 @@
  <rect style="opacity:0.2" width="45.231" height="34" x="-58" y="-49" rx="2.692" ry="2.656" transform="matrix(0,-1,-1,0,0,0)"/>
  <rect style="fill:#8e8e8e" width="45.231" height="34" x="-57" y="-49" rx="2.692" ry="2.656" transform="matrix(0,-1,-1,0,0,0)"/>
  <rect style="opacity:0.2" width="44" height="56" x="-52" y="-60" rx="2.75" ry="2.692" transform="matrix(0,-1,-1,0,0,0)"/>
- <rect style="fill:#4f4f4f" width="44" height="56" x="-51" y="-60" rx="2.75" ry="2.692" transform="matrix(0,-1,-1,0,0,0)"/>
- <rect style="fill:#333333" width="36" height="48" x="-47" y="-56" rx="0" ry="0" transform="matrix(0,-1,-1,0,0,0)"/>
+ <rect style="fill:#fff495" width="44" height="56" x="-51" y="-60" rx="2.75" ry="2.692" transform="matrix(0,-1,-1,0,0,0)"/>
+ <rect style="fill:#fff495" width="36" height="48" x="-47" y="-56" rx="0" ry="0" transform="matrix(0,-1,-1,0,0,0)"/>
  <path style="fill:#303f9f" d="M 8.0000002,36.710036 V 47 H 18.491729 Z"/>
  <path style="fill:#2357cd" d="M 8.0000002,26.30108 V 36.710036 L 18.491729,47 H 29.10478 Z"/>
  <path style="fill:#9844e8" d="M 8.0000002,15.892127 V 26.30108 L 29.10478,47 h 10.610294 z"/>

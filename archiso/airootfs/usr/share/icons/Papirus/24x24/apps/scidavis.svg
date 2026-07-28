@@ -6,7 +6,7 @@
  <rect style="fill:#1480e3" width="2" height="6" x="-6" y="9" transform="rotate(-90)"/>
  <rect style="fill:#1480e3" width="2" height="14" x="11" y="5"/>
  <rect style="fill:#1480e3" width="2" height="6" x="-20" y="9" transform="rotate(-90)"/>
- <path style="fill:none;stroke:#3f3f3f;stroke-width:2" d="M 2,17 C 11,17 13,7 22,7"/>
+ <path style="fill:none;stroke:#fff495;stroke-width:2" d="M 2,17 C 11,17 13,7 22,7"/>
  <circle style="opacity:0.1" cx="12" cy="12.5" r="2"/>
  <circle style="fill:#f55044" cx="12" cy="12" r="2"/>
 </svg>

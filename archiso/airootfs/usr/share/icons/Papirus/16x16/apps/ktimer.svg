@@ -3,9 +3,9 @@
  <rect fill="#07aef5" width="15" height="15" x="1" y="1" rx="7.5" ry="7.5"/>
  <circle fill="#ffffff" cx="8.5" cy="8.5" r="5.5"/>
  <rect fill="#ff8b29" width=".999" height="5" x="11.11" y="-1.38" rx=".5" ry=".504" transform="matrix(.86630 .49952 -.50017 .86593 0 0)"/>
- <circle fill="#4d4d4d" cx="8.5" cy="8.5" r="1.5"/>
- <circle fill="#4d4d4d" cx="8.5" cy="3.5"/>
- <circle fill="#4d4d4d" cx="8.5" cy="13.5"/>
- <circle fill="#4d4d4d" cx="8.5" cy="-13.5" transform="rotate(90)"/>
- <circle fill="#4d4d4d" cx="8.5" cy="-3.5" transform="rotate(90)"/>
+ <circle fill="#fff495" cx="8.5" cy="8.5" r="1.5"/>
+ <circle fill="#fff495" cx="8.5" cy="3.5"/>
+ <circle fill="#fff495" cx="8.5" cy="13.5"/>
+ <circle fill="#fff495" cx="8.5" cy="-13.5" transform="rotate(90)"/>
+ <circle fill="#fff495" cx="8.5" cy="-3.5" transform="rotate(90)"/>
 </svg>

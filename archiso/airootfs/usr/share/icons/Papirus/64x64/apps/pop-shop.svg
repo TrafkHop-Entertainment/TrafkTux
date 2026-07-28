@@ -2,7 +2,7 @@
  <path style="fill:#fcb96f" d="M 16,8 H 55.5 A 4.5,4.5 0 0 1 60,12.5 V 50 H 16 Z"/>
  <path style="fill:#fada7b" d="M 16,34 C 38,34 44,36 60,41 V 50 H 16 Z"/>
  <path style="opacity:0.2;fill:#ffffff" d="M 16,34 V 35 C 38,35 44,37 60,42 V 41 C 44,36 38,34 16,34 Z"/>
- <path style="fill:#554741" d="M 16,50 H 60 V 53.5 A 4.5,4.5 0 0 1 55.5,58 H 16 Z"/>
+ <path style="fill:#fff495" d="M 16,50 H 60 V 53.5 A 4.5,4.5 0 0 1 55.5,58 H 16 Z"/>
  <path style="fill:#aaa09b" d="M 8.5,8 H 16 V 58 H 8.5 A 4.5,4.5 0 0 1 4,53.5 V 12.5 A 4.5,4.5 0 0 1 8.5,8 Z"/>
  <circle style="fill:#8a7d77" cx="10" cy="46" r="2"/>
  <circle style="fill:#8a7d77" cx="10" cy="38" r="2"/>

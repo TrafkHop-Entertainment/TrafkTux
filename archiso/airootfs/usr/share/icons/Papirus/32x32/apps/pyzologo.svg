@@ -5,9 +5,9 @@
  <rect style="opacity:0.3" width="9" height="1.5" x="3" y="9"/>
  <rect style="opacity:0.3" width="6" height="1.5" x="3" y="21"/>
  <rect style="fill:#e83f3c" width="15" height="11" x="15" y="5" rx="1.364" ry="1.375"/>
- <path style="opacity:0.3;fill:none;stroke:#000000;stroke-width:0.68465322px;stroke-linecap:round;stroke-linejoin:round" d="M 18.071626,7.4027779 20.11708,9.4652778 18.071626,11.527778"/>
- <path style="opacity:0.3;fill:none;stroke:#000000;stroke-width:0.68465322px;stroke-linecap:round;stroke-linejoin:round" d="m 21.480717,7.4027779 2.045454,2.0624999 -2.045454,2.0625002"/>
- <path style="opacity:0.3;fill:none;stroke:#000000;stroke-width:0.68465322px;stroke-linecap:round;stroke-linejoin:round" d="m 24.889808,7.4027779 2.045454,2.0624999 -2.045454,2.0625002"/>
+ <path style="opacity:0.3;fill:none;stroke:#fff495;stroke-width:0.68465322px;stroke-linecap:round;stroke-linejoin:round" d="M 18.071626,7.4027779 20.11708,9.4652778 18.071626,11.527778"/>
+ <path style="opacity:0.3;fill:none;stroke:#fff495;stroke-width:0.68465322px;stroke-linecap:round;stroke-linejoin:round" d="m 21.480717,7.4027779 2.045454,2.0624999 -2.045454,2.0625002"/>
+ <path style="opacity:0.3;fill:none;stroke:#fff495;stroke-width:0.68465322px;stroke-linecap:round;stroke-linejoin:round" d="m 24.889808,7.4027779 2.045454,2.0624999 -2.045454,2.0625002"/>
  <rect style="fill:#9bb013" width="7" height="9" x="23" y="17" rx="1.4" ry="1.286"/>
  <rect style="opacity:0.3" width="9" height="1.5" x="3" y="13"/>
  <rect style="opacity:0.3" width="9" height="1.5" x="3" y="17"/>

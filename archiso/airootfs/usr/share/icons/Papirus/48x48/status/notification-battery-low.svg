@@ -5,9 +5,9 @@
  <rect fill="#fff" opacity=".2" width="26" height="8" x="11" y="32"/>
  <rect fill="#d23a2e" width="26" height="8" x="11" y="31"/>
  <rect fill="#fff" opacity=".2" width="26" height="8" x="11" y="22"/>
- <rect fill="#5d5d5d" width="26" height="8" x="11" y="21"/>
+ <rect fill="#fff495" width="26" height="8" x="11" y="21"/>
  <rect fill="#fff" opacity=".2" width="26" height="8" x="11" y="12"/>
- <rect fill="#5d5d5d" width="26" height="8" x="11" y="11"/>
+ <rect fill="#fff495" width="26" height="8" x="11" y="11"/>
  <path fill="#fff" opacity=".2" d="m14 4v1h20v-1h-20z"/>
  <path fill="#fff" opacity=".1" d="m10 8c-1.108 0-2 0.892-2 2v1c0-1.108 0.892-2 2-2h28c1.108 0 2 0.892 2 2v-1c0-1.108-0.892-2-2-2h-28z"/>
 </svg>

@@ -8,6 +8,6 @@
  <ellipse style="opacity:0.2" cx="15.5" cy="18.5" rx="5.5" ry="6.5"/>
  <ellipse style="fill:#dfdfdf" cx="15.5" cy="17.5" rx="5.5" ry="6.5"/>
  <ellipse style="fill:#5ca32e" cx="17.5" cy="17" rx="2.5" ry="3"/>
- <ellipse style="fill:#3f3f3f" cx="17.5" cy="17" rx="1.5" ry="2"/>
- <ellipse style="fill:#3f3f3f" cx="9" cy="18.5" rx="1" ry="1.5"/>
+ <ellipse style="fill:#fff495" cx="17.5" cy="17" rx="1.5" ry="2"/>
+ <ellipse style="fill:#fff495" cx="9" cy="18.5" rx="1" ry="1.5"/>
 </svg>

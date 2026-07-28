@@ -5,9 +5,9 @@
  <path style="fill:none;stroke:#7a7a7a;stroke-linecap:round;stroke-linejoin:round" d="M 4.5000133,10.499996 7.5000132,4.4999981 10.500013,10.499996"/>
  <rect style="fill:#7a7a7a" width="4" height="1" x="5.5" y="8"/>
  <path style="fill:none;stroke:#7a7a7a;stroke-linecap:round;stroke-linejoin:round" d="m 10.500013,10.499996 2.499987,5 1.75,-5 1.75,5 2,-5"/>
- <path style="fill:none;stroke:#404040;stroke-width:0.5px;stroke-linecap:round" d="m 5.2500133,15.249996 5.2499997,-4.75"/>
- <path style="fill:none;stroke:#404040;stroke-linecap:round" d="m 10.500013,10.499996 3,-3.9999979"/>
+ <path style="fill:none;stroke:#fff495;stroke-width:0.5px;stroke-linecap:round" d="m 5.2500133,15.249996 5.2499997,-4.75"/>
+ <path style="fill:none;stroke:#fff495;stroke-linecap:round" d="m 10.500013,10.499996 3,-3.9999979"/>
  <circle style="opacity:0.1" cx="10.5" cy="11" r="1.5"/>
- <circle style="fill:#595959" cx="10.5" cy="10.5" r="1.5"/>
+ <circle style="fill:#fff495" cx="10.5" cy="10.5" r="1.5"/>
  <path style="opacity:0.2;fill:#ffffff" d="M 10.5,-1.9073486e-6 C 4.683,-1.9073486e-6 0,4.6829981 0,10.499998 c 0,0.08447 0.011708,0.166015 0.013672,0.25 C 0.1469713,5.050667 4.7674739,0.49999809 10.5,0.49999809 c 5.732526,0 10.353029,4.55066891 10.486328,10.24999991 C 20.988292,10.666013 21,10.584472 21,10.499998 21,4.6829981 16.317,-1.9073486e-6 10.5,-1.9073486e-6 Z"/>
 </svg>

@@ -4,7 +4,7 @@
  <rect style="opacity:0.2" width="31" height="38" x="-38" y="-43" rx="1.937" ry="1.9" transform="matrix(0,-1,-1,0,0,0)"/>
  <rect style="fill:#e4e4e4" width="31" height="38" x="-37" y="-43" rx="1.937" ry="1.9" transform="matrix(0,-1,-1,0,0,0)"/>
  <path style="fill:#ffffff;opacity:0.2" d="M 6.9003906 6 C 5.8477906 6 5 6.8641597 5 7.9375 L 5 8.9375 C 5 7.8641597 5.8477906 7 6.9003906 7 L 41.099609 7 C 42.152209 7 43 7.8641597 43 8.9375 L 43 7.9375 C 43 6.8641597 42.152209 6 41.099609 6 L 6.9003906 6 z"/>
- <rect style="fill:#4f4f4f" width="30" height="23" x="9" y="-31" rx="1.364" ry="1.438" transform="scale(1,-1)"/>
+ <rect style="fill:#fff495" width="30" height="23" x="9" y="-31" rx="1.364" ry="1.438" transform="scale(1,-1)"/>
  <circle style="opacity:0.2" cx="-34.5" cy="37" r="2" transform="rotate(-90)"/>
  <circle style="fill:#afafb1" cx="-34" cy="37" r="2" transform="rotate(-90)"/>
  <path style="fill:#68c7ff" d="m 12,28.5 c 0,0.276984 0.252733,0.5 0.566668,0.5 h 3.4 H 19 v -3.500001 -4 -3.999998 -4 V 10 h -3.033332 -3.4 C 12.252733,10 12,10.223016 12,10.5 v 3.000001 4 3.999998 4 z"/>

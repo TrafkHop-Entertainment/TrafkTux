@@ -1,5 +1,5 @@
 <svg width="24" height="24" version="1.1" xmlns="http://www.w3.org/2000/svg">
- <ellipse cx="12" cy="12.499998" rx="9.5000019" ry="9.5" style="opacity:.2;stroke-width:.999997;stroke:#000000"/>
+ <ellipse cx="12" cy="12.499998" rx="9.5000019" ry="9.5" style="opacity:.2;stroke-width:.999997;stroke:#fff495"/>
  <ellipse cx="12" cy="12" rx="8" ry="7.9999995" style="fill:#a06950"/>
  <path d="m14.5 3.7543257v16.586215zm-4 0.06278v16.398576zm8 1.933594v12.649971zm-12 0.06696v12.426059z" style="fill:none;stroke-linecap:round;stroke-linejoin:round;stroke-width:.999997;stroke:#694239"/>
  <path d="M 12,4.0000007 A 8,7.9999995 0 0 0 4.0000004,12 8,7.9999995 0 0 0 4.0175785,12.25 8,7.9999995 0 0 1 12,4.5000007 8,7.9999995 0 0 1 19.990234,12.128906 8,7.9999995 0 0 0 20,12 8,7.9999995 0 0 0 12,4.0000007 Z" style="opacity:.2"/>
@@ -10,7 +10,7 @@
  <circle cx="12" cy="12.5" r="5" style="opacity:.2"/>
  <circle cx="12" cy="12" r="5" style="fill:#606a75"/>
  <path d="m12 7.0000007a4.9999999 5 0 0 0-1.640625 0.289062l0.759766 1.550782-1.4980466-1.22461a4.9999999 5 0 0 0-0.914063 0.648437l0.220703 2.4238293-0.90039-1.6992193a4.9999999 5 0 0 0-1.027344 3.0117183 4.9999999 5 0 0 0 4.9999996 5 4.9999999 5 0 0 0 0.480469-0.03515l0.15039-1.882812 0.5 1.77539a4.9999999 5 0 0 0 3.869141-4.857428 4.9999999 5 0 0 0-5-4.9999993z" style="fill:#9da8b4"/>
- <path d="m9.5000004 14.999961v-4.9999993l4.9999996 2.9212443v-2.9212443 4.9999993" style="fill:none;opacity:.2;stroke-linecap:round;stroke-linejoin:round;stroke-width:.999997;stroke:#000000"/>
- <path d="M 9.5000004,14.5 V 9.5000007 L 14.5,12.421245 V 9.5000007 14.5" style="fill:none;stroke-linecap:round;stroke-linejoin:round;stroke-width:.999997;stroke:#2e2e38"/>
+ <path d="m9.5000004 14.999961v-4.9999993l4.9999996 2.9212443v-2.9212443 4.9999993" style="fill:none;opacity:.2;stroke-linecap:round;stroke-linejoin:round;stroke-width:.999997;stroke:#fff495"/>
+ <path d="M 9.5000004,14.5 V 9.5000007 L 14.5,12.421245 V 9.5000007 14.5" style="fill:none;stroke-linecap:round;stroke-linejoin:round;stroke-width:.999997;stroke:#fff495"/>
  <path d="M 12,7.0000007 A 5,5 0 0 0 7.0000004,12 5,5 0 0 0 7.0175784,12.25 5,5 0 0 1 12,7.5000007 5,5 0 0 1 16.988281,12.167969 5,5 0 0 0 17,12 5,5 0 0 0 12,7.0000007 Z" style="fill:#ffffff;opacity:.2"/>
 </svg>

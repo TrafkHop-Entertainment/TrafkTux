@@ -2,7 +2,7 @@
  <rect style="opacity:0.2" width="32" height="42" x="16" y="14" rx="2.6" ry="2.6"/>
  <rect style="fill:#8e8e8e" width="32" height="42" x="16" y="13" rx="2.6" ry="2.6"/>
  <rect style="opacity:0.2" width="52" height="40" x="6" y="10" rx="2.6" ry="2.6"/>
- <rect style="fill:#4f4f4f" width="52" height="40" x="6" y="9" rx="2.6" ry="2.6"/>
+ <rect style="fill:#fff495" width="52" height="40" x="6" y="9" rx="2.6" ry="2.6"/>
  <rect style="fill:#6b9fff" width="44" height="32" x="10" y="13" rx="0" ry="0"/>
  <rect style="opacity:0.1;fill:#ffffff" width="44" height="1" x="10" y="45"/>
  <circle style="opacity:0.2" cx="48" cy="47" r="16"/>

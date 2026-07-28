@@ -6,12 +6,12 @@
   <path d="m3 4h14v12h-2v3h-10v-3h-2z" style="fill:#b06332"/>
   <rect x="3" y="9" width="14" height="3" style="fill:#93481e"/>
   <rect x="12" y="9.5" width="3" height="3" style="opacity:.1"/>
-  <rect x="12" y="9" width="3" height="3" style="fill:#3f3f3f"/>
+  <rect x="12" y="9" width="3" height="3" style="fill:#fff495"/>
   <rect x="5" y="9.5" width="3" height="3" style="opacity:.1"/>
   <path d="m3 4.5v3h9v-3.5zm9 2v3h5v-3z" style="opacity:.1"/>
   <rect x="8" y="12.5" width="4" height="1" style="opacity:.2"/>
-  <rect x="5" y="9" width="3" height="3" style="fill:#3f3f3f"/>
-  <path d="m3 4v3h9v-3.5zm9 2v3h5v-3z" style="fill:#4f4f4f"/>
+  <rect x="5" y="9" width="3" height="3" style="fill:#fff495"/>
+  <path d="m3 4v3h9v-3.5zm9 2v3h5v-3z" style="fill:#fff495"/>
   <path d="m3 1.5v4h9v2h7v-6z" style="opacity:.2"/>
   <path d="m3 1v4h9v2h7v-6z" style="fill:#ae1919"/>
   <rect x="8" y="12" width="4" height="1" style="fill:#c77947"/>

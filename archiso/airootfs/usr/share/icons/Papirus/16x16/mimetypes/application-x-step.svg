@@ -4,8 +4,8 @@
  <rect style="fill:#e4e4e4" width=".419" height="4.194" x="10.39" y="7.13"/>
  <rect style="fill:#e4e4e4" width=".419" height="4.194" x="8.29" y="7.13"/>
  <rect style="fill:#e4e4e4" width=".419" height="4.194" x="6.19" y="7.13"/>
- <circle style="fill:#3f3f3f" cx="6.5" cy="12" r="1"/>
- <path style="fill:#4f4f4f" d="M 4.4292889,7 C 4.1918798,7 3.9859431,7.1738641 4.0007525,7.3888889 V 14 H 5 V 8 h 7 v 6 h 1 V 7.3888889 C 13,7.1734445 12.808873,7 12.571464,7 Z"/>
- <circle style="fill:#3f3f3f" cx="8.5" cy="12" r="1"/>
- <circle style="fill:#3f3f3f" cx="10.5" cy="12" r="1"/>
+ <circle style="fill:#fff495" cx="6.5" cy="12" r="1"/>
+ <path style="fill:#fff495" d="M 4.4292889,7 C 4.1918798,7 3.9859431,7.1738641 4.0007525,7.3888889 V 14 H 5 V 8 h 7 v 6 h 1 V 7.3888889 C 13,7.1734445 12.808873,7 12.571464,7 Z"/>
+ <circle style="fill:#fff495" cx="8.5" cy="12" r="1"/>
+ <circle style="fill:#fff495" cx="10.5" cy="12" r="1"/>
 </svg>

@@ -102,11 +102,11 @@
       <stop
          id="stop4774"
          offset="0"
-         style="stop-color:#000000;stop-opacity:1;" />
+         style="stop-color:#fff495;stop-opacity:1;" />
       <stop
          id="stop4776"
          offset="1"
-         style="stop-color:#000000;stop-opacity:0;" />
+         style="stop-color:#fff495;stop-opacity:0;" />
     </linearGradient>
     <linearGradient
        y2="93.069283"
@@ -425,7 +425,7 @@
        id="clipPath3519"
        clipPathUnits="userSpaceOnUse">
       <path
-         style="fill:#000000;fill-opacity:1;stroke:none;stroke-width:1;stroke-linecap:square;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dashoffset:0.3612;stroke-opacity:1;display:inline;enable-background:new"
+         style="fill:#fff495;fill-opacity:1;stroke:none;stroke-width:1;stroke-linecap:square;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dashoffset:0.3612;stroke-opacity:1;display:inline;enable-background:new"
          d="M 49.053018,377.91849 C 48.342312,377.99122 47.713462,378.41045 47.372978,379.03851 L 33.092643,405.42136 C 32.920748,405.74568 32.837999,406.09423 32.843749,406.44805 C 32.843921,406.45862 32.843421,406.46859 32.843749,406.47916 L 32.843749,409.46589 L 32.843749,409.77701 L 32.905972,409.77701 C 32.951307,410.03663 33.015025,410.28987 33.154867,410.5237 C 33.54293,411.17259 34.234402,411.57735 34.990466,411.5815 L 255.85342,411.5815 C 256.61879,411.58325 257.33012,411.18224 257.72013,410.5237 C 257.85756,410.29166 257.92585,410.03519 257.96903,409.77701 C 258.01775,409.48565 258.03125,408.90588 258.03125,408.90588 L 258.03125,406.82139 C 258.03125,406.32941 257.99578,405.83393 257.75124,405.39024 L 242.9109,379.0074 C 242.52232,378.32737 241.79626,377.91078 241.01307,377.91849 L 49.270801,377.91849 C 49.198253,377.91482 49.125565,377.91482 49.053018,377.91849 z"
          id="path3521"
          sodipodi:nodetypes="cccsccccsccsscsccccc" />
@@ -1259,11 +1259,11 @@
       <stop
          id="stop5168"
          offset="0"
-         style="stop-color:black;stop-opacity:1;" />
+         style="stop-color:#fff495;stop-opacity:1;" />
       <stop
          id="stop5170"
          offset="1"
-         style="stop-color:black;stop-opacity:0;" />
+         style="stop-color:#fff495;stop-opacity:0;" />
     </linearGradient>
     <radialGradient
        r="2.046875"
@@ -1290,15 +1290,15 @@
       <stop
          id="stop5182"
          offset="0"
-         style="stop-color:black;stop-opacity:0;" />
+         style="stop-color:#fff495;stop-opacity:0;" />
       <stop
-         style="stop-color:black;stop-opacity:1;"
+         style="stop-color:#fff495;stop-opacity:1;"
          offset="0.5"
          id="stop5188" />
       <stop
          id="stop5184"
          offset="1"
-         style="stop-color:black;stop-opacity:0;" />
+         style="stop-color:#fff495;stop-opacity:0;" />
     </linearGradient>
     <inkscape:perspective
        id="perspective3495"

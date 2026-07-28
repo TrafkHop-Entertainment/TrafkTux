@@ -7,8 +7,8 @@
  <g style="opacity:0.2" transform="matrix(0.0316092,0,0,0.0316092,-9.3678157,-8.8678157)">
   <circle cx="850" cy="850" r="174"/>
  </g>
- <g style="fill:#4f4f4f" transform="matrix(0.0316092,0,0,0.0316092,-9.3678157,-9.3678152)">
-  <circle style="fill:#4f4f4f" cx="850" cy="850" r="174"/>
+ <g style="fill:#fff495" transform="matrix(0.0316092,0,0,0.0316092,-9.3678157,-9.3678152)">
+  <circle style="fill:#fff495" cx="850" cy="850" r="174"/>
  </g>
  <rect style="fill:#ffffff" width="1" height="4" x="18" y="16"/>
  <polygon style="fill:#ffffff" transform="matrix(0.03205128,0,0,0.03448276,-9.7692292,-12.896553)" points="819.6 925 882 983 944.4 925"/>

@@ -54,7 +54,7 @@
     <path
        d="M 7,3 V 13 H 9 V 3 Z"
        overflow="visible"
-       style="font-family:sans-serif;font-variant-ligatures:normal;font-variant-position:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-alternates:normal;font-feature-settings:normal;text-indent:0;text-decoration:none;text-decoration-line:none;text-decoration-style:solid;text-decoration-color:#000000;text-transform:none;text-orientation:mixed;shape-padding:0;overflow:visible;isolation:auto;mix-blend-mode:normal"
+       style="font-family:sans-serif;font-variant-ligatures:normal;font-variant-position:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-alternates:normal;font-feature-settings:normal;text-indent:0;text-decoration:none;text-decoration-line:none;text-decoration-style:solid;text-decoration-color:#fff495;text-transform:none;text-orientation:mixed;shape-padding:0;overflow:visible;isolation:auto;mix-blend-mode:normal"
        id="path2"
        inkscape:connector-curvature="0" />
     <path

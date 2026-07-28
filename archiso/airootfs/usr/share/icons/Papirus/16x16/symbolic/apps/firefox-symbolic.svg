@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" version="1.1">
  <defs>
   <style id="current-color-scheme" type="text/css">
-   .ColorScheme-Text { color:#444444; } .ColorScheme-Highlight { color:#4285f4; } .ColorScheme-NeutralText { color:#ff9800; } .ColorScheme-PositiveText { color:#4caf50; } .ColorScheme-NegativeText { color:#f44336; }
+   .ColorScheme-Text { color:#fff495; } .ColorScheme-Highlight { color:#4285f4; } .ColorScheme-NeutralText { color:#ff9800; } .ColorScheme-PositiveText { color:#4caf50; } .ColorScheme-NegativeText { color:#f44336; }
   </style>
  </defs>
  <path style="opacity:.35;fill:currentColor" class="ColorScheme-Text" d="M 8,4 7.6934,4.0137 C 7.1169,4.0592 6.5572,4.2291 6.0527,4.5117 6.3346,4.7339 6.6527,4.9903 6.668,5.0039 6.6695,5.0051 6.6704,5.0047 6.6719,5.0059 7.2501,5.4595 7.9694,5.7352 8.1445,5.7832 8.3208,5.8309 8.4571,5.9709 8.5,6.1484 8.5463,6.3402 8.4783,6.685 8.2969,6.9082 8.1154,7.1314 7.8546,7.3399 7.4062,7.6348 7.3289,7.6856 7.239,7.714 7.1465,7.7168 6.2653,7.745 5.7983,7.901 5.4844,8.0996 5.1541,8.3213 5.0495,8.4581 5.0215,8.543 4.9931,8.6287 4.9958,8.7947 5.1211,9.1602 5.2917,9.6576 5.5886,10.046 6.2087,10.466 6.8288,10.886 7.5851,11 8.209,11 9.6286,11 10.724,9.7338 10.725,8.2871 10.723,7.1996 10.096,6.216 9.1113,5.7539 8.6361,5.5331 8.7773,4.823 9.3008,4.8008 L 9.4961,4.793 C 9.921,4.793 10.274,4.9909 10.654,5.1211 9.942,4.4567 9.05,4 8,4 Z"/>

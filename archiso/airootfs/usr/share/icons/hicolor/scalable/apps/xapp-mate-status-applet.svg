@@ -142,9 +142,9 @@
            height="68"
            width="256"
            id="rect5564"
-           style="color:#000000;display:inline;overflow:visible;visibility:visible;opacity:0.2;fill:#ffffff;fill-opacity:1;fill-rule:nonzero;stroke:none;stroke-width:4;marker:none;enable-background:new" />
+           style="color:#fff495;display:inline;overflow:visible;visibility:visible;opacity:0.2;fill:#ffffff;fill-opacity:1;fill-rule:nonzero;stroke:none;stroke-width:4;marker:none;enable-background:new" />
         <rect
-           style="color:#000000;display:inline;overflow:visible;visibility:visible;fill:#292929;fill-opacity:1;fill-rule:nonzero;stroke:none;stroke-width:4;marker:none;enable-background:new"
+           style="color:#fff495;display:inline;overflow:visible;visibility:visible;fill:#292929;fill-opacity:1;fill-rule:nonzero;stroke:none;stroke-width:4;marker:none;enable-background:new"
            id="rect3904-8"
            width="256"
            height="68"
@@ -156,9 +156,9 @@
     <g
        transform="matrix(1.0583333,0,0,1.0583333,-304.69479,78.613564)"
        id="g4458"
-       style="display:inline;opacity:0.2;fill:#000000;fill-opacity:1;stroke:none;enable-background:new">
+       style="display:inline;opacity:0.2;fill:#fff495;fill-opacity:1;stroke:none;enable-background:new">
       <rect
-         style="color:#000000;display:inline;overflow:visible;visibility:visible;fill:#000000;fill-opacity:1;fill-rule:evenodd;stroke:none;stroke-width:0.25;marker:none;enable-background:new"
+         style="color:#fff495;display:inline;overflow:visible;visibility:visible;fill:#fff495;fill-opacity:1;fill-rule:evenodd;stroke:none;stroke-width:0.25;marker:none;enable-background:new"
          id="rect4460"
          width="8"
          height="8"
@@ -172,9 +172,9 @@
          height="8"
          width="8"
          id="rect4462"
-         style="color:#000000;display:inline;overflow:visible;visibility:visible;fill:#000000;fill-opacity:1;fill-rule:evenodd;stroke:none;stroke-width:0.25;marker:none;enable-background:new" />
+         style="color:#fff495;display:inline;overflow:visible;visibility:visible;fill:#fff495;fill-opacity:1;fill-rule:evenodd;stroke:none;stroke-width:0.25;marker:none;enable-background:new" />
       <rect
-         style="color:#000000;display:inline;overflow:visible;visibility:visible;fill:#000000;fill-opacity:1;fill-rule:evenodd;stroke:none;stroke-width:0.25;marker:none;enable-background:new"
+         style="color:#fff495;display:inline;overflow:visible;visibility:visible;fill:#fff495;fill-opacity:1;fill-rule:evenodd;stroke:none;stroke-width:0.25;marker:none;enable-background:new"
          id="rect4464"
          width="8"
          height="8"
@@ -188,7 +188,7 @@
          height="8"
          width="8"
          id="rect4466"
-         style="color:#000000;display:inline;overflow:visible;visibility:visible;fill:#000000;fill-opacity:1;fill-rule:evenodd;stroke:none;stroke-width:0.25;marker:none;enable-background:new" />
+         style="color:#fff495;display:inline;overflow:visible;visibility:visible;fill:#fff495;fill-opacity:1;fill-rule:evenodd;stroke:none;stroke-width:0.25;marker:none;enable-background:new" />
     </g>
     <g
        style="display:inline;enable-background:new"
@@ -201,9 +201,9 @@
          height="8"
          width="8"
          id="rect4562"
-         style="color:#000000;display:inline;overflow:visible;visibility:visible;fill:#ffffff;fill-opacity:1;fill-rule:evenodd;stroke:none;stroke-width:4;marker:none;enable-background:new" />
+         style="color:#fff495;display:inline;overflow:visible;visibility:visible;fill:#ffffff;fill-opacity:1;fill-rule:evenodd;stroke:none;stroke-width:4;marker:none;enable-background:new" />
       <rect
-         style="color:#000000;display:inline;overflow:visible;visibility:visible;fill:#ffffff;fill-opacity:1;fill-rule:evenodd;stroke:none;stroke-width:4;marker:none;enable-background:new"
+         style="color:#fff495;display:inline;overflow:visible;visibility:visible;fill:#ffffff;fill-opacity:1;fill-rule:evenodd;stroke:none;stroke-width:4;marker:none;enable-background:new"
          id="rect4564"
          width="8"
          height="8"
@@ -217,9 +217,9 @@
          height="8"
          width="8"
          id="rect4566"
-         style="color:#000000;display:inline;overflow:visible;visibility:visible;fill:#ffffff;fill-opacity:1;fill-rule:evenodd;stroke:none;stroke-width:4;marker:none;enable-background:new" />
+         style="color:#fff495;display:inline;overflow:visible;visibility:visible;fill:#ffffff;fill-opacity:1;fill-rule:evenodd;stroke:none;stroke-width:4;marker:none;enable-background:new" />
       <rect
-         style="color:#000000;display:inline;overflow:visible;visibility:visible;fill:#ffffff;fill-opacity:1;fill-rule:evenodd;stroke:none;stroke-width:4;marker:none;enable-background:new"
+         style="color:#fff495;display:inline;overflow:visible;visibility:visible;fill:#ffffff;fill-opacity:1;fill-rule:evenodd;stroke:none;stroke-width:4;marker:none;enable-background:new"
          id="rect4568"
          width="8"
          height="8"

@@ -7,12 +7,12 @@
  <rect style="opacity:0.4" width="2" height="1" x="7" y="16"/>
  <rect style="fill:#f84c4b" width="5" height="1" x="5" y="12"/>
  <rect style="opacity:0.2" width="20" height=".5" x="1" y="14"/>
- <path style="fill:#3a3a3a" d="m 13,9 v 2 3 4 h 5 V 14 11 9 Z"/>
+ <path style="fill:#fff495" d="m 13,9 v 2 3 4 h 5 V 14 11 9 Z"/>
  <rect style="opacity:0.4" width="2" height="1" x="15" y="-15" transform="rotate(90)"/>
  <rect style="opacity:0.4" width="2" height="1" x="15" y="-17" transform="rotate(90)"/>
  <path style="opacity:0.2;fill:#ffffff" d="M 3.180664,3 C 2.490973,3 2.3671875,3.7109375 2.3671875,3.7109375 L 1,11 v 0.5 L 2.3671875,4.2109375 C 2.3671875,4.2109375 2.490973,3.5 3.180664,3.5 H 11 18.819336 c 0.689691,0 0.813476,0.7109375 0.813476,0.7109375 L 21,11.5 V 11 L 19.632812,3.7109375 C 19.632812,3.7109375 19.509027,3 18.819336,3 H 11 Z"/>
- <rect style="fill:#3a3a3a" width="5" height="1.5" x="13" y="3"/>
- <path style="font-variation-settings:normal;inline-size:0;opacity:0.3;stop-color:#000000" d="M 4.5,9 C 4.5,9 4.145624,8.9931 3.7763672,9.177735 3.4071102,9.362363 3,9.833334 3,10.5 V 14 H 4 V 10.5 C 4,10.166667 4.09289,10.137637 4.223633,10.072266 4.354376,10.006894 4.5,10 4.5,10 H 13 V 9 Z"/>
+ <rect style="fill:#fff495" width="5" height="1.5" x="13" y="3"/>
+ <path style="font-variation-settings:normal;inline-size:0;opacity:0.3;stop-color:#fff495" d="M 4.5,9 C 4.5,9 4.145624,8.9931 3.7763672,9.177735 3.4071102,9.362363 3,9.833334 3,10.5 V 14 H 4 V 10.5 C 4,10.166667 4.09289,10.137637 4.223633,10.072266 4.354376,10.006894 4.5,10 4.5,10 H 13 V 9 Z"/>
  <rect style="opacity:0.3" width="5" height=".5" x="13" y="5"/>
  <rect style="opacity:0.3" width="5" height=".5" x="13" y="6"/>
  <rect style="opacity:0.3" width="5" height=".5" x="13" y="7"/>

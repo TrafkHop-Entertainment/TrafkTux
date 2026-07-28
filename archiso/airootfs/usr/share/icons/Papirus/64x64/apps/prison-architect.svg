@@ -7,7 +7,7 @@
  <circle cx="32" cy="20" r="11" style="fill:#dfb189"/>
  <path d="m40 20s1.6 0.6 3 2v-11c0-4.2-6.826006-6-11-6s-11 1.8-11 6v11c1.4-1.4 3-2 3-2v-4s2.4 2 8 2 8-2 8-2z" style="opacity:.1"/>
  <path d="m40 19s1.6 0.6 3 2v-11c0-4.2-6.826006-6-11-6s-11 1.8-11 6v11c1.4-1.4 3-2 3-2v-4s2.4 2 8 2 8-2 8-2z" style="fill:#674b42"/>
- <circle cx="28" cy="20" r="2" style="fill:#3f3f3f"/>
- <circle cx="36" cy="20" r="2" style="fill:#3f3f3f"/>
+ <circle cx="28" cy="20" r="2" style="fill:#fff495"/>
+ <circle cx="36" cy="20" r="2" style="fill:#fff495"/>
  <path d="m32 4c-4.173994 0-11 1.8-11 6v1c0-4.2 6.826006-6 11-6s11 1.8 11 6v-1c0-4.2-6.826006-6-11-6z" style="fill:#ffffff;opacity:.1"/>
 </svg>

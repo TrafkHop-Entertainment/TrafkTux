@@ -7,7 +7,7 @@
  <path style="fill:#347937" d="M 10,4 V 8 H 11 V 4 Z M 12,4 V 8 H 13 V 4 H 12.5 Z M 14,4 V 8 H 15 V 4 Z M 20,7.5 V 10 H 16 V 11 H 20.5 C 21,11 21,10.5 21,10.5 V 7.5 Z M 3.5,6 V 7 H 5 V 9.5 C 5,9.5 5,10 5.5,10 H 8 V 9 H 6 V 6.5 C 6,6 5.5,6 5.5,6 Z M 3.5,11 V 12 H 8 V 11 Z M 16,12 V 13 H 20.5 V 12 Z M 3.5,13 C 3,13 3,13.5 3,13.5 V 16.5 H 4 V 14 H 8 V 13 Z M 16,14 V 15 H 18 V 17.5 C 18,18 18.5,18 18.5,18 H 20.5 V 17 H 19 V 14.5 C 19,14.5 19,14 18.5,14 Z M 9,16 V 20 H 10 V 16 Z M 11,16 V 20 H 12 V 16 Z M 13,16 V 20 H 14 V 16 Z"/>
  <path style="fill:#fbd14e" d="M 10,7 9.9999,9 H 6.9999 V 10 H 9 V 11 H 6.9999 V 12 H 9 V 13 H 6.9999 V 14 H 8.9999 L 9,17 H 10 V 15 H 11 V 17 H 12 V 15 H 13 V 17 H 14 V 15 H 17 V 14 H 15 V 13 H 17 V 12 H 15 V 11 H 17 V 10 H 15 V 7 H 14 V 9.0001 H 13 V 7 H 12 V 9.0001 H 11 V 7 Z"/>
  <rect style="opacity:0.2" width="6" height="6" x="9" y="9.5"/>
- <rect style="fill:#414141" width="6" height="6" x="9" y="9"/>
+ <rect style="fill:#fff495" width="6" height="6" x="9" y="9"/>
  <circle style="fill:#fbd14e" cx="20.5" cy="7.5" r=".5"/>
  <circle style="fill:#fbd14e" cx="20.5" cy="17.5" r=".5"/>
  <circle style="fill:#fbd14e" cx="3.5" cy="11.5" r=".5"/>

@@ -4,7 +4,7 @@
  <path style="fill:#aaa9a3" d="m 19,29 h 18 v 2 H 19 Z m 0,0"/>
  <path style="fill:#aaa9a3" d="m 19,35 h 18 v 2 H 19 Z m 0,0"/>
  <path stroke="#949390" stroke-width="1.335" style="fill:none;stroke-linecap:round" d="M 24,24 18.5,17.5"/>
- <path stroke="#3d3846" stroke-width=".668" style="fill:none;stroke-width:2;stroke-linecap:round" d="m 24,24 9,-9"/>
+ <path stroke="#fff495" stroke-width=".668" style="fill:none;stroke-width:2;stroke-linecap:round" d="m 24,24 9,-9"/>
  <path stroke="#c061cb" stroke-width=".668" style="fill:none;stroke-width:2;stroke-linecap:round" d="M 24,24 19,36"/>
  <path style="opacity:0.2" d="m 25.826823,24.184555 c 0.449219,1.009114 -0.0039,2.191406 -1.011719,2.641927 -1.009114,0.449219 -2.191406,-0.0039 -2.641927,-1.011719 -0.449219,-1.009114 0.0039,-2.191406 1.011719,-2.641927 1.009114,-0.449219 2.191406,0.0039 2.641927,1.011719 z m 0,0"/>
  <path style="fill:#ffffff" d="m 25.826823,23.184896 c 0.449219,1.009114 -0.0039,2.191406 -1.011719,2.641927 -1.009114,0.449219 -2.191406,-0.0039 -2.641927,-1.011719 -0.449219,-1.009114 0.0039,-2.191406 1.011719,-2.641927 1.009114,-0.449219 2.191406,0.0039 2.641927,1.011719 z m 0,0"/>

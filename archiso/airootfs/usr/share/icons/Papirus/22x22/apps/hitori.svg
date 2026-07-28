@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" version="1">
- <rect fill="#4f4f4f" width="4" height="4" x="1" y="2" rx=".203" ry=".239"/>
+ <rect fill="#fff495" width="4" height="4" x="1" y="2" rx=".203" ry=".239"/>
  <rect fill="#e4e4e4" width="4" height="4" x="6" y="2" rx=".203" ry=".239"/>
  <rect fill="#ff5757" width="4" height="4" x="11" y="2" rx=".203" ry=".239"/>
  <rect fill="#e4e4e4" width="4" height="4" x="16" y="2" rx=".203" ry=".239"/>
@@ -8,7 +8,7 @@
  <rect fill="#ff5757" width="4" height="4" x="11" y="7" rx=".203" ry=".239"/>
  <rect fill="#e4e4e4" width="4" height="4" x="16" y="7" rx=".203" ry=".239"/>
  <rect fill="#e4e4e4" width="4" height="4" x="1" y="12" rx=".203" ry=".239"/>
- <rect fill="#4f4f4f" width="4" height="4" x="6" y="12" rx=".203" ry=".239"/>
+ <rect fill="#fff495" width="4" height="4" x="6" y="12" rx=".203" ry=".239"/>
  <rect fill="#e4e4e4" width="4" height="4" x="11" y="12" rx=".203" ry=".239"/>
  <rect fill="#4ac73e" width="4" height="4" x="16" y="12" rx=".203" ry=".239"/>
  <rect fill="#e4e4e4" width="4" height="4" x="1" y="17" rx=".203" ry=".239"/>

@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" version="1.1">
  <path style="opacity:.2" d="m5 2.5c-0.554 0-1 0.446-1 1v18c0 0.554 0.446 1 1 1h14c0.554 0 1-0.446 1-1v-13l-6-6z"/>
- <path style="fill:#4f4f4f" d="m5 2c-0.554 0-1 0.446-1 1v18c0 0.554 0.446 1 1 1h14c0.554 0 1-0.446 1-1v-13l-5-1-1-5z"/>
+ <path style="fill:#fff495" d="m5 2c-0.554 0-1 0.446-1 1v18c0 0.554 0.446 1 1 1h14c0.554 0 1-0.446 1-1v-13l-5-1-1-5z"/>
  <ellipse style="opacity:.2" cx="14.27" cy="8.504" rx="1.483" ry="3.338" transform="rotate(30)"/>
  <ellipse style="opacity:.2" cx="21.015" cy="4.611" rx="1.483" ry="3.338" transform="rotate(30)"/>
  <ellipse style="opacity:.2" cx="17.642" cy="6.558" rx="1.483" ry="3.338" transform="rotate(30)"/>

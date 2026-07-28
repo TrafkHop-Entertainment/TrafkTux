@@ -3,7 +3,7 @@
  <path style="fill:#57779f" d="m 32,47.4 c 0,0 17,4.2 17,7 v 2.8 C 49,58.7512 47.736333,60 46.166667,60 H 17.833333 C 16.263667,60 15,58.7512 15,57.2 v -2.8 c 0,-2.8 17,-7 17,-7 z"/>
  <circle style="opacity:0.2" cx="32" cy="30" r="25"/>
  <circle style="fill:#73a0d6" cx="32" cy="29" r="25"/>
- <circle style="fill:#2f2f2f" cx="32" cy="-29" r="18" transform="scale(1,-1)"/>
+ <circle style="fill:#fff495" cx="32" cy="-29" r="18" transform="scale(1,-1)"/>
  <circle style="opacity:0.2" cx="32" cy="-30" r="14" transform="scale(1,-1)"/>
  <circle style="fill:#a95b86" cx="32" cy="-29" r="14" transform="scale(1,-1)"/>
  <circle style="opacity:0.2" cx="32" cy="30" r="8"/>

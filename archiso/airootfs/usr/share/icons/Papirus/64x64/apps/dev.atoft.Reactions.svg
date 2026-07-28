@@ -8,7 +8,7 @@
  <path style="fill:#c2352a;fill-rule:evenodd" width="12" height="12" x="38" y="8" d="m 38,8 h 10 a 2,2 0 0 1 2,2 V 20 H 38 Z"/>
  <path style="fill:#e97e10;fill-rule:evenodd" width="12" height="12" x="26" y="44" d="M 26,44 H 38 V 56 H 28 a 2,2 0 0 1 -2,-2 z"/>
  <rect style="fill:#7767c0" width="12" height="12" x="26" y="32"/>
- <rect style="fill:#5d5d5d" width="12" height="12" x="26" y="20"/>
+ <rect style="fill:#fff495" width="12" height="12" x="26" y="20"/>
  <path style="fill:#50beee;fill-rule:evenodd" width="12" height="12" x="26" y="8" d="M 28,8 H 38 V 20 H 26 V 10 a 2,2 0 0 1 2,-2 z"/>
  <path style="opacity:0.2;fill-rule:evenodd" d="m 28,8 a 2,2 0 0 0 -2,2 v 1 a 2,2 0 0 1 2,-2 h 10 10 a 2,2 0 0 1 2,2 V 10 A 2,2 0 0 0 48,8 H 38 Z"/>
  <rect style="opacity:0.2" width="12" height="1" x="38" y="20"/>
@@ -21,7 +21,7 @@
  <path style="fill:#ffca28" d="M 33,26 C 33,32.626954 27.626953,38 20.999999,38 14.373046,38 9,32.626954 9,26 9,19.373046 14.373046,14 20.999999,14 27.626953,14 33,19.373046 33,26 Z m 0,0"/>
  <path style="fill:#ffffff;opacity:0.2" d="M 21 14 C 14.373047 14 9 19.373046 9 26 C 9 26.167763 9.0048988 26.333911 9.0117188 26.5 C 9.274299 20.105261 14.54081 15 21 15 C 27.459191 15 32.725701 20.105261 32.988281 26.5 C 32.995101 26.333911 33 26.167763 33 26 C 33 19.373046 27.626954 14 21 14 z"/>
  <path style="fill:#c2352a" d="M 15.359375,32 A 6,6 0 0 0 21,36 6,6 0 0 0 26.640625,32 Z"/>
- <path fill="none" stroke="#241f31" stroke-width="1.048" d="m 16,21 3,3 -3,3"/>
- <path fill="none" stroke="#241f31" stroke-width="1.048" d="m 26,21 -3,3 3,3"/>
+ <path fill="none" stroke="#fff495" stroke-width="1.048" d="m 16,21 3,3 -3,3"/>
+ <path fill="none" stroke="#fff495" stroke-width="1.048" d="m 26,21 -3,3 3,3"/>
  <path style="fill:#ffffff" d="m 15,30 a 6,6 0 0 0 0.359375,2 h 11.28125 A 6,6 0 0 0 27,30 Z"/>
 </svg>

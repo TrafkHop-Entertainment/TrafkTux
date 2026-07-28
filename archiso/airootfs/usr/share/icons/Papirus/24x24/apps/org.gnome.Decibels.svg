@@ -13,8 +13,8 @@
  <circle cx="7" cy="12" r="1" style="fill:#f75952"/>
  <circle cx="16" cy="12.5" r="1" style="opacity:.1"/>
  <circle cx="16" cy="12" r="1" style="fill:#7975f1"/>
- <path d="m10 8.5v8" style="fill:none;opacity:.1;stroke-linecap:round;stroke-linejoin:round;stroke-width:2;stroke:#000000"/>
+ <path d="m10 8.5v8" style="fill:none;opacity:.1;stroke-linecap:round;stroke-linejoin:round;stroke-width:2;stroke:#fff495"/>
  <path d="m10 8v8" style="fill:none;stroke-linecap:round;stroke-linejoin:round;stroke-width:2;stroke:#c26493"/>
- <path d="m13 10.5v4" style="fill:none;opacity:.1;stroke-linecap:round;stroke-linejoin:round;stroke-width:2;stroke:#000000"/>
+ <path d="m13 10.5v4" style="fill:none;opacity:.1;stroke-linecap:round;stroke-linejoin:round;stroke-width:2;stroke:#fff495"/>
  <path d="m13 10v4" style="fill:none;stroke-linecap:round;stroke-linejoin:round;stroke-width:2;stroke:#ac68ae"/>
 </svg>

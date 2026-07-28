@@ -15,10 +15,10 @@
   <circle cx="11" cy="12" r="2" style="opacity:.1"/>
   <circle cx="21" cy="12" r="5" style="fill:#e2bf56"/>
   <circle cx="21" cy="12" r="2" style="opacity:.1"/>
-  <circle cx="11" cy="11" r="2" style="fill:#3f3f3f"/>
-  <circle cx="21" cy="11" r="2" style="fill:#3f3f3f"/>
-  <path style="opacity:.1;stroke-linejoin:round;stroke:#000000;stroke-linecap:round;stroke-width:1.5;fill:none" d="m9.7060095 22.45s2.0999995 2.8 6.2999995 2.8 6.3-2.8 6.3-2.8"/>
-  <path style="stroke-linejoin:round;stroke:#3f3f3f;stroke-width:1.5;stroke-linecap:round;fill:none" d="m9.7060095 21.45s2.0999995 2.8 6.2999995 2.8 6.3-2.8 6.3-2.8"/>
+  <circle cx="11" cy="11" r="2" style="fill:#fff495"/>
+  <circle cx="21" cy="11" r="2" style="fill:#fff495"/>
+  <path style="opacity:.1;stroke-linejoin:round;stroke:#fff495;stroke-linecap:round;stroke-width:1.5;fill:none" d="m9.7060095 22.45s2.0999995 2.8 6.2999995 2.8 6.3-2.8 6.3-2.8"/>
+  <path style="stroke-linejoin:round;stroke:#fff495;stroke-width:1.5;stroke-linecap:round;fill:none" d="m9.7060095 21.45s2.0999995 2.8 6.2999995 2.8 6.3-2.8 6.3-2.8"/>
   <path style="opacity:.1;fill:#ffffff" d="m16 2c-7.756 0-14 6.244-14 14 0 0.168842 0.019521 0.33264 0.025391 0.5 0.2637416-7.5205675 6.3874508-13.5 13.974609-13.5 7.587158 0 13.710867 5.9794325 13.974609 13.5 0.00587-0.16736 0.025391-0.331158 0.025391-0.5 0-7.756-6.244-14-14-14z"/>
  </g>
 </svg>

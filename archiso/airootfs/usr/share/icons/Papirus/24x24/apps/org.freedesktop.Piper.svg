@@ -17,10 +17,10 @@
  <path style="opacity:0.1" d="M 15 17 A 1 1 0 0 0 14 18 A 1 1 0 0 0 14.033203 18.248047 A 1 1 0 0 1 15 17.5 L 15 17 z"/>
  <path style="opacity:0.1" d="m 10.5,19.000001 a 0.5,0.5 0 0 0 -0.5,0.5 0.5,0.5 0 0 0 0.06738,0.25 0.5,0.5 0 0 1 0.432617,-0.25 0.5,0.5 0 0 1 0.432617,0.25 0.5,0.5 0 0 0 0.06738,-0.25 0.5,0.5 0 0 0 -0.5,-0.5 z"/>
  <path style="opacity:0.1" d="M 9.9941405,16 C 9.4999175,16 9,16.499945 9,17.009765 v 0.5 C 9,16.999945 9.4999175,16.5 9.9941405,16.5 H 10.749024 A 1.25,1.25 0 0 1 10.973633,16.998047 1.25,1.25 0 0 0 11,16.75 1.25,1.25 0 0 0 10.749024,16 Z"/>
- <path style="opacity:0.2;fill:none;stroke:#000000;stroke-linecap:round" d="m 9.501437,13.999975 0.5,-3"/>
+ <path style="opacity:0.2;fill:none;stroke:#fff495;stroke-linecap:round" d="m 9.501437,13.999975 0.5,-3"/>
  <path style="fill:none;stroke:#eaeaea;stroke-linecap:round" d="m 9.501437,13.5 0.5,-3"/>
- <path style="opacity:0.2;fill:none;stroke:#000000;stroke-linecap:round" d="m 11.501437,13.999975 0.5,-3"/>
+ <path style="opacity:0.2;fill:none;stroke:#fff495;stroke-linecap:round" d="m 11.501437,13.999975 0.5,-3"/>
  <path style="fill:none;stroke:#eaeaea;stroke-linecap:round" d="m 11.501437,13.5 0.5,-3"/>
- <path style="opacity:0.2;fill:none;stroke:#000000;stroke-linecap:round" d="m 13.501437,13.999975 0.5,-3"/>
+ <path style="opacity:0.2;fill:none;stroke:#fff495;stroke-linecap:round" d="m 13.501437,13.999975 0.5,-3"/>
  <path style="fill:none;stroke:#eaeaea;stroke-linecap:round" d="m 13.501437,13.5 0.5,-3"/>
 </svg>

@@ -9,6 +9,6 @@
  <circle cx="16" cy="27" r="1" style="fill:#ffffff"/>
  <circle cx="21" cy="27" r="1" style="opacity:.2"/>
  <circle cx="21" cy="26" r="1" style="fill:#ffffff"/>
- <rect x="10" y="9" width="12" height="12" ry="1" style="fill:#333333"/>
+ <rect x="10" y="9" width="12" height="12" ry="1" style="fill:#fff495"/>
  <path d="M 16 2 C 10 2 5 9 5 18 C 5 18.148479 5.0150702 18.290849 5.0195312 18.4375 C 5.2248178 9.7128655 10.126907 3 16 3 C 21.873093 3 26.775182 9.7128655 26.980469 18.4375 C 26.98493 18.290849 27 18.148479 27 18 C 27 9 22 2 16 2 z " style="fill:#ffffff;opacity:.2"/>
 </svg>

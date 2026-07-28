@@ -3,5 +3,5 @@
  <rect style="fill:#57c2ff;stroke:#4285f4;stroke-width:0;stroke-linecap:round;stroke-linejoin:round" width="10" height="10" x="1" y="3" rx="4.2" ry="3.4"/>
  <circle style="fill:#ffffff" cx="13.5" cy="4.5" r="1.5"/>
  <circle style="fill:#ffffff" cx="13.5" cy="8.5" r="1.5"/>
- <rect style="fill:#323232;stroke:#4285f4;stroke-width:0;stroke-linecap:round;stroke-linejoin:round" width="3" height="1" x="12" y="12"/>
+ <rect style="fill:#fff495;stroke:#4285f4;stroke-width:0;stroke-linecap:round;stroke-linejoin:round" width="3" height="1" x="12" y="12"/>
 </svg>

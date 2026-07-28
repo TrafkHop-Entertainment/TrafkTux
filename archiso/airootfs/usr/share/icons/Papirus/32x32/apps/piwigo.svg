@@ -7,5 +7,5 @@
  <circle style="opacity:0.2" cx="11" cy="18" r="7"/>
  <circle style="fill:#ffffff" cx="11" cy="17" r="7"/>
  <circle id="ellipse16" style="opacity:0.2" cx="11" cy="18" r="5"/>
- <circle id="ellipse18" style="fill:#4f4f4f" cx="11" cy="17" r="5"/>
+ <circle id="ellipse18" style="fill:#fff495" cx="11" cy="17" r="5"/>
 </svg>

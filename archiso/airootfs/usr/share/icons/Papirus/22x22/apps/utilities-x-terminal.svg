@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" version="1">
  <g transform="translate(-1,-1)">
   <rect style="opacity:0.2" width="20" height="18" x="2" y="3.5" rx="1.5" ry="1.5"/>
-  <rect style="fill:#4f4f4f" width="20" height="18" x="2" y="3" rx="1.5" ry="1.5"/>
+  <rect style="fill:#fff495" width="20" height="18" x="2" y="3" rx="1.5" ry="1.5"/>
   <path style="opacity:0.1;fill:#ffffff" d="M 3.5,3 C 2.669,3 2,3.669 2,4.5 V 5 C 2,4.169 2.669,3.5 3.5,3.5 H 20.5 C 21.331,3.5 22,4.169 22,5 V 4.5 C 22,3.669 21.331,3 20.5,3 Z"/>
   <rect style="opacity:0.2" width="6" height="2" x="10" y="11.5" rx=".5" ry=".5"/>
   <rect style="fill:#33c839" width="6" height="2" x="10" y="11" rx=".5" ry=".5"/>

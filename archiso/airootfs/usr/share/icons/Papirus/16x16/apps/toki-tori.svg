@@ -7,11 +7,11 @@
  <path style="opacity:0.7" d="M 8.4,3 8.463298,3.366056 C 9.093454,3.4607372 9.53739,3.6343252 10,3.8 10,3.8 9.3750944,3.0077092 8.4,3 Z"/>
  <g transform="translate(-1.0000006)">
   <ellipse style="fill:#ffffff" cx="8.858" cy="4.038" rx="1.506" ry="2.038" transform="matrix(0.97145609,0.23721945,-0.25985795,0.96564685,0,0)"/>
-  <ellipse style="fill:#3f3f3f" cx="9.391" cy="5.012" rx=".773" ry="1.021" transform="matrix(0.97295699,0.23098635,-0.26676097,0.96376272,0,0)"/>
+  <ellipse style="fill:#fff495" cx="9.391" cy="5.012" rx=".773" ry="1.021" transform="matrix(0.97295699,0.23098635,-0.26676097,0.96376272,0,0)"/>
  </g>
- <path style="opacity:0.4;fill:none;stroke:#000000;stroke-width:0.40000001px;stroke-linecap:round;stroke-linejoin:bevel" d="m 7.1000207,8.9999806 c 0,0 0.2,-0.1998704 1,-0.1998704 0.8,0 1,0.1998704 1,0.1998704"/>
+ <path style="opacity:0.4;fill:none;stroke:#fff495;stroke-width:0.40000001px;stroke-linecap:round;stroke-linejoin:bevel" d="m 7.1000207,8.9999806 c 0,0 0.2,-0.1998704 1,-0.1998704 0.8,0 1,0.1998704 1,0.1998704"/>
  <g transform="matrix(-1,0,0,1,17.011111,0)">
   <ellipse style="fill:#ffffff" cx="8.858" cy="4.038" rx="1.506" ry="2.038" transform="matrix(0.97145609,0.23721945,-0.25985795,0.96564685,0,0)"/>
-  <ellipse style="fill:#3f3f3f" cx="9.391" cy="5.012" rx=".773" ry="1.021" transform="matrix(0.97295699,0.23098635,-0.26676097,0.96376272,0,0)"/>
+  <ellipse style="fill:#fff495" cx="9.391" cy="5.012" rx=".773" ry="1.021" transform="matrix(0.97295699,0.23098635,-0.26676097,0.96376272,0,0)"/>
  </g>
 </svg>

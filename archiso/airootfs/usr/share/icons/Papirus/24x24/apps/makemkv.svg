@@ -5,10 +5,10 @@
  <path style="opacity:0.2" d="M 2.006,12.250077 C 2.00395,12.333576 2.00015,12.416076 2.00015,12.500075 2.00015,18.040033 6.4601165,22.5 12.000075,22.5 17.540033,22.5 22,18.040033 22,12.500075 c 0,-0.084 -0.004,-0.166499 -0.006,-0.249998 -0.131999,5.422959 -4.537966,9.749927 -9.993925,9.749927 -5.4559591,0 -9.861926,-4.326968 -9.993925,-9.749927 z"/>
  <rect style="opacity:0.2" width="14" height="7" x="5" y="15.5" rx="1" ry="1"/>
  <rect style="fill:#64cd4a" width="14" height="7" x="5" y="15" rx="1" ry="1"/>
- <path style="opacity:0.2;fill:none;stroke:#000000;stroke-width:0.99999243;stroke-linecap:round;stroke-linejoin:round" d="m 9.5042362,20.99289 0,-3.99997 m -2.9999775,0 1.4999888,1.999984 1.4999887,-1.999984 m -2.9999775,3.99997 0,-3.99997"/>
+ <path style="opacity:0.2;fill:none;stroke:#fff495;stroke-width:0.99999243;stroke-linecap:round;stroke-linejoin:round" d="m 9.5042362,20.99289 0,-3.99997 m -2.9999775,0 1.4999888,1.999984 1.4999887,-1.999984 m -2.9999775,3.99997 0,-3.99997"/>
  <path style="fill:none;stroke:#ffffff;stroke-width:0.99999243;stroke-linecap:round;stroke-linejoin:round" d="m 9.5042362,20.492894 0,-3.99997 m -2.9999775,0 1.4999888,1.999984 1.4999887,-1.999984 m -2.9999775,3.99997 0,-3.99997"/>
- <path style="opacity:0.2;fill:none;stroke:#000000;stroke-width:0.99999243;stroke-linecap:round" d="m 13.504382,20.99289 -1.999986,-2.499981 m 1.999986,-1.499989 -1.999986,2.499982 m 0,1.499988 0,-3.99997"/>
+ <path style="opacity:0.2;fill:none;stroke:#fff495;stroke-width:0.99999243;stroke-linecap:round" d="m 13.504382,20.99289 -1.999986,-2.499981 m 1.999986,-1.499989 -1.999986,2.499982 m 0,1.499988 0,-3.99997"/>
  <path style="fill:none;stroke:#ffffff;stroke-width:0.99999243;stroke-linecap:round" d="m 13.504382,20.492894 -1.999986,-2.499982 m 1.999986,-1.499988 -1.999986,2.499981 m 0,1.499989 0,-3.99997"/>
- <path style="opacity:0.2;fill:none;stroke:#000000;stroke-width:0.99999243;stroke-linecap:round;stroke-linejoin:round" d="m 17.502042,17.000158 -1.24999,3.999971 -1.249991,-3.999971"/>
+ <path style="opacity:0.2;fill:none;stroke:#fff495;stroke-width:0.99999243;stroke-linecap:round;stroke-linejoin:round" d="m 17.502042,17.000158 -1.24999,3.999971 -1.249991,-3.999971"/>
  <path style="fill:none;stroke:#ffffff;stroke-width:0.99999243;stroke-linecap:round;stroke-linejoin:round" d="m 17.502042,16.500162 -1.24999,3.99997 -1.249991,-3.99997"/>
 </svg>

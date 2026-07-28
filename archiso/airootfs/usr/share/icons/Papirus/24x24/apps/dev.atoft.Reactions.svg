@@ -8,7 +8,7 @@
  <path style="fill:#c2352a;fill-rule:evenodd" width="4.5" height="4.5" x="14.5" y="3" d="m 14.500019,3 h 3.5 a 1,1 0 0 1 1,1 v 3.5 h -4.5 z"/>
  <path style="fill:#e97e10;fill-rule:evenodd" width="4.5" height="4.5" x="10" y="16.5" d="m 10.00001,16.5 h 4.5 V 21 h -3.5 a 1,1 0 0 1 -1,-1 z"/>
  <rect style="fill:#7767c0" width="4.5" height="4.5" x="10" y="12"/>
- <rect style="fill:#5d5d5d" width="4.5" height="4.5" x="10" y="7.5"/>
+ <rect style="fill:#fff495" width="4.5" height="4.5" x="10" y="7.5"/>
  <path style="fill:#50beee;fill-rule:evenodd" width="4.5" height="4.5" x="10" y="3" d="m 11.00001,3 h 3.5 v 4.5 h -4.5 V 4 a 1,1 0 0 1 1,-1 z"/>
  <path style="opacity:0.2;fill-rule:evenodd" d="m 11,3 a 1,1 0 0 0 -1,1 v 0.5 a 1,1 0 0 1 1,-1 h 3.5 3.5 a 1,1 0 0 1 1,1 V 4 A 1,1 0 0 0 18,3 h -3.5 z"/>
  <rect style="opacity:0.2;fill:#ffffff" width="4.5" height=".5" x="10" y="7.5"/>
@@ -20,8 +20,8 @@
  <path style="opacity:0.2" d="m 13,10.5 c 0,2.76123 -2.23877,5 -4.9999994,5 C 5.238768,15.5 3,13.26123 3,10.5 3,7.73877 5.238768,5.5 8.0000006,5.5 10.76123,5.5 13,7.73877 13,10.5 Z m 0,0"/>
  <path style="fill:#ffca28" d="m 13,10 c 0,2.76123 -2.23877,5 -4.9999994,5 C 5.238768,15 3,12.76123 3,10 3,7.23877 5.238768,5 8.0000006,5 10.76123,5 13,7.23877 13,10 Z m 0,0"/>
  <path style="opacity:0.2;fill:#ffffff" d="M 8 5 C 5.2387674 5 3 7.23877 3 10 C 3 10.081062 3.0020439 10.16207 3.0058594 10.242188 C 3.1397861 7.600503 5.3250559 5.5 8 5.5 C 10.674941 5.5 12.860214 7.600503 12.994141 10.242188 C 12.997956 10.16207 13 10.081062 13 10 C 13 7.23877 10.761229 5 8 5 z"/>
- <path fill="none" stroke="#241f31" stroke-width=".393" style="stroke-width:0.5" d="M 6,8 7,9 6,10"/>
- <path fill="none" stroke="#241f31" stroke-width=".393" style="stroke-width:0.5" d="m 10,8 -1,1 1,1"/>
+ <path fill="none" stroke="#fff495" stroke-width=".393" style="stroke-width:0.5" d="M 6,8 7,9 6,10"/>
+ <path fill="none" stroke="#fff495" stroke-width=".393" style="stroke-width:0.5" d="m 10,8 -1,1 1,1"/>
  <path style="fill:#c2352a" d="M 6.0664062,12.5 A 2,2 0 0 0 8,14 2,2 0 0 0 9.9335938,12.5 Z"/>
  <path style="fill:#ffffff" d="m 6,12 a 2,2 0 0 0 0.066406,0.5 H 9.9335938 A 2,2 0 0 0 10,12 Z"/>
 </svg>

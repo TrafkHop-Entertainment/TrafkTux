@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" version="1.1">
  <circle style="opacity:0.2" cx="13" cy="12.5" r="9"/>
- <circle style="fill:#3f3f3f" cx="13" cy="12" r="9"/>
+ <circle style="fill:#fff495" cx="13" cy="12" r="9"/>
  <path style="opacity:0.1;fill:#ffffff" d="M 13,3 A 9,9 0 0 0 4,12 9,9 0 0 0 4.0175781,12.25 9,9 0 0 1 13,3.5 9,9 0 0 1 21.991211,12.126953 9,9 0 0 0 22,12 9,9 0 0 0 13,3 Z"/>
  <ellipse style="opacity:0.2" cx="5.5" cy="14" rx="4.5" ry="2.5"/>
  <ellipse style="fill:#8cd538" cx="5.5" cy="13.5" rx="4.5" ry="2.5"/>

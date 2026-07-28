@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" version="1">
  <rect style="opacity:0.2" width="6" height="36" x="7" y="15" rx="1.5" ry="1.385"/>
  <rect style="opacity:0.2" width="45" height="56" x="13" y="5" rx="8.438" ry="8.4"/>
- <rect style="fill:#4f4f4f" width="45" height="56" x="13" y="4" rx="8.438" ry="8.4"/>
+ <rect style="fill:#fff495" width="45" height="56" x="13" y="4" rx="8.438" ry="8.4"/>
  <circle style="opacity:0.2" cx="-12.5" cy="-50.5" r="2.5" transform="matrix(0,-1,-1,0,0,0)"/>
  <circle style="fill:#ff4d4d" cx="-11.5" cy="-50.5" r="2.5" transform="matrix(0,-1,-1,0,0,0)"/>
  <circle style="opacity:0.4" cx="-30.5" cy="-35.5" r="11.5" transform="matrix(0,-1,-1,0,0,0)"/>
@@ -9,7 +9,7 @@
  <circle style="fill:#00b1c4" cx="-30.5" cy="35.5" r="8.5" transform="rotate(-90)"/>
  <circle style="opacity:0.2" cx="-31.5" cy="-35.5" r="4.5" transform="matrix(0,-1,-1,0,0,0)"/>
  <circle style="fill:#70f4ff" cx="-30.5" cy="-35.5" r="4.5" transform="matrix(0,-1,-1,0,0,0)"/>
- <rect style="fill:#3f3f3f" width="6" height="36" x="7" y="14" rx="1.5" ry="1.385"/>
+ <rect style="fill:#fff495" width="6" height="36" x="7" y="14" rx="1.5" ry="1.385"/>
  <circle style="opacity:0.5" cx="18.5" cy="50.5" r="1.5"/>
  <circle style="opacity:0.5" cx="24.5" cy="50.5" r="1.5"/>
  <circle style="opacity:0.5" cx="30.5" cy="50.5" r="1.5"/>

@@ -3,6 +3,6 @@
  <path d="m6 10h4l-2 5z" style="fill:#f0e24b"/>
  <circle cx="5.5" cy="6.5" r="2.5" style="fill:#ffffff"/>
  <circle cx="10.5" cy="6.5" r="2.5" style="fill:#ffffff"/>
- <circle cx="6.5" cy="6.5" r="1.5" style="fill:#494949"/>
- <circle cx="9.5" cy="6.5" r="1.5" style="fill:#494949"/>
+ <circle cx="6.5" cy="6.5" r="1.5" style="fill:#fff495"/>
+ <circle cx="9.5" cy="6.5" r="1.5" style="fill:#fff495"/>
 </svg>

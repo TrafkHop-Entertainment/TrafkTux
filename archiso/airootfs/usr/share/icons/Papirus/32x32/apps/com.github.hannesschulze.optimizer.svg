@@ -6,14 +6,14 @@
  <path style="fill:#ffffff;opacity:0.1" d="M 22.427734 18.34375 L 14.849609 23.304688 L 15.408203 23.939453 L 20.486328 20.615234 L 22.427734 18.34375 z"/>
  <circle style="opacity:0.2" cx="16" cy="25" r="2"/>
  <circle style="fill:#ed274c" cx="16" cy="24" r="2"/>
- <g style="opacity:0.2;stroke:#000000" transform="translate(0,0.9999)">
-  <path style="fill:none;stroke:#000000;stroke-width:2;stroke-linecap:round" d="m 16,9 v 2"/>
-  <path style="fill:none;stroke:#000000;stroke-width:2;stroke-linecap:round" d="M 29,22 H 27"/>
-  <path style="fill:none;stroke:#000000;stroke-width:2;stroke-linecap:round" d="M 5,22 H 3"/>
-  <path style="fill:none;stroke:#000000;stroke-width:2;stroke-linecap:round" d="m 6.4737206,16.5 -1.7320508,-1"/>
-  <path style="fill:none;stroke:#000000;stroke-width:2;stroke-linecap:round" d="m 25.526279,16.5 1.732051,-1"/>
-  <path style="fill:none;stroke:#000000;stroke-width:2;stroke-linecap:round" d="m 21.5,12.473721 1,-1.732051"/>
-  <path style="fill:none;stroke:#000000;stroke-width:2;stroke-linecap:round" d="M 10.5,12.473721 9.5,10.74167"/>
+ <g style="opacity:0.2;stroke:#fff495" transform="translate(0,0.9999)">
+  <path style="fill:none;stroke:#fff495;stroke-width:2;stroke-linecap:round" d="m 16,9 v 2"/>
+  <path style="fill:none;stroke:#fff495;stroke-width:2;stroke-linecap:round" d="M 29,22 H 27"/>
+  <path style="fill:none;stroke:#fff495;stroke-width:2;stroke-linecap:round" d="M 5,22 H 3"/>
+  <path style="fill:none;stroke:#fff495;stroke-width:2;stroke-linecap:round" d="m 6.4737206,16.5 -1.7320508,-1"/>
+  <path style="fill:none;stroke:#fff495;stroke-width:2;stroke-linecap:round" d="m 25.526279,16.5 1.732051,-1"/>
+  <path style="fill:none;stroke:#fff495;stroke-width:2;stroke-linecap:round" d="m 21.5,12.473721 1,-1.732051"/>
+  <path style="fill:none;stroke:#fff495;stroke-width:2;stroke-linecap:round" d="M 10.5,12.473721 9.5,10.74167"/>
  </g>
  <g>
   <path style="fill:none;stroke:#ffffff;stroke-width:2;stroke-linecap:round" d="m 16,9 v 2"/>

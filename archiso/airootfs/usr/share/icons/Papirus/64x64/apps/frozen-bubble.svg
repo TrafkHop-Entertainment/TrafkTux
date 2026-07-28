@@ -20,6 +20,6 @@
  <circle style="opacity:0.2" cx="-21" cy="22" r="9" transform="scale(-1,1)"/>
  <circle style="fill:#ffffff" cx="-8" cy="22" r="6" transform="scale(-1,1)"/>
  <circle style="fill:#ffffff" cx="-21" cy="21" r="9" transform="scale(-1,1)"/>
- <circle style="fill:#3f3f3f" cx="-18" cy="22" r="4" transform="scale(-1,1)"/>
- <circle style="fill:#3f3f3f" cx="-7" cy="22" r="3" transform="scale(-1,1)"/>
+ <circle style="fill:#fff495" cx="-18" cy="22" r="4" transform="scale(-1,1)"/>
+ <circle style="fill:#fff495" cx="-7" cy="22" r="3" transform="scale(-1,1)"/>
 </svg>

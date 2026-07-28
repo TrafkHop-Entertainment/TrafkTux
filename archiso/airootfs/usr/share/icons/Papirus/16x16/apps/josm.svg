@@ -11,13 +11,13 @@
  <path d="m13.749783 6.3100645-0.499783 0.6745532 1.416558 0.9268435 0.328884-0.4436045v-0.3429933z" style="fill:#b89b00"/>
  <path d="M 12.583333,7.9111841 14,8.8380273 14.499999,8.1639595 13.083333,7.237116 Z" style="fill:#b89b00"/>
  <path d="m2.2167969 6.7651021-0.2498915 0.084605 0.5666233 3.2858729-0.078234 2.740896 0.2840711-0.04345 0.077474-2.714219zm0.5225694 6.0679289-0.00608 0.201222-0.2833115 0.01677 0.00532-0.174545-0.038737 0.0061-1.4051648 0.993918v0.08841s-0.0295474 0.187384 0.013672 0.382628l1.4750453-1.043464 0.166341-0.05107 3.3335495-0.201985 1.1667761-0.926844-0.083551-0.4215-1.0832268 0.92685-3.2499991 0.201985z" style="fill:#646464"/>
- <ellipse cx="2.592" cy="13.059" rx=".225" ry=".228" style="fill:#222222;stroke-linecap:round;stroke-linejoin:round;stroke-width:.13407141;stroke:#ffffff"/>
- <ellipse cx="7.167" cy="11.88" rx=".225" ry=".228" style="fill:#222222;stroke-linecap:round;stroke-linejoin:round;stroke-width:.13407141;stroke:#ffffff"/>
- <ellipse cx="2.083" cy="6.824" rx=".225" ry=".228" style="fill:#222222;stroke-linecap:round;stroke-linejoin:round;stroke-width:.13407141;stroke:#ffffff"/>
- <ellipse cx="2.667" cy="10.127" rx=".225" ry=".228" style="fill:#222222;stroke-linecap:round;stroke-linejoin:round;stroke-width:.13407141;stroke:#ffffff"/>
+ <ellipse cx="2.592" cy="13.059" rx=".225" ry=".228" style="fill:#fff495;stroke-linecap:round;stroke-linejoin:round;stroke-width:.13407141;stroke:#ffffff"/>
+ <ellipse cx="7.167" cy="11.88" rx=".225" ry=".228" style="fill:#fff495;stroke-linecap:round;stroke-linejoin:round;stroke-width:.13407141;stroke:#ffffff"/>
+ <ellipse cx="2.083" cy="6.824" rx=".225" ry=".228" style="fill:#fff495;stroke-linecap:round;stroke-linejoin:round;stroke-width:.13407141;stroke:#ffffff"/>
+ <ellipse cx="2.667" cy="10.127" rx=".225" ry=".228" style="fill:#fff495;stroke-linecap:round;stroke-linejoin:round;stroke-width:.13407141;stroke:#ffffff"/>
  <path d="m1.0112896 1.8462083v12.118963s-0.11125566 0.654517 0.3647464 0.79218l4.623964 1.242649c-0.015625-0.003906 0-13.463622 0-13.463622l-4.3798458-1.1897857s-0.6088646-0.1695589-0.6088646 0.4996156z" style="fill:#ffffff;opacity:.3"/>
  <path d="m10.333333 14.634125 4.004323 1.175563c0.708207 0.247732 0.658041-0.494393 0.658041-0.494393v-12.215401c0.06547-0.6348332-0.63778-0.7657056-0.63778-0.7657056l-4.024584-1.1636845z" style="fill:#ffffff;opacity:.3"/>
  <path d="m7.1686198 9.0155623-0.1238066 2.1891097 0.570421 0.338287 1.6922745-1.257839z" style="fill:#d9c8b0"/>
- <path d="M 7.0448132,11.204672 7,12 7.6152342,11.542959 Z" style="fill:#505050"/>
+ <path d="M 7.0448132,11.204672 7,12 7.6152342,11.542959 Z" style="fill:#fff495"/>
  <path d="m12.903972 5.291665e-4c-0.639568 0.020258424-1.207461 0.62742899-1.424914 1.0226777l-4.3104382 7.9923554 2.1388889 1.2695577 0.0546875-0.040625 4.4031028-8.0587636c0.496126-0.8549454 0.132178-1.8541498-0.410156-2.0961378-0.15175-0.06771059-0.303579-0.09373941-0.451171-0.089064394z" style="fill:#a15f34"/>
 </svg>

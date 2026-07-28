@@ -33,16 +33,16 @@
       "icon": "applications-graphics",
       "children": [
         {
-          "name": "Kolourpaint",
+          "name": "Pinta",
           "type": "app",
-          "icon": "kolourpaint",
-          "exec": "kolourpaint"
+          "icon": "pinta",
+          "exec": "pinta"
         },
         {
-          "name": "Kate",
+          "name": "Writing",
           "type": "app",
           "icon": "kate",
-          "exec": "kate"
+          "exec": "xed"
         }
       ]
     },
@@ -77,10 +77,10 @@
           "exec": "vlc"
         },
         {
-          "name": "Gwenview",
+          "name": "Loupe",
           "type": "app",
-          "icon": "gwenview",
-          "exec": "gwenview"
+          "icon": "deepin-album",
+          "exec": "loupe"
         }
       ]
     },
@@ -180,19 +180,19 @@
           "name": "Btop",
           "type": "app",
           "icon": "utilities-system-monitor",
-          "exec": "sfce4-terminal btop"
+          "exec": "xfce4-terminal btop"
+        },
+        {
+          "name": "Htop",
+          "type": "app",
+          "icon": "utilities-system-monitor",
+          "exec": "xfce4-terminal Htop"
         },
         {
           "name": "GParted",
           "type": "app",
           "icon": "gparted",
           "exec": "gparted"
-        },
-        {
-          "name": "GNOME Disks",
-          "type": "app",
-          "icon": "drive-harddisk",
-          "exec": "gnome-disks"
         }
       ]
     },

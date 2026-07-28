@@ -38,22 +38,7 @@ background-color: #fff495;
 border-radius: 35px 35px 0 0;
 min-height:    45px;
 padding:       0px 15px;
-/* ── Oberer Rand dunkler ("3D"-Effekt) ────────────────────
- * Erster Versuch war ein heller inset-box-shadow-Ring rundum - auf
- * Wunsch jetzt umgedreht: NUR die obere Hälfte bekommt einen Effekt,
- * größer als vorher, und dunkler statt heller als die Grundfarbe
- * #fff495. box-shadow kann nicht auf eine Seite beschränkt werden
- * (der Blur legt sich immer rundum um die Form), deshalb hier
- * stattdessen ein linear-gradient als background-image: er startet
- * oben dunkler und geht bei ca. 60% der Bar-Höhe in die normale
- * Grundfarbe über. background-image folgt genau wie box-shadow der
- * border-radius-Form (wird an den oberen Ecken automatisch
- * mitgerundet), macht also unten (eckige Kante) keinen Unterschied.
- * #b3990a ist #fff495 mit reduzierter Helligkeit (kein neuer
- * Farbton, nur dunklere Variante desselben Gelbs) - Prozentsatz bei
- * 60% steuert, wie weit der dunkle Bereich nach unten reicht.
- */
-background-image: linear-gradient(to bottom, #ede59f 1%, #C7C07F 5%, #ede59f 12%, #fff495 13%);
+background-color: #fff495;
 }
 
 #waybar > box {
@@ -79,7 +64,7 @@ padding-right: 15px;
 #custom-settings,
 #tray,
 #clock {
-background-image:  url("../rofi/assets/bubble-normal.png");
+background-image:  url("/tmp/bubble-normal.png");
 background-size:   100% 100%;
 background-repeat: no-repeat;
 background-color:  transparent;   /* kein schwarzer Fallback mehr */
@@ -107,19 +92,19 @@ margin:            5px;
 #custom-settings:hover,
 #tray:hover,
 #clock:hover {
-background-image: url("../rofi/assets/bubble-selected.png");
+background-image: url("/tmp/bubble-selected.png");
 color:            #c8b800;
 }
 
 /* ── OSK aktiv: dezent hervorheben, damit man sieht ob sie offen ist ── */
 #custom-osk.active {
-background-image: url("../rofi/assets/bubble-selected.png");
+background-image: url("/tmp/bubble-selected.png");
 color:            #c8b800;
 }
 
 /* ── Hideall aktiv: alle Fenster sind gerade versteckt ─────────────── */
 #custom-hide-windows.active {
-background-image: url("../rofi/assets/bubble-selected.png");
+background-image: url("/tmp/bubble-selected.png");
 color:            #c8b800;
 }
 
@@ -158,7 +143,7 @@ margin-left: 35px;            /* Abstand zum linken Nachbarn */
  * bekommen jeweils eine EIGENE Blase, genau wie die anderen Module.
  */
 #workspaces .workspace-label {
-background-image:  url("../rofi/assets/bubble-normal.png");
+background-image:  url("/tmp/bubble-normal.png");
 background-size:   100% 100%;
 background-repeat: no-repeat;
 background-color:  transparent;
@@ -170,12 +155,12 @@ margin:             5px;
 
 #workspaces button:hover .workspace-label,
 #workspaces button.active .workspace-label {
-background-image: url("../rofi/assets/bubble-selected.png");
+background-image: url("/tmp/bubble-selected.png");
 color:            #c8b800;
 }
 
 #workspaces .taskbar-window {
-background-image:  url("../rofi/assets/bubble-normal.png");
+background-image:  url("/tmp/bubble-normal.png");
 background-size:   100% 100%;
 background-repeat: no-repeat;
 background-color:  transparent;
@@ -188,7 +173,7 @@ border-radius:      0;    /* das PNG bringt schon die Form mit */
 
 #workspaces .taskbar-window:hover,
 #workspaces .taskbar-window.active {
-background-image: url("../rofi/assets/bubble-selected.png");
+background-image: url("/tmp/bubble-selected.png");
 }
 
 #workspaces .taskbar-window image {

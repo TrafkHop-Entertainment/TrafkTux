@@ -6,7 +6,7 @@
  <circle style="fill:#e2bf56" cx="5.5" cy="6.5" r="2.5"/>
  <rect style="fill:#e2bf56" width="4.2" height="2.8" x="5.9" y="5.9"/>
  <circle style="fill:#e2bf56" cx="10.5" cy="6.5" r="2.5"/>
- <circle style="fill:#3f3f3f" cx="6" cy="6" r="1"/>
- <circle style="fill:#3f3f3f" cx="10.05" cy="5.95" r="1.05"/>
- <path style="fill:none;stroke:#3f3f3f;stroke-linecap:round;stroke-linejoin:round" d="m 4.8530047,11.1 c 0,0 1.05,1.4 3.15,1.4 2.1000003,0 3.1500003,-1.4 3.1500003,-1.4 v 0 0"/>
+ <circle style="fill:#fff495" cx="6" cy="6" r="1"/>
+ <circle style="fill:#fff495" cx="10.05" cy="5.95" r="1.05"/>
+ <path style="fill:none;stroke:#fff495;stroke-linecap:round;stroke-linejoin:round" d="m 4.8530047,11.1 c 0,0 1.05,1.4 3.15,1.4 2.1000003,0 3.1500003,-1.4 3.1500003,-1.4 v 0 0"/>
 </svg>

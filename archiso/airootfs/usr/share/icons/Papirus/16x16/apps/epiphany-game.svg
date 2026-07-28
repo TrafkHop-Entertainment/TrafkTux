@@ -7,10 +7,10 @@
  <path style="fill:#09dbed" d="m 12.25,14 c 0.4155,0 0.75,0.446 0.75,1 0,0.554 -0.3345,1 -0.75,1 l -1.5,0 C 10.3345,16 10,15.554 10,15 c 0,-0.554 0.3345,-1 0.75,-1 l 1.5,0 z"/>
  <rect style="fill:#3ce63c" width="5" height="6" x="6" y="7" rx=".388" ry=".309"/>
  <ellipse style="fill:#9f9f9f" cx="8.5" cy="5.5" rx="5.5" ry="3.5"/>
- <rect style="fill:#3f3f3f" width="1" height="1" x="5" y="5"/>
- <rect style="fill:#3f3f3f" width="1" height="1" x="11" y="5"/>
- <rect style="fill:#3f3f3f" width="5.027" height="1" x="5.97" y="7"/>
+ <rect style="fill:#fff495" width="1" height="1" x="5" y="5"/>
+ <rect style="fill:#fff495" width="1" height="1" x="11" y="5"/>
+ <rect style="fill:#fff495" width="5.027" height="1" x="5.97" y="7"/>
  <path style="fill:#ffc901" d="M 1.7903099,0 C 1.0360966,6.5868e-4 0.7121568,0.97025192 1.3108261,1.4351562 L 3.08,5 C 3.08,5 3.9902528,3.3264452 4.7173197,3.1 5.9296845,2.7224088 7.2145616,4 8.5,4 9.7854384,4 11.070315,2.7224088 12.28268,3.1 13.009747,3.3264452 13.92,5 13.92,5 L 15.689174,1.4351562 C 16.287843,0.97025192 15.963903,6.6e-4 15.209689,0 L 8.5,0 Z"/>
- <rect style="fill:#3f3f3f" width="1" height="1" x="8" y="9"/>
- <rect style="fill:#3f3f3f" width="1" height="1" x="8" y="11"/>
+ <rect style="fill:#fff495" width="1" height="1" x="8" y="9"/>
+ <rect style="fill:#fff495" width="1" height="1" x="8" y="11"/>
 </svg>

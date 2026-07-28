@@ -12,8 +12,8 @@
    <rect transform="rotate(90)" x="13" y="-15" width="1" height="2"/>
    <rect transform="rotate(90)" x="16" y="-15" width="1" height="2"/>
   </g>
-  <rect x="15" y="12" width="6" height="6" rx="1.2" ry="1.2" style="fill:#4e4e4e"/>
-  <path d="m3 6h2v21" style="fill:none;opacity:.2;stroke-linecap:round;stroke-linejoin:round;stroke-width:2;stroke:#000000"/>
+  <rect x="15" y="12" width="6" height="6" rx="1.2" ry="1.2" style="fill:#fff495"/>
+  <path d="m3 6h2v21" style="fill:none;opacity:.2;stroke-linecap:round;stroke-linejoin:round;stroke-width:2;stroke:#fff495"/>
   <path d="m3 5h2v21" style="fill:none;stroke-linecap:round;stroke-linejoin:round;stroke-width:2;stroke:#b7b7b7"/>
   <g transform="translate(0,1)" style="opacity:.2">
    <rect x="17" y="22" width="2" height="4"/>

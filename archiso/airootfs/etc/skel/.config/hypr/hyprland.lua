@@ -35,8 +35,17 @@ if not f then return default end
         -- da Rofi jetzt direkt von Hyprland gestartet wird statt von bubble-menu.py.
         -- $HOME statt ~, da ~ innerhalb der verschachtelten -modi-Anführungszeichen
         -- von Bash nicht expandiert wird, $HOME aber schon.
-        local launcher_cmd   = "rofi -show bubble -modi \"bubble:python3 $HOME/.config/rofi/bubble-menu.py --menu launcher --x11\" -theme $HOME/.config/rofi/launcher/theme.rasi -show-icons -no-custom -x11 -kb-row-up 'Up,Control+p,w' -kb-row-down 'Down,Control+n,s' -kb-row-left 'Control+Page_Up,a' -kb-row-right 'Control+Page_Down,d' -kb-accept-entry 'Control+j,Control+m,Return,KP_Enter,space,less' -kb-custom-1 'q' -kb-custom-2 'e' -kb-custom-3 'x'"
-        local powermenu_cmd  = "rofi -show bubble -modi \"bubble:python3 $HOME/.config/rofi/bubble-menu.py --menu powermenu --x11\" -theme $HOME/.config/rofi/powermenu/theme.rasi -show-icons -no-custom -x11 -kb-row-up 'Up,Control+p,w' -kb-row-down 'Down,Control+n,s' -kb-row-left 'Control+Page_Up,a' -kb-row-right 'Control+Page_Down,d' -kb-accept-entry 'Control+j,Control+m,Return,KP_Enter,space,less' -kb-custom-1 'q' -kb-custom-2 'e' -kb-custom-3 'x'"
+        --
+        -- Zentrierungs-Fix (-monitor $(...)): Rofi kennt im nativen Wayland-Modus
+        -- seinen Output erst NACHDEM die erste Layer-Surface gemappt wurde,
+        -- "location: center" wird aber schon vorher berechnet -> der allererste
+        -- Start eines neuen Rofi-Prozesses landet potenziell auf dem falschen
+        -- Monitor (egal ob per Hyprland-Bind oder Waybar-Klick gestartet).
+        -- Statt Rofis eigener (racy) Output-Erkennung zu vertrauen, wird der
+        -- fokussierte Monitor per hyprctl+jq VOR dem Start ermittelt und Rofi
+        -- explizit mitgegeben - direkt inline, kein separates Skript nötig.
+        local launcher_cmd   = "rofi -show bubble -modi \"bubble:python3 $HOME/.config/rofi/bubble-menu.py --menu launcher --x11\" -theme $HOME/.config/rofi/launcher/theme.rasi -show-icons -no-custom -x11 -monitor \"$(hyprctl monitors -j | jq -r '.[] | select(.focused) | .name')\" -kb-row-up 'Up,Control+p,w' -kb-row-down 'Down,Control+n,s' -kb-row-left 'Control+Page_Up,a' -kb-row-right 'Control+Page_Down,d' -kb-accept-entry 'Control+j,Control+m,Return,KP_Enter,space,less' -kb-custom-1 'q' -kb-custom-2 'e' -kb-custom-3 'x'"
+        local powermenu_cmd  = "rofi -show bubble -modi \"bubble:python3 $HOME/.config/rofi/bubble-menu.py --menu powermenu --x11\" -theme $HOME/.config/rofi/powermenu/theme.rasi -show-icons -no-custom -x11 -monitor \"$(hyprctl monitors -j | jq -r '.[] | select(.focused) | .name')\" -kb-row-up 'Up,Control+p,w' -kb-row-down 'Down,Control+n,s' -kb-row-left 'Control+Page_Up,a' -kb-row-right 'Control+Page_Down,d' -kb-accept-entry 'Control+j,Control+m,Return,KP_Enter,space,less' -kb-custom-1 'q' -kb-custom-2 'e' -kb-custom-3 'x'"
 
         -- Cursor-Umgebungsvariablen
         hl.env("XCURSOR_THEME", "TrafkTuxCursorLegacy")
@@ -140,7 +149,7 @@ if not f then return default end
 
         hl.config({
             cursor = {
-                no_warps = true,
+                no_warps = false,
             },
         })
 
@@ -234,7 +243,7 @@ if not f then return default end
                 hl.config({
                     input = {
                         kb_layout    = "de",
-                        follow_mouse = 0,
+                        follow_mouse = 1,
                         float_switch_override_focus = 0,
                         sensitivity  = 0,
                         touchpad = {

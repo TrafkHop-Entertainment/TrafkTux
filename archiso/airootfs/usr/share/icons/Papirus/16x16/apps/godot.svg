@@ -5,7 +5,7 @@
   <path style="fill:none;stroke:#ffffff;stroke-width:2;stroke-linecap:round" d="M 8,8 V 9"/>
   <circle style="fill:#ffffff" cx="4.5" cy="7.5" r="1.5"/>
   <circle style="fill:#ffffff" cx="11.5" cy="7.5" r="1.5"/>
-  <rect style="fill:#353535" width="1" height="1" x="4" y="7"/>
-  <rect style="fill:#353535" width="1" height="1" x="11" y="7"/>
+  <rect style="fill:#fff495" width="1" height="1" x="4" y="7"/>
+  <rect style="fill:#fff495" width="1" height="1" x="11" y="7"/>
  </g>
 </svg>

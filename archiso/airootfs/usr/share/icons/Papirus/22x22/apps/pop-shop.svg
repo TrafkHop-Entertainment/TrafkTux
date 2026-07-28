@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" version="1.1">
  <g transform="translate(-1,-1)">
   <path style="fill:#fcb96f" d="M 6,3 H 19.75 C 20.993,3 22,4.0074 22,5.25 V 18 L 21,19 H 5 V 4 Z"/>
-  <path style="fill:#554741" d="M 6,18 H 22 V 18.75 A 2.25,2.25 0 0 1 19.75,21 H 6 Z"/>
+  <path style="fill:#fff495" d="M 6,18 H 22 V 18.75 A 2.25,2.25 0 0 1 19.75,21 H 6 Z"/>
   <path style="fill:#aaa09b" d="M 4.25,3 H 6 V 21 H 4.25 A 2.25,2.25 0 0 1 2,18.75 V 5.25 A 2.25,2.25 0 0 1 4.25,3 Z"/>
   <circle style="fill:#8a7d77" cx="4.5" cy="15.5" r=".5"/>
   <circle style="fill:#8a7d77" cx="4.5" cy="13.5" r=".5"/>

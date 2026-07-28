@@ -1,6 +1,6 @@
 <svg width="64" height="64" version="1" xmlns="http://www.w3.org/2000/svg">
  <rect transform="matrix(0,-1,-1,0,0,0)" x="-61" y="-54" width="56" height="44" rx="2.8" ry="2.75" style="opacity:.2"/>
- <rect transform="matrix(0,-1,-1,0,0,0)" x="-60" y="-54" width="56" height="44" rx="2.8" ry="2.75" style="fill:#4f4f4f"/>
+ <rect transform="matrix(0,-1,-1,0,0,0)" x="-60" y="-54" width="56" height="44" rx="2.8" ry="2.75" style="fill:#fff495"/>
  <rect transform="matrix(0,-1,-1,0,0,0)" x="-44" y="-49" width="34" height="28" ry="4.1999998" style="opacity:.2"/>
  <rect transform="matrix(0,-1,-1,0,0,0)" x="-56" y="-43" width="34" height="28" ry="4.1999998" style="opacity:.2"/>
  <rect transform="matrix(0,-1,-1,0,0,0)" x="-43" y="-49" width="34" height="28" ry="4.1999998" style="fill:#dbdbdb"/>

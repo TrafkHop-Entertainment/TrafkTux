@@ -3,7 +3,7 @@
   <rect opacity=".2" width="20" height="20" x="-21.5" y="-21" rx="10" ry="10" transform="matrix(0,-1,-1,0,0,0)"/>
   <rect fill="#c4c4c4" width="20" height="20" x="-21" y="-21" rx="10" ry="10" transform="matrix(0,-1,-1,0,0,0)"/>
   <circle opacity=".5" cx="11" cy="11.5" r="5.5"/>
-  <circle fill="#3f3f3f" cx="11" cy="11" r="6"/>
+  <circle fill="#fff495" cx="11" cy="11" r="6"/>
   <circle opacity=".2" cx="11" cy="-11.5" r="5" transform="scale(1,-1)"/>
   <circle fill="#ba174e" cx="11" cy="-11" r="5" transform="scale(1,-1)"/>
   <circle fill="#55cc98" cx="17" cy="17" r="5"/>

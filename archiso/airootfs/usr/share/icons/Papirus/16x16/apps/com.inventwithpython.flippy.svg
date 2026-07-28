@@ -6,11 +6,11 @@
  <rect style="opacity:0.1" width="5" height="15" x="6" y="-16" transform="rotate(90)"/>
  <circle style="fill:#ffffff" cx="8.5" cy="8.5" r="1.5"/>
  <circle style="fill:#ffffff" cx="3.5" cy="8.5" r="1.5"/>
- <circle style="fill:#3f3f3f" cx="13.5" cy="8.5" r="1.5"/>
+ <circle style="fill:#fff495" cx="13.5" cy="8.5" r="1.5"/>
  <circle style="fill:#ffffff" cx="8.5" cy="3.5" r="1.5"/>
  <circle style="fill:#ffffff" cx="3.5" cy="3.5" r="1.5"/>
  <circle style="fill:#ffffff" cx="13.5" cy="3.5" r="1.5"/>
- <circle style="fill:#3f3f3f" cx="8.5" cy="13.5" r="1.5"/>
- <circle style="fill:#3f3f3f" cx="3.5" cy="13.5" r="1.5"/>
+ <circle style="fill:#fff495" cx="8.5" cy="13.5" r="1.5"/>
+ <circle style="fill:#fff495" cx="3.5" cy="13.5" r="1.5"/>
  <circle style="fill:#ffffff" cx="13.5" cy="13.5" r="1.5"/>
 </svg>

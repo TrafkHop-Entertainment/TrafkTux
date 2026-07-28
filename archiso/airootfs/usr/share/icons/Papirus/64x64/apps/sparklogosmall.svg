@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" version="1">
  <rect style="opacity:0.2" width="56" height="56" x="4" y="5" rx="16.8" ry="16.8"/>
- <rect style="fill:#3f3f3f" width="56" height="56" x="4" y="4" rx="16.8" ry="16.8"/>
+ <rect style="fill:#fff495" width="56" height="56" x="4" y="4" rx="16.8" ry="16.8"/>
  <path style="fill:none;stroke:#2257e1;stroke-width:10;stroke-linecap:round;stroke-linejoin:round" d="m 49,26 c 0,0 -1.875045,17.448221 -8,18 -9.130547,0.822544 -7.855474,-22.350717 -17,-23 -2.586462,-0.183646 -5,7 -5,7"/>
  <path style="fill:none;stroke:#5be759;stroke-width:10;stroke-linecap:round;stroke-linejoin:round" d="M 32.755793,30.793854 C 34.389799,26.075998 36.051931,21.280323 40,21 c 2.586462,-0.183645 6,7 6,7"/>
  <path style="fill:none;stroke:#11c9ff;stroke-width:10;stroke-linecap:round;stroke-linejoin:round" d="m 15,26 c 0,0 2.875045,17.448221 9,18 4.367919,0.393492 5.989609,-4.982932 7.755787,-10.236421"/>

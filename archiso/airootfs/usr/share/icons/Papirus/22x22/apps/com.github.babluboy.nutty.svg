@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" version="1.1">
  <g transform="translate(0,-1100.5197)">
   <path style="opacity:0.2" d="m 10.999995,1102.951 -8.9999999,3.375 v 0.6933 9.5801 l 8.9101559,5.1113 9.089844,-5.1054 v -10.2793 z m -0.9999999,2.5117 v 4.7519 l -4.7539062,-2.9707 z m 1.9999999,0 4.751953,1.7832 -4.751953,2.9687 z m -7.9999999,3.3594 4.9589844,3.1015 -4.9589844,2.4785 z m 13.9999999,0 v 5.58 l -4.958984,-2.4785 z m -7.9999999,4.8164 v 5.2441 l -4.8847656,-2.8027 z m 1.9999999,0 4.865234,2.4316 -4.865234,2.7324 z"/>
-  <path style="fill:none;stroke:#364451;stroke-width:1.99999905" d="m 10.999995,1103.5197 v 8"/>
-  <path style="fill:none;stroke:#364451;stroke-width:1.99999905" d="m 2.9999951,1115.5197 7.9999999,-4 8,4"/>
+  <path style="fill:none;stroke:#fff495;stroke-width:1.99999905" d="m 10.999995,1103.5197 v 8"/>
+  <path style="fill:none;stroke:#fff495;stroke-width:1.99999905" d="m 2.9999951,1115.5197 7.9999999,-4 8,4"/>
   <path style="fill:none;stroke:#7e8f99;stroke-width:1.99999905" d="m 2.9999951,1106.5197 7.9999999,5 8,-5"/>
   <path style="fill:none;stroke:#7e8f99;stroke-width:1.99999905" d="m 10.999995,1119.5197 v -8"/>
   <path style="fill:none;stroke:#53626c;stroke-width:2" d="m 2.9999951,1106.5197 7.9999999,-3 8,3 v 9 l -8.084471,4.5411 -7.9155289,-4.5411 z"/>

@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" version="1">
  <path style="opacity:0.2" d="m 3,42 v 1 h 3 v -1 z m 39,0 v 1 H 42 45 V 42 H 42 Z M 6,45 v 1 h 3 30 3 V 45 H 39 9 Z"/>
  <rect style="fill:#ffffff" width="36" height="36" x="6" y="6"/>
- <path style="fill:#5c3e52" d="m9 3v3h30v-3zm30 3v3h3v-3zm3 3v30h3v-30zm0 30h-3v3h3zm-3 3h-30v3h30zm-30 0v-3h-3v3zm-3-3v-30h-3v30zm0-30h3v-3h-3zm9 6v12h3v-12zm15 0v12h3v-12z"/>
+ <path style="fill:#fff495" d="m9 3v3h30v-3zm30 3v3h3v-3zm3 3v30h3v-30zm0 30h-3v3h3zm-3 3h-30v3h30zm-30 0v-3h-3v3zm-3-3v-30h-3v30zm0-30h3v-3h-3zm9 6v12h3v-12zm15 0v12h3v-12z"/>
  <path style="fill:#6d8292" d="m6 33v6h3v3h30v-3h3v-6h-3v3h-30v-3z"/>
  <rect style="opacity:.2" width="3" height="1" x="3" y="9"/>
  <rect style="opacity:.2" width="3" height="1" x="6" y="6"/>

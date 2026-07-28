@@ -339,11 +339,11 @@
        inkscape:collect="always"
        id="linearGradient11399">
       <stop
-         style="stop-color:#000000;stop-opacity:1;"
+         style="stop-color:#fff495;stop-opacity:1;"
          offset="0"
          id="stop11401" />
       <stop
-         style="stop-color:#000000;stop-opacity:0;"
+         style="stop-color:#fff495;stop-opacity:0;"
          offset="1"
          id="stop11403" />
     </linearGradient>
@@ -378,11 +378,11 @@
        inkscape:collect="always"
        id="linearGradient11508">
       <stop
-         style="stop-color:#000000;stop-opacity:1;"
+         style="stop-color:#fff495;stop-opacity:1;"
          offset="0"
          id="stop11510" />
       <stop
-         style="stop-color:#000000;stop-opacity:0;"
+         style="stop-color:#fff495;stop-opacity:0;"
          offset="1"
          id="stop11512" />
     </linearGradient>
@@ -430,11 +430,11 @@
       <stop
          id="stop2289"
          offset="0"
-         style="stop-color:#000000;stop-opacity:1;" />
+         style="stop-color:#fff495;stop-opacity:1;" />
       <stop
          id="stop2291"
          offset="1"
-         style="stop-color:#000000;stop-opacity:0;" />
+         style="stop-color:#fff495;stop-opacity:0;" />
     </linearGradient>
     <inkscape:perspective
        id="perspective3548"
@@ -515,7 +515,7 @@
      inkscape:groupmode="layer">
     <rect
        transform="matrix(1.12925,0,0,0.3575833,8.9728127,43.149425)"
-       style="opacity:0.19262295;fill:#000000;fill-opacity:1;stroke:#000000;stroke-width:0.98492777;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1;filter:url(#filter3974)"
+       style="opacity:0.19262295;fill:#fff495;fill-opacity:1;stroke:#fff495;stroke-width:0.98492777;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1;filter:url(#filter3974)"
        id="rect3891"
        width="14.5"
        height="7.9696693"

@@ -63,7 +63,7 @@
        height="4"
        rx=".38462"
        ry=".50229"
-       style="color:#000000;enable-background:new;fill:#bebebe" />
+       style="color:#fff495;enable-background:new;fill:#bebebe" />
     <rect
        id="rect12860"
        transform="rotate(90)"
@@ -73,7 +73,7 @@
        height="4"
        rx=".38462"
        ry=".50229"
-       style="color:#000000;enable-background:new;fill:#bebebe" />
+       style="color:#fff495;enable-background:new;fill:#bebebe" />
     <rect
        id="rect12862"
        transform="rotate(90)"
@@ -83,6 +83,6 @@
        height="4"
        rx=".38462"
        ry=".50229"
-       style="color:#000000;enable-background:new;fill:#bebebe" />
+       style="color:#fff495;enable-background:new;fill:#bebebe" />
   </g>
 </svg>

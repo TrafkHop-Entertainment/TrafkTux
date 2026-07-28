@@ -8,7 +8,7 @@
  <ellipse style="fill:#ffd428" cx="28" cy="30.5" rx="2" ry="1.5"/>
  <ellipse style="opacity:0.2" cx="33" cy="29.5" rx="2" ry="1.5"/>
  <ellipse style="fill:#72ba3e" cx="33" cy="28.5" rx="2" ry="1.5"/>
- <ellipse style="fill:#3f3f3f" cx="24" cy="26" rx="4" ry="2"/>
+ <ellipse style="fill:#fff495" cx="24" cy="26" rx="4" ry="2"/>
  <path style="fill:none;stroke:#e4e4e4;stroke-width:4;stroke-linecap:round" d="M 24,25 V 12"/>
  <circle style="opacity:0.2" cx="24" cy="11" r="6"/>
  <circle style="fill:#e33d43" cx="24" cy="10" r="6"/>

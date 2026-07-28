@@ -1,12 +1,12 @@
 <svg width="32" height="32" version="1.1" xmlns="http://www.w3.org/2000/svg">
- <rect x="6" y="2" width="6" height="8" ry="1" style="fill:#5c5c5c"/>
- <rect x="20" y="2" width="6" height="8" ry="1" style="fill:#5c5c5c"/>
+ <rect x="6" y="2" width="6" height="8" ry="1" style="fill:#fff495"/>
+ <rect x="20" y="2" width="6" height="8" ry="1" style="fill:#fff495"/>
  <rect x="14" y="10" width="4" height="10" ry="1.9067796" style="opacity:.2"/>
  <rect x="14" y="9" width="4" height="10" ry="1.9067796" style="fill:#674f4f"/>
  <path d="m5 20-3 11h11l-3-11z" style="opacity:.2"/>
- <path d="m5 19-3 11h11l-3-11z" style="fill:#5c5c5c"/>
+ <path d="m5 19-3 11h11l-3-11z" style="fill:#fff495"/>
  <path d="m22 20-3 11h11l-3-11z" style="opacity:.2"/>
- <path d="m22 19-3 11h11l-3-11z" style="fill:#5c5c5c"/>
+ <path d="m22 19-3 11h11l-3-11z" style="fill:#fff495"/>
  <rect x="2" y="8" width="11" height="13" ry="1" style="opacity:.2"/>
  <rect x="2" y="7" width="11" height="13" ry="1" style="fill:#838181"/>
  <rect x="19" y="8" width="11" height="13" ry="1" style="opacity:.2"/>

@@ -26,11 +26,11 @@
        y2="19.387045"
        gradientUnits="userSpaceOnUse">
       <stop
-         style="stop-color:#000000;stop-opacity:0.23529412;"
+         style="stop-color:#fff495;stop-opacity:0.23529412;"
          offset="0"
          id="stop3283" />
       <stop
-         style="stop-color:#000000;stop-opacity:0.54901963;"
+         style="stop-color:#fff495;stop-opacity:0.54901963;"
          offset="1"
          id="stop2651" />
     </linearGradient>

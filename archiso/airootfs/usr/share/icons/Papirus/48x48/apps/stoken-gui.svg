@@ -2,7 +2,7 @@
  <path style="opacity:0.2" d="m 8,5.0010569 c -3.5638672,0 -5.3480127,4.3085542 -2.8282834,6.8282831 C 7.6914458,14.34907 12,12.564924 12,9.0010569 c 0,-2.209139 -1.790861,-4 -4,-4 z m -0.048828,2 c 0.016275,-1.987e-4 0.032553,-1.987e-4 0.048828,0 1.7819336,0 2.674006,2.1542771 1.4141417,3.4141421 C 8.1542771,11.675063 6,10.78299 6,9.0010569 c -3.236e-4,-1.0857785 0.8657169,-1.9734918 1.9511719,-2 z"/>
  <path style="opacity:0.2" d="M 20 9.0019531 C 13.372583 9.0019531 8 14.374536 8 21.001953 C 8 27.62937 13.372583 33.001953 20 33.001953 C 20.659343 33.001953 21.301193 32.934329 21.931641 32.832031 L 32.050781 42.951172 A 7 7 0 0 0 41.949219 42.951172 A 7 7 0 0 0 41.949219 33.052734 L 31.830078 22.933594 C 31.932376 22.303146 32 21.661296 32 21.001953 C 32 14.374536 26.627417 9.0019531 20 9.0019531 z"/>
  <path style="fill:none;stroke:#e52030;stroke-width:14;stroke-linecap:round;stroke-linejoin:round" d="M 20,20 37,37"/>
- <path style="opacity:0.2;fill:none;stroke:#000000;stroke-width:6;stroke-linecap:round;stroke-linejoin:round" d="M 20,21 37,38"/>
+ <path style="opacity:0.2;fill:none;stroke:#fff495;stroke-width:6;stroke-linecap:round;stroke-linejoin:round" d="M 20,21 37,38"/>
  <path style="fill:#c6c6c6" d="M 8 4 A 4 4 0 1 0 12 8 A 4 4 0 0 0 8 4 z M 7.9511719 6 A 2 2 0 0 1 8 6 A 2 2 0 1 1 6 8 A 2 2 0 0 1 7.9511719 6 z"/>
  <path style="fill:none;stroke:#fcfcfc;stroke-width:6;stroke-linecap:round;stroke-linejoin:round" d="M 20,20 37,37"/>
  <circle style="fill:#929292" cx="12" cy="11" r="2"/>

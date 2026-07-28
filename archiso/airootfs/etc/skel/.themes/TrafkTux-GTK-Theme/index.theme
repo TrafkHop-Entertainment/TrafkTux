@@ -10,3 +10,4 @@ MetacityTheme=TrafkTux-GTK-Theme
 IconTheme=Clay-Light
 CursorTheme=Colloid-cursors
 ButtonLayout=close,minimize,maximize:menu
+X-GNOME-SupportsDarkVariant=true

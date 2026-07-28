@@ -10,8 +10,8 @@
  <rect style="fill:#267edb" width="2" height="13" x="-22" y="14" transform="scale(-1,1)"/>
  <rect style="fill:#267edb" width="3.5" height="2" x="-22" y="14" transform="scale(-1,1)"/>
  <rect style="fill:#267edb" width="3.5" height="2" x="-22" y="25" transform="scale(-1,1)"/>
- <path style="fill:none;stroke:#3f3f3f;stroke-width:1.70000005" d="m 12.199999,17.437 3.5,6.141948"/>
- <path style="fill:none;stroke:#3f3f3f;stroke-width:1.70000005" d="m 18.499999,17.437 c 0,0 -2.8,8.563 -4.9,8.563 h -0.6"/>
+ <path style="fill:none;stroke:#fff495;stroke-width:1.70000005" d="m 12.199999,17.437 3.5,6.141948"/>
+ <path style="fill:none;stroke:#fff495;stroke-width:1.70000005" d="m 18.499999,17.437 c 0,0 -2.8,8.563 -4.9,8.563 h -0.6"/>
  <path style="fill:#267edb" d="m 24.999999,17 a 1,1 0 0 1 -1,1 1,1 0 0 1 -1,-1 1,1 0 0 1 1,-1 1,1 0 0 1 1,1 z"/>
  <path style="fill:#267edb" d="m 24.999999,24 a 1,1 0 0 1 -1,1 1,1 0 0 1 -1,-1 1,1 0 0 1 1,-1 1,1 0 0 1 1,1 z"/>
 </svg>

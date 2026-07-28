@@ -6,7 +6,7 @@
   <path d="m23 16v8h-8v4h8v3h-8v4h8v3h-8v4h8v8h4v-8h3v8h4v-8h3v8h4v-8h8v-4h-8v-3h8v-4h-8v-3h8v-4h-8v-8h-4v8h-3v-8h-4v8h-3v-8z" style="opacity:.2"/>
   <path d="m23 15v8h-8v4h8v3h-8v4h8v3h-8v4h8v8h4v-8h3v8h4v-8h3v8h4v-8h8v-4h-8v-3h8v-4h-8v-3h8v-4h-8v-8h-4v8h-3v-8h-4v8h-3v-8z" style="fill:#e4e4e4"/>
   <rect x="21" y="22" width="22" height="22" rx="3" ry="3" style="opacity:.1"/>
-  <rect x="21" y="21" width="22" height="22" rx="3" ry="3" style="fill:#3f3f3f"/>
+  <rect x="21" y="21" width="22" height="22" rx="3" ry="3" style="fill:#fff495"/>
   <circle cx="26" cy="26" r="3" style="fill:#ffffff"/>
  </g>
 </svg>

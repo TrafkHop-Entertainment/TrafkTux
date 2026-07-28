@@ -2,7 +2,7 @@
  <rect style="fill:#b7b7b7" width="14" height="7" x="5" y="3"/>
  <rect style="opacity:0.2" width="20" height="12" x="2" y="9.5" rx="1" ry="1"/>
  <path style="fill:#ffffff;opacity:0.2" d="m5 3v0.5h14v-0.5z"/>
- <rect style="fill:#4f4f4f" width="20" height="12" x="2" y="9" rx="1" ry="1"/>
+ <rect style="fill:#fff495" width="20" height="12" x="2" y="9" rx="1" ry="1"/>
  <rect style="opacity:0.5" width="4" height="2" x="6" y="5"/>
  <rect style="opacity:0.5" width="4" height="2" x="14" y="5"/>
  <rect style="opacity:0.4" width="12" height="2" x="6" y="11"/>

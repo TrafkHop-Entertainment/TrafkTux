@@ -6,10 +6,10 @@
  <ellipse cx="24" cy="20" rx="15" ry="14" style="fill:#fcd0d5"/>
  <path d="m13 23v6.498047a15 14 0 0 0 4 2.875v-9.373047h-4zm18 0v9.373047a15 14 0 0 0 4-2.880859v-6.492188h-4z" style="fill:#b2e8fa"/>
  <path d="m15 18a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4zm18 0a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4z" style="opacity:.2"/>
- <circle cx="15" cy="21" r="4" style="fill:#2f2f2f"/>
- <circle cx="33" cy="21" r="4" style="fill:#2f2f2f"/>
+ <circle cx="15" cy="21" r="4" style="fill:#fff495"/>
+ <circle cx="33" cy="21" r="4" style="fill:#fff495"/>
  <path d="m20 27h8s0-5-4-5-4 5-4 5z" style="opacity:.2"/>
- <path d="m20 26h8s0-5-4-5-4 5-4 5z" style="fill:#2f2f2f"/>
+ <path d="m20 26h8s0-5-4-5-4 5-4 5z" style="fill:#fff495"/>
  <circle cx="13.5" cy="19.5" r="1.5" style="fill:#ffffff"/>
  <circle cx="31.5" cy="19.5" r="1.5" style="fill:#ffffff"/>
  <rect x="21" y="24" width="6" height="1" style="fill:#ffffff"/>

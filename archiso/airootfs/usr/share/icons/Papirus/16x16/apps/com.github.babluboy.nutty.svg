@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" version="1.1">
  <g transform="translate(0,-1106.5197)">
-  <path style="fill:none;stroke:#364451;stroke-width:1.52380967" d="m 8,1108.5197 v 6"/>
-  <path style="fill:none;stroke:#364451;stroke-width:1.5" d="m 3,1117.5197 4.9999942,-3 5.0000058,3"/>
+  <path style="fill:none;stroke:#fff495;stroke-width:1.52380967" d="m 8,1108.5197 v 6"/>
+  <path style="fill:none;stroke:#fff495;stroke-width:1.5" d="m 3,1117.5197 4.9999942,-3 5.0000058,3"/>
   <path style="fill:none;stroke:#7e8f99;stroke-width:1.5" d="m 3,1111.5197 5,3 5,-3"/>
   <path style="fill:none;stroke:#7e8f99;stroke-width:1.52380967" d="m 8,1120.5197 v -6"/>
   <path style="fill:none;stroke:#53626c;stroke-width:1.5" d="m 2.8,1111.5197 5.2,-3 5.2,3 v 6 l -5.2,3 -5.2,-2.9048 z"/>

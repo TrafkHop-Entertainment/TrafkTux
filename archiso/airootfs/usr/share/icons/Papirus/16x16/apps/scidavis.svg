@@ -3,6 +3,6 @@
  <rect style="fill:#1480e3" width="1" height="5" x="-4" y="6" transform="rotate(-90)"/>
  <rect style="fill:#1480e3" width="1" height="10" x="8" y="3.5"/>
  <rect style="fill:#1480e3" width="1" height="5" x="-14" y="6" transform="rotate(-90)"/>
- <path style="fill:none;stroke:#3f3f3f" d="M 1,12.5 C 7.75,12.5 9.25,4.5 16,4.5"/>
+ <path style="fill:none;stroke:#fff495" d="M 1,12.5 C 7.75,12.5 9.25,4.5 16,4.5"/>
  <circle style="fill:#f55044" cx="8.5" cy="8.5" r="1.5"/>
 </svg>

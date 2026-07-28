@@ -5,7 +5,7 @@
  <circle style="opacity:0.2" cx="32" cy="49" r="8"/>
  <circle style="fill:#ffffff" cx="32" cy="48" r="8"/>
  <rect style="opacity:0.2" width="5.994" height="41.955" x="49.67" y="-11.63" rx="2.883" ry="3.258" transform="matrix(0.86602541,0.5,-0.5,0.86602541,0,0)"/>
- <rect style="fill:#4f4f4f" width="5.994" height="41.955" x="48.67" y="-13.37" rx="2.883" ry="3.258" transform="matrix(0.86602541,0.5,-0.5,0.86602541,0,0)"/>
+ <rect style="fill:#fff495" width="5.994" height="41.955" x="48.67" y="-13.37" rx="2.883" ry="3.258" transform="matrix(0.86602541,0.5,-0.5,0.86602541,0,0)"/>
  <path style="opacity:0.2" d="M 38,5 31.999999,15 26,5 Z"/>
  <path style="fill:#ffffff" d="M 38,4 31.999999,14 26,4 Z"/>
 </svg>

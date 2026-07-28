@@ -1,10 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" version="1">
  <rect style="opacity:0.2" width="28" height="25" x="2" y="4" rx="1.4" ry="1.4"/>
- <rect style="fill:#3b555e" width="28" height="25" x="2" y="3" rx="1.4" ry="1.4"/>
- <path style="fill:none;stroke:#000000;opacity:0.2" d="M 4,16.5 C 13.11,16.5 13.03,9.53 17.05,9.5 21.07,9.47 20.9,16.5 30,16.5 M 4,16.5 C 13.11,16.5 13.03,26.47 17.05,26.5 21.07,26.53 20.9,16.5 30,16.5"/>
+ <rect style="fill:#fff495" width="28" height="25" x="2" y="3" rx="1.4" ry="1.4"/>
+ <path style="fill:none;stroke:#fff495;opacity:0.2" d="M 4,16.5 C 13.11,16.5 13.03,9.53 17.05,9.5 21.07,9.47 20.9,16.5 30,16.5 M 4,16.5 C 13.11,16.5 13.03,26.47 17.05,26.5 21.07,26.53 20.9,16.5 30,16.5"/>
  <path style="fill:none;stroke:#7e7e7e" d="m 4,15.5 c 9.11,0 9.03,9.97 13.05,10 4.02,0.03 3.85,-10 12.95,-10"/>
  <path style="fill:none;stroke:#1588e4" d="m 4,15.5 c 9.11,0 9.03,-6.97 13.05,-7 4.02,-0.03 3.85,7 12.95,7"/>
- <path style="fill:none;stroke:#000000;opacity:0.2" d="M 4,16.5 C 13.11,16.5 13.03,6.53 17.05,6.5 21.07,6.47 20.9,16.5 30,16.5"/>
+ <path style="fill:none;stroke:#fff495;opacity:0.2" d="M 4,16.5 C 13.11,16.5 13.03,6.53 17.05,6.5 21.07,6.47 20.9,16.5 30,16.5"/>
  <path style="fill:none;stroke:#e95656" d="m 4,15.5 c 9.11,0 9.03,-9.97 13.05,-10 4.02,-0.03 3.85,10 12.95,10"/>
  <path style="opacity:0.2" d="m 4,6 v 10 1 10 H 5 V 17 h 2 v 1 h 1 v -1 h 8 v 1 h 1 v -1 h 10 v 1 h 1 v -1 h 2 v -1 h -2 v -1 h -1 v 1 H 17 v -1 h -1 v 1 H 8 V 15 H 7 v 1 H 5 V 6 Z"/>
  <rect style="fill:#ffffff" width="1" height="21" x="4" y="5"/>

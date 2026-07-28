@@ -15,8 +15,8 @@
   <circle cx="24" cy="-36" r="2" transform="rotate(90)"/>
  </g>
  <ellipse opacity=".1" cx="12" cy="12.5" rx="2" ry="2"/>
- <ellipse fill="#4d4d4d" cx="12" cy="12" rx="2" ry="2"/>
- <g fill="#4d4d4d" transform="scale(.5)">
+ <ellipse fill="#fff495" cx="12" cy="12" rx="2" ry="2"/>
+ <g fill="#fff495" transform="scale(.5)">
   <circle cx="24" cy="36" r="2"/>
   <circle cx="24" cy="12" r="2"/>
   <circle cx="24" cy="-12" r="2" transform="rotate(90)"/>

@@ -8,6 +8,6 @@
  <circle style="fill:#ffffff" cx="39.5" cy="14.5" r="2.5"/>
  <circle style="opacity:0.2" cx="39.5" cy="21.5" r="2.5"/>
  <circle style="fill:#ffffff" cx="39.5" cy="20.5" r="2.5"/>
- <path fill="#323232" d="m37 30v1h5v-1h-5zm0 2v1h5v-1h-5zm0 2v1h5v-1h-5z"/>
+ <path fill="#fff495" d="m37 30v1h5v-1h-5zm0 2v1h5v-1h-5zm0 2v1h5v-1h-5z"/>
  <path style="fill:#ffffff;opacity:0.2" d="M 21 11 C 11 11 6 12 6 24 C 6 24.176632 6.0115053 24.328103 6.0136719 24.5 C 6.1586984 12.993555 11.147193 12 21 12 C 30.852807 12 35.841302 12.993555 35.986328 24.5 C 35.988495 24.328103 36 24.176632 36 24 C 36 12 31 11 21 11 z"/>
 </svg>

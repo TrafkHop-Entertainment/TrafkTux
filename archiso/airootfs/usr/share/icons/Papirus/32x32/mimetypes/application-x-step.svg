@@ -8,8 +8,8 @@
  <rect style="fill:#e4e4e4" width=".6" height="6" x="18.2" y="15.67"/>
  <rect style="fill:#e4e4e4" width=".6" height="6" x="15.2" y="15.67"/>
  <rect style="fill:#e4e4e4" width=".6" height="6" x="12.2" y="15.67"/>
- <circle style="fill:#3f3f3f" cx="12.5" cy="22.5" r="1.5"/>
- <path style="fill:#4f4f4f" d="m 9.6200854,14.999924 c -0.3429242,0 -0.6403883,0.298055 -0.618997,0.666671 V 27 H 10 V 16 h 11 v 11 h 1.000002 V 15.666595 c 0,-0.369336 -0.276074,-0.666671 -0.618998,-0.666671 z"/>
- <circle style="fill:#3f3f3f" cx="15.5" cy="22.5" r="1.5"/>
- <circle style="fill:#3f3f3f" cx="18.5" cy="22.5" r="1.5"/>
+ <circle style="fill:#fff495" cx="12.5" cy="22.5" r="1.5"/>
+ <path style="fill:#fff495" d="m 9.6200854,14.999924 c -0.3429242,0 -0.6403883,0.298055 -0.618997,0.666671 V 27 H 10 V 16 h 11 v 11 h 1.000002 V 15.666595 c 0,-0.369336 -0.276074,-0.666671 -0.618998,-0.666671 z"/>
+ <circle style="fill:#fff495" cx="15.5" cy="22.5" r="1.5"/>
+ <circle style="fill:#fff495" cx="18.5" cy="22.5" r="1.5"/>
 </svg>

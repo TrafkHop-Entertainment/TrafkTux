@@ -55,7 +55,7 @@
     <path
        d="M 3,7 V 9 H 13 V 7 Z"
        overflow="visible"
-       style="font-family:sans-serif;font-variant-ligatures:normal;font-variant-position:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-alternates:normal;font-feature-settings:normal;text-indent:0;text-decoration:none;text-decoration-line:none;text-decoration-style:solid;text-decoration-color:#000000;text-transform:none;text-orientation:mixed;shape-padding:0;overflow:visible;isolation:auto;mix-blend-mode:normal"
+       style="font-family:sans-serif;font-variant-ligatures:normal;font-variant-position:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-alternates:normal;font-feature-settings:normal;text-indent:0;text-decoration:none;text-decoration-line:none;text-decoration-style:solid;text-decoration-color:#fff495;text-transform:none;text-orientation:mixed;shape-padding:0;overflow:visible;isolation:auto;mix-blend-mode:normal"
        id="path4655"
        inkscape:connector-curvature="0" />
     <path
@@ -66,7 +66,7 @@
        inkscape:connector-curvature="0" />
   </g>
   <path
-     style="fill:none;stroke:#000000;stroke-width:0;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1;stroke-miterlimit:4;stroke-dasharray:none"
+     style="fill:none;stroke:#fff495;stroke-width:0;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1;stroke-miterlimit:4;stroke-dasharray:none"
      d="m 0.125,0.15625 v 15.5625"
      id="path832"
      inkscape:connector-curvature="0" />

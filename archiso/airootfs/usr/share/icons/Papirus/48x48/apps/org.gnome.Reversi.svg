@@ -10,8 +10,8 @@
  <circle style="opacity:0.2" cx="38" cy="39" r="5"/>
  <circle style="fill:#ffffff" cx="38" cy="38" r="5"/>
  <circle style="opacity:0.1" cx="38" cy="25" r="5"/>
- <circle style="fill:#3d3846" cx="38" cy="24" r="5"/>
+ <circle style="fill:#fff495" cx="38" cy="24" r="5"/>
  <circle style="opacity:0.1" cx="24" cy="39" r="5"/>
- <circle style="fill:#3d3846" cx="24" cy="38" r="5"/>
+ <circle style="fill:#fff495" cx="24" cy="38" r="5"/>
  <path style="opacity:0.2;fill:#ffffff" d="M 7 4 C 5.338 4 4 5.338 4 7 L 4 8 C 4 6.338 5.338 5 7 5 L 41 5 C 42.662 5 44 6.338 44 8 L 44 7 C 44 5.338 42.662 4 41 4 L 7 4 z"/>
 </svg>

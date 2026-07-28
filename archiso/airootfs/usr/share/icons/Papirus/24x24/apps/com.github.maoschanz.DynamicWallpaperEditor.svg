@@ -2,7 +2,7 @@
  <rect style="opacity:0.2" width="16" height="12" x="-21.5" y="-18" rx="1" ry="1" transform="matrix(0,-1,-1,0,0,0)"/>
  <rect style="fill:#8e8e8e" width="16" height="12" x="-21" y="-18" rx="1" ry="1" transform="matrix(0,-1,-1,0,0,0)"/>
  <rect style="opacity:0.2" width="16" height="20" x="-19.5" y="-22" rx="1" ry="1" transform="matrix(0,-1,-1,0,0,0)"/>
- <rect style="fill:#4f4f4f" width="16" height="20" x="-19" y="-22" rx="1" ry="1" transform="matrix(0,-1,-1,0,0,0)"/>
+ <rect style="fill:#fff495" width="16" height="20" x="-19" y="-22" rx="1" ry="1" transform="matrix(0,-1,-1,0,0,0)"/>
  <path style="fill:#303f9f" d="M 4,13.570012 V 17 h 3.4972428 z"/>
  <path style="fill:#2357cd" d="m 4,10.100361 v 3.469651 L 7.4972428,17 h 3.5376842 z"/>
  <path style="fill:#9844e8" d="M 4,6.6307091 V 10.100361 L 11.034927,17 h 3.536764 z"/>

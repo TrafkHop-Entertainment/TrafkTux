@@ -10,5 +10,5 @@
  <path style="fill:#64dedc" d="M 14.5,8 A 0.5,0.5 0 0 1 15,8.5 0.5,0.5 0 0 1 14.5,9 0.5,0.5 0 0 1 14,8.5 0.5,0.5 0 0 1 14.5,8 Z"/>
  <path style="fill:#64dedc" d="M 12.5,12 A 0.5,0.5 0 0 1 13,12.5 0.5,0.5 0 0 1 12.5,13 0.5,0.5 0 0 1 12,12.5 0.5,0.5 0 0 1 12.5,12 Z"/>
  <path style="fill:#f0f2f7" d="M 12.397,10.75 8.683,9.183 9.183,8.317 Z"/>
- <circle style="fill:#24303e" cx="-12.021" cy="0" r="1.5" transform="rotate(-135)"/>
+ <circle style="fill:#fff495" cx="-12.021" cy="0" r="1.5" transform="rotate(-135)"/>
 </svg>

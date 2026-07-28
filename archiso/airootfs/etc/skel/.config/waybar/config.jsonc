@@ -44,15 +44,22 @@
     ],
 
     // ── LEFT ──────────────────────────────────────────────
+    // Zentrierungs-Fix (-monitor $(...)): Rofi kennt im nativen Wayland-Modus
+    // seinen Output erst NACHDEM die erste Layer-Surface gemappt wurde,
+    // "location: center" wird aber schon vorher berechnet -> der allererste
+    // Start eines neuen Rofi-Prozesses landet potenziell auf dem falschen
+    // Monitor. Fokussierten Monitor per hyprctl+jq VOR dem Start ermitteln
+    // und Rofi explizit mitgeben, statt Rofis eigener (racy) Erkennung zu
+    // vertrauen - direkt inline im on-click, kein separates Skript.
     "custom/appmenu": {
         "format": "󱄅",
         "tooltip": "App Launcher",
-        "on-click": "rofi -show bubble -modi \"bubble:python3 $HOME/.config/rofi/bubble-menu.py --menu launcher --x11\" -theme $HOME/.config/rofi/launcher/theme.rasi -show-icons -no-custom -x11 -kb-row-up 'Up,Control+p,w' -kb-row-down 'Down,Control+n,s' -kb-row-left 'Control+Page_Up,a' -kb-row-right 'Control+Page_Down,d' -kb-accept-entry 'Control+j,Control+m,Return,KP_Enter,space,less' -kb-custom-1 'q' -kb-custom-2 'e' -kb-custom-3 'x'"
+        "on-click": "rofi -show bubble -modi \"bubble:python3 $HOME/.config/rofi/bubble-menu.py --menu launcher --x11\" -theme $HOME/.config/rofi/launcher/theme.rasi -show-icons -no-custom -x11 -monitor \"$(hyprctl monitors -j | jq -r '.[] | select(.focused) | .name')\" -kb-row-up 'Up,Control+p,w' -kb-row-down 'Down,Control+n,s' -kb-row-left 'Control+Page_Up,a' -kb-row-right 'Control+Page_Down,d' -kb-accept-entry 'Control+j,Control+m,Return,KP_Enter,space,less' -kb-custom-1 'q' -kb-custom-2 'e' -kb-custom-3 'x'"
     },
     "custom/powermenu": {
         "format": "⏻",
         "tooltip": "Power Menu",
-        "on-click": "rofi -show bubble -modi \"bubble:python3 $HOME/.config/rofi/bubble-menu.py --menu powermenu --x11\" -theme $HOME/.config/rofi/powermenu/theme.rasi -show-icons -no-custom -x11 -kb-row-up 'Up,Control+p,w' -kb-row-down 'Down,Control+n,s' -kb-row-left 'Control+Page_Up,a' -kb-row-right 'Control+Page_Down,d' -kb-accept-entry 'Control+j,Control+m,Return,KP_Enter,space,less' -kb-custom-1 'q' -kb-custom-2 'e' -kb-custom-3 'x'"
+        "on-click": "rofi -show bubble -modi \"bubble:python3 $HOME/.config/rofi/bubble-menu.py --menu powermenu --x11\" -theme $HOME/.config/rofi/powermenu/theme.rasi -show-icons -no-custom -x11 -monitor \"$(hyprctl monitors -j | jq -r '.[] | select(.focused) | .name')\" -kb-row-up 'Up,Control+p,w' -kb-row-down 'Down,Control+n,s' -kb-row-left 'Control+Page_Up,a' -kb-row-right 'Control+Page_Down,d' -kb-accept-entry 'Control+j,Control+m,Return,KP_Enter,space,less' -kb-custom-1 'q' -kb-custom-2 'e' -kb-custom-3 'x'"
     },
     "custom/workspaces-view": {
     "format": "󰙀",
@@ -96,7 +103,7 @@
         "format-window-separator": " ",
         "on-click": "activate",
         "active-only": false,
-        "all-outputs": false,
+        "all-outputs": true,
         "show-special": false,
         "special-visible-only": false,
         "workspace-taskbar": {

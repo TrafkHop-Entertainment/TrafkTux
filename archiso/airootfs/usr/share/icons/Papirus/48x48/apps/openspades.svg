@@ -4,7 +4,7 @@
  <path fill="#fff" opacity=".1" d="m6 4c-1.108 0-2 0.892-2 2v1c0-1.108 0.892-2 2-2h36c1.108 0 2 0.892 2 2v-1c0-1.108-0.892-2-2-2h-36z"/>
  <path opacity=".2" d="m6 45c-1.108 0-2-0.892-2-2v-1c0 1.108 0.892 2 2 2h36c1.108 0 2-0.892 2-2v1c0 1.108-0.892 2-2 2h-36z"/>
  <rect style="opacity:0.1" width="8" height="8" x="12" y="19"/>
- <rect style="fill:#3f3f3f" width="8" height="8" x="12" y="18"/>
+ <rect style="fill:#fff495" width="8" height="8" x="12" y="18"/>
  <rect style="opacity:0.1" width="8" height="8" x="28" y="19"/>
- <rect style="fill:#3f3f3f" width="8" height="8" x="28" y="18"/>
+ <rect style="fill:#fff495" width="8" height="8" x="28" y="18"/>
 </svg>

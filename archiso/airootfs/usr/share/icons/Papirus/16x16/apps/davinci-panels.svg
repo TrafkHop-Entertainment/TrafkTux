@@ -5,5 +5,5 @@
  <path style="fill:#f54646" d="m 8,8 h 5 c 0,2.761424 -2.238576,5 -5,5 z"/>
  <path style="fill:#ffeb23" d="m 8,8 h 5 C 13,5.2385762 10.761424,3 8,3 Z"/>
  <circle style="fill:#3e658e" cx="8" cy="8" r="4"/>
- <circle style="fill:#243c56" cx="8" cy="8" r="2"/>
+ <circle style="fill:#fff495" cx="8" cy="8" r="2"/>
 </svg>

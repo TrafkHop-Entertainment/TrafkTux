@@ -25,7 +25,7 @@
   <circle cx="-16.389" cy="25.983" r="4" transform="scale(-1,1)"/>
  </g>
  <circle style="fill:#ffffff" cx="-16.5" cy="16.5" r="6.5" transform="scale(-1,1)"/>
- <circle style="fill:#3f3f3f" cx="-14" cy="17" r="3" transform="scale(-1,1)"/>
+ <circle style="fill:#fff495" cx="-14" cy="17" r="3" transform="scale(-1,1)"/>
  <circle style="fill:#ffffff" cx="-7" cy="17" r="4" transform="scale(-1,1)"/>
- <circle style="fill:#3f3f3f" cx="-6" cy="17" r="2" transform="scale(-1,1)"/>
+ <circle style="fill:#fff495" cx="-6" cy="17" r="2" transform="scale(-1,1)"/>
 </svg>

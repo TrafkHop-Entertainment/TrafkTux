@@ -22,7 +22,7 @@
  </g>
  <circle style="opacity:0.2" cx="-6" cy="8.5" r="3" transform="scale(-1,1)"/>
  <circle style="fill:#ffffff" cx="-6" cy="8" r="3" transform="scale(-1,1)"/>
- <circle style="fill:#3f3f3f" cx="-5.5" cy="7.5" r="1.5" transform="scale(-1,1)"/>
+ <circle style="fill:#fff495" cx="-5.5" cy="7.5" r="1.5" transform="scale(-1,1)"/>
  <circle style="fill:#ffffff" cx="-2" cy="8" r="2" transform="scale(-1,1)"/>
- <circle style="fill:#3f3f3f" cx="-2" cy="8" r="1" transform="scale(-1,1)"/>
+ <circle style="fill:#fff495" cx="-2" cy="8" r="1" transform="scale(-1,1)"/>
 </svg>

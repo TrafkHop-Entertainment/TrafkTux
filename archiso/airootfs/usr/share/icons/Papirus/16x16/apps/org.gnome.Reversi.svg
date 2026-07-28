@@ -6,6 +6,6 @@
  <rect style="fill:#26a269" width=".5" height="16" x="10.5" y="-16" transform="rotate(90)"/>
  <circle style="fill:#ffffff" cx="8" cy="8" r="2"/>
  <circle style="fill:#ffffff" cx="13" cy="13" r="2"/>
- <circle style="fill:#3d3846" cx="13" cy="8" r="2"/>
- <circle style="fill:#3d3846" cx="8" cy="13" r="2"/>
+ <circle style="fill:#fff495" cx="13" cy="8" r="2"/>
+ <circle style="fill:#fff495" cx="8" cy="13" r="2"/>
 </svg>

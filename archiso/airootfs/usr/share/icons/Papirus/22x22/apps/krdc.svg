@@ -3,12 +3,12 @@
   <path fill="#1e88e5" d="M 3,3 C 2.446,3 2,3.446 2,4 V 19 H 22 V 4 C 22,3.446 21.554,3 21,3 Z"/>
   <rect style="opacity:0.2" width="12" height="8" x="6" y="8.5" rx=".8" ry=".8"/>
   <rect style="fill:#81d4fa" width="12" height="9" x="6" y="7" rx=".8" ry=".8"/>
-  <path style="fill:#253951" d="M 6.8,6 C 6.3565,6 6,6.3345 6,6.75 V 8 H 18 V 6.75 C 18,6.3345 17.643,6 17.2,6 Z"/>
+  <path style="fill:#fff495" d="M 6.8,6 C 6.3565,6 6,6.3345 6,6.75 V 8 H 18 V 6.75 C 18,6.3345 17.643,6 17.2,6 Z"/>
   <rect style="opacity:0.2" width="2" height="2" x="7" y="9.5" rx=".25" ry=".25"/>
   <rect fill="#ffffff" width="2" height="2" x="7" y="9" rx=".25" ry=".25"/>
   <rect style="opacity:0.2" width="2" height="2" x="7" y="12.5" rx=".25" ry=".25"/>
   <rect fill="#ffffff" width="2" height="2" x="7" y="12" rx=".25" ry=".25"/>
-  <path fill="#253951" d="M 3,21 C 2.446,21 2,20.554 2,20 V 19 H 22 V 20 C 22,20.554 21.554,21 21,21 Z"/>
+  <path fill="#fff495" d="M 3,21 C 2.446,21 2,20.554 2,20 V 19 H 22 V 20 C 22,20.554 21.554,21 21,21 Z"/>
   <path fill="#ffffff" opacity=".1" d="M 3,3 C 2.446,3 2,3.446 2,4 V 4.5 C 2,3.946 2.446,3.5 3,3.5 H 21 C 21.554,3.5 22,3.946 22,4.5 V 4 C 22,3.446 21.554,3 21,3 Z"/>
   <path opacity=".2" d="M 2,20 V 20.5 C 2,21.054 2.446,21.5 3,21.5 H 21 C 21.554,21.5 22,21.054 22,20.5 V 20 C 22,20.554 21.554,21 21,21 H 3 C 2.446,21 2,20.554 2,20 Z"/>
   <circle style="fill:#48cd42" cx="17" cy="17" r="6"/>

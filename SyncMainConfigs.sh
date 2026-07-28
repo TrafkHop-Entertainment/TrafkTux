@@ -14,7 +14,7 @@
 # Aufruf: ./sync-arbeitsskript.sh [--dry-run]
 
 AIROOTFS_DIR="/run/media/hopx/HopxSSD/TrafkSite/Projects/TrafkTux/TrafkTux/archiso/airootfs"
-CONFIG_SRC="$AIROOTFS_DIR/etc/skel/.config"
+SKEL_SRC="$AIROOTFS_DIR/etc/skel"
 BACKUP_DIR="$HOME/.trafktux-sync-backups/$(date +%Y%m%d-%H%M%S)"
 
 DRY_RUN=0
@@ -27,8 +27,11 @@ fi
 # Werden hier IMMER uebersprungen, relativ zu .config. Prefix-Match.
 # ---------------------------------------------------------------------
 ONCE_ONLY_PREFIXES=(
-    "clay-icons"
-    "hypr/TrafkCursor_Build"
+    ".config/clay-icons"
+    ".config/hypr/TrafkCursor_Build"
+    ".themes"
+    ".local"
+    ".bash_profile"
 )
 
 matches_prefix_list() {
@@ -56,8 +59,9 @@ BACKED_UP=0
 
 while read -r FILE; do
 
-    REL_PATH="${FILE#$CONFIG_SRC/}"
-    TARGET_PATH="$HOME/.config/$REL_PATH"
+    # Relativer Pfad jetzt ab skel (wird z.B. ".config/...", "Vorlagen/..." oder "Templates")
+    REL_PATH="${FILE#$SKEL_SRC/}"
+    TARGET_PATH="$HOME/$REL_PATH"
 
     if matches_prefix_list "$REL_PATH" "${ONCE_ONLY_PREFIXES[@]}"; then
        # echo "UEBERSPRUNGEN (Icons/Cursor, siehe sync-systemupdate.sh): $REL_PATH"
@@ -70,9 +74,9 @@ while read -r FILE; do
         continue
     fi
 
-    # Existierendes Ziel vor dem Ueberschreiben sichern
+    # Existierendes Ziel vor dem Ueberschreiben sichern (Pfad für alle Ordner dynamisch)
     if [ -e "$TARGET_PATH" ]; then
-        BACKUP_TARGET="$BACKUP_DIR/.config/$REL_PATH"
+        BACKUP_TARGET="$BACKUP_DIR/$REL_PATH"
         mkdir -p "$(dirname "$BACKUP_TARGET")"
         cp -a "$TARGET_PATH" "$BACKUP_TARGET"
         BACKED_UP=$((BACKED_UP + 1))
@@ -85,7 +89,8 @@ while read -r FILE; do
 
     echo "Kopiert: $FILE -> $TARGET_PATH"
     COPIED=$((COPIED + 1))
-done < <(find "$CONFIG_SRC" \( -type f -o -type l \))
+# Dem find-Befehl werden explizit nur die gewuenschten 3 Ziele uebergeben
+done < <(find "$SKEL_SRC/.config" "$SKEL_SRC/Vorlagen" "$SKEL_SRC/Templates" \( -type f -o -type l \) 2>/dev/null)
 
 echo ""
 echo "Kopiervorgang abgeschlossen!"

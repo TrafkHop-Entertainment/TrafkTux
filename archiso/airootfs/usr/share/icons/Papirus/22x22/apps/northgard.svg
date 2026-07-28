@@ -1,5 +1,5 @@
 <svg width="22" height="22" version="1.1" xmlns="http://www.w3.org/2000/svg">
- <ellipse cx="11" cy="11.499998" rx="9.5000019" ry="9.5" style="opacity:.2;stroke-width:.999997;stroke:#000000"/>
+ <ellipse cx="11" cy="11.499998" rx="9.5000019" ry="9.5" style="opacity:.2;stroke-width:.999997;stroke:#fff495"/>
  <ellipse cx="11" cy="11" rx="8" ry="7.9999995" style="fill:#a06950"/>
  <path d="m13.5 2.7543257v16.586215zm-3.9999996 0.06278v16.398576zm7.9999996 1.933594v12.649971zm-11.999999 0.06696v12.426059z" style="fill:none;stroke-linecap:round;stroke-linejoin:round;stroke-width:.999997;stroke:#694239"/>
  <path d="M 11,3.0000007 A 8,7.9999995 0 0 0 3.0000008,11 8,7.9999995 0 0 0 3.0175788,11.25 8,7.9999995 0 0 1 11,3.5000007 8,7.9999995 0 0 1 18.990234,11.128906 8,7.9999995 0 0 0 19,11 8,7.9999995 0 0 0 11,3.0000007 Z" style="opacity:.2"/>
@@ -10,7 +10,7 @@
  <circle cx="11" cy="11.5" r="5" style="opacity:.2"/>
  <circle cx="11" cy="11" r="5" style="fill:#606a75"/>
  <path d="m11 6.0000007a4.9999999 5 0 0 0-1.6406246 0.289062l0.7597656 1.550782-1.4980462-1.22461a4.9999999 5 0 0 0-0.914063 0.648437l0.220703 2.4238293-0.90039-1.6992193a4.9999999 5 0 0 0-1.027344 3.0117183 4.9999999 5 0 0 0 4.9999992 5 4.9999999 5 0 0 0 0.480469-0.03515l0.15039-1.882812 0.5 1.77539a4.9999999 5 0 0 0 3.869141-4.857428 4.9999999 5 0 0 0-5-4.9999993z" style="fill:#9da8b4"/>
- <path d="m8.5000008 13.999961v-4.9999993l4.9999992 2.9212443v-2.9212443 4.9999993" style="fill:none;opacity:.2;stroke-linecap:round;stroke-linejoin:round;stroke-width:.999997;stroke:#000000"/>
- <path d="M 8.5000008,13.5 V 8.5000007 L 13.5,11.421245 V 8.5000007 13.5" style="fill:none;stroke-linecap:round;stroke-linejoin:round;stroke-width:.999997;stroke:#2e2e38"/>
+ <path d="m8.5000008 13.999961v-4.9999993l4.9999992 2.9212443v-2.9212443 4.9999993" style="fill:none;opacity:.2;stroke-linecap:round;stroke-linejoin:round;stroke-width:.999997;stroke:#fff495"/>
+ <path d="M 8.5000008,13.5 V 8.5000007 L 13.5,11.421245 V 8.5000007 13.5" style="fill:none;stroke-linecap:round;stroke-linejoin:round;stroke-width:.999997;stroke:#fff495"/>
  <path d="M 11,6.0000007 A 5,5 0 0 0 6.0000008,11 5,5 0 0 0 6.0175788,11.25 5,5 0 0 1 11,6.5000007 5,5 0 0 1 15.988281,11.167969 5,5 0 0 0 16,11 5,5 0 0 0 11,6.0000007 Z" style="fill:#ffffff;opacity:.2"/>
 </svg>

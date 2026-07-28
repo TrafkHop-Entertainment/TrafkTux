@@ -7,9 +7,9 @@
  <circle style="opacity:0.2" cx="24.5" cy="24.5" r="7.5"/>
  <circle style="fill:#b7b7b7" cx="24.5" cy="23.5" r="7.5"/>
  <g transform="translate(0.5)">
-  <circle style="fill:#3f3f3f" cx="24" cy="20" r="2"/>
-  <circle style="fill:#3f3f3f" cx="24" cy="27" r="2"/>
+  <circle style="fill:#fff495" cx="24" cy="20" r="2"/>
+  <circle style="fill:#fff495" cx="24" cy="27" r="2"/>
  </g>
- <circle style="fill:#3f3f3f" cx="23.5" cy="-28" r="2" transform="rotate(90)"/>
- <circle style="fill:#3f3f3f" cx="23.5" cy="-21" r="2" transform="rotate(90)"/>
+ <circle style="fill:#fff495" cx="23.5" cy="-28" r="2" transform="rotate(90)"/>
+ <circle style="fill:#fff495" cx="23.5" cy="-21" r="2" transform="rotate(90)"/>
 </svg>

@@ -3,7 +3,7 @@
  <rect style="fill:#4791ce" width="40" height="40" x="4" y="4" rx="12" ry="12"/>
  <path style="fill:#87bdff" d="M 12 4.6816 C 7.9383 6.1088 4.8924 9.6502 4.168 14 L 12 14 L 12 4.6816 z M 12 14 L 12 24 L 22 24 L 22 14 L 12 14 z M 12 24 L 4 24 L 4 32 C 4 32.682 4.0596 33.349 4.168 34 L 12 34 L 12 24 z M 12 34 L 12 43.318 C 13.25 43.758 14.596 44 16 44 L 22 44 L 22 34 L 12 34 z"/>
  <rect style="opacity:0.2" width="4" height="44" x="22" y="3" rx="2" ry="2"/>
- <rect style="fill:#304059" width="4" height="44" x="22" y="2" rx="2" ry="2"/>
+ <rect style="fill:#fff495" width="4" height="44" x="22" y="2" rx="2" ry="2"/>
  <circle style="opacity:0.1" cx="24" cy="25" r="7"/>
  <circle style="fill:#375179" cx="24" cy="24" r="7"/>
  <path style="fill:#9fc8ff" d="M 26,21 V 27 L 30,24 Z M 22,21 V 27 L 18,24 Z"/>

@@ -10,7 +10,7 @@
  <path style="fill:#8bdb4c" d="m16 16l4.238281 6.78125a8 8 0 0 0 3.761719 -6.78125h-8z"/>
  <path style="fill:#f1502f" d="m8 16a8 8 0 0 0 3.763672 6.777344l4.236328-6.777344h-8z"/>
  <circle r="6" style="opacity:.1" cx="16" cy="17"/>
- <circle r="6" style="fill:#4f4f4f" cx="16" cy="16"/>
+ <circle r="6" style="fill:#fff495" cx="16" cy="16"/>
  <circle r="1.5" style="opacity:.2" cx="12.5" cy="14.5"/>
  <circle r="1.5" style="fill:#ffffff" cx="12.5" cy="13.5"/>
  <path style="opacity:.2;fill:#ffffff" d="m16 8a8 8 0 0 0 -8 8 8 8 0 0 0 0.0214844 0.576172 8 8 0 0 1 7.9785156 -7.576172 8 8 0 0 1 7.978516 7.423828 8 8 0 0 0 0.021484 -0.423828 8 8 0 0 0 -8 -8z"/>

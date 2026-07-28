@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" version="1">
- <rect fill="#4f4f4f" width="6" height="6" x="2" y="3" rx=".305" ry=".358"/>
+ <rect fill="#fff495" width="6" height="6" x="2" y="3" rx=".305" ry=".358"/>
  <rect fill="#e4e4e4" width="6" height="6" x="9" y="3" rx=".305" ry=".358"/>
  <rect fill="#ff5757" width="6" height="6" x="16" y="3" rx=".305" ry=".358"/>
  <rect fill="#e4e4e4" width="6" height="6" x="23" y="3" rx=".305" ry=".358"/>
@@ -8,7 +8,7 @@
  <rect fill="#ff5757" width="6" height="6" x="16" y="10" rx=".305" ry=".358"/>
  <rect fill="#e4e4e4" width="6" height="6" x="23" y="10" rx=".305" ry=".358"/>
  <rect fill="#e4e4e4" width="6" height="6" x="2" y="17" rx=".305" ry=".358"/>
- <rect fill="#4f4f4f" width="6" height="6" x="9" y="17" rx=".305" ry=".358"/>
+ <rect fill="#fff495" width="6" height="6" x="9" y="17" rx=".305" ry=".358"/>
  <rect fill="#e4e4e4" width="6" height="6" x="16" y="17" rx=".305" ry=".358"/>
  <rect fill="#4ac73e" width="6" height="6" x="23" y="17" rx=".305" ry=".358"/>
  <rect fill="#e4e4e4" width="6" height="6" x="2" y="24" rx=".305" ry=".358"/>

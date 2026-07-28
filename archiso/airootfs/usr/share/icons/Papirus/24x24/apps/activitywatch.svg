@@ -5,9 +5,9 @@
  <path style="fill:none;stroke:#7a7a7a;stroke-linecap:round;stroke-linejoin:round" d="M 5.5000133,11.499998 8.5000132,5.5 11.500013,11.499998"/>
  <rect style="fill:#7a7a7a" width="4" height="1" x="6.5" y="9"/>
  <path style="fill:none;stroke:#7a7a7a;stroke-linecap:round;stroke-linejoin:round" d="m 11.500013,11.499998 2.499987,5 1.75,-5 1.75,5 2,-5"/>
- <path style="fill:none;stroke:#404040;stroke-width:0.5px;stroke-linecap:round" d="m 6.2500133,16.249998 5.2499997,-4.75"/>
- <path style="fill:none;stroke:#404040;stroke-linecap:round" d="m 11.500013,11.499998 3,-3.999998"/>
+ <path style="fill:none;stroke:#fff495;stroke-width:0.5px;stroke-linecap:round" d="m 6.2500133,16.249998 5.2499997,-4.75"/>
+ <path style="fill:none;stroke:#fff495;stroke-linecap:round" d="m 11.500013,11.499998 3,-3.999998"/>
  <circle style="opacity:0.1" cx="11.5" cy="12" r="1.5"/>
- <circle style="fill:#595959" cx="11.5" cy="11.5" r="1.5"/>
+ <circle style="fill:#fff495" cx="11.5" cy="11.5" r="1.5"/>
  <path style="fill:#ffffff;opacity:0.2" d="M 11.5 1 C 5.683 1 1 5.683 1 11.5 C 1 11.584474 1.0117076 11.666015 1.0136719 11.75 C 1.1469713 6.0506689 5.7674739 1.5 11.5 1.5 C 17.232526 1.5 21.853029 6.0506689 21.986328 11.75 C 21.988292 11.666015 22 11.584474 22 11.5 C 22 5.683 17.317 1 11.5 1 z"/>
 </svg>

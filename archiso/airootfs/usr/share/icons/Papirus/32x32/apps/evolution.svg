@@ -12,5 +12,5 @@
  <path style="fill:#949390;fill-rule:evenodd;stroke:#949390;stroke-width:0.3125;stroke-linecap:round" d="m 23,22.999999 3,-2.9375"/>
  <path style="fill:none;stroke:#ed333b;stroke-width:0.25;stroke-linecap:round" d="m 23,22.999999 -1.408588,3.622148"/>
  <path style="fill:none;stroke:#68676b;stroke-width:0.93750006;stroke-linecap:round;stroke-linejoin:round" d="m 21,20.937499 2,2.0625"/>
- <circle style="fill:#42403c" cx="11.635" cy="30.375" r="1" transform="rotate(-24.040001)" overflow="visible"/>
+ <circle style="fill:#fff495" cx="11.635" cy="30.375" r="1" transform="rotate(-24.040001)" overflow="visible"/>
 </svg>

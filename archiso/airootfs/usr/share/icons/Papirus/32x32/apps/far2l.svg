@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" version="1.1">
  <g transform="translate(0,-1026.9764)">
   <rect style="opacity:0.2" width="29" height="29" x="-1057.98" y="-31" rx="1.45" ry="1.45" transform="matrix(0,-1,-1,0,0,0)"/>
-  <path style="fill:#3f3f3f" d="m 2,1052.8764 v 1.9242 0.6221 c 0,0.8607 0.6467,1.5537 1.45,1.5537 h 26.1 c 0.8033,0 1.45,-0.693 1.45,-1.5537 v -0.6221 -1.9242 z"/>
+  <path style="fill:#fff495" d="m 2,1052.8764 v 1.9242 0.6221 c 0,0.8607 0.6467,1.5537 1.45,1.5537 h 26.1 c 0.8033,0 1.45,-0.693 1.45,-1.5537 v -0.6221 -1.9242 z"/>
   <rect style="fill:#009072" width="4" height="2" x="4" y="1054.98"/>
   <path style="fill:#4551ff" d="m 3.45,1027.9764 c -0.8033,0 -1.45,0.6467 -1.45,1.45 v 23.55 h 29 v -23.55 c 0,-0.8033 -0.6467,-1.45 -1.45,-1.45 z"/>
   <path style="opacity:0.2" d="m 4,1030.9764 v 3 h 9 v -3 z m 16,0 v 3 h 9 v -3 z m -16,6 v 3 h 9 v -3 z m 16,0 v 3 h 9 v -3 z m -16,6 v 3 h 9 v -3 z m 16,0 v 3 h 9 v -3 z m -16,6 v 3 h 9 v -3 z m 16,0 v 3 h 9 v -3 z"/>

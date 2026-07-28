@@ -5,20 +5,20 @@
  <rect style="opacity:0.2" width="20" height="12" x="1" y="7.5" rx="1" ry="1"/>
  <rect style="fill:#e4e4e4" width="16" height="8" x="3" y="6" rx="1" ry="1"/>
  <rect style="fill:#ff5a00" width="20" height="12" x="1" y="8" rx="1" ry="1"/>
- <g style="fill:#591f00" transform="translate(-1,-0.5)">
-  <circle style="fill:#591f00" cx="8.75" cy="12.75" r=".75"/>
-  <circle style="fill:#591f00" cx="10.75" cy="12.75" r=".75"/>
-  <circle style="fill:#591f00" cx="12.75" cy="12.75" r=".75"/>
-  <circle style="fill:#591f00" cx="14.75" cy="12.75" r=".75"/>
-  <circle style="fill:#591f00" cx="6.75" cy="14.75" r=".75"/>
-  <circle style="fill:#591f00" cx="8.75" cy="14.75" r=".75"/>
-  <circle style="fill:#591f00" cx="10.75" cy="14.75" r=".75"/>
-  <circle style="fill:#591f00" cx="12.75" cy="14.75" r=".75"/>
-  <circle style="fill:#591f00" cx="14.75" cy="14.75" r=".75"/>
-  <circle style="fill:#591f00" cx="16.75" cy="14.75" r=".75"/>
-  <circle style="fill:#591f00" cx="6.75" cy="16.75" r=".75"/>
-  <circle style="fill:#591f00" cx="8.75" cy="16.75" r=".75"/>
-  <circle style="fill:#591f00" cx="14.75" cy="16.75" r=".75"/>
-  <circle style="fill:#591f00" cx="16.75" cy="16.75" r=".75"/>
+ <g style="fill:#fff495" transform="translate(-1,-0.5)">
+  <circle style="fill:#fff495" cx="8.75" cy="12.75" r=".75"/>
+  <circle style="fill:#fff495" cx="10.75" cy="12.75" r=".75"/>
+  <circle style="fill:#fff495" cx="12.75" cy="12.75" r=".75"/>
+  <circle style="fill:#fff495" cx="14.75" cy="12.75" r=".75"/>
+  <circle style="fill:#fff495" cx="6.75" cy="14.75" r=".75"/>
+  <circle style="fill:#fff495" cx="8.75" cy="14.75" r=".75"/>
+  <circle style="fill:#fff495" cx="10.75" cy="14.75" r=".75"/>
+  <circle style="fill:#fff495" cx="12.75" cy="14.75" r=".75"/>
+  <circle style="fill:#fff495" cx="14.75" cy="14.75" r=".75"/>
+  <circle style="fill:#fff495" cx="16.75" cy="14.75" r=".75"/>
+  <circle style="fill:#fff495" cx="6.75" cy="16.75" r=".75"/>
+  <circle style="fill:#fff495" cx="8.75" cy="16.75" r=".75"/>
+  <circle style="fill:#fff495" cx="14.75" cy="16.75" r=".75"/>
+  <circle style="fill:#fff495" cx="16.75" cy="16.75" r=".75"/>
  </g>
 </svg>

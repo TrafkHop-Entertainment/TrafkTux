@@ -7,7 +7,7 @@ Widgets: volume | network | bluetooth | brightness | akku | clock | settings
 """
 
 import gi, sys, os, re, signal, subprocess, json, threading, time, calendar
-from datetime import datetime
+from datetime import datetime, date
 from pathlib import Path
 
 gi.require_version("Gtk", "3.0")
@@ -115,6 +115,22 @@ button.bubble.active {{
     color: {GOLD_H};
     font-weight: bold;
 }}
+button.bubble.has-events {{
+    /* Kalendertage mit mind. einem khal-Termin - rötliche Tönung als
+    halbtransparente background-color ÜBER dem bestehenden Bubble-PNG
+    plus eine dünne rote Umrandung. box-shadow statt border, da
+    .bubble weiter oben generell "border: none" setzt. */
+    background-color: rgba(200, 40, 40, 0.35);
+    box-shadow: inset 0 0 0 1px rgba(255, 120, 120, 0.9);
+}}
+button.bubble.has-events:hover {{
+    background-color: rgba(220, 55, 55, 0.5);
+}}
+button.bubble.has-events.active {{
+    background-image: url("{B_SEL}");
+    background-color: rgba(200, 40, 40, 0.35);
+    box-shadow: inset 0 0 0 1px rgba(255, 120, 120, 0.9);
+}}
 button.bubble.title {{
     padding: 8px 22px;
     font-size: 17px;
@@ -188,8 +204,22 @@ def jrun(cmd: list) -> object:
     except Exception:
         return None
 
+import concurrent.futures as _cf
+_THREAD_POOL = _cf.ThreadPoolExecutor(max_workers=4, thread_name_prefix="wb-worker")
+
 def in_thread(fn, *args):
-    threading.Thread(target=fn, args=args, daemon=True).start()
+    # Wiederverwendeter, kleiner Thread-Pool statt für JEDEN einzelnen
+    # Timer-Tick (System-Monitor alle 2s, Akku alle 10s, Medien alle
+    # 1.5s, Uhr jede Sekunde, ...) einen KOMPLETT NEUEN OS-Thread zu
+    # erzeugen. Laut strace-Diagnose (997k clock_gettime-Aufrufe,
+    # futex als größter Zeitfresser = Thread-/GIL-Synchronisations-
+    # Konkurrenz) war genau diese Thread-Erzeugungs-Churn unter
+    # CPython (hier 3.14) bei mehreren gleichzeitig offenen Widgets
+    # teuer genug, um einen Kern dauerhaft auszulasten. max_workers=4
+    # reicht für dieses Projekt bei weitem (die Arbeit pro Tick ist
+    # kurz: ein paar Subprozess-Aufrufe/sysfs-Reads), verhindert aber
+    # die Erzeugungs-/Abbau-Kosten von hunderten kurzlebigen Threads.
+    _THREAD_POOL.submit(fn, *args)
 
 def load_css():
     p = Gtk.CssProvider()
@@ -204,13 +234,43 @@ def load_css():
 WIDGET = None
 _open: dict[str, Gtk.Window] = {}
 _timers_by_win: dict[Gtk.Window, list] = {}
+_cleanup_by_win: dict[Gtk.Window, object] = {}
 _current_win: list = [None]
 
 def _destroy_widget(name: str) -> None:
     win = _open.pop(name, None)
-    if win is not None:
+    if win is None:
+        return
+    # WICHTIG: _cleanup() (Timer-Entfernung, _timers_by_win/_open
+    # aufräumen, win.destroy()) wird HIER DIREKT aufgerufen, statt sich
+    # ausschließlich darauf zu verlassen, dass ein separater
+    # win.destroy()-Aufruf zuverlässig das "destroy"-Signal auslöst,
+    # das wiederum _cleanup() triggert. Genau diese indirekte Kette war
+    # der eigentliche Leak: wenn win.destroy() intern aus irgendeinem
+    # Grund scheiterte (GTK-Lifecycle-Timing, Fehler in einem Signal-
+    # Handler während des Teardowns, o.ä.), wurde die Exception vom
+    # bloßen "except: pass" verschluckt - das Fenster (und ALLE seine
+    # periodischen Timer, z.B. der 2s-System-Monitor-Refresh) blieb
+    # dann für immer im Hintergrund aktiv, obwohl _open das Widget
+    # schon als geschlossen führte und ein erneutes Öffnen anstandslos
+    # einen komplett NEUEN Timer-Satz obendrauf gestapelt hätte - über
+    # einen Tag verteiltes wiederholtes Öffnen/Schließen summiert sich
+    # so zu genau der Art von Hintergrund-Last, die hier beobachtet
+    # wurde. _cleanup() selbst entfernt die Timer ZUERST, bevor es
+    # überhaupt win.destroy() versucht - dieser Aufruf hier ist also
+    # auch dann sicher, wenn win.destroy() intern nochmal scheitert.
+    cleanup_fn = _cleanup_by_win.get(win)
+    if cleanup_fn is not None:
+        try: cleanup_fn()
+        except Exception as e:
+            print(f"⚠ _cleanup für Widget '{name}' fehlgeschlagen: {e}", file=sys.stderr)
+    else:
+        # Sollte nie vorkommen (make_win registriert IMMER einen
+        # Eintrag, bevor ein Fenster in _open landen kann) - Fallback
+        # nur zur Sicherheit, damit das Fenster wenigstens verschwindet.
         try: win.destroy()
-        except: pass
+        except Exception as e:
+            print(f"⚠ win.destroy() für Widget '{name}' fehlgeschlagen: {e}", file=sys.stderr)
 
 def _close_all(except_name: str = None) -> None:
     for name in list(_open):
@@ -282,11 +342,13 @@ def make_win(name: str) -> Gtk.Window:
             except: pass
         my_timers.clear()
         _timers_by_win.pop(win, None)
+        _cleanup_by_win.pop(win, None)
         _open.pop(name, None)
         try: win.destroy()
         except: pass
         return False
 
+    _cleanup_by_win[win] = _cleanup
     win.connect("destroy", _cleanup)
     win.connect("focus-out-event", lambda w, e: _cleanup())
     return win
@@ -965,12 +1027,137 @@ def _kbd_bright_pct(device: str) -> int:
 def _openrgb_available() -> bool:
     return bool(run(["which", "openrgb"]))
 
-def _hue_to_hex(hue: float) -> str:
-    import colorsys
-    r, g, b = colorsys.hsv_to_rgb((hue % 360) / 360, 1.0, 1.0)
-    return f"{int(r*255):02x}{int(g*255):02x}{int(b*255):02x}"
+# ════════════════════════════════════════════════════════════
+#  OpenRGB (pro-Gerät Helligkeit + Farbe für alle erkannten
+#  RGB-Geräte - Tastatur, Maus, Mainboard, GPU, RAM, ...)
+# ════════════════════════════════════════════════════════════
+# Ersetzt den alten, einzelnen globalen Hue-Regler: openrgb-python
+# verbindet sich mit dem OpenRGB-SDK-Server und liefert strukturierte
+# Geräteobjekte (Name, Typ, Modi) statt CLI-Text parsen zu müssen.
+# API-Verhalten wurde gegen die tatsächlich installierte openrgb-
+# python-Bibliothek verifiziert (Quellcode gelesen): device.active_mode
+# ist ein INDEX in device.modes, kein Objekt; Helligkeit wird nicht über
+# eine eigene Methode gesetzt, sondern indem man das ModeData-Objekt
+# des aktiven Modus mit geändertem .brightness erneut über
+# device.set_mode() schickt.
+_ORGB_PORT = 6742
 
-def _brightness_content() -> Gtk.Box:
+def _openrgb_server_running() -> bool:
+    """Prüft, ob der SDK-Server bereits lauscht, per einfachem TCP-
+    Connect-Versuch (kein extra Tool/Paket nötig dafür)."""
+    import socket as _socket
+    s = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+    s.settimeout(0.5)
+    try:
+        s.connect(("127.0.0.1", _ORGB_PORT))
+        return True
+    except OSError:
+        return False
+    finally:
+        s.close()
+
+def _openrgb_ensure_server() -> bool:
+    """Startet den OpenRGB-SDK-Server bei Bedarf selbst im Hintergrund
+    ('openrgb --server') - bewusst NICHT als dauerhafter systemd-
+    Service, damit nichts unnötig im Hintergrund läuft, wenn man das
+    Brightness-Widget gar nicht öffnet. Wartet kurz auf den
+    Verbindungsaufbau, da der Serverstart selbst nicht synchron ist."""
+    if _openrgb_server_running():
+        return True
+    if not _openrgb_available():
+        return False
+    run_bg(["openrgb", "--server", "--server-port", str(_ORGB_PORT)])
+    for _ in range(20):  # bis zu ~4s warten
+        time.sleep(0.2)
+        if _openrgb_server_running():
+            return True
+    return False
+
+def _openrgb_client():
+    """Liefert einen verbundenen OpenRGBClient, oder None bei Fehler.
+    Cached NICHT über mehrere Widget-Öffnungen hinweg - eine tote/
+    abgelaufene Verbindung vom letzten Mal würde sonst bei jedem
+    weiteren Öffnen sofort wieder fehlschlagen, ohne dass ein
+    Neuverbindungsversuch stattfindet."""
+    try:
+        from openrgb import OpenRGBClient
+    except ImportError:
+        return None
+    if not _openrgb_ensure_server():
+        return None
+    try:
+        client = OpenRGBClient(address="127.0.0.1", port=_ORGB_PORT,
+                                name="wb-daemon")
+        return client
+    except Exception:
+        return None
+
+def _openrgb_device_info(dev) -> dict:
+    """Extrahiert die für die UI relevanten Infos aus einem
+    openrgb-python Device-Objekt: aktueller Modus, ob der aktuell
+    aktive Modus Helligkeit unterstützt (ModeFlags.HAS_BRIGHTNESS -
+    NICHT jeder Modus tut das), und die aktuelle Farbe fürs
+    Vorbelegen des Farbreglers."""
+    from openrgb.utils import ModeFlags
+    mode = dev.modes[dev.active_mode] if dev.modes else None
+    has_brightness = bool(mode and mode.flags & ModeFlags.HAS_BRIGHTNESS)
+    cur_color = dev.colors[0] if dev.colors else None
+    return {
+        "name": dev.name,
+        "type": dev.type.name if hasattr(dev.type, "name") else str(dev.type),
+        "has_brightness": has_brightness,
+        "brightness": mode.brightness if has_brightness else None,
+        "brightness_min": mode.brightness_min if has_brightness else 0,
+        "brightness_max": mode.brightness_max if has_brightness else 100,
+        "color_hex": (f"{cur_color.red:02x}{cur_color.green:02x}{cur_color.blue:02x}"
+                      if cur_color else "ffffff"),
+    }
+
+def _openrgb_find_device(client, name: str):
+    """Sucht ein Gerät über seinen NAMEN statt über einen rohen Index -
+    laut openrgb-python-Doku ist der Listenindex nicht stabil über
+    Verbindungen hinweg (kann sich ändern, wenn Geräte hinzukommen oder
+    die Detektor-Reihenfolge wechselt). Name ist innerhalb einer
+    laufenden Widget-Sitzung stabil genug."""
+    for d in client.devices:
+        if d.name == name:
+            return d
+    return None
+
+def _openrgb_set_brightness(dev_name: str, value: int) -> None:
+    """Läuft in einem Hintergrund-Thread - öffnet dafür eine EIGENE,
+    kurzlebige Verbindung statt die UI-Ladeverbindung wiederzuverwenden,
+    da diese in einem anderen Thread lief und openrgb-python-
+    Verbindungen nicht als thread-safe dokumentiert sind."""
+    client = _openrgb_client()
+    if client is None:
+        return
+    dev = _openrgb_find_device(client, dev_name)
+    if dev is None or not dev.modes:
+        return
+    mode = dev.modes[dev.active_mode]
+    mode.brightness = value
+    try:
+        dev.set_mode(mode)
+    except Exception:
+        pass
+
+def _openrgb_set_color(dev_name: str, hex_color: str) -> None:
+    """Wie _openrgb_set_brightness, für Farbe. Setzt die Farbe des
+    gesamten Geräts (alle LEDs gleich)."""
+    from openrgb.utils import RGBColor
+    client = _openrgb_client()
+    if client is None:
+        return
+    dev = _openrgb_find_device(client, dev_name)
+    if dev is None:
+        return
+    try:
+        dev.set_color(RGBColor.fromHEX(hex_color))
+    except Exception:
+        pass
+
+def _brightness_content(win: Gtk.Window) -> Gtk.Box:
     root = vbox(4); pad(root, h=10, v=8)
 
     def _on_wallpaper(_):
@@ -994,25 +1181,117 @@ def _brightness_content() -> Gtk.Box:
     bright_box, _ = bslider("󰃟", 5, 100, 1, _bright_pct(), cb=_on_bright)
     root.pack_start(bright_box, False, False, 0)
 
-    kbd_dev     = _kbd_backlight_device()
-    has_openrgb = _openrgb_available()
-    if kbd_dev or has_openrgb:
+    kbd_dev = _kbd_backlight_device()
+    if kbd_dev:
         root.pack_start(sep(), False, False, 4)
         root.pack_start(bsec("KEYBOARD BACKLIGHT"), False, False, 0)
-        if kbd_dev:
-            def _on_kbd(s):
-                in_thread(run, ["brightnessctl", "-d", kbd_dev,
-                                 "set", f"{int(s.get_value())}%"])
-            kbd_box, _ = bslider("⌨", 0, 100, 1,
-                                  _kbd_bright_pct(kbd_dev), cb=_on_kbd)
-            root.pack_start(kbd_box, False, False, 0)
-        if has_openrgb:
-            def _on_hue(s):
-                in_thread(run, ["openrgb", "--mode", "static",
-                                 "--color", _hue_to_hex(s.get_value())])
-            hue_box, _ = bslider("󰸌", 0, 359, 1, 0,
-                                  cb=_on_hue, show_val=False)
-            root.pack_start(hue_box, False, False, 0)
+        def _on_kbd(s):
+            in_thread(run, ["brightnessctl", "-d", kbd_dev,
+                             "set", f"{int(s.get_value())}%"])
+        kbd_box, _ = bslider("⌨", 0, 100, 1,
+                              _kbd_bright_pct(kbd_dev), cb=_on_kbd)
+        root.pack_start(kbd_box, False, False, 0)
+
+    # ── OpenRGB: ein Regler-Set PRO ERKANNTEM GERÄT ──────────────────
+    # Jedes Gerät bekommt nur die Regler, die es laut seinem aktuell
+    # aktiven Modus tatsächlich unterstützt - Farbe ist praktisch immer
+    # verfügbar, Helligkeit nur wenn ModeFlags.HAS_BRIGHTNESS gesetzt
+    # ist. Erkennung + SDK-Serverstart laufen komplett asynchron -
+    # openrgb-python macht synchrone Netzwerk-Aufrufe, ein direkter
+    # Aufruf im GTK-Main-Thread würde das Fenster einfrieren.
+    rgb_section = vbox(4)
+    root.pack_start(rgb_section, False, False, 0)
+
+    def _build_rgb_device_row(info: dict) -> Gtk.Box:
+        dev_name = info["name"]
+        box = vbox(3)
+        box.get_style_context().add_class("bubble")
+        pad(box, h=8, v=6)
+        name_lbl = Gtk.Label(label=f'{info["name"]} ({info["type"].title()})')
+        name_lbl.set_halign(Gtk.Align.START)
+        name_lbl.get_style_context().add_class("caption")
+        box.pack_start(name_lbl, False, False, 0)
+
+        debounce_id = [0]
+
+        def _debounced(fn, *args, delay=200):
+            if debounce_id[0]:
+                GLib.source_remove(debounce_id[0])
+            def _fire():
+                debounce_id[0] = 0
+                in_thread(fn, *args)
+                return False
+            debounce_id[0] = GLib.timeout_add(delay, _fire)
+
+        if info["has_brightness"]:
+            def _on_bri(s, n=dev_name):
+                _debounced(_openrgb_set_brightness, n, int(s.get_value()))
+            bri_box, _ = bslider(
+                "󰃟", info["brightness_min"], info["brightness_max"], 1,
+                info["brightness"] or 0, cb=_on_bri)
+            box.pack_start(bri_box, False, False, 0)
+
+        swatch_css = Gtk.CssProvider()
+
+        def _apply_swatch_color(hexcol: str):
+            swatch_css.load_from_data(
+                f"#swatch{id(swatch_css)} {{ background-color: #{hexcol}; "
+                f"min-width: 22px; min-height: 14px; border-radius: 4px; }}"
+                .encode())
+
+        def _on_color(_w, n=dev_name):
+            dlg = Gtk.ColorChooserDialog(title="Farbe wählen", transient_for=win)
+            dlg.set_use_alpha(False)
+            resp = dlg.run()
+            if resp == Gtk.ResponseType.OK:
+                rgba = dlg.get_rgba()
+                hexcol = "{:02x}{:02x}{:02x}".format(
+                    int(rgba.red * 255), int(rgba.green * 255), int(rgba.blue * 255))
+                _apply_swatch_color(hexcol)
+                _debounced(_openrgb_set_color, n, hexcol, delay=0)
+            dlg.destroy()
+
+        color_row = hbox(6)
+        color_lbl = Gtk.Label(label="Farbe:")
+        color_lbl.get_style_context().add_class("caption")
+        color_btn = Gtk.Button()
+        color_btn.get_style_context().add_class("bubble")
+        color_btn.set_can_focus(False)
+        swatch = Gtk.Label(label="")
+        swatch.set_name(f"swatch{id(swatch_css)}")
+        swatch.get_style_context().add_provider(
+            swatch_css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+        _apply_swatch_color(info["color_hex"])
+        color_btn.add(swatch)
+        color_btn.connect("clicked", _on_color)
+        color_row.pack_start(color_lbl, False, False, 0)
+        color_row.pack_start(color_btn, False, False, 0)
+        box.pack_start(color_row, False, False, 0)
+
+        return box
+
+    def _load_rgb_devices():
+        client = _openrgb_client()
+        if client is None:
+            return
+        try:
+            devices = [_openrgb_device_info(d) for d in client.devices]
+        except Exception:
+            devices = []
+
+        def _apply():
+            if not devices:
+                return
+            rgb_section.pack_start(sep(), False, False, 2)
+            rgb_section.pack_start(bsec("RGB DEVICES"), False, False, 0)
+            for info in devices:
+                row = _build_rgb_device_row(info)
+                rgb_section.pack_start(row, False, False, 0)
+            rgb_section.show_all()
+        GLib.idle_add(_apply)
+
+    if _openrgb_available():
+        in_thread(_load_rgb_devices)
 
     root.pack_start(sep(), False, False, 4)
 
@@ -1076,7 +1355,7 @@ def _brightness_content() -> Gtk.Box:
 
 def build_brightness(win: Gtk.Window):
     win.set_default_size(360, 1)
-    win.add(_brightness_content())
+    win.add(_brightness_content(win))
 
 # ════════════════════════════════════════════════════════════
 #  BATTERY
@@ -1314,27 +1593,34 @@ def _akku_content() -> Gtk.Box:
     power_lbl.set_no_show_all(True)
     root.pack_start(power_lbl, False, False, 0)
 
+    _power_fetch_in_flight = [False]
+
     def _refresh_bat():
         info = _bat()
         if info:
             bat_icon_lbl.set_label(_bat_icon(info["cap"], info["status"]))
             bat_pct_lbl.set_label(f'  {info["cap"]} %')
             bat_status_lbl.set_label(f'   {info["status"]}')
-            def _fetch_power():
-                p = _bat_power_info()
-                def _apply():
-                    parts = []
-                    if p["watts"] is not None:
-                        parts.append(f'{p["watts"]:.1f} W')
-                    if p["time_str"]:
-                        parts.append(p["time_str"])
-                    if parts:
-                        power_lbl.set_label("  ·  ".join(parts))
-                        power_lbl.show()
-                    else:
-                        power_lbl.hide()
-                GLib.idle_add(_apply)
-            in_thread(_fetch_power)
+            if not _power_fetch_in_flight[0]:
+                _power_fetch_in_flight[0] = True
+                def _fetch_power():
+                    try:
+                        p = _bat_power_info()
+                        def _apply():
+                            parts = []
+                            if p["watts"] is not None:
+                                parts.append(f'{p["watts"]:.1f} W')
+                            if p["time_str"]:
+                                parts.append(p["time_str"])
+                            if parts:
+                                power_lbl.set_label("  ·  ".join(parts))
+                                power_lbl.show()
+                            else:
+                                power_lbl.hide()
+                        GLib.idle_add(_apply)
+                    finally:
+                        _power_fetch_in_flight[0] = False
+                in_thread(_fetch_power)
         else:
             bat_icon_lbl.set_label("󰂑")
             bat_pct_lbl.set_label("  No Battery")
@@ -1496,10 +1782,24 @@ def _sysmon_content() -> Gtk.Box:
             if "watts" in gpu_widgets and "watts" in gpu:
                 _set_stat(gpu_widgets["watts"], f'{gpu["watts"]:.1f} W')
 
+    _fetch_in_flight = [False]
+
     def _refresh():
+        # Überlappungs-Schutz: falls ein einzelner _fetch()-Durchlauf
+        # (psutil + SUID-Helper-Subprozess + GPU-sysfs-Reads) mal länger
+        # als die 2s-Poll-Rate braucht (z.B. bei hoher Systemlast),
+        # NICHT einen weiteren Thread obendrauf starten - das würde bei
+        # anhaltender Überlastung immer mehr Threads stapeln lassen.
+        # Zusätzliche Absicherung unabhängig vom Fenster-Cleanup-Fix.
+        if _fetch_in_flight[0]:
+            return True
+        _fetch_in_flight[0] = True
         def _fetch():
-            snap = _sysmon_snapshot()
-            GLib.idle_add(_apply_snapshot, snap)
+            try:
+                snap = _sysmon_snapshot()
+                GLib.idle_add(_apply_snapshot, snap)
+            finally:
+                _fetch_in_flight[0] = False
         in_thread(_fetch)
         return True
 
@@ -1518,14 +1818,45 @@ def _akku_and_sysmon_content(win: Gtk.Window) -> Gtk.Box:
     stack.set_transition_duration(120)
 
     has_bat = _battery_present()
+    default_tab = "battery" if has_bat else "system"
     if has_bat:
         stack.add_named(_akku_content(), "battery")
-    stack.add_named(_sysmon_content(), "system")
+
+    # System-Tab wird LAZY gebaut - erst wenn tatsächlich draufgeklickt
+    # wird, nicht sofort beim Öffnen des Fensters. Der System-Monitor
+    # pollt alle 2s (CPU/RAM/GPU/Disk) - ohne Lazy-Loading würde dieser
+    # Timer die GANZE Zeit mitlaufen, auch wenn nur der Battery-Tab
+    # angeschaut wird. Falls kein Akku vorhanden ist, ist "system" der
+    # einzige/Default-Tab und wird direkt gebaut (kein Grund zu warten,
+    # er wird ja sofort angezeigt).
+    system_built = [False]
+    if not has_bat:
+        stack.add_named(_sysmon_content(), "system")
+        system_built[0] = True
+
+    def _ensure_system_tab():
+        if system_built[0]:
+            return
+        system_built[0] = True
+        # WICHTIG: _current_win muss hier gesetzt sein, exakt wie beim
+        # Lazy-Aufbau der Settings-Kategorien - add_timer() registriert
+        # neue Timer nur gegen _current_win[0]. Ohne das würde der
+        # System-Monitor-Timer NIE in _timers_by_win landen und beim
+        # Schließen des Fensters nie abgeräumt - derselbe Bug-Musterfall
+        # wie zuvor bei den lazy geladenen Settings-Unterseiten.
+        _current_win[0] = win
+        try:
+            stack.add_named(_sysmon_content(), "system")
+        finally:
+            _current_win[0] = None
+        stack.show_all()
 
     tab_row = hbox(6)
     tab_row.set_halign(Gtk.Align.CENTER)
     tab_btns: dict = {}
     def _switch(name):
+        if name == "system":
+            _ensure_system_tab()
         stack.set_visible_child_name(name)
         for n, b in tab_btns.items():
             ctx = b.get_style_context()
@@ -1534,7 +1865,6 @@ def _akku_and_sysmon_content(win: Gtk.Window) -> Gtk.Box:
 
     tabs = ([("battery", "󰁹  Battery")] if has_bat else []) + \
            [("system", "󰍹  System")]
-    default_tab = tabs[0][0]
     for name, label in tabs:
         b = btn(label, active=(name == default_tab))
         b.connect("clicked", lambda _b, n=name: _switch(n))
@@ -1692,7 +2022,116 @@ MONTHS_EN = ["January","February","March","April","May","June",
              "July","August","September","October","November","December"]
 DAYS_EN   = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"]
 
-def _clock_content() -> Gtk.Box:
+# ════════════════════════════════════════════════════════════
+#  khal-Integration (schnelle Termine im Kalender-Widget)
+# ════════════════════════════════════════════════════════════
+# khal ist bewusst gewaehlt statt einer schwergewichtigen Desktop-App
+# oder einer direkten Cloud-Anbindung: standardbasiert (iCalendar/
+# vdir), leichtgewichtig, rein CLI-steuerbar.
+_KHAL_CACHE = {"available": None, "configured": None}
+
+def _khal_available() -> bool:
+    if _KHAL_CACHE["available"] is None:
+        import shutil
+        _KHAL_CACHE["available"] = shutil.which("khal") is not None
+    return _KHAL_CACHE["available"]
+
+def _khal_configured() -> bool:
+    """khal braucht mindestens einen konfigurierten Kalender, sonst
+    schlagen 'khal new'/'khal list' mit einem Konfigurationsfehler
+    fehl. 'khal printcalendars' listet alle konfigurierten Kalender -
+    leere Ausgabe bzw. Fehler heisst: noch nichts eingerichtet."""
+    if _KHAL_CACHE["configured"] is None:
+        out, _err, ec = run_ec(["khal", "printcalendars"])
+        _KHAL_CACHE["configured"] = (ec == 0 and bool(out.strip()))
+    return _KHAL_CACHE["configured"]
+
+def _khal_setup_default_calendar() -> tuple[bool, str]:
+    """Legt automatisch einen minimalen lokalen Kalender an, falls noch
+    keiner konfiguriert ist."""
+    try:
+        cal_dir = Path(HOME) / ".local" / "share" / "khal" / "calendars" / "private"
+        cal_dir.mkdir(parents=True, exist_ok=True)
+        conf_dir = Path(HOME) / ".config" / "khal"
+        conf_dir.mkdir(parents=True, exist_ok=True)
+        conf_path = conf_dir / "config"
+        if not conf_path.is_file():
+            tz = run(["timedatectl", "show", "-p", "Timezone", "--value"]) or "UTC"
+            conf_path.write_text(
+                "[calendars]\n"
+                "[[private]]\n"
+                f"path = {cal_dir}\n"
+                "color = dark green\n\n"
+                "[locale]\n"
+                f"local_timezone = {tz}\n"
+                f"default_timezone = {tz}\n"
+                "timeformat = %H:%M\n"
+                "dateformat = %Y-%m-%d\n"
+                "longdateformat = %Y-%m-%d\n"
+                "datetimeformat = %Y-%m-%d %H:%M\n"
+                "longdatetimeformat = %Y-%m-%d %H:%M\n"
+                "\n[default]\n"
+                "default_calendar = private\n")
+        _KHAL_CACHE["configured"] = None
+        ok = _khal_configured()
+        return ok, "" if ok else "khal-Konfiguration konnte nicht verifiziert werden."
+    except Exception as e:
+        return False, str(e)
+
+def _khal_events_for_month(year: int, month: int) -> dict:
+    """EIN einziger khal-Aufruf für den kompletten sichtbaren Monat
+    statt bis zu 42 Einzelaufrufen (einer pro Kalendertag) - würde bei
+    jedem Monatswechsel das UI einfrieren lassen. Rückgabe:
+    {date_str: [event, ...]}.
+    WICHTIG: 'khal list --json' gibt bei einem mehrtägigen Zeitraum
+    NICHT ein einziges großes JSON-Array zurück, sondern EIN Array PRO
+    TAG, zeilenweise aneinandergereiht (z.B. "[]\\n[]\\n[{...}]\\n").
+    Ein einzelnes json.loads() auf den kompletten Output wirft daher
+    "Extra data" - verifiziert gegen ein echtes khal 0.14.0 mit
+    mehreren Terminen an unterschiedlichen Tagen. Fix: zeilenweise
+    parsen, jede Zeile für sich als eigenes JSON-Array behandeln, dann
+    zusammenführen."""
+    if not (_khal_available() and _khal_configured()):
+        return {}
+    first = date(year, month, 1)
+    days_in_month = calendar.monthrange(year, month)[1]
+    out, _err, ec = run_ec([
+        "khal", "list", first.strftime("%Y-%m-%d"), f"{days_in_month}d",
+        "--json", "title", "--json", "start-time", "--json", "start-date",
+    ])
+    if ec != 0 or not out.strip():
+        return {}
+    all_events: list = []
+    for line in out.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            arr = json.loads(line)
+        except Exception:
+            continue
+        if isinstance(arr, list):
+            all_events.extend(arr)
+    by_day: dict = {}
+    for ev in all_events:
+        key = ev.get("start-date", "")
+        by_day.setdefault(key, []).append(ev)
+    return by_day
+
+def _khal_new_event(d, time_str: str, title: str) -> tuple[bool, str]:
+    """Legt einen neuen Termin an: Datum d (datetime.date) + Uhrzeit
+    (HH:MM) + Titel."""
+    if not title.strip():
+        return False, "Titel darf nicht leer sein."
+    if not re.match(r'^([01]?\d|2[0-3]):[0-5]\d$', time_str.strip()):
+        return False, "Ungültige Uhrzeit (erwartet HH:MM)."
+    date_str = d.strftime("%Y-%m-%d")
+    _out, err, ec = run_ec(["khal", "new", date_str, time_str.strip(), title.strip()])
+    if ec != 0:
+        return False, err or "khal new ist fehlgeschlagen."
+    return True, ""
+
+def _clock_content(win: Gtk.Window) -> Gtk.Box:
     root = vbox(4); pad(root, h=10, v=8)
 
     today_card = hbox(12)
@@ -1726,11 +2165,94 @@ def _clock_content() -> Gtk.Box:
     rain_lbl.get_style_context().add_class("caption")
     rain_lbl.set_halign(Gtk.Align.END)
     rain_lbl.set_tooltip_text("Precipitation (mm)")
+    loc_btn = Gtk.Button(label="📍")
+    loc_btn.set_relief(Gtk.ReliefStyle.NONE)
+    loc_btn.get_style_context().add_class("flat")
+    loc_btn.set_can_focus(False)
+    loc_btn.set_halign(Gtk.Align.END)
+    loc_btn.set_tooltip_text("Standort ändern")
     stats_box.pack_start(hum_lbl,  False, False, 0)
     stats_box.pack_start(rain_lbl, False, False, 0)
+    stats_box.pack_start(loc_btn,  False, False, 0)
     today_card.pack_start(stats_box, False, False, 0)
 
     root.pack_start(today_card, False, False, 0)
+
+    def _prompt_change_location(_w=None):
+        """Standort-Such-Dialog - nutzt denselben _geocode()-Helper
+        wie die CLI (--set-weather), damit beide Wege konsistent
+        bleiben."""
+        dlg = Gtk.Dialog(title="Standort ändern", transient_for=win)
+        dlg.add_buttons("Schließen", Gtk.ResponseType.CANCEL)
+        content = dlg.get_content_area()
+        content.set_spacing(6)
+        pad(content, h=14, v=10)
+        dlg.set_default_size(340, 320)
+
+        search_row = hbox(6)
+        search_e = Gtk.Entry()
+        search_e.set_placeholder_text("Stadt suchen…")
+        search_e.set_hexpand(True)
+        search_b = btn("Suchen")
+        search_row.pack_start(search_e, True, True, 0)
+        search_row.pack_start(search_b, False, False, 0)
+        content.pack_start(search_row, False, False, 0)
+
+        status_lbl = Gtk.Label(label="")
+        status_lbl.get_style_context().add_class("caption")
+        content.pack_start(status_lbl, False, False, 0)
+
+        results_box = vbox(4)
+        content.pack_start(results_box, True, True, 0)
+
+        def _clear_results():
+            for c in results_box.get_children():
+                results_box.remove(c)
+
+        def _select(res):
+            _save_weather_location(res["latitude"], res["longitude"], res["name"])
+            dlg.destroy()
+            in_thread(_load_weather)
+
+        def _do_search(_w=None):
+            query = search_e.get_text().strip()
+            if not query:
+                return
+            status_lbl.set_label("Suche…")
+            _clear_results()
+
+            def _fetch():
+                results = _geocode(query)
+                def _apply():
+                    status_lbl.set_label(
+                        "" if results else f"Keine Ergebnisse für „{query}“")
+                    _clear_results()
+                    for res in results[:8]:
+                        admin = res.get("admin1", "")
+                        country = res.get("country", "")
+                        parts = ", ".join(p for p in (admin, country) if p)
+                        label = f'{res["name"]}' + (f" ({parts})" if parts else "")
+                        row_b = btn(label)
+                        row_b.set_halign(Gtk.Align.FILL)
+                        row_b.get_child().set_halign(Gtk.Align.START)
+                        row_b.connect("clicked", lambda _b, r=res: _select(r))
+                        results_box.pack_start(row_b, False, False, 0)
+                    results_box.show_all()
+                GLib.idle_add(_apply)
+            in_thread(_fetch)
+
+        search_b.connect("clicked", _do_search)
+        search_e.connect("activate", _do_search)
+        dlg_destroyed = [False]
+        dlg.connect("destroy", lambda _d: dlg_destroyed.__setitem__(0, True))
+        dlg.show_all()
+        status_lbl.hide()
+        search_e.grab_focus()
+        dlg.run()
+        if not dlg_destroyed[0]:
+            dlg.destroy()
+
+    loc_btn.connect("clicked", _prompt_change_location)
 
     fc_row = hbox(6)
     fc_row.set_halign(Gtk.Align.CENTER)
@@ -1803,40 +2325,218 @@ def _clock_content() -> Gtk.Box:
         wd_row.pack_start(b, False, False, 0)
     root.pack_start(wd_row, False, False, 0)
 
+    khal_ok = _khal_available() and _khal_configured()
+    if not khal_ok and _khal_available():
+        setup_row = hbox(6)
+        setup_row.set_halign(Gtk.Align.CENTER)
+        setup_lbl = Gtk.Label(label="Termine noch nicht eingerichtet")
+        setup_lbl.get_style_context().add_class("caption")
+        setup_btn = btn("Einrichten", tip="Legt einen lokalen Standardkalender an")
+        setup_row.pack_start(setup_lbl, False, False, 0)
+        setup_row.pack_start(setup_btn, False, False, 0)
+        root.pack_start(setup_row, False, False, 2)
+
+        def _on_setup_clicked(_w):
+            ok, err = _khal_setup_default_calendar()
+            if ok:
+                setup_row.set_visible(False)
+                _build_grid(cur[0], cur[1])
+            else:
+                setup_lbl.set_label(f"Einrichtung fehlgeschlagen: {err}"[:60])
+        setup_btn.connect("clicked", _on_setup_clicked)
+
     cal_grid = vbox(2)
     cal_grid.set_halign(Gtk.Align.CENTER)
     root.pack_start(cal_grid, False, False, 0)
 
+    def _prompt_new_event(d) -> None:
+        """Kleiner Termin-Dialog - eigenständiges Gtk.Dialog-Fenster."""
+        dlg = Gtk.Dialog(title=f"Neuer Termin – {d.strftime('%d.%m.%Y')}",
+                          transient_for=win)
+        dlg.add_buttons("Abbrechen", Gtk.ResponseType.CANCEL,
+                        "Anlegen", Gtk.ResponseType.OK)
+        content = dlg.get_content_area()
+        content.set_spacing(6)
+        pad(content, h=14, v=10)
+
+        title_e = Gtk.Entry()
+        title_e.set_placeholder_text("Titel")
+        title_e.set_activates_default(True)
+        time_e = Gtk.Entry()
+        time_e.set_placeholder_text("Uhrzeit, z.B. 14:30")
+        time_e.set_text("12:00")
+        time_e.set_activates_default(True)
+        err_lbl = Gtk.Label(label="")
+        err_lbl.get_style_context().add_class("caption")
+        err_lbl.set_no_show_all(True)
+        err_lbl.hide()
+
+        content.pack_start(Gtk.Label(label="Titel:"), False, False, 0)
+        content.pack_start(title_e, False, False, 0)
+        content.pack_start(Gtk.Label(label="Uhrzeit:"), False, False, 0)
+        content.pack_start(time_e, False, False, 0)
+        content.pack_start(err_lbl, False, False, 0)
+
+        ok_btn = dlg.get_widget_for_response(Gtk.ResponseType.OK)
+        if ok_btn:
+            dlg.set_default(ok_btn)
+        dlg.show_all()
+        title_e.grab_focus()
+
+        while True:
+            resp = dlg.run()
+            if resp != Gtk.ResponseType.OK:
+                break
+            ok, err = _khal_new_event(d, time_e.get_text(), title_e.get_text())
+            if ok:
+                break
+            err_lbl.set_label(err[:80])
+            err_lbl.show()
+        dlg.destroy()
+        _build_grid(cur[0], cur[1])
+
+    def _show_events_popover(anchor: Gtk.Widget, day_date, events: list) -> None:
+        """Floatendes Gtk.Popover mit den Terminen eines Tages - reine
+        Anzeige, kein Toplevel-Fenster nötig."""
+        pop = Gtk.Popover.new(anchor)
+        pop.set_position(Gtk.PositionType.BOTTOM)
+        box = vbox(4); pad(box, h=10, v=8)
+
+        title = Gtk.Label()
+        title.set_markup(f"<b>{day_date.strftime('%d.%m.%Y')}</b>")
+        box.pack_start(title, False, False, 0)
+        box.pack_start(sep(), False, False, 2)
+
+        if not events:
+            empty = Gtk.Label(label="Keine Termine")
+            empty.get_style_context().add_class("caption")
+            box.pack_start(empty, False, False, 0)
+        else:
+            for e in sorted(events, key=lambda e: e.get("start-time", "")):
+                row = hbox(6)
+                t = e.get("start-time", "")
+                time_lbl = Gtk.Label(label=t if t else "–")
+                time_lbl.get_style_context().add_class("caption")
+                time_lbl.set_width_chars(5)
+                title_lbl = Gtk.Label(label=e.get("title", "(ohne Titel)"))
+                title_lbl.set_halign(Gtk.Align.START)
+                title_lbl.set_line_wrap(True)
+                title_lbl.set_max_width_chars(28)
+                row.pack_start(time_lbl, False, False, 0)
+                row.pack_start(title_lbl, True, True, 0)
+                box.pack_start(row, False, False, 0)
+
+        add_row = hbox(6)
+        add_row.set_halign(Gtk.Align.END)
+        add_btn = btn("+ Termin", cb=lambda _w: (pop.popdown(),
+                      _prompt_new_event(day_date)))
+        add_row.pack_start(add_btn, False, False, 0)
+        box.pack_start(sep(), False, False, 2)
+        box.pack_start(add_row, False, False, 0)
+
+        pop.add(box)
+        box.show_all()
+        pop.popup()
+
+    def _on_day_click(anchor_widget, day_date, ev, day_events_ref: list):
+        """Linksklick (Button 1) -> Popover mit den Terminen dieses
+        Tages zeigen (häufigster Fall). Rechtsklick (Button 3) ->
+        Termin anlegen."""
+        if ev.button == 1:
+            _show_events_popover(anchor_widget, day_date, day_events_ref)
+            return True
+        elif ev.button == 3:
+            _prompt_new_event(day_date)
+            return True
+        return False
+
     def _build_grid(year, month):
         for c in cal_grid.get_children(): cal_grid.remove(c)
         today = datetime.now()
+        day_widgets = {}  # date_str -> (button, inner_box, events_ref) für async Nachtragen der Punkte/Termine
+
         for week in calendar.monthcalendar(year, month):
             week_row = hbox(2)
             week_row.set_halign(Gtk.Align.CENTER)
             for day in week:
-                b = hbox(0)
+                if day == 0:
+                    b = hbox(0)
+                    b.get_style_context().add_class("bubble")
+                    b.get_style_context().add_class("item")
+                    b.set_size_request(44, -1)
+                    l = Gtk.Label(label="")
+                    l.set_opacity(0)
+                    l.set_size_request(44, -1)
+                    b.pack_start(l, False, False, 0)
+                    week_row.pack_start(b, False, False, 0)
+                    continue
+
+                is_today = (day == today.day and month == today.month
+                            and year == today.year)
+                day_date = date(year, month, day)
+                cell_lbl = f"<b>{day}</b>" if is_today else str(day)
+
+                b = Gtk.Button()
                 b.get_style_context().add_class("bubble")
                 b.get_style_context().add_class("item")
                 b.set_size_request(44, -1)
-                is_today = (day == today.day and month == today.month
-                            and year == today.year)
-                if day == 0:
-                    l = Gtk.Label(label="")
-                    l.set_opacity(0)
-                else:
-                    l = Gtk.Label()
-                    if is_today:
-                        l.set_markup(f"<b>{day}</b>")
-                        b.get_style_context().add_class("active")
-                    else:
-                        l.set_label(str(day))
+                b.set_can_focus(False)
+                b.add_events(Gdk.EventMask.BUTTON_PRESS_MASK)
+                if is_today:
+                    b.get_style_context().add_class("active")
+
+                inner = vbox(0)
+                l = Gtk.Label()
+                l.set_markup(cell_lbl)
                 l.set_size_request(44, -1)
                 l.set_halign(Gtk.Align.CENTER)
                 l.get_style_context().add_class("caption")
-                b.pack_start(l, False, False, 0)
+                inner.pack_start(l, False, False, 0)
+
+                b.add(inner)
+                if khal_ok:
+                    day_events_ref = []
+                    b.connect("button-press-event",
+                              lambda _w, ev, dd=day_date, evs=day_events_ref:
+                                  _on_day_click(_w, dd, ev, evs))
+                    day_widgets[day_date.strftime("%Y-%m-%d")] = (b, inner, day_events_ref)
                 week_row.pack_start(b, False, False, 0)
             cal_grid.pack_start(week_row, False, False, 0)
         cal_grid.show_all()
+
+        if not khal_ok:
+            return
+
+        # Termine NICHT synchron im GTK-Main-Thread abfragen. Grid
+        # steht sofort (klickbar, ohne Punkte), Termin-Punkte/Tooltips
+        # werden nachgetragen, sobald der Hintergrund-Thread fertig ist.
+        def _fetch():
+            month_events = _khal_events_for_month(year, month)
+            def _apply():
+                # Falls der Nutzer inzwischen weitergeblättert hat, ist
+                # cal_grid schon neu aufgebaut - dann NICHT mehr in die
+                # (jetzt falsche) alte Widget-Zuordnung schreiben.
+                if cur[0] != year or cur[1] != month:
+                    return
+                for date_str, events in month_events.items():
+                    widgets = day_widgets.get(date_str)
+                    if not widgets or not events:
+                        continue
+                    btn_w, inner_w, events_ref = widgets
+                    events_ref.extend(events)
+                    btn_w.get_style_context().add_class("has-events")
+                    dot = Gtk.Label(label="•")
+                    dot.get_style_context().add_class("caption")
+                    dot.set_halign(Gtk.Align.CENTER)
+                    dot.set_opacity(0.85)
+                    inner_w.pack_start(dot, False, False, 0)
+                    inner_w.show_all()
+                    tip = "\n".join(
+                        f"{e.get('start-time', '')}  {e.get('title', '')}".strip()
+                        for e in events[:6])
+                    btn_w.set_tooltip_text(tip)
+            GLib.idle_add(_apply)
+        in_thread(_fetch)
 
     def _update_mth():
         mth_lbl.set_label(f"{MONTHS_EN[cur[1]-1]}  {cur[0]}")
@@ -1875,8 +2575,7 @@ def _clock_content() -> Gtk.Box:
             rain_lbl.set_label(f'☔ {w["precip"]}')
             d1_lbl.set_label(w["day1_icon"])
             d2_lbl.set_label(w["day2_icon"])
-            loc_tip = (f'Location: {w["location"]}\n'
-                       f'Change: widgets_daemon.py --set-weather "<Location>"')
+            loc_tip = f'Location: {w["location"]}\nClick 📍 to change'
             today_card.set_tooltip_text(loc_tip)
         GLib.idle_add(_apply)
 
@@ -1886,7 +2585,7 @@ def _clock_content() -> Gtk.Box:
 
 def build_clock(win: Gtk.Window):
     win.set_default_size(460, 1)
-    win.add(_clock_content())
+    win.add(_clock_content(win))
 
 # ════════════════════════════════════════════════════════════
 #  SETTINGS
@@ -2610,8 +3309,18 @@ def _build_monitor_row(mon: dict, lua_path: Path, win: Gtk.Window) -> Gtk.Box:
                 print(msg, file=sys.stderr)
                 break
 
+        # Waybar per SIGUSR2 neu laden lassen (offizieller, eingebauter
+        # Reload-Mechanismus laut "man waybar": "SIGUSR2 - By default
+        # reloads (resets) the bar") - NICHT mehr per killall+Neustart.
+        # Ein voller Kill+Respawn reißt ALLE internen Waybar-Zustände
+        # (inkl. jedes einzelnen Custom-Widget-Prozesses) auf einmal ab
+        # und wieder auf; falls der alte Prozess/Socket dabei nicht
+        # rechtzeitig sauber weg ist, bevor der neue startet, kann das
+        # zu Fehlverhalten bis hin zu wiederholten Neustartversuchen
+        # führen - ein plausibler Mitverursacher der beobachteten
+        # System-weiten Last (Rofi-Lags) direkt nach "Apply".
         run_bg(["bash", "-c",
-                "killall waybar; waybar; "
+                "killall -SIGUSR2 waybar; "
                 "systemctl --user restart wb-autohide.service"])
 
         if lua_path.is_file():
@@ -2697,7 +3406,7 @@ SETTINGS_CATEGORIES = [
 ]
 
 def _build_settings_brightness(page: Gtk.Box, key: str, label: str, win: Gtk.Window) -> None:
-    page.pack_start(_brightness_content(), True, True, 0)
+    page.pack_start(_brightness_content(win), True, True, 0)
 
 def _build_settings_audio(page: Gtk.Box, key: str, label: str, win: Gtk.Window) -> None:
     page.pack_start(_volume_content(), True, True, 0)
@@ -2706,7 +3415,7 @@ def _build_settings_bluetooth(page: Gtk.Box, key: str, label: str, win: Gtk.Wind
     page.pack_start(_bluetooth_content(), True, True, 0)
 
 def _build_settings_calendar(page: Gtk.Box, key: str, label: str, win: Gtk.Window) -> None:
-    page.pack_start(_clock_content(), True, True, 0)
+    page.pack_start(_clock_content(win), True, True, 0)
 
 SETTINGS_BUILDERS = {
     "display":    _build_settings_display,

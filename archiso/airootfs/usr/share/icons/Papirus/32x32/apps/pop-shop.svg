@@ -2,7 +2,7 @@
  <path style="fill:#fcb96f" d="M 8,4 H 27.75 C 28.993,4 30,5.0074 30,6.25 V 25 L 29,26 H 7 V 5 Z"/>
  <path style="fill:#fada7b" d="M 8,17 C 19,17 22,18 30,20.5 V 25 H 8 Z"/>
  <path style="opacity:0.2;fill:#ffffff" d="M 8,17 V 18 C 19,18 22,19 30,21.5 V 20.5 C 22,18 19,17 8,17 Z"/>
- <path style="fill:#554741" d="M 8,25 H 30 V 26.75 A 2.25,2.25 0 0 1 27.75,29 H 8 Z"/>
+ <path style="fill:#fff495" d="M 8,25 H 30 V 26.75 A 2.25,2.25 0 0 1 27.75,29 H 8 Z"/>
  <path style="fill:#aaa09b" d="M 4.25,4 H 8 V 29 H 4.25 A 2.25,2.25 0 0 1 2,26.75 V 6.25 A 2.25,2.25 0 0 1 4.25,4 Z"/>
  <circle style="fill:#8a7d77" cx="5" cy="23" r="1"/>
  <circle style="fill:#8a7d77" cx="5" cy="19" r="1"/>

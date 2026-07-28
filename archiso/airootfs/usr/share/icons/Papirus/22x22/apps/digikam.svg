@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" version="1">
  <g transform="translate(-1,-1)">
   <rect style="opacity:0.2" width="20" height="20" x="2" y="2.5" rx="10" ry="10"/>
-  <rect fill="#4f4f4f" width="20" height="20" x="2" y="2" rx="10" ry="10"/>
+  <rect fill="#fff495" width="20" height="20" x="2" y="2" rx="10" ry="10"/>
   <circle style="opacity:0.4" cx="12" cy="12" r="6"/>
   <circle opacity=".2" cx="12" cy="12.5" r="5"/>
   <circle fill="#1789ba" cx="12" cy="12" r="5"/>

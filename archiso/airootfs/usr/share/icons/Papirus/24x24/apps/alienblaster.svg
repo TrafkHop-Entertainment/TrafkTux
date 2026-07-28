@@ -9,7 +9,7 @@
   <rect x="4" y="8" width="2" height="12" rx="1.5" ry="1.5" style="fill:#37bdbd"/>
   <rect x="16" y="8.5" width="2" height="12" rx="1.5" ry="1.5" style="opacity:.2"/>
   <rect x="16" y="8" width="2" height="12" rx="1.5" ry="1.5" style="fill:#37bdbd"/>
-  <ellipse cx="11" cy="13.5" rx="2" ry="2.5" style="fill:#4f4f4f"/>
+  <ellipse cx="11" cy="13.5" rx="2" ry="2.5" style="fill:#fff495"/>
   <path d="m5.0000001 7.9999992c-0.554 0-1 0.669-1 1.4999998v0.5c0-0.831 0.446-1.4999998 1-1.4999998s1 0.6689998 1 1.4999998v-0.5c0-0.8309998-0.446-1.4999998-1-1.4999998z" style="fill:#ffffff;opacity:.2"/>
   <path d="m17 7.9999992c-0.554 0-1 0.669-1 1.4999998v0.5c0-0.831 0.446-1.4999998 1-1.4999998s1 0.6689998 1 1.4999998v-0.5c0-0.8309998-0.446-1.4999998-1-1.4999998z" style="fill:#ffffff;opacity:.2"/>
  </g>

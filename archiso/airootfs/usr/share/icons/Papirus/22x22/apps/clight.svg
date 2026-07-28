@@ -3,7 +3,7 @@
  <path style="fill:#57779f" d="m 10.999988,16.500007 c 0,0 5.999992,1.499998 5.999992,2.499996 v 0.999999 c 0,0.553999 -0.446,0.999999 -0.999999,0.999999 H 5.9999946 c -0.5539992,0 -0.9999986,-0.446 -0.9999986,-0.999999 v -0.999999 c 0,-0.999998 5.999992,-2.499996 5.999992,-2.499996 z"/>
  <circle style="opacity:0.2" cx="11" cy="10.5" r="9"/>
  <circle style="fill:#73a0d6" cx="11" cy="10" r="9"/>
- <circle style="fill:#2f2f2f" cx="11" cy="-10" r="6" transform="scale(1,-1)"/>
+ <circle style="fill:#fff495" cx="11" cy="-10" r="6" transform="scale(1,-1)"/>
  <circle style="opacity:0.2" cx="11" cy="-10.5" r="5" transform="scale(1,-1)"/>
  <circle style="fill:#a95b86" cx="11" cy="-10" r="5" transform="scale(1,-1)"/>
  <circle style="opacity:0.2" cx="11" cy="10.5" r="3"/>
