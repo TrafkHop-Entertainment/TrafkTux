@@ -1,0 +1,164 @@
+
+Ja aber die widgets sind ja nicht offen und das python skript ist noch immer auf 100%, die gaanze zeit...
+mhhhhh grad ists auf einmal wieder weg....
+jetzt wenn ich auch widgets spame, kurz mehr cpu, normal hald, aber dann gehts auch wieder weg.... komisch... naja
+
+neee jetzt ists wieder auf 100%... nevermend, mach weiter
+
+Wichtige neue Information, die meine bisherige Theorie umwirft: Wenn CPU auch bei komplett geschlossenen Widgets bei 100% bleibt, kann das nicht (nur) an neu erstellten Threads pro Timer-Tick liegen — ohne offenes Widget sollte kein einziger Timer laufen. Das riecht eher nach: entweder hängt doch noch ein Fenster unsichtbar im Hintergrund (Leck trotz meines Fixes), oder es ist gar nicht der Daemon-Prozess selbst, sondern ein anderer, zeitweise hängender Subprozess.
+
+Ich mach jetzt zwei Dinge gleichzeitig: den Thread-Pool-Fix (sinnvoll so oder so) UND baue eine eingebaute Selbstdiagnose ein, die uns beim nächsten Auftreten sofort zeigt, ob heimlich noch Fenster/Timer offen sind — ohne dass wir nochmal manuell strace/py-spy durchgehen müssen.
+Replace per-call thread creation with a small bounded thread pool. Creating a brand new OS thread for every single periodic timer tick (system monitor every 2s, battery every 10s, media every 1.5s, clock every 1s, etc.) across potentially many simultaneously-open widgets causes exactly the kind of futex/clock_gettime-dominated syscall storm seen in the strace output — CPython's GIL machinery has non-trivial per-thread-creation overhead. A small reused worker pool eliminates that churn while keeping the exact same fire-and-forget call signature everywhere in the codebase.
+
+OK, ICH HABS (so ca)!
+Sobald man apply im settings menü drückt geht die party ab, 100% CPU kern, mein rofi menu laggt dann wie sau und der lappi wird zur heizung. Also da ist was schuld
+
+Das ist ein extrem wertvoller, konkreter Hinweis — jetzt kann ich gezielt suchen statt zu raten. Lass mich apply_all() und alles, was beim Drücken von "Apply" läuft, genau durchgehen.
+Hat einen Befehl ausgeführt, datei angesehen
+
+Rofi laggt mitleidet, das spricht für systemweite Last, nicht nur einen isolierten Prozess. Lass mich den Apply-Button und seine Verdrahtung genau prüfen — insbesondere ob der Klick-Handler eventuell mehrfach verbunden wird.
+2 Befehle ausgeführt, 2 Dateien angesehen
+
+Die Apply-Button-Verdrahtung selbst ist sauber — kein Mehrfach-Connect, kein Rebuild-Loop. Das heißt der Bug muss in einer der einzelnen apply_fn-Funktionen stecken, die über stage_change() registriert werden. Lass mich alle Stellen auflisten, die stage_change() aufrufen, um zu sehen, was tatsächlich beim Apply-Klick ausgeführt wird.
+2 Befehle ausgeführt, datei angesehen
+
+Gefunden — sehr wahrscheinlicher Kandidat, in der Display-Widget-Apply-Funktion:
+Eruierte leichtere Reload-Optionen statt vollständigem Neustart
+
+Das killt Waybar komplett und startet es neu — ein sehr schwerer Eingriff für jeden einzelnen Apply-Klick. Falls Waybar dabei in irgendeine Neustart-Schleife gerät (z.B. weil der alte Prozess/Socket nicht rechtzeitig sauber weg ist, bevor der neue startet), könnte das kaskadierend unseren Daemon mit Toggle-Anfragen fluten — das würde auch erklären, warum Rofi mitleidet (ganzes System unter IPC-Last). Lass mich prüfen, ob Waybar einen sanfteren Reload-Mechanismus hat, statt komplett neu zu starten.
+Identifizierte ineffiziente Restart-Methode, implementiert elegantere Signal-basierte Lösung
+
+Bestätigt: Waybar hat einen eingebauten, deutlich sanfteren Reload-Mechanismus — killall -SIGUSR2 waybar lädt die Config neu, ohne den kompletten Prozess zu killen und neu zu starten. Das offizielle man waybar bestätigt das explizit. Der aktuelle Code macht stattdessen einen vollständigen Kill+Neustart — das ist unnötig schwer und riskant (falls der alte Prozess/Socket nicht rechtzeitig sauber weg ist, bevor der neue startet, kann das zu Fehlverhalten führen). Ich fixe das.
+3 Befehle ausgeführt, hat eine Datei bearbeitet, datei lesen
+
+Gefunden — die einzige Stelle im ganzen Code, die einen kompletten Kill+Neustart macht, ist genau in der Display-Apply-Funktion:
+python
+
+run_bg(["bash", "-c", "killall waybar; waybar; systemctl --user restart wb-autohide.service"])
+
+killall waybar; waybar reißt Waybar komplett ab und startet es kalt neu — jedes einzelne Custom-Widget innerhalb von Waybar muss dabei neu initialisiert werden. Laut offiziellem man waybar gibt's dafür einen viel sanfteren, eingebauten Weg: SIGUSR2 löst gezielt einen Config-Reload aus, ohne den Prozess zu killen. Das passt zu allem, was wir gesehen haben:
+
+    Tritt exakt beim Apply-Klick auf
+    Rofi laggt mit — ein voller Waybar-Teardown+Rebuild belastet Compositor/IPC systemweit, nicht nur einen isolierten Prozess
+    Falls der alte Prozess/Socket nicht rechtzeitig sauber weg ist, bevor der neue Waybar-Prozess startet, kann das zu Fehlverhalten führen
+
+Ich hab's auf killall -SIGUSR2 waybar umgestellt — reloadet die Config in-place, kein Kill, kein Neustart, kein Race-Condition-Risiko.
+
+Ehrlich gesagt: Ich kann dir nicht zu 100% garantieren, dass das die alleinige Ursache war, ohne dass du es testest — aber es ist der einzige Kill+Restart-Vorgang im ganzen Code, es passt zeitlich exakt zu deiner Beobachtung, und die Umstellung ist so oder so eine klare Verbesserung (schneller, weniger disruptiv, keine Race-Condition mehr). Bitte Daemon neu starten und testen: Widget öffnen → eine Display-Einstellung ändern → Apply klicken → schauen, ob's noch abgeht.
+Widgets daemon
+PY 
+
+Das Erste ist VOR dem apply, die anderen sind DANACH:
+[hopx@trafktux ~]$ systemctl --user restart wb-daemon.service
+[hopx@trafktux ~]$ pgrep -f widgets_daemon.py
+8624
+[hopx@trafktux ~]$ sudo $(python3 -m site --user-base)/bin/py-spy dump --pid 8624
+[sudo] Passwort für hopx: 
+Process 8624: /usr/bin/python3 /home/hopx/.config/waybar/scripts/widgets_daemon.py
+Python v3.14.6 (/usr/bin/python3.14)
+Thread 8624 (idle)
+    main (gi/overrides/Gtk.py:1867)
+    main (widgets_daemon.py:3632)
+    <module> (widgets_daemon.py:3704)
+Thread 8632 (idle)
+    _worker (concurrent/futures/thread.py:116)
+    run (threading.py:1024)
+    _bootstrap_inner (threading.py:1082)
+    _bootstrap (threading.py:1044)
+[hopx@trafktux ~]$ sudo $(python3 -m site --user-base)/bin/py-spy dump --pid <PID>
+bash: Syntaxfehler beim unerwarteten Symbol »newline«
+[hopx@trafktux ~]$ sudo $(python3 -m site --user-base)/bin/py-spy dump --pid 8624
+Process 8624: /usr/bin/python3 /home/hopx/.config/waybar/scripts/widgets_daemon.py
+Python v3.14.6 (/usr/bin/python3.14)
+Thread 8624 (active)
+    main (gi/overrides/Gtk.py:1867)
+    main (widgets_daemon.py:3632)
+    <module> (widgets_daemon.py:3704)
+Thread 8632 (idle)
+    _worker (concurrent/futures/thread.py:116)
+    run (threading.py:1024)
+    _bootstrap_inner (threading.py:1082)
+    _bootstrap (threading.py:1044)
+[hopx@trafktux ~]$ sudo $(python3 -m site --user-base)/bin/py-spy dump --pid 8624
+Process 8624: /usr/bin/python3 /home/hopx/.config/waybar/scripts/widgets_daemon.py
+Python v3.14.6 (/usr/bin/python3.14)
+Thread 8624 (active)
+    main (gi/overrides/Gtk.py:1867)
+    main (widgets_daemon.py:3632)
+    <module> (widgets_daemon.py:3704)
+Thread 8632 (idle)
+    _worker (concurrent/futures/thread.py:116)
+    run (threading.py:1024)
+    _bootstrap_inner (threading.py:1082)
+    _bootstrap (threading.py:1044)
+[hopx@trafktux ~]$ sudo $(python3 -m site --user-base)/bin/py-spy dump --pid 8624
+Process 8624: /usr/bin/python3 /home/hopx/.config/waybar/scripts/widgets_daemon.py
+Python v3.14.6 (/usr/bin/python3.14)
+Thread 8624 (active)
+    main (gi/overrides/Gtk.py:1867)
+    main (widgets_daemon.py:3632)
+    <module> (widgets_daemon.py:3704)
+Thread 8632 (idle)
+    _worker (concurrent/futures/thread.py:116)
+    run (threading.py:1024)
+    _bootstrap_inner (threading.py:1082)
+    _bootstrap (threading.py:1044)
+[hopx@trafktux ~]$ sudo $(python3 -m site --user-base)/bin/py-spy dump --pid 8624
+Process 8624: /usr/bin/python3 /home/hopx/.config/waybar/scripts/widgets_daemon.py
+Python v3.14.6 (/usr/bin/python3.14)
+Thread 8624 (active)
+    main (gi/overrides/Gtk.py:1867)
+    main (widgets_daemon.py:3632)
+    <module> (widgets_daemon.py:3704)
+Thread 8632 (idle)
+    _worker (concurrent/futures/thread.py:116)
+    run (threading.py:1024)
+    _bootstrap_inner (threading.py:1082)
+    _bootstrap (threading.py:1044)
+[hopx@trafktux ~]$
+Investigated bug pattern across codebase systematically
+
+Bestätigt — nur apply_all() hatte den Bug (die anderen drei rufen _apply_bar_refresh[0]() direkt auf, deren Rückgabewert wird einfach verworfen, kein Problem). Jetzt prüfe ich systematisch die restlichen GLib.idle_add(_refresh)-Aufrufe im Bluetooth-Widget, um sicherzugehen, dass da nicht dasselbe Muster lauert.
+Check the bluetooth widget's _refresh function and its idle_add usages for the same anti-pattern
+
+Noch ein Fund derselben Bug-Klasse, und der ist potenziell noch schlimmer — Zeile 916-922 im Bluetooth-Widget:
+Identified critical bug causing excessive system calls
+
+Bestätigt — noch schlimmer, denn hier wird bei jedem Loop-Durchlauf auch _refresh() erneut aufgerufen, das selbst bluetoothctl-Subprozesse startet und die komplette Geräteliste neu aufbaut. Das würde beim Klick auf den Bluetooth-Ein/Aus-Schalter einen noch schwereren Busy-Loop auslösen. Fix:
+Fix the same tuple-truthiness bug in the bluetooth power toggle handler — an unindexed tuple literal is ALWAYS truthy in Python regardless of its contents (even a tuple of all-None elements), since tuple truthiness is based on length, not element values. This meant GLib rescheduled this callback forever, each time re-running _refresh() (which itself spawns bluetoothctl subprocess calls and rebuilds the device list) — a heavier busy loop than the apply_bar one. Fixed with the same explicit-False indexing idiom.
+
+Jetzt validieren und die anderen verdächtigen Stellen (806, 938) genau prüfen:
+2 Befehle ausgeführt, datei angesehen
+
+Bestätigt, derselbe Bug — diesmal im Wi-Fi-Scan-Button. Und die zweite Stelle (jetzt Zeile 952, ehemals Bluetooth-Scan):
+Identified and validated callback patterns, earmarked remaining bugs for repair
+
+Beide sind derselbe Bug. Ich fixe beide, konsistent mit dem etablierten [1]-Indexierungs-Muster:
+2 Dateien bearbeitet, hat einen Befehl ausgeführt
+
+Jetzt eine komplette, systematische Durchsuchung — auch GLib.timeout_add und add_timer können denselben Bug haben, nicht nur idle_add. Ich schreib mir ein kleines Skript, das jeden Callback-Rückgabewert automatisiert prüft:
+Systematically audited callback return values across codebase
+
+Ich geh jetzt systematisch jede einzelne Stelle durch — die vielen _apply-benannten Closures muss ich einzeln im Kontext prüfen. Fangen wir an:
+2 Dateien angesehen
+
+_refresh_apps endet mit .show_all() — implizit None, sicher. Weiter:
+Audited callback functions for unsafe return values
+
+Alle diese enden mit einer normalen Anweisung (kein explizites return), was in Python implizit None zurückgibt — sicher. Der Bug tritt nur bei Lambdas auf (deren Körper direkt der Rückgabewert ist) oder bei explizitem return. Das grenzt meine Suche ein. Weiter mit den restlichen Kandidaten:
+Check the debounce _fire function at line 1238
+
+Sicher. Weiter mit den restlichen _apply-Funktionen:
+2 Dateien angesehen
+
+Sicher. Weiter:
+Check _build_pp_row function for its return value
+
+Sicher. Weiter mit _apply_snapshot (System-Monitor) und den restlichen:
+Hat einen Befehl ausgeführt, datei angesehen
+
+weiter
+
+Sicher. Weiter mit _done und den letzten Kandidaten:
+Check the _done callback used by apply_all_async
+

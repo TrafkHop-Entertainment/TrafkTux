@@ -1,0 +1,1993 @@
+.:
+insgesamt 5084
+drwxr-xr-x 1 hopx hopx     388 30. Jul 01:38 .
+drwxr-xr-x 1 hopx hopx     214 29. Jul 15:44 ..
+drwxr-xr-x 1 hopx hopx      18  5. Jul 12:27 airootfs
+-rw-r--r-- 1 hopx hopx 5056988 23. Jul 23:01 archiso_structure.txt
+-rw-r--r-- 1 hopx hopx       0 30. Jul 01:45 archiso.txt
+-rw-r--r-- 1 hopx hopx      26 29. Jun 12:03 bootstrap_packages
+-rw-r--r-- 1 hopx hopx    4792 13. Jul 00:03 build-hyprland-plugins.sh
+-rwxr-xr-x 1 hopx hopx    2552 11. Jul 13:00 build-iso.sh
+-rw------- 1 hopx hopx    1763 25. Jul 22:02 build-local-repo.sh
+drwxr-xr-x 1 hopx hopx      12 29. Jun 12:03 efiboot
+drwxr-xr-x 1 hopx hopx      40  9. Jul 19:51 grub
+-rw-r--r-- 1 hopx hopx  108677 11. Jul 13:21 log.txt
+-rw-r--r-- 1 hopx hopx     276  9. Jul 19:50 mkinitcpio.conf
+-rw------- 1 hopx hopx    2759 28. Jul 23:35 packages.x86_64
+-rw-r--r-- 1 hopx hopx    2839  7. Jul 20:00 pacman.conf
+-rw-r--r-- 1 hopx hopx    1380 11. Jul 14:05 profiledef.sh
+drwxr-xr-x 1 hopx hopx     252 29. Jun 12:17 syslinux
+
+./airootfs:
+insgesamt 0
+drwxr-xr-x 1 hopx hopx  18  5. Jul 12:27 .
+drwxr-xr-x 1 hopx hopx 388 30. Jul 01:38 ..
+drwxr-xr-x 1 hopx hopx 228 25. Jul 21:33 etc
+drwxr-xr-x 1 hopx hopx  68 11. Jul 13:59 opt
+drwxr-xr-x 1 hopx hopx  26 10. Jul 22:52 usr
+
+./airootfs/etc:
+insgesamt 20
+drwxr-xr-x 1 hopx hopx  228 25. Jul 21:33 .
+drwxr-xr-x 1 hopx hopx   18  5. Jul 12:27 ..
+drwxr-xr-x 1 hopx hopx   62 11. Jul 13:03 calamares
+-rw-r--r-- 1 hopx hopx 2073 22. Jun 13:04 grub
+-rw-r--r-- 1 hopx hopx    9  5. Jul 11:26 hostname
+-rw-r--r-- 1 hopx hopx   13 29. Jun 12:03 locale.conf
+drwxr-xr-x 1 hopx hopx   66  5. Jul 12:38 modprobe.d
+drwxr-xr-x 1 hopx hopx   24 23. Jul 22:27 modules-load.d
+-rw-r--r-- 1 hopx hopx  748 29. Jun 12:03 motd
+-rw-r--r-- 1 hopx hopx 2839  7. Jul 20:00 pacman.conf
+drwxr-xr-x 1 hopx hopx   10 29. Jun 12:03 pacman.d
+drwxr-xr-x 1 hopx hopx   14  5. Jul 12:27 polkit-1
+drwxr-xr-x 1 hopx hopx  100 29. Jul 00:33 skel
+drwxr-xr-x 1 hopx hopx   22  5. Jul 12:38 sudoers.d
+drwxr-xr-x 1 hopx hopx  134  5. Jul 12:49 systemd
+drwxr-xr-x 1 hopx hopx   14 23. Jul 22:28 udev
+drwxr-xr-x 1 hopx hopx   14 25. Jul 21:34 xdg
+
+./airootfs/etc/calamares:
+insgesamt 8
+drwxr-xr-x 1 hopx hopx  62 11. Jul 13:03 .
+drwxr-xr-x 1 hopx hopx 228 25. Jul 21:33 ..
+drwxr-xr-x 1 hopx hopx  16  5. Jul 12:27 branding
+drwxr-xr-x 1 hopx hopx 570 23. Jul 22:29 modules
+lrwxrwxrwx 1 hopx hopx  24  5. Jul 13:58 qml -> /usr/share/calamares/qml
+-rw------- 1 hopx hopx 830 11. Jul 13:03 settings.conf
+
+./airootfs/etc/calamares/branding:
+insgesamt 0
+drwxr-xr-x 1 hopx hopx 16  5. Jul 12:27 .
+drwxr-xr-x 1 hopx hopx 62 11. Jul 13:03 ..
+drwxr-xr-x 1 hopx hopx 80  5. Jul 17:25 trafktux
+
+./airootfs/etc/calamares/branding/trafktux:
+insgesamt 8
+drwxr-xr-x 1 hopx hopx   80  5. Jul 17:25 .
+drwxr-xr-x 1 hopx hopx   16  5. Jul 12:27 ..
+-rw-r--r-- 1 hopx hopx  834  5. Jul 17:25 branding.desc
+-rw-r--r-- 1 hopx hopx    0  5. Jul 14:05 logo.png
+-rw-r--r-- 1 hopx hopx 2314  5. Jul 14:05 show.qml
+-rw-r--r-- 1 hopx hopx    0  5. Jul 14:05 welcome.png
+
+./airootfs/etc/calamares/modules:
+insgesamt 64
+drwxr-xr-x 1 hopx hopx  570 23. Jul 22:29 .
+drwxr-xr-x 1 hopx hopx   62 11. Jul 13:03 ..
+-rw-r--r-- 1 hopx hopx  208  5. Jul 11:29 bootloader.conf
+-rw-r--r-- 1 hopx hopx  222  5. Jul 11:28 displaymanager.conf
+-rw-r--r-- 1 hopx hopx  220  5. Jul 11:29 grubcfg.conf
+-rw-r--r-- 1 hopx hopx  939  5. Jul 16:46 packagechooser.conf
+-rw-r--r-- 1 hopx hopx  415  5. Jul 11:29 packages.conf
+-rw-r--r-- 1 hopx hopx  386  5. Jul 17:29 partition.conf
+-rw-r--r-- 1 hopx hopx   23  5. Jul 11:28 removeuser.conf
+-rw-r--r-- 1 hopx hopx  381  5. Jul 11:28 services-systemd.conf
+-rw-r--r-- 1 hopx hopx  907  6. Jul 13:19 settings.conf
+-rw------- 1 hopx hopx   99  6. Jul 03:51 shellprocess-aurinstall.conf
+-rw-r--r-- 1 hopx hopx 1057  6. Jul 13:19 shellprocess-cleanup.conf
+-rw-r--r-- 1 hopx hopx 1769  6. Jul 13:19 shellprocess-fixboot.conf
+-rw-r--r-- 1 hopx hopx  100 11. Jul 13:00 shellprocess-hyprpminstall.conf
+-rw-r--r-- 1 hopx hopx  445  5. Jul 11:28 unpackfs.conf
+-rw-r--r-- 1 hopx hopx  288 23. Jul 22:29 users.conf
+-rw-r--r-- 1 hopx hopx  638  5. Jul 17:12 welcome.conf
+
+./airootfs/etc/modprobe.d:
+insgesamt 8
+drwxr-xr-x 1 hopx hopx  66  5. Jul 12:38 .
+drwxr-xr-x 1 hopx hopx 228 25. Jul 21:33 ..
+-rw-r--r-- 1 hopx hopx 380 29. Jun 12:03 broadcom-wl.conf
+-rw-r--r-- 1 hopx hopx 272  5. Jul 11:26 nvidia-power.conf
+
+./airootfs/etc/modules-load.d:
+insgesamt 4
+drwxr-xr-x 1 hopx hopx  24 23. Jul 22:27 .
+drwxr-xr-x 1 hopx hopx 228 25. Jul 21:33 ..
+-rw------- 1 hopx hopx 383 23. Jul 20:24 i2c-dev.conf
+
+./airootfs/etc/pacman.d:
+insgesamt 0
+drwxr-xr-x 1 hopx hopx  10 29. Jun 12:03 .
+drwxr-xr-x 1 hopx hopx 228 25. Jul 21:33 ..
+drwxr-xr-x 1 hopx hopx 160  5. Jul 12:38 hooks
+
+./airootfs/etc/pacman.d/hooks:
+insgesamt 12
+drwxr-xr-x 1 hopx hopx 160  5. Jul 12:38 .
+drwxr-xr-x 1 hopx hopx  10 29. Jun 12:03 ..
+-rw-r--r-- 1 hopx hopx 211  5. Jul 11:25 liveuser.hook
+-rw-r--r-- 1 hopx hopx 342 29. Jun 12:03 uncomment-mirrors.hook
+-rw-r--r-- 1 hopx hopx 586 29. Jun 12:03 zzzz99-remove-custom-hooks-from-airootfs.hook
+
+./airootfs/etc/polkit-1:
+insgesamt 0
+drwxr-xr-x 1 hopx hopx  14  5. Jul 12:27 .
+drwxr-xr-x 1 hopx hopx 228 25. Jul 21:33 ..
+drwxr-xr-x 1 hopx hopx  54  5. Jul 12:38 rules.d
+
+./airootfs/etc/polkit-1/rules.d:
+insgesamt 4
+drwxr-xr-x 1 hopx hopx  54  5. Jul 12:38 .
+drwxr-xr-x 1 hopx hopx  14  5. Jul 12:27 ..
+-rw-r--r-- 1 hopx hopx 353  5. Jul 11:30 60-trafktux-calamares.rules
+
+./airootfs/etc/skel:
+insgesamt 8
+drwxr-xr-x 1 hopx hopx 100 29. Jul 00:33 .
+drwxr-xr-x 1 hopx hopx 228 25. Jul 21:33 ..
+-rw-r--r-- 1 hopx hopx 137  5. Jul 12:47 .bash_profile
+drwxr-xr-x 1 hopx hopx 170 27. Jul 02:40 .config
+drwxr-xr-x 1 hopx hopx  10 29. Jun 12:44 .local
+lrwxrwxrwx 1 hopx hopx   8 29. Jul 00:18 Templates -> Vorlagen
+drwxr-xr-x 1 hopx hopx  58 29. Jul 00:52 Vorlagen
+
+./airootfs/etc/skel/.config:
+insgesamt 0
+drwxr-xr-x 1 hopx hopx 170 27. Jul 02:40 .
+drwxr-xr-x 1 hopx hopx 100 29. Jul 00:33 ..
+drwxr-xr-x 1 hopx hopx  14 28. Jul 21:29 dunst
+drwxr-xr-x 1 hopx hopx  50  1. Jul 21:47 fastfetch
+drwxr-xr-x 1 hopx hopx  56 27. Jul 16:04 gtk-3.0
+drwxr-xr-x 1 hopx hopx  74 27. Jul 16:04 gtk-4.0
+drwxr-xr-x 1 hopx hopx 274 30. Jul 01:01 hypr
+drwxr-xr-x 1 hopx hopx  76 27. Jul 16:04 Kvantum
+drwxr-xr-x 1 hopx hopx  12 27. Jul 16:04 nwg-look
+drwxr-xr-x 1 hopx hopx  72 26. Jul 03:16 qt5ct
+drwxr-xr-x 1 hopx hopx  72 26. Jul 03:16 qt6ct
+drwxr-xr-x 1 hopx hopx  74 28. Jul 22:06 rofi
+drwxr-xr-x 1 hopx hopx   8  3. Jul 09:27 systemd
+drwxr-xr-x 1 hopx hopx  52 26. Jul 02:17 Thunar
+drwxr-xr-x 1 hopx hopx  56 28. Jul 22:06 waybar
+drwxr-xr-x 1 hopx hopx  32 26. Jul 02:18 xfce4
+
+./airootfs/etc/skel/.config/dunst:
+insgesamt 4
+drwxr-xr-x 1 hopx hopx   14 28. Jul 21:29 .
+drwxr-xr-x 1 hopx hopx  170 27. Jul 02:40 ..
+-rw-r--r-- 1 hopx hopx 2679 28. Jul 21:29 dunstrc
+
+./airootfs/etc/skel/.config/fastfetch:
+insgesamt 12
+drwxr-xr-x 1 hopx hopx   50  1. Jul 21:47 .
+drwxr-xr-x 1 hopx hopx  170 27. Jul 02:40 ..
+-rw-r--r-- 1 hopx hopx 5840  1. Jul 21:47 config.jsonc
+-rw-r--r-- 1 hopx hopx 1700  1. Jul 21:32 fastfetch.txt
+
+./airootfs/etc/skel/.config/gtk-3.0:
+insgesamt 12
+drwxr-xr-x 1 hopx hopx  56 27. Jul 16:04 .
+drwxr-xr-x 1 hopx hopx 170 27. Jul 02:40 ..
+-rw-r--r-- 1 hopx hopx 367 27. Jul 03:23 bookmarks
+-rw-r--r-- 1 hopx hopx  49 27. Jul 03:23 gtk.css
+-rw-r--r-- 1 hopx hopx 478 27. Jul 16:03 settings.ini
+
+./airootfs/etc/skel/.config/gtk-4.0:
+insgesamt 16
+drwxr-xr-x 1 hopx hopx  74 27. Jul 16:04 .
+drwxr-xr-x 1 hopx hopx 170 27. Jul 02:40 ..
+lrwxrwxrwx 1 hopx hopx  67 27. Jul 16:04 assets -> /home/hopx/.local/share/themes/Colloid-Light-Dracula/gtk-4.0/assets
+lrwxrwxrwx 1 hopx hopx  68 27. Jul 16:04 gtk.css -> /home/hopx/.local/share/themes/Colloid-Light-Dracula/gtk-4.0/gtk.css
+lrwxrwxrwx 1 hopx hopx  73 27. Jul 16:04 gtk-dark.css -> /home/hopx/.local/share/themes/Colloid-Light-Dracula/gtk-4.0/gtk-dark.css
+-rw-r--r-- 1 hopx hopx 209 27. Jul 16:03 settings.ini
+
+./airootfs/etc/skel/.config/hypr:
+insgesamt 384
+drwxr-xr-x 1 hopx hopx    274 30. Jul 01:01 .
+drwxr-xr-x 1 hopx hopx    170 27. Jul 02:40 ..
+-rw-r--r-- 1 hopx hopx  40598 30. Jul 01:01 hyprland.lua
+-rw-r--r-- 1 hopx hopx  39803 27. Jul 20:18 hyprland_old.lua
+-rw-r--r-- 1 hopx hopx   1722  9. Jul 18:41 hyprlock.conf
+-rw-r--r-- 1 hopx hopx 282902  9. Jul 18:38 hyprlock.png
+-rw-r--r-- 1 hopx hopx    245 29. Jun 11:37 hyprpaper.conf
+-rwxr-xr-x 1 hopx hopx   4868 25. Jul 15:14 layout_switcher.sh
+-rwxr-xr-x 1 hopx hopx    469  3. Jul 14:44 pip.sh
+-rwxr-xr-x 1 hopx hopx   1180 27. Jul 20:12 random_wallpaper.sh
+drwxr-xr-x 1 hopx hopx    178 15. Jul 00:12 TrafkCursor_Build
+drwxr-xr-x 1 hopx hopx    142 28. Jul 18:53 wallpapers
+
+./airootfs/etc/skel/.config/hypr/TrafkCursor_Build:
+insgesamt 12
+drwxr-xr-x 1 hopx hopx  178 15. Jul 00:12 .
+drwxr-xr-x 1 hopx hopx  274 30. Jul 01:01 ..
+-rw-r--r-- 1 hopx hopx 3733 15. Jul 00:03 build_theme_hyprcursor.sh
+-rw-r--r-- 1 hopx hopx 4116 15. Jul 00:03 build_theme_xcursor.sh
+drwxr-xr-x 1 hopx hopx   80 15. Jul 00:12 Output
+drwxr-xr-x 1 hopx hopx 1048 29. Jun 12:37 TrafkTuxCursorPNGs
+-rw-r--r-- 1 hopx hopx    0 14. Jul 16:29 unterderbruecke.de
+
+./airootfs/etc/skel/.config/hypr/TrafkCursor_Build/Output:
+insgesamt 0
+drwxr-xr-x 1 hopx hopx  80 15. Jul 00:12 .
+drwxr-xr-x 1 hopx hopx 178 15. Jul 00:12 ..
+drwxr-xr-x 1 hopx hopx  44 15. Jul 00:12 theme_TrafkTuxCursor
+drwxr-xr-x 1 hopx hopx  36 15. Jul 00:12 TrafkTuxCursorLegacy
+
+./airootfs/etc/skel/.config/hypr/TrafkCursor_Build/Output/theme_TrafkTuxCursor:
+insgesamt 4
+drwxr-xr-x 1 hopx hopx  44 15. Jul 00:12 .
+drwxr-xr-x 1 hopx hopx  80 15. Jul 00:12 ..
+drwxr-xr-x 1 hopx hopx 202 15. Jul 00:12 hyprcursors
+-rw-r--r-- 1 hopx hopx 117 15. Jul 00:12 manifest.hl
+
+./airootfs/etc/skel/.config/hypr/TrafkCursor_Build/Output/theme_TrafkTuxCursor/hyprcursors:
+insgesamt 344
+drwxr-xr-x 1 hopx hopx    202 15. Jul 00:12 .
+drwxr-xr-x 1 hopx hopx     44 15. Jul 00:12 ..
+-rw-r--r-- 1 hopx hopx   5100 15. Jul 00:12 default.hlc
+-rw-r--r-- 1 hopx hopx   6682 15. Jul 00:12 grab-diagonal.hlc
+-rw-r--r-- 1 hopx hopx   5862 15. Jul 00:12 grab-straight.hlc
+-rw-r--r-- 1 hopx hopx   5514 15. Jul 00:12 link.hlc
+-rw-r--r-- 1 hopx hopx   6056 15. Jul 00:12 not-allowed.hlc
+-rw-r--r-- 1 hopx hopx   6240 15. Jul 00:12 openhand.hlc
+-rw-r--r-- 1 hopx hopx   6763 15. Jul 00:12 text.hlc
+-rw-r--r-- 1 hopx hopx 284703 15. Jul 00:12 wait.hlc
+-rw-r--r-- 1 hopx hopx   5036 15. Jul 00:12 X.hlc
+
+./airootfs/etc/skel/.config/hypr/TrafkCursor_Build/Output/TrafkTuxCursorLegacy:
+insgesamt 4
+drwxr-xr-x 1 hopx hopx   36 15. Jul 00:12 .
+drwxr-xr-x 1 hopx hopx   80 15. Jul 00:12 ..
+drwxr-xr-x 1 hopx hopx 2064 15. Jul 00:12 cursors
+-rw-r--r-- 1 hopx hopx   56 15. Jul 00:12 index.theme
+
+./airootfs/etc/skel/.config/hypr/TrafkCursor_Build/Output/TrafkTuxCursorLegacy/cursors:
+insgesamt 2712
+drwxr-xr-x 1 hopx hopx    2064 15. Jul 00:12 .
+drwxr-xr-x 1 hopx hopx      36 15. Jul 00:12 ..
+lrwxrwxrwx 1 hopx hopx      11 15. Jul 00:11 03b6e0fcb3499374a867c041f52298f0 -> not-allowed
+lrwxrwxrwx 1 hopx hopx       4 15. Jul 00:12 0426c94ea35c87780ff01dc239897213 -> wait
+lrwxrwxrwx 1 hopx hopx       4 15. Jul 00:12 08e8e1c95fe2fc01f976f1e063a24ccd -> wait
+lrwxrwxrwx 1 hopx hopx       7 15. Jul 00:11 alias -> default
+lrwxrwxrwx 1 hopx hopx      13 15. Jul 00:11 all-scroll -> grab-straight
+lrwxrwxrwx 1 hopx hopx       7 15. Jul 00:11 arrow -> default
+lrwxrwxrwx 1 hopx hopx      13 15. Jul 00:11 bd_double_arrow -> grab-diagonal
+lrwxrwxrwx 1 hopx hopx      13 15. Jul 00:11 bottom_left_corner -> grab-diagonal
+lrwxrwxrwx 1 hopx hopx      13 15. Jul 00:11 bottom_right_corner -> grab-diagonal
+lrwxrwxrwx 1 hopx hopx      13 15. Jul 00:11 bottom_side -> grab-straight
+lrwxrwxrwx 1 hopx hopx      13 15. Jul 00:11 bottom_tee -> grab-straight
+lrwxrwxrwx 1 hopx hopx       7 15. Jul 00:11 cell -> default
+lrwxrwxrwx 1 hopx hopx       7 15. Jul 00:11 center_ptr -> default
+lrwxrwxrwx 1 hopx hopx      11 15. Jul 00:11 circle -> not-allowed
+lrwxrwxrwx 1 hopx hopx      13 15. Jul 00:11 closedhand -> grab-straight
+lrwxrwxrwx 1 hopx hopx      13 15. Jul 00:11 col-resize -> grab-straight
+lrwxrwxrwx 1 hopx hopx       7 15. Jul 00:11 context-menu -> default
+lrwxrwxrwx 1 hopx hopx       7 15. Jul 00:11 copy -> default
+lrwxrwxrwx 1 hopx hopx       7 15. Jul 00:11 cross -> default
+lrwxrwxrwx 1 hopx hopx      11 15. Jul 00:11 crossed_circle -> not-allowed
+lrwxrwxrwx 1 hopx hopx       7 15. Jul 00:11 crosshair -> default
+-rw-r--r-- 1 hopx hopx   45304 15. Jul 00:11 default
+lrwxrwxrwx 1 hopx hopx       7 15. Jul 00:11 dnd-copy -> default
+lrwxrwxrwx 1 hopx hopx       7 15. Jul 00:11 dnd-link -> default
+lrwxrwxrwx 1 hopx hopx      13 15. Jul 00:11 dnd-move -> grab-straight
+lrwxrwxrwx 1 hopx hopx      11 15. Jul 00:11 dnd-no-drop -> not-allowed
+lrwxrwxrwx 1 hopx hopx      11 15. Jul 00:11 dnd-none -> not-allowed
+lrwxrwxrwx 1 hopx hopx       7 15. Jul 00:11 dotbox -> default
+lrwxrwxrwx 1 hopx hopx       4 15. Jul 00:11 e29285e634086352946a0e7090d73106 -> link
+lrwxrwxrwx 1 hopx hopx      13 15. Jul 00:11 e-resize -> grab-straight
+lrwxrwxrwx 1 hopx hopx      13 15. Jul 00:11 ew-resize -> grab-straight
+lrwxrwxrwx 1 hopx hopx      13 15. Jul 00:11 fd_double_arrow -> grab-diagonal
+lrwxrwxrwx 1 hopx hopx      13 15. Jul 00:11 fleur -> grab-straight
+lrwxrwxrwx 1 hopx hopx      11 15. Jul 00:11 forbidden -> not-allowed
+lrwxrwxrwx 1 hopx hopx      13 15. Jul 00:11 grab -> grab-straight
+lrwxrwxrwx 1 hopx hopx      13 15. Jul 00:11 grabbing -> grab-straight
+-rw-r--r-- 1 hopx hopx   45304 15. Jul 00:11 grab-diagonal
+-rw-r--r-- 1 hopx hopx   45304 15. Jul 00:11 grab-straight
+lrwxrwxrwx 1 hopx hopx       4 15. Jul 00:12 half-busy -> wait
+lrwxrwxrwx 1 hopx hopx      13 15. Jul 00:11 hand1 -> grab-straight
+lrwxrwxrwx 1 hopx hopx       4 15. Jul 00:11 hand2 -> link
+lrwxrwxrwx 1 hopx hopx       7 15. Jul 00:11 help -> default
+lrwxrwxrwx 1 hopx hopx       4 15. Jul 00:11 ibeam -> text
+lrwxrwxrwx 1 hopx hopx       7 15. Jul 00:11 left_ptr -> default
+lrwxrwxrwx 1 hopx hopx       8 15. Jul 00:11 left_ptr_fallback -> openhand
+lrwxrwxrwx 1 hopx hopx       4 15. Jul 00:12 left_ptr_watch -> wait
+lrwxrwxrwx 1 hopx hopx      13 15. Jul 00:11 left_side -> grab-straight
+lrwxrwxrwx 1 hopx hopx      13 15. Jul 00:11 left_tee -> grab-straight
+-rw-r--r-- 1 hopx hopx   45304 15. Jul 00:11 link
+lrwxrwxrwx 1 hopx hopx      13 15. Jul 00:11 ll_angle -> grab-diagonal
+lrwxrwxrwx 1 hopx hopx      13 15. Jul 00:11 lr_angle -> grab-diagonal
+lrwxrwxrwx 1 hopx hopx      13 15. Jul 00:11 move -> grab-straight
+lrwxrwxrwx 1 hopx hopx      13 15. Jul 00:11 ne-resize -> grab-diagonal
+lrwxrwxrwx 1 hopx hopx      13 15. Jul 00:11 nesw-resize -> grab-diagonal
+lrwxrwxrwx 1 hopx hopx      11 15. Jul 00:11 no-drop -> not-allowed
+-rw-r--r-- 1 hopx hopx   45304 15. Jul 00:11 not-allowed
+lrwxrwxrwx 1 hopx hopx      13 15. Jul 00:11 n-resize -> grab-straight
+lrwxrwxrwx 1 hopx hopx      13 15. Jul 00:11 ns-resize -> grab-straight
+lrwxrwxrwx 1 hopx hopx      13 15. Jul 00:11 nw-resize -> grab-diagonal
+lrwxrwxrwx 1 hopx hopx      13 15. Jul 00:11 nwse-resize -> grab-diagonal
+-rw-r--r-- 1 hopx hopx   45304 15. Jul 00:11 openhand
+lrwxrwxrwx 1 hopx hopx       7 15. Jul 00:11 plus -> default
+lrwxrwxrwx 1 hopx hopx       4 15. Jul 00:11 pointer -> link
+lrwxrwxrwx 1 hopx hopx       4 15. Jul 00:11 pointing_hand -> link
+lrwxrwxrwx 1 hopx hopx       4 15. Jul 00:12 progress -> wait
+lrwxrwxrwx 1 hopx hopx       7 15. Jul 00:11 question_arrow -> default
+lrwxrwxrwx 1 hopx hopx       7 15. Jul 00:11 right_ptr -> default
+lrwxrwxrwx 1 hopx hopx      13 15. Jul 00:11 right_side -> grab-straight
+lrwxrwxrwx 1 hopx hopx      13 15. Jul 00:11 right_tee -> grab-straight
+lrwxrwxrwx 1 hopx hopx      13 15. Jul 00:11 row-resize -> grab-straight
+lrwxrwxrwx 1 hopx hopx      13 15. Jul 00:11 sb_down_arrow -> grab-straight
+lrwxrwxrwx 1 hopx hopx      13 15. Jul 00:11 sb_h_double_arrow -> grab-straight
+lrwxrwxrwx 1 hopx hopx      13 15. Jul 00:11 sb_left_arrow -> grab-straight
+lrwxrwxrwx 1 hopx hopx      13 15. Jul 00:11 sb_right_arrow -> grab-straight
+lrwxrwxrwx 1 hopx hopx      13 15. Jul 00:11 sb_up_arrow -> grab-straight
+lrwxrwxrwx 1 hopx hopx      13 15. Jul 00:11 sb_v_double_arrow -> grab-straight
+lrwxrwxrwx 1 hopx hopx      13 15. Jul 00:11 se-resize -> grab-diagonal
+lrwxrwxrwx 1 hopx hopx      13 15. Jul 00:11 size_bdiag -> grab-diagonal
+lrwxrwxrwx 1 hopx hopx      13 15. Jul 00:11 size_fdiag -> grab-diagonal
+lrwxrwxrwx 1 hopx hopx      13 15. Jul 00:11 size_hor -> grab-straight
+lrwxrwxrwx 1 hopx hopx      13 15. Jul 00:11 size_ver -> grab-straight
+lrwxrwxrwx 1 hopx hopx      13 15. Jul 00:11 split_h -> grab-straight
+lrwxrwxrwx 1 hopx hopx      13 15. Jul 00:11 split_v -> grab-straight
+lrwxrwxrwx 1 hopx hopx      13 15. Jul 00:11 s-resize -> grab-straight
+lrwxrwxrwx 1 hopx hopx      13 15. Jul 00:11 sw-resize -> grab-diagonal
+lrwxrwxrwx 1 hopx hopx       7 15. Jul 00:11 target -> default
+lrwxrwxrwx 1 hopx hopx       7 15. Jul 00:11 tcross -> default
+-rw-r--r-- 1 hopx hopx   45304 15. Jul 00:11 text
+lrwxrwxrwx 1 hopx hopx       7 15. Jul 00:11 top_left_arrow -> default
+lrwxrwxrwx 1 hopx hopx      13 15. Jul 00:11 top_left_corner -> grab-diagonal
+lrwxrwxrwx 1 hopx hopx      13 15. Jul 00:11 top_right_corner -> grab-diagonal
+lrwxrwxrwx 1 hopx hopx      13 15. Jul 00:11 top_side -> grab-straight
+lrwxrwxrwx 1 hopx hopx      13 15. Jul 00:11 top_tee -> grab-straight
+lrwxrwxrwx 1 hopx hopx      13 15. Jul 00:11 ul_angle -> grab-diagonal
+lrwxrwxrwx 1 hopx hopx      13 15. Jul 00:11 ur_angle -> grab-diagonal
+lrwxrwxrwx 1 hopx hopx       4 15. Jul 00:11 vertical-text -> text
+-rw-r--r-- 1 hopx hopx 1992688 15. Jul 00:12 wait
+lrwxrwxrwx 1 hopx hopx       4 15. Jul 00:12 watch -> wait
+lrwxrwxrwx 1 hopx hopx      13 15. Jul 00:11 w-resize -> grab-straight
+-rw-r--r-- 1 hopx hopx   45304 15. Jul 00:11 X
+lrwxrwxrwx 1 hopx hopx       1 15. Jul 00:11 X_cursor -> X
+lrwxrwxrwx 1 hopx hopx       4 15. Jul 00:11 xterm -> text
+lrwxrwxrwx 1 hopx hopx       7 15. Jul 00:11 zoom-in -> default
+lrwxrwxrwx 1 hopx hopx       7 15. Jul 00:11 zoom-out -> default
+
+./airootfs/etc/skel/.config/hypr/TrafkCursor_Build/TrafkTuxCursorPNGs:
+insgesamt 224
+drwxr-xr-x 1 hopx hopx 1048 29. Jun 12:37 .
+drwxr-xr-x 1 hopx hopx  178 15. Jul 00:12 ..
+-rw-r--r-- 1 hopx hopx 3782 26. Jun 12:26 grab-diagonal.png
+-rw-r--r-- 1 hopx hopx 3284 26. Jun 12:26 grab-straight.png
+-rw-r--r-- 1 hopx hopx 3219 26. Jun 12:26 link.png
+-rw-r--r-- 1 hopx hopx 3459 26. Jun 12:26 not-allowed.png
+-rw-r--r-- 1 hopx hopx 3572 26. Jun 12:26 openhand.png
+-rw-r--r-- 1 hopx hopx 2909 26. Jun 12:26 pointer.png
+-rw-r--r-- 1 hopx hopx 3881 26. Jun 12:26 text.png
+-rw-r--r-- 1 hopx hopx 4107 26. Jun 12:26 wait10.png
+-rw-r--r-- 1 hopx hopx 4115 26. Jun 12:26 wait11.png
+-rw-r--r-- 1 hopx hopx 4094 26. Jun 12:26 wait12.png
+-rw-r--r-- 1 hopx hopx 4062 26. Jun 12:26 wait13.png
+-rw-r--r-- 1 hopx hopx 4023 26. Jun 12:26 wait14.png
+-rw-r--r-- 1 hopx hopx 3938 26. Jun 12:26 wait15.png
+-rw-r--r-- 1 hopx hopx 3907 26. Jun 12:26 wait16.png
+-rw-r--r-- 1 hopx hopx 3807 26. Jun 12:26 wait17.png
+-rw-r--r-- 1 hopx hopx 3738 26. Jun 12:26 wait18.png
+-rw-r--r-- 1 hopx hopx 3687 26. Jun 12:26 wait19.png
+-rw-r--r-- 1 hopx hopx 3450 26. Jun 12:26 wait1.png
+-rw-r--r-- 1 hopx hopx 3612 26. Jun 12:26 wait20.png
+-rw-r--r-- 1 hopx hopx 3466 26. Jun 12:26 wait21.png
+-rw-r--r-- 1 hopx hopx 3390 26. Jun 12:26 wait22.png
+-rw-r--r-- 1 hopx hopx 3364 26. Jun 12:26 wait23.png
+-rw-r--r-- 1 hopx hopx 3384 26. Jun 12:26 wait24.png
+-rw-r--r-- 1 hopx hopx 3380 26. Jun 12:26 wait25.png
+-rw-r--r-- 1 hopx hopx 3449 26. Jun 12:26 wait26.png
+-rw-r--r-- 1 hopx hopx 3576 26. Jun 12:26 wait27.png
+-rw-r--r-- 1 hopx hopx 3656 26. Jun 12:26 wait28.png
+-rw-r--r-- 1 hopx hopx 3724 26. Jun 12:26 wait29.png
+-rw-r--r-- 1 hopx hopx 3518 26. Jun 12:26 wait2.png
+-rw-r--r-- 1 hopx hopx 3792 26. Jun 12:26 wait30.png
+-rw-r--r-- 1 hopx hopx 3901 26. Jun 12:26 wait31.png
+-rw-r--r-- 1 hopx hopx 4115 26. Jun 12:26 wait32.png
+-rw-r--r-- 1 hopx hopx 4094 26. Jun 12:26 wait33.png
+-rw-r--r-- 1 hopx hopx 4062 26. Jun 12:26 wait34.png
+-rw-r--r-- 1 hopx hopx 4023 26. Jun 12:26 wait35.png
+-rw-r--r-- 1 hopx hopx 3938 26. Jun 12:26 wait36.png
+-rw-r--r-- 1 hopx hopx 3907 26. Jun 12:26 wait37.png
+-rw-r--r-- 1 hopx hopx 3807 26. Jun 12:26 wait38.png
+-rw-r--r-- 1 hopx hopx 3738 26. Jun 12:26 wait39.png
+-rw-r--r-- 1 hopx hopx 3570 26. Jun 12:26 wait3.png
+-rw-r--r-- 1 hopx hopx 3687 26. Jun 12:26 wait40.png
+-rw-r--r-- 1 hopx hopx 3612 26. Jun 12:26 wait41.png
+-rw-r--r-- 1 hopx hopx 3987 26. Jun 12:26 wait42.png
+-rw-r--r-- 1 hopx hopx 4062 26. Jun 12:26 wait43.png
+-rw-r--r-- 1 hopx hopx 4106 26. Jun 12:26 wait44.png
+-rw-r--r-- 1 hopx hopx 3658 26. Jun 12:26 wait4.png
+-rw-r--r-- 1 hopx hopx 3724 26. Jun 12:26 wait5.png
+-rw-r--r-- 1 hopx hopx 3804 26. Jun 12:26 wait6.png
+-rw-r--r-- 1 hopx hopx 3891 26. Jun 12:26 wait7.png
+-rw-r--r-- 1 hopx hopx 4000 26. Jun 12:26 wait8.png
+-rw-r--r-- 1 hopx hopx 4070 26. Jun 12:26 wait9.png
+-rw-r--r-- 1 hopx hopx 3009 26. Jun 12:26 X.png
+
+./airootfs/etc/skel/.config/hypr/wallpapers:
+insgesamt 14360
+drwxr-xr-x 1 hopx hopx     142 28. Jul 18:53 .
+drwxr-xr-x 1 hopx hopx     274 30. Jul 01:01 ..
+-rw-r--r-- 1 hopx hopx 2284593 22. Jun 19:18 13WorldsBG3.png
+-rw-r--r-- 1 hopx hopx 2141526 28. Jul 18:52 Straßenklippe.png
+-rw-r--r-- 1 hopx hopx 8309408 28. Jul 18:52 Straßenklippe.png.kra
+-rw-r--r-- 1 hopx hopx 1964828 15. Jun 16:42 Trafk Test 4.png
+
+./airootfs/etc/skel/.config/Kvantum:
+insgesamt 4
+drwxr-xr-x 1 hopx hopx  76 27. Jul 16:04 .
+drwxr-xr-x 1 hopx hopx 170 27. Jul 02:40 ..
+-rw-r--r-- 1 hopx hopx  39 27. Jul 15:59 kvantum.kvconfig
+drwxr-xr-x 1 hopx hopx 244 27. Jul 16:04 TrafkTux-Kvantum-Theme
+
+./airootfs/etc/skel/.config/Kvantum/TrafkTux-Kvantum-Theme:
+insgesamt 364
+drwxr-xr-x 1 hopx hopx    244 27. Jul 16:04 .
+drwxr-xr-x 1 hopx hopx     76 27. Jul 16:04 ..
+-rw-r--r-- 1 hopx hopx  10739 27. Jul 03:23 TrafkTux-Kvantum-ThemeDark.kvconfig
+-rw-r--r-- 1 hopx hopx 171953 27. Jul 03:23 TrafkTux-Kvantum-ThemeDark.svg
+-rw-r--r-- 1 hopx hopx  10867 27. Jul 03:23 TrafkTux-Kvantum-Theme.kvconfig
+-rw-r--r-- 1 hopx hopx 172145 27. Jul 03:23 TrafkTux-Kvantum-Theme.svg
+
+./airootfs/etc/skel/.config/nwg-look:
+insgesamt 4
+drwxr-xr-x 1 hopx hopx  12 27. Jul 16:04 .
+drwxr-xr-x 1 hopx hopx 170 27. Jul 02:40 ..
+-rw-r--r-- 1 hopx hopx 279 27. Jul 16:03 config
+
+./airootfs/etc/skel/.config/qt5ct:
+insgesamt 8
+drwxr-xr-x 1 hopx hopx  72 26. Jul 03:16 .
+drwxr-xr-x 1 hopx hopx 170 27. Jul 02:40 ..
+drwxr-xr-x 1 hopx hopx   0 15. Jul 01:39 colors
+drwxr-xr-x 1 hopx hopx   0 15. Jul 01:39 qss
+-rw-r--r-- 1 hopx hopx 840 26. Jul 03:16 qt5ct.conf
+-rw-r--r-- 1 hopx hopx 750 15. Jul 01:38 style-colors.conf
+
+./airootfs/etc/skel/.config/qt5ct/colors:
+insgesamt 0
+drwxr-xr-x 1 hopx hopx  0 15. Jul 01:39 .
+drwxr-xr-x 1 hopx hopx 72 26. Jul 03:16 ..
+
+./airootfs/etc/skel/.config/qt5ct/qss:
+insgesamt 0
+drwxr-xr-x 1 hopx hopx  0 15. Jul 01:39 .
+drwxr-xr-x 1 hopx hopx 72 26. Jul 03:16 ..
+
+./airootfs/etc/skel/.config/qt6ct:
+insgesamt 8
+drwxr-xr-x 1 hopx hopx  72 26. Jul 03:16 .
+drwxr-xr-x 1 hopx hopx 170 27. Jul 02:40 ..
+drwxr-xr-x 1 hopx hopx   0 15. Jul 01:39 colors
+drwxr-xr-x 1 hopx hopx   0 15. Jul 01:39 qss
+-rw-r--r-- 1 hopx hopx 891 26. Jul 03:16 qt6ct.conf
+-rw-r--r-- 1 hopx hopx 783 15. Jul 01:38 style-colors.conf
+
+./airootfs/etc/skel/.config/qt6ct/colors:
+insgesamt 0
+drwxr-xr-x 1 hopx hopx  0 15. Jul 01:39 .
+drwxr-xr-x 1 hopx hopx 72 26. Jul 03:16 ..
+
+./airootfs/etc/skel/.config/qt6ct/qss:
+insgesamt 0
+drwxr-xr-x 1 hopx hopx  0 15. Jul 01:39 .
+drwxr-xr-x 1 hopx hopx 72 26. Jul 03:16 ..
+
+./airootfs/etc/skel/.config/rofi:
+insgesamt 48
+drwxr-xr-x 1 hopx hopx    74 28. Jul 22:06 .
+drwxr-xr-x 1 hopx hopx   170 27. Jul 02:40 ..
+drwxr-xr-x 1 hopx hopx    78 24. Jul 21:39 assets
+-rw-r--r-- 1 hopx hopx 47939 28. Jul 22:06 bubble-menu.py
+drwxr-xr-x 1 hopx hopx    38 28. Jul 23:35 launcher
+drwxr-xr-x 1 hopx hopx    38 25. Jul 17:15 powermenu
+
+./airootfs/etc/skel/.config/rofi/assets:
+insgesamt 756
+drwxr-xr-x 1 hopx hopx     78 24. Jul 21:39 .
+drwxr-xr-x 1 hopx hopx     74 28. Jul 22:06 ..
+-rw-r--r-- 1 hopx hopx 360929 24. Jul 21:39 bubble-normal.png
+-rw-r--r-- 1 hopx hopx 405633 24. Jul 21:37 bubble-selected.png
+drwxr-xr-x 1 hopx hopx     72 24. Jul 21:37 old
+
+./airootfs/etc/skel/.config/rofi/assets/old:
+insgesamt 3372
+drwxr-xr-x 1 hopx hopx      72 24. Jul 21:37 .
+drwxr-xr-x 1 hopx hopx      78 24. Jul 21:39 ..
+-rw-r--r-- 1 hopx hopx 1626031  9. Jul 18:46 bubble-normal.png
+-rw-r--r-- 1 hopx hopx 1825358  9. Jul 18:44 bubble-selected.png
+
+./airootfs/etc/skel/.config/rofi/launcher:
+insgesamt 16
+drwxr-xr-x 1 hopx hopx   38 28. Jul 23:35 .
+drwxr-xr-x 1 hopx hopx   74 28. Jul 22:06 ..
+-rw-r--r-- 1 hopx hopx 4726 28. Jul 23:35 menu.json
+-rw-r--r-- 1 hopx hopx 5513  9. Jul 21:28 theme.rasi
+
+./airootfs/etc/skel/.config/rofi/powermenu:
+insgesamt 8
+drwxr-xr-x 1 hopx hopx   38 25. Jul 17:15 .
+drwxr-xr-x 1 hopx hopx   74 28. Jul 22:06 ..
+-rw-r--r-- 1 hopx hopx 2748 25. Jul 17:15 menu.json
+-rw-r--r-- 1 hopx hopx 2927 25. Jul 01:11 theme.rasi
+
+./airootfs/etc/skel/.config/systemd:
+insgesamt 0
+drwxr-xr-x 1 hopx hopx   8  3. Jul 09:27 .
+drwxr-xr-x 1 hopx hopx 170 27. Jul 02:40 ..
+drwxr-xr-x 1 hopx hopx 132  7. Jul 16:35 user
+
+./airootfs/etc/skel/.config/systemd/user:
+insgesamt 8
+drwxr-xr-x 1 hopx hopx 132  7. Jul 16:35 .
+drwxr-xr-x 1 hopx hopx   8  3. Jul 09:27 ..
+drwxr-xr-x 1 hopx hopx  72  7. Jul 16:31 graphical-session.target.wants
+-rw------- 1 hopx hopx 262  4. Jul 07:28 wb-autohide.service
+-rw------- 1 hopx hopx 340  3. Jul 07:19 wb-daemon.service
+
+./airootfs/etc/skel/.config/systemd/user/graphical-session.target.wants:
+insgesamt 8
+drwxr-xr-x 1 hopx hopx  72  7. Jul 16:31 .
+drwxr-xr-x 1 hopx hopx 132  7. Jul 16:35 ..
+lrwxrwxrwx 1 hopx hopx  22  7. Jul 16:31 wb-autohide.service -> ../wb-autohide.service
+lrwxrwxrwx 1 hopx hopx  20  7. Jul 16:31 wb-daemon.service -> ../wb-daemon.service
+
+./airootfs/etc/skel/.config/Thunar:
+insgesamt 20
+drwxr-xr-x 1 hopx hopx   52 26. Jul 02:17 .
+drwxr-xr-x 1 hopx hopx  170 27. Jul 02:40 ..
+-rw-r--r-- 1 hopx hopx 9137 26. Jul 01:40 accels.scm
+-rw-r--r-- 1 hopx hopx  353 26. Jul 01:37 renamerrc
+-rw------- 1 hopx hopx  391 26. Jul 01:37 uca.xml
+
+./airootfs/etc/skel/.config/waybar:
+insgesamt 16
+drwxr-xr-x 1 hopx hopx   56 28. Jul 22:06 .
+drwxr-xr-x 1 hopx hopx  170 27. Jul 02:40 ..
+-rw-r--r-- 1 hopx hopx 7697 28. Jul 22:06 config.jsonc
+drwxr-xr-x 1 hopx hopx  310 30. Jul 01:00 scripts
+-rw-r--r-- 1 hopx hopx 5721 27. Jul 03:22 style.css
+
+./airootfs/etc/skel/.config/waybar/scripts:
+insgesamt 376
+drwxr-xr-x 1 hopx hopx    310 30. Jul 01:00 .
+drwxr-xr-x 1 hopx hopx     56 28. Jul 22:06 ..
+-rwxr-xr-x 1 hopx hopx   4089 30. Jul 01:00 hideall.sh
+-rwxr-xr-x 1 hopx hopx   1010  4. Jul 11:06 taskbar-click.sh
+-rwxr-xr-x 1 hopx hopx  26992 28. Jul 21:37 waybar_autohide
+-rw-r--r-- 1 hopx hopx  17550 28. Jul 21:37 waybar_autohide.c
+-rwxr-xr-x 1 root root  16336 25. Jul 02:30 wb-power-helper
+-rw------- 1 hopx hopx   3661 24. Jul 23:49 wb-power-helper.c
+-rw-r--r-- 1 hopx hopx   1469 21. Jul 18:12 widgets_client.py
+-rw-r--r-- 1 hopx hopx 154765 29. Jul 14:57 widgets_daemon.py
+-rw-r--r-- 1 hopx hopx 147342 27. Jul 02:02 widgets_daemon_workingbackup.py
+
+./airootfs/etc/skel/.config/xfce4:
+insgesamt 4
+drwxr-xr-x 1 hopx hopx  32 26. Jul 02:18 .
+drwxr-xr-x 1 hopx hopx 170 27. Jul 02:40 ..
+-rw-r--r-- 1 hopx hopx  32 26. Jul 01:37 helpers.rc
+drwxr-xr-x 1 hopx hopx  38 23. Jul 22:49 xfconf
+
+./airootfs/etc/skel/.config/xfce4/xfconf:
+insgesamt 0
+drwxr-xr-x 1 hopx hopx 38 23. Jul 22:49 .
+drwxr-xr-x 1 hopx hopx 32 26. Jul 02:18 ..
+drwxr-xr-x 1 hopx hopx 56 26. Jul 02:18 xfce-perchannel-xml
+
+./airootfs/etc/skel/.config/xfce4/xfconf/xfce-perchannel-xml:
+insgesamt 8
+drwxr-xr-x 1 hopx hopx   56 26. Jul 02:18 .
+drwxr-xr-x 1 hopx hopx   38 23. Jul 22:49 ..
+-rw-r--r-- 1 hopx hopx 1663 26. Jul 02:17 thunar.xml
+-rw-r--r-- 1 hopx hopx  941 26. Jul 02:18 xfce4-terminal.xml
+
+./airootfs/etc/skel/.local:
+insgesamt 0
+drwxr-xr-x 1 hopx hopx  10 29. Jun 12:44 .
+drwxr-xr-x 1 hopx hopx 100 29. Jul 00:33 ..
+
+./airootfs/etc/skel/Vorlagen:
+insgesamt 8
+drwxr-xr-x 1 hopx hopx  58 29. Jul 00:52 .
+drwxr-xr-x 1 hopx hopx 100 29. Jul 00:33 ..
+drwxr-xr-x 1 hopx hopx 186 29. Jul 01:47 Code
+-rw-r--r-- 1 hopx hopx  11 29. Jul 00:50 MD.md
+drwxr-xr-x 1 hopx hopx 128 29. Jul 01:52 Office
+drwxr-xr-x 1 hopx hopx  90 29. Jul 00:59 Picture
+-rw-r--r-- 1 hopx hopx   5 29. Jul 00:50 TXT.txt
+
+./airootfs/etc/skel/Vorlagen/Code:
+insgesamt 16
+drwxr-xr-x 1 hopx hopx 186 29. Jul 01:47 .
+drwxr-xr-x 1 hopx hopx  58 29. Jul 00:52 ..
+-rw-r--r-- 1 hopx hopx  34 29. Jul 00:40 BASH.sh
+drwxr-xr-x 1 hopx hopx  50 29. Jul 01:20 C
+drwxr-xr-x 1 hopx hopx  34 29. Jul 01:37 C#
+drwxr-xr-x 1 hopx hopx 174 29. Jul 01:20 CONFIG-DATABASE
+drwxr-xr-x 1 hopx hopx  58 29. Jul 01:33 CPP
+drwxr-xr-x 1 hopx hopx  22 29. Jul 01:37 GO
+drwxr-xr-x 1 hopx hopx  18 29. Jul 01:36 JAVA
+drwxr-xr-x 1 hopx hopx  50 29. Jul 01:47 KOTLIN
+-rw-r--r-- 1 hopx hopx  23 29. Jul 00:44 LUA.lua
+drwxr-xr-x 1 hopx hopx  36 29. Jul 01:44 PERL
+-rw-r--r-- 1 hopx hopx  27 29. Jul 01:08 POWERSHELL.ps1
+drwxr-xr-x 1 hopx hopx  66 29. Jul 01:34 PYTHON
+drwxr-xr-x 1 hopx hopx  28 29. Jul 01:44 RUBY
+drwxr-xr-x 1 hopx hopx  34 29. Jul 01:38 RUST
+-rw-r--r-- 1 hopx hopx  23 29. Jul 01:08 SWIFT.swift
+drwxr-xr-x 1 hopx hopx 154 29. Jul 01:47 WEB
+
+./airootfs/etc/skel/Vorlagen/Code/C:
+insgesamt 12
+drwxr-xr-x 1 hopx hopx  50 29. Jul 01:20 .
+drwxr-xr-x 1 hopx hopx 186 29. Jul 01:47 ..
+-rw-r--r-- 1 hopx hopx  68 29. Jul 00:42 C.c
+-rw-r--r-- 1 hopx hopx 256 29. Jul 01:13 CMakeLists.txt
+-rw-r--r-- 1 hopx hopx 187 29. Jul 01:13 Makefile
+
+./airootfs/etc/skel/Vorlagen/Code/C#:
+insgesamt 8
+drwxr-xr-x 1 hopx hopx  34 29. Jul 01:37 .
+drwxr-xr-x 1 hopx hopx 186 29. Jul 01:47 ..
+-rw-r--r-- 1 hopx hopx 108 29. Jul 01:37 C#.cs
+-rw-r--r-- 1 hopx hopx 209 29. Jul 01:36 hello.csproj
+
+./airootfs/etc/skel/Vorlagen/Code/CONFIG-DATABASE:
+insgesamt 32
+drwxr-xr-x 1 hopx hopx 174 29. Jul 01:20 .
+drwxr-xr-x 1 hopx hopx 186 29. Jul 01:47 ..
+-rw-r--r-- 1 hopx hopx 129 29. Jul 01:13 CONFIG.conf
+-rw-r--r-- 1 hopx hopx 354 29. Jul 01:13 DB.db
+-rw-r--r-- 1 hopx hopx 189 29. Jul 01:13 DESKTOP.desktop
+drwxr-xr-x 1 hopx hopx 136 29. Jul 01:17 Docker
+-rw-r--r-- 1 hopx hopx 207 29. Jul 01:18 .gitignore
+-rw-r--r-- 1 hopx hopx 101 29. Jul 01:12 INI.ini
+-rw-r--r-- 1 hopx hopx 272 29. Jul 01:12 JSON.json
+-rw-r--r-- 1 hopx hopx 219 29. Jul 01:13 SERVICE.service
+-rw-r--r-- 1 hopx hopx  79 29. Jul 00:49 TOML.toml
+
+./airootfs/etc/skel/Vorlagen/Code/CONFIG-DATABASE/Docker:
+insgesamt 16
+drwxr-xr-x 1 hopx hopx 136 29. Jul 01:17 .
+drwxr-xr-x 1 hopx hopx 174 29. Jul 01:20 ..
+-rw-r--r-- 1 hopx hopx 110 29. Jul 01:17 docker-compose.override.yml
+-rw-r--r-- 1 hopx hopx 183 29. Jul 01:14 docker-compose.yml
+-rw-r--r-- 1 hopx hopx 134 29. Jul 01:14 Dockerfile
+-rw-r--r-- 1 hopx hopx  39 29. Jul 01:17 .dockerignore
+
+./airootfs/etc/skel/Vorlagen/Code/CPP:
+insgesamt 12
+drwxr-xr-x 1 hopx hopx  58 29. Jul 01:33 .
+drwxr-xr-x 1 hopx hopx 186 29. Jul 01:47 ..
+-rw-r--r-- 1 hopx hopx  57 29. Jul 01:33 build.sh
+-rw-r--r-- 1 hopx hopx 150 29. Jul 01:33 CMakeLists.txt
+-rw-r--r-- 1 hopx hopx  97 29. Jul 00:43 CPP.cpp
+
+./airootfs/etc/skel/Vorlagen/Code/GO:
+insgesamt 8
+drwxr-xr-x 1 hopx hopx  22 29. Jul 01:37 .
+drwxr-xr-x 1 hopx hopx 186 29. Jul 01:47 ..
+-rw-r--r-- 1 hopx hopx  77 29. Jul 00:44 GO.go
+-rw-r--r-- 1 hopx hopx  30 29. Jul 01:37 go.mod
+
+./airootfs/etc/skel/Vorlagen/Code/JAVA:
+insgesamt 4
+drwxr-xr-x 1 hopx hopx  18 29. Jul 01:36 .
+drwxr-xr-x 1 hopx hopx 186 29. Jul 01:47 ..
+-rw-r--r-- 1 hopx hopx 118 29. Jul 00:43 JAVA.java
+
+./airootfs/etc/skel/Vorlagen/Code/KOTLIN:
+insgesamt 8
+drwxr-xr-x 1 hopx hopx  50 29. Jul 01:47 .
+drwxr-xr-x 1 hopx hopx 186 29. Jul 01:47 ..
+-rw-r--r-- 1 hopx hopx 162 29. Jul 01:47 build.gradle.kts
+-rw-r--r-- 1 hopx hopx  44 29. Jul 01:07 KOTLIN.kt
+
+./airootfs/etc/skel/Vorlagen/Code/PERL:
+insgesamt 8
+drwxr-xr-x 1 hopx hopx  36 29. Jul 01:44 .
+drwxr-xr-x 1 hopx hopx 186 29. Jul 01:47 ..
+-rw-r--r-- 1 hopx hopx 127 29. Jul 01:44 Makefile.PL
+-rw-r--r-- 1 hopx hopx  67 29. Jul 01:44 PERL.pl
+
+./airootfs/etc/skel/Vorlagen/Code/PYTHON:
+insgesamt 12
+drwxr-xr-x 1 hopx hopx  66 29. Jul 01:34 .
+drwxr-xr-x 1 hopx hopx 186 29. Jul 01:47 ..
+-rw-r--r-- 1 hopx hopx  44 29. Jul 01:34 .gitignore
+-rw-r--r-- 1 hopx hopx 181 29. Jul 01:34 pyproject.toml
+-rw-r--r-- 1 hopx hopx  78 29. Jul 01:34 PYTHON.py
+
+./airootfs/etc/skel/Vorlagen/Code/RUBY:
+insgesamt 8
+drwxr-xr-x 1 hopx hopx  28 29. Jul 01:44 .
+drwxr-xr-x 1 hopx hopx 186 29. Jul 01:47 ..
+-rw-r--r-- 1 hopx hopx  52 29. Jul 01:44 Gemfile
+-rw-r--r-- 1 hopx hopx  21 29. Jul 01:07 RUBY.rb
+
+./airootfs/etc/skel/Vorlagen/Code/RUST:
+insgesamt 8
+drwxr-xr-x 1 hopx hopx  34 29. Jul 01:38 .
+drwxr-xr-x 1 hopx hopx 186 29. Jul 01:47 ..
+-rw-r--r-- 1 hopx hopx  81 29. Jul 01:38 Cargo.toml
+-rw-r--r-- 1 hopx hopx  45 29. Jul 00:45 RUST.rs
+
+./airootfs/etc/skel/Vorlagen/Code/WEB:
+insgesamt 32
+drwxr-xr-x 1 hopx hopx 154 29. Jul 01:47 .
+drwxr-xr-x 1 hopx hopx 186 29. Jul 01:47 ..
+-rw-r--r-- 1 hopx hopx  93 29. Jul 01:11 CSS.css
+-rw-r--r-- 1 hopx hopx 404 28. Jul 22:54 HTML.html
+-rw-r--r-- 1 hopx hopx 109 29. Jul 00:45 JAVASCRIPT.js
+-rw-r--r-- 1 hopx hopx  73 29. Jul 00:46 PHP.php
+-rw-r--r-- 1 hopx hopx 409 29. Jul 01:47 SQL.sql
+drwxr-xr-x 1 hopx hopx  76 29. Jul 01:41 TYPESCRIPT
+-rw-r--r-- 1 hopx hopx 153 29. Jul 00:48 XML.xml
+-rw-r--r-- 1 hopx hopx  61 29. Jul 00:49 YAML.yaml
+-rw-r--r-- 1 hopx hopx  61 29. Jul 00:49 YAML.yml
+
+./airootfs/etc/skel/Vorlagen/Code/WEB/TYPESCRIPT:
+insgesamt 12
+drwxr-xr-x 1 hopx hopx  76 29. Jul 01:41 .
+drwxr-xr-x 1 hopx hopx 154 29. Jul 01:47 ..
+-rw-r--r-- 1 hopx hopx  82 29. Jul 01:41 package.json
+-rw-r--r-- 1 hopx hopx 207 29. Jul 01:40 tsconfig.json
+-rw-r--r-- 1 hopx hopx  59 29. Jul 00:46 TYPESCRIPT.ts
+
+./airootfs/etc/skel/Vorlagen/Office:
+insgesamt 80
+drwxr-xr-x 1 hopx hopx   128 29. Jul 01:52 .
+drwxr-xr-x 1 hopx hopx    58 29. Jul 00:52 ..
+-rw-r--r-- 1 hopx hopx  7061 29. Jul 01:51 EPUB.epub
+drwxr-xr-x 1 hopx hopx   104 29. Jul 01:02 Microsoft
+-rw-r--r-- 1 hopx hopx 53059 29. Jul 00:06 PDF.pdf
+-rw-r--r-- 1 hopx hopx  6645 29. Jul 00:03 PRESENTATION.odp
+-rw-r--r-- 1 hopx hopx  3718 29. Jul 00:04 SPREADSHEET.ods
+-rw-r--r-- 1 hopx hopx  4788 29. Jul 00:05 TEXT.odt
+
+./airootfs/etc/skel/Vorlagen/Office/Microsoft:
+insgesamt 924
+drwxr-xr-x 1 hopx hopx    104 29. Jul 01:02 .
+drwxr-xr-x 1 hopx hopx    128 29. Jul 01:52 ..
+-rw-r--r-- 1 hopx hopx   8535 29. Jul 01:01 ECXEL.xlsx
+-rw-r--r-- 1 hopx hopx  33742 29. Jul 00:03 PRESENTATION.pptx
+-rw-r--r-- 1 hopx hopx 861282 29. Jul 01:01 RTF.rtf
+-rw-r--r-- 1 hopx hopx     12 29. Jul 01:01 TABLE.csv
+-rw-r--r-- 1 hopx hopx  26736 29. Jul 01:02 WORD.docx
+
+./airootfs/etc/skel/Vorlagen/Picture:
+insgesamt 24516
+drwxr-xr-x 1 hopx hopx       90 29. Jul 00:59 .
+drwxr-xr-x 1 hopx hopx       58 29. Jul 00:52 ..
+-rw-r--r-- 1 hopx hopx 24883322 28. Jul 23:43 BMP.bmp
+-rw-r--r-- 1 hopx hopx     1931 29. Jul 00:59 ICO.ico
+-rw-r--r-- 1 hopx hopx   170729 28. Jul 23:51 JPEG.jpg
+-rw-r--r-- 1 hopx hopx    29302 28. Jul 22:56 PNG.png
+-rw-r--r-- 1 hopx hopx     1580 29. Jul 00:16 SVG.svg
+-rw-r--r-- 1 hopx hopx     2776 28. Jul 23:44 WEBP.wepg
+
+./airootfs/etc/sudoers.d:
+insgesamt 4
+drwxr-xr-x 1 hopx hopx  22  5. Jul 12:38 .
+drwxr-xr-x 1 hopx hopx 228 25. Jul 21:33 ..
+-rw-r--r-- 1 hopx hopx  35  5. Jul 11:26 99-liveuser
+
+./airootfs/etc/systemd:
+insgesamt 4
+drwxr-xr-x 1 hopx hopx  134  5. Jul 12:49 .
+drwxr-xr-x 1 hopx hopx  228 25. Jul 21:33 ..
+drwxr-xr-x 1 hopx hopx   42 29. Jun 12:03 journald.conf.d
+-rw-r--r-- 1 hopx hopx 1802  4. Jul 22:57 logind.conf
+drwxr-xr-x 1 hopx hopx   34  5. Jul 12:50 logind.conf.d
+drwxr-xr-x 1 hopx hopx   98 29. Jun 12:03 network
+drwxr-xr-x 1 hopx hopx   56 29. Jun 12:03 networkd.conf.d
+drwxr-xr-x 1 hopx hopx  348 20. Jul 20:36 system
+
+./airootfs/etc/systemd/journald.conf.d:
+insgesamt 4
+drwxr-xr-x 1 hopx hopx  42 29. Jun 12:03 .
+drwxr-xr-x 1 hopx hopx 134  5. Jul 12:49 ..
+-rw-r--r-- 1 hopx hopx  27 29. Jun 12:03 volatile-storage.conf
+
+./airootfs/etc/systemd/logind.conf.d:
+insgesamt 4
+drwxr-xr-x 1 hopx hopx  34  5. Jul 12:50 .
+drwxr-xr-x 1 hopx hopx 134  5. Jul 12:49 ..
+-rw-r--r-- 1 hopx hopx  32  5. Jul 12:50 10-lidswitch.conf
+
+./airootfs/etc/systemd/network:
+insgesamt 12
+drwxr-xr-x 1 hopx hopx  98 29. Jun 12:03 .
+drwxr-xr-x 1 hopx hopx 134  5. Jul 12:49 ..
+-rw-r--r-- 1 hopx hopx 617 29. Jun 12:03 20-ethernet.network
+-rw-r--r-- 1 hopx hopx 570 29. Jun 12:03 20-wlan.network
+-rw-r--r-- 1 hopx hopx 553 29. Jun 12:03 20-wwan.network
+
+./airootfs/etc/systemd/networkd.conf.d:
+insgesamt 4
+drwxr-xr-x 1 hopx hopx  56 29. Jun 12:03 .
+drwxr-xr-x 1 hopx hopx 134  5. Jul 12:49 ..
+-rw-r--r-- 1 hopx hopx  36 29. Jun 12:03 ipv6-privacy-extensions.conf
+
+./airootfs/etc/systemd/system:
+insgesamt 16
+drwxr-xr-x 1 hopx hopx 348 20. Jul 20:36 .
+drwxr-xr-x 1 hopx hopx 134  5. Jul 12:49 ..
+lrwxrwxrwx 1 hopx hopx  44 29. Jun 12:03 dbus-org.freedesktop.ModemManager1.service -> /usr/lib/systemd/system/ModemManager.service
+lrwxrwxrwx 1 hopx hopx  48 29. Jun 12:03 dbus-org.freedesktop.network1.service -> /usr/lib/systemd/system/systemd-networkd.service
+lrwxrwxrwx 1 hopx hopx  48 29. Jun 12:03 dbus-org.freedesktop.resolve1.service -> /usr/lib/systemd/system/systemd-resolved.service
+lrwxrwxrwx 1 hopx hopx  49 29. Jun 12:03 dbus-org.freedesktop.timesync1.service -> /usr/lib/systemd/system/systemd-timesyncd.service
+drwxr-xr-x 1 hopx hopx  28  5. Jul 12:38 getty@tty1.service.d
+
+./airootfs/etc/systemd/system/getty@tty1.service.d:
+insgesamt 4
+drwxr-xr-x 1 hopx hopx  28  5. Jul 12:38 .
+drwxr-xr-x 1 hopx hopx 348 20. Jul 20:36 ..
+-rw-r--r-- 1 hopx hopx  88  5. Jul 11:26 autologin.conf
+
+./airootfs/etc/udev:
+insgesamt 0
+drwxr-xr-x 1 hopx hopx  14 23. Jul 22:28 .
+drwxr-xr-x 1 hopx hopx 228 25. Jul 21:33 ..
+drwxr-xr-x 1 hopx hopx  40 23. Jul 22:28 rules.d
+
+./airootfs/etc/udev/rules.d:
+insgesamt 4
+drwxr-xr-x 1 hopx hopx  40 23. Jul 22:28 .
+drwxr-xr-x 1 hopx hopx  14 23. Jul 22:28 ..
+-rw------- 1 hopx hopx 607 23. Jul 20:24 45-ddcutil-i2c.rules
+
+./airootfs/etc/xdg:
+insgesamt 0
+drwxr-xr-x 1 hopx hopx  14 25. Jul 21:34 .
+drwxr-xr-x 1 hopx hopx 228 25. Jul 21:33 ..
+drwxr-xr-x 1 hopx hopx  20 25. Jul 21:34 tumbler
+
+./airootfs/etc/xdg/tumbler:
+insgesamt 4
+drwxr-xr-x 1 hopx hopx   20 25. Jul 21:34 .
+drwxr-xr-x 1 hopx hopx   14 25. Jul 21:34 ..
+-rw-r--r-- 1 hopx hopx 3592 25. Jul 21:33 tumbler.rc
+
+./airootfs/opt:
+insgesamt 0
+drwxr-xr-x 1 hopx hopx   68 11. Jul 13:59 .
+drwxr-xr-x 1 hopx hopx   18  5. Jul 12:27 ..
+drwxr-xr-x 1 hopx hopx  158 11. Jul 13:58 trafktux-hyprpm-cache
+drwxr-xr-x 1 hopx hopx 1200 11. Jul 14:03 trafktux-repo
+
+./airootfs/opt/trafktux-hyprpm-cache:
+insgesamt 4
+drwxr-xr-x 1 hopx hopx 158 11. Jul 13:58 .
+drwxr-xr-x 1 hopx hopx  68 11. Jul 13:59 ..
+drwxr-xr-x 1 hopx hopx  56 11. Jul 13:59 dynamic-cursors
+drwxr-xr-x 1 hopx hopx  24 22. Jun 13:06 headersRoot
+drwxr-xr-x 1 hopx hopx  44 11. Jul 13:59 HyprGlass
+drwxr-xr-x 1 hopx hopx 124 11. Jul 13:59 hyprgrass
+drwxr-xr-x 1 hopx hopx 142 11. Jul 13:59 hyprland-plugins
+drwxr-xr-x 1 hopx hopx  44 11. Jul 13:59 Hyprspace
+-rw-r--r-- 1 hopx hopx 120 11. Jul 13:58 state.toml
+
+./airootfs/opt/trafktux-hyprpm-cache/dynamic-cursors:
+insgesamt 16608
+drwxr-xr-x 1 hopx hopx       56 11. Jul 13:59 .
+drwxr-xr-x 1 hopx hopx      158 11. Jul 13:58 ..
+-rwxr-xr-x 1 hopx hopx 17002488 10. Jul 22:44 dynamic-cursors.so
+-rw-r--r-- 1 hopx hopx      254 11. Jul 13:59 state.toml
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot:
+insgesamt 0
+drwxr-xr-x 1 hopx hopx  24 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx 158 11. Jul 13:58 ..
+drwxr-xr-x 1 hopx hopx  16 22. Jun 13:06 include
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include:
+insgesamt 0
+drwxr-xr-x 1 hopx hopx 16 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx 24 22. Jun 13:06 ..
+drwxr-xr-x 1 hopx hopx 24 22. Jun 13:06 hyprland
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland:
+insgesamt 0
+drwxr-xr-x 1 hopx hopx   24 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx   16 22. Jun 13:06 ..
+drwxr-xr-x 1 hopx hopx 3128 22. Jun 13:06 protocols
+drwxr-xr-x 1 hopx hopx  372 22. Jun 13:06 src
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/protocols:
+insgesamt 648
+drwxr-xr-x 1 hopx hopx  3128 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx    24 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx  5727 22. Jun 13:06 alpha-modifier-v1.hpp
+-rw-r--r-- 1 hopx hopx 29748 22. Jun 13:06 color-management-v1.hpp
+-rw-r--r-- 1 hopx hopx  5820 22. Jun 13:06 commit-timing-v1.hpp
+-rw-r--r-- 1 hopx hopx  5848 22. Jun 13:06 content-type-v1.hpp
+-rw-r--r-- 1 hopx hopx  7834 22. Jun 13:06 cursor-shape-v1.hpp
+-rw-r--r-- 1 hopx hopx 10042 22. Jun 13:06 drm-lease-v1.hpp
+-rw-r--r-- 1 hopx hopx 10915 22. Jun 13:06 ext-data-control-v1.hpp
+-rw-r--r-- 1 hopx hopx  6046 22. Jun 13:06 ext-foreign-toplevel-list-v1.hpp
+-rw-r--r-- 1 hopx hopx  5752 22. Jun 13:06 ext-idle-notify-v1.hpp
+-rw-r--r-- 1 hopx hopx  8060 22. Jun 13:06 ext-image-capture-source-v1.hpp
+-rw-r--r-- 1 hopx hopx 13011 22. Jun 13:06 ext-image-copy-capture-v1.hpp
+-rw-r--r-- 1 hopx hopx  8420 22. Jun 13:06 ext-session-lock-v1.hpp
+-rw-r--r-- 1 hopx hopx 10119 22. Jun 13:06 ext-workspace-v1.hpp
+-rw-r--r-- 1 hopx hopx  5483 22. Jun 13:06 fifo-v1.hpp
+-rw-r--r-- 1 hopx hopx  5654 22. Jun 13:06 fractional-scale-v1.hpp
+-rw-r--r-- 1 hopx hopx  4556 22. Jun 13:06 hyprland-ctm-control-v1.hpp
+-rw-r--r-- 1 hopx hopx  6306 22. Jun 13:06 hyprland-focus-grab-v1.hpp
+-rw-r--r-- 1 hopx hopx  6423 22. Jun 13:06 hyprland-global-shortcuts-v1.hpp
+-rw-r--r-- 1 hopx hopx  5978 22. Jun 13:06 hyprland-lock-notify-v1.hpp
+-rw-r--r-- 1 hopx hopx  6378 22. Jun 13:06 hyprland-surface-v1.hpp
+-rw-r--r-- 1 hopx hopx  7572 22. Jun 13:06 hyprland-toplevel-export-v1.hpp
+-rw-r--r-- 1 hopx hopx  6654 22. Jun 13:06 hyprland-toplevel-mapping-v1.hpp
+-rw-r--r-- 1 hopx hopx  5407 22. Jun 13:06 idle-inhibit-unstable-v1.hpp
+-rw-r--r-- 1 hopx hopx 11579 22. Jun 13:06 input-method-unstable-v2.hpp
+-rw-r--r-- 1 hopx hopx  5150 22. Jun 13:06 kde-server-decoration.hpp
+-rw-r--r-- 1 hopx hopx  6044 22. Jun 13:06 keyboard-shortcuts-inhibit-unstable-v1.hpp
+-rw-r--r-- 1 hopx hopx 10278 22. Jun 13:06 linux-dmabuf-v1.hpp
+-rw-r--r-- 1 hopx hopx  8826 22. Jun 13:06 linux-drm-syncobj-v1.hpp
+-rw-r--r-- 1 hopx hopx  8766 22. Jun 13:06 pointer-constraints-unstable-v1.hpp
+-rw-r--r-- 1 hopx hopx 10634 22. Jun 13:06 pointer-gestures-unstable-v1.hpp
+-rw-r--r-- 1 hopx hopx  3659 22. Jun 13:06 pointer-warp-v1.hpp
+-rw-r--r-- 1 hopx hopx  6009 22. Jun 13:06 presentation-time.hpp
+-rw-r--r-- 1 hopx hopx 10641 22. Jun 13:06 primary-selection-unstable-v1.hpp
+-rw-r--r-- 1 hopx hopx  5725 22. Jun 13:06 relative-pointer-unstable-v1.hpp
+-rw-r--r-- 1 hopx hopx  6352 22. Jun 13:06 security-context-v1.hpp
+-rw-r--r-- 1 hopx hopx  3716 22. Jun 13:06 single-pixel-buffer-v1.hpp
+-rw-r--r-- 1 hopx hopx 24308 22. Jun 13:06 tablet-v2.hpp
+-rw-r--r-- 1 hopx hopx  5907 22. Jun 13:06 tearing-control-v1.hpp
+-rw-r--r-- 1 hopx hopx 10185 22. Jun 13:06 text-input-unstable-v1.hpp
+-rw-r--r-- 1 hopx hopx 10141 22. Jun 13:06 text-input-unstable-v3.hpp
+-rw-r--r-- 1 hopx hopx  5725 22. Jun 13:06 viewporter.hpp
+-rw-r--r-- 1 hopx hopx  6243 22. Jun 13:06 virtual-keyboard-unstable-v1.hpp
+-rw-r--r-- 1 hopx hopx  7086 22. Jun 13:06 wayland-drm.hpp
+-rw-r--r-- 1 hopx hopx 54042 22. Jun 13:06 wayland.hpp
+-rw-r--r-- 1 hopx hopx 10966 22. Jun 13:06 wlr-data-control-unstable-v1.hpp
+-rw-r--r-- 1 hopx hopx  8058 22. Jun 13:06 wlr-foreign-toplevel-management-unstable-v1.hpp
+-rw-r--r-- 1 hopx hopx  5855 22. Jun 13:06 wlr-gamma-control-unstable-v1.hpp
+-rw-r--r-- 1 hopx hopx  8305 22. Jun 13:06 wlr-layer-shell-unstable-v1.hpp
+-rw-r--r-- 1 hopx hopx 15074 22. Jun 13:06 wlr-output-management-unstable-v1.hpp
+-rw-r--r-- 1 hopx hopx  5906 22. Jun 13:06 wlr-output-power-management-unstable-v1.hpp
+-rw-r--r-- 1 hopx hopx  7062 22. Jun 13:06 wlr-screencopy-unstable-v1.hpp
+-rw-r--r-- 1 hopx hopx  7314 22. Jun 13:06 wlr-virtual-pointer-unstable-v1.hpp
+-rw-r--r-- 1 hopx hopx  6280 22. Jun 13:06 xdg-activation-v1.hpp
+-rw-r--r-- 1 hopx hopx  6343 22. Jun 13:06 xdg-decoration-unstable-v1.hpp
+-rw-r--r-- 1 hopx hopx  5430 22. Jun 13:06 xdg-dialog-v1.hpp
+-rw-r--r-- 1 hopx hopx  9305 22. Jun 13:06 xdg-foreign-unstable-v2.hpp
+-rw-r--r-- 1 hopx hopx  5629 22. Jun 13:06 xdg-output-unstable-v1.hpp
+-rw-r--r-- 1 hopx hopx 18929 22. Jun 13:06 xdg-shell.hpp
+-rw-r--r-- 1 hopx hopx  3431 22. Jun 13:06 xdg-system-bell-v1.hpp
+-rw-r--r-- 1 hopx hopx  3812 22. Jun 13:06 xdg-toplevel-tag-v1.hpp
+-rw-r--r-- 1 hopx hopx  5644 22. Jun 13:06 xwayland-shell-v1.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src:
+insgesamt 40
+drwxr-xr-x 1 hopx hopx   372 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx    24 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx 11627 22. Jun 13:06 Compositor.hpp
+drwxr-xr-x 1 hopx hopx   132 22. Jun 13:06 config
+drwxr-xr-x 1 hopx hopx    92 22. Jun 13:06 debug
+-rw-r--r-- 1 hopx hopx   277 22. Jun 13:06 defines.hpp
+drwxr-xr-x 1 hopx hopx   124 22. Jun 13:06 desktop
+drwxr-xr-x 1 hopx hopx   252 22. Jun 13:06 devices
+drwxr-xr-x 1 hopx hopx    22 22. Jun 13:06 errorOverlay
+drwxr-xr-x 1 hopx hopx    24 22. Jun 13:06 event
+drwxr-xr-x 1 hopx hopx   734 22. Jun 13:06 helpers
+drwxr-xr-x 1 hopx hopx    20 22. Jun 13:06 i18n
+-rw-r--r-- 1 hopx hopx   618 22. Jun 13:06 includes.hpp
+drwxr-xr-x 1 hopx hopx    30 22. Jun 13:06 init
+drwxr-xr-x 1 hopx hopx   100 22. Jun 13:06 layout
+-rw-r--r-- 1 hopx hopx 10754 22. Jun 13:06 macros.hpp
+drwxr-xr-x 1 hopx hopx   614 22. Jun 13:06 managers
+drwxr-xr-x 1 hopx hopx   112 22. Jun 13:06 notification
+drwxr-xr-x 1 hopx hopx    14 22. Jun 13:06 pch
+drwxr-xr-x 1 hopx hopx    86 22. Jun 13:06 plugins
+drwxr-xr-x 1 hopx hopx  2010 22. Jun 13:06 protocols
+drwxr-xr-x 1 hopx hopx   426 22. Jun 13:06 render
+-rw-r--r-- 1 hopx hopx  1915 22. Jun 13:06 SharedDefs.hpp
+-rw-r--r-- 1 hopx hopx   659 22. Jun 13:06 version.h
+drwxr-xr-x 1 hopx hopx   126 22. Jun 13:06 xwayland
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/config:
+insgesamt 8
+drwxr-xr-x 1 hopx hopx  132 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx  372 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx 2972 22. Jun 13:06 ConfigManager.hpp
+-rw-r--r-- 1 hopx hopx 2774 22. Jun 13:06 ConfigValue.hpp
+drwxr-xr-x 1 hopx hopx  116 22. Jun 13:06 legacy
+drwxr-xr-x 1 hopx hopx  214 22. Jun 13:06 lua
+drwxr-xr-x 1 hopx hopx  164 22. Jun 13:06 shared
+drwxr-xr-x 1 hopx hopx   54 22. Jun 13:06 supplementary
+drwxr-xr-x 1 hopx hopx   42 22. Jun 13:06 values
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/config/legacy:
+insgesamt 20
+drwxr-xr-x 1 hopx hopx  116 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx  132 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx 8548 22. Jun 13:06 ConfigManager.hpp
+-rw-r--r-- 1 hopx hopx  639 22. Jun 13:06 DefaultConfig.hpp
+-rw-r--r-- 1 hopx hopx  567 22. Jun 13:06 DispatcherTranslator.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/config/lua:
+insgesamt 28
+drwxr-xr-x 1 hopx hopx  214 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx  132 22. Jun 13:06 ..
+drwxr-xr-x 1 hopx hopx   64 22. Jun 13:06 bindings
+-rw-r--r-- 1 hopx hopx 9445 22. Jun 13:06 ConfigManager.hpp
+-rw-r--r-- 1 hopx hopx  656 22. Jun 13:06 DefaultConfig.hpp
+-rw-r--r-- 1 hopx hopx 1069 22. Jun 13:06 Emergency.hpp
+drwxr-xr-x 1 hopx hopx  120 22. Jun 13:06 layout
+-rw-r--r-- 1 hopx hopx  198 22. Jun 13:06 LuaBindings.hpp
+-rw-r--r-- 1 hopx hopx 2427 22. Jun 13:06 LuaEventHandler.hpp
+drwxr-xr-x 1 hopx hopx  392 22. Jun 13:06 objects
+drwxr-xr-x 1 hopx hopx  462 22. Jun 13:06 types
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/config/lua/bindings:
+insgesamt 20
+drwxr-xr-x 1 hopx hopx    64 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx   214 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx   451 22. Jun 13:06 Check.hpp
+-rw-r--r-- 1 hopx hopx 15706 22. Jun 13:06 LuaBindingsInternal.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/config/lua/layout:
+insgesamt 12
+drwxr-xr-x 1 hopx hopx  120 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx  214 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx  446 22. Jun 13:06 LuaLayoutContext.hpp
+-rw-r--r-- 1 hopx hopx 2460 22. Jun 13:06 LuaLayoutProvider.hpp
+-rw-r--r-- 1 hopx hopx  322 22. Jun 13:06 LuaLayoutTarget.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/config/lua/objects:
+insgesamt 48
+drwxr-xr-x 1 hopx hopx  392 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx  214 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx  332 22. Jun 13:06 LuaEventSubscription.hpp
+-rw-r--r-- 1 hopx hopx  311 22. Jun 13:06 LuaGroup.hpp
+-rw-r--r-- 1 hopx hopx  321 22. Jun 13:06 LuaKeybind.hpp
+-rw-r--r-- 1 hopx hopx  346 22. Jun 13:06 LuaLayerRule.hpp
+-rw-r--r-- 1 hopx hopx  304 22. Jun 13:06 LuaLayerSurface.hpp
+-rw-r--r-- 1 hopx hopx  305 22. Jun 13:06 LuaMonitor.hpp
+-rw-r--r-- 1 hopx hopx  359 22. Jun 13:06 LuaNotification.hpp
+-rw-r--r-- 1 hopx hopx 1353 22. Jun 13:06 LuaObjectHelpers.hpp
+-rw-r--r-- 1 hopx hopx  349 22. Jun 13:06 LuaTimer.hpp
+-rw-r--r-- 1 hopx hopx  301 22. Jun 13:06 LuaWindow.hpp
+-rw-r--r-- 1 hopx hopx  350 22. Jun 13:06 LuaWindowRule.hpp
+-rw-r--r-- 1 hopx hopx  368 22. Jun 13:06 LuaWorkspace.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/config/lua/types:
+insgesamt 48
+drwxr-xr-x 1 hopx hopx  462 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx  214 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx  737 22. Jun 13:06 LuaConfigBool.hpp
+-rw-r--r-- 1 hopx hopx  742 22. Jun 13:06 LuaConfigColor.hpp
+-rw-r--r-- 1 hopx hopx  909 22. Jun 13:06 LuaConfigCssGap.hpp
+-rw-r--r-- 1 hopx hopx  782 22. Jun 13:06 LuaConfigExpressionVec2.hpp
+-rw-r--r-- 1 hopx hopx  941 22. Jun 13:06 LuaConfigFloat.hpp
+-rw-r--r-- 1 hopx hopx  813 22. Jun 13:06 LuaConfigFontWeight.hpp
+-rw-r--r-- 1 hopx hopx  746 22. Jun 13:06 LuaConfigGradient.hpp
+-rw-r--r-- 1 hopx hopx 1268 22. Jun 13:06 LuaConfigInt.hpp
+-rw-r--r-- 1 hopx hopx 1181 22. Jun 13:06 LuaConfigString.hpp
+-rw-r--r-- 1 hopx hopx  231 22. Jun 13:06 LuaConfigUtils.hpp
+-rw-r--r-- 1 hopx hopx 1690 22. Jun 13:06 LuaConfigValue.hpp
+-rw-r--r-- 1 hopx hopx 1154 22. Jun 13:06 LuaConfigVec2.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/config/shared:
+insgesamt 8
+drwxr-xr-x 1 hopx hopx  164 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx  132 22. Jun 13:06 ..
+drwxr-xr-x 1 hopx hopx   34 22. Jun 13:06 actions
+drwxr-xr-x 1 hopx hopx   34 22. Jun 13:06 animation
+drwxr-xr-x 1 hopx hopx   78 22. Jun 13:06 complex
+-rw-r--r-- 1 hopx hopx 2341 22. Jun 13:06 ConfigErrors.hpp
+drwxr-xr-x 1 hopx hopx   34 22. Jun 13:06 inotify
+drwxr-xr-x 1 hopx hopx   94 22. Jun 13:06 monitor
+drwxr-xr-x 1 hopx hopx   30 22. Jun 13:06 parserUtils
+-rw-r--r-- 1 hopx hopx  486 22. Jun 13:06 Types.hpp
+drwxr-xr-x 1 hopx hopx   82 22. Jun 13:06 workspace
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/config/shared/actions:
+insgesamt 8
+drwxr-xr-x 1 hopx hopx   34 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx  164 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx 6687 22. Jun 13:06 ConfigActions.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/config/shared/animation:
+insgesamt 4
+drwxr-xr-x 1 hopx hopx  34 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx 164 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx 889 22. Jun 13:06 AnimationTree.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/config/shared/complex:
+insgesamt 12
+drwxr-xr-x 1 hopx hopx   78 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx  164 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx  481 22. Jun 13:06 ComplexDataType.hpp
+-rw-r--r-- 1 hopx hopx 6116 22. Jun 13:06 ComplexDataTypes.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/config/shared/inotify:
+insgesamt 4
+drwxr-xr-x 1 hopx hopx   34 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx  164 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx 1100 22. Jun 13:06 ConfigWatcher.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/config/shared/monitor:
+insgesamt 12
+drwxr-xr-x 1 hopx hopx   94 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx  164 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx 2664 22. Jun 13:06 MonitorRule.hpp
+-rw-r--r-- 1 hopx hopx 1167 22. Jun 13:06 MonitorRuleManager.hpp
+-rw-r--r-- 1 hopx hopx 1360 22. Jun 13:06 Parser.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/config/shared/parserUtils:
+insgesamt 4
+drwxr-xr-x 1 hopx hopx  30 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx 164 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx 252 22. Jun 13:06 ParserUtils.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/config/shared/workspace:
+insgesamt 8
+drwxr-xr-x 1 hopx hopx   82 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx  164 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx 1846 22. Jun 13:06 WorkspaceRule.hpp
+-rw-r--r-- 1 hopx hopx 1064 22. Jun 13:06 WorkspaceRuleManager.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/config/supplementary:
+insgesamt 0
+drwxr-xr-x 1 hopx hopx  54 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx 132 22. Jun 13:06 ..
+drwxr-xr-x 1 hopx hopx  24 22. Jun 13:06 executor
+drwxr-xr-x 1 hopx hopx  20 22. Jun 13:06 jeremy
+drwxr-xr-x 1 hopx hopx  34 22. Jun 13:06 propRefresher
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/config/supplementary/executor:
+insgesamt 4
+drwxr-xr-x 1 hopx hopx   24 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx   54 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx 1697 22. Jun 13:06 Executor.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/config/supplementary/jeremy:
+insgesamt 4
+drwxr-xr-x 1 hopx hopx  20 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx  54 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx 530 22. Jun 13:06 Jeremy.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/config/supplementary/propRefresher:
+insgesamt 4
+drwxr-xr-x 1 hopx hopx   34 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx   54 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx 1096 22. Jun 13:06 PropRefresher.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/config/values:
+insgesamt 8
+drwxr-xr-x 1 hopx hopx   42 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx  132 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx 5506 22. Jun 13:06 ConfigValues.hpp
+drwxr-xr-x 1 hopx hopx  284 22. Jun 13:06 types
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/config/values/types:
+insgesamt 40
+drwxr-xr-x 1 hopx hopx  284 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx   42 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx  759 22. Jun 13:06 BoolValue.hpp
+-rw-r--r-- 1 hopx hopx  769 22. Jun 13:06 ColorValue.hpp
+-rw-r--r-- 1 hopx hopx 1047 22. Jun 13:06 CssGapValue.hpp
+-rw-r--r-- 1 hopx hopx  969 22. Jun 13:06 FloatValue.hpp
+-rw-r--r-- 1 hopx hopx  921 22. Jun 13:06 FontWeightValue.hpp
+-rw-r--r-- 1 hopx hopx  868 22. Jun 13:06 GradientValue.hpp
+-rw-r--r-- 1 hopx hopx 1481 22. Jun 13:06 IntValue.hpp
+-rw-r--r-- 1 hopx hopx  796 22. Jun 13:06 IValue.hpp
+-rw-r--r-- 1 hopx hopx 1233 22. Jun 13:06 StringValue.hpp
+-rw-r--r-- 1 hopx hopx 1211 22. Jun 13:06 Vec2Value.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/debug:
+insgesamt 12
+drwxr-xr-x 1 hopx hopx   92 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx  372 22. Jun 13:06 ..
+drwxr-xr-x 1 hopx hopx   62 22. Jun 13:06 crash
+-rw-r--r-- 1 hopx hopx 2078 22. Jun 13:06 HyprCtl.hpp
+drwxr-xr-x 1 hopx hopx   60 22. Jun 13:06 log
+-rw-r--r-- 1 hopx hopx 3088 22. Jun 13:06 Overlay.hpp
+-rw-r--r-- 1 hopx hopx  570 22. Jun 13:06 TracyDefines.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/debug/crash:
+insgesamt 12
+drwxr-xr-x 1 hopx hopx   62 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx   92 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx   80 22. Jun 13:06 CrashReporter.hpp
+-rw-r--r-- 1 hopx hopx 5308 22. Jun 13:06 SignalSafe.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/debug/log:
+insgesamt 8
+drwxr-xr-x 1 hopx hopx   60 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx   92 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx 2165 22. Jun 13:06 Logger.hpp
+-rw-r--r-- 1 hopx hopx 2504 22. Jun 13:06 RollingLogFollow.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/desktop:
+insgesamt 8
+drwxr-xr-x 1 hopx hopx  124 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx  372 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx  782 22. Jun 13:06 DesktopTypes.hpp
+drwxr-xr-x 1 hopx hopx  102 22. Jun 13:06 history
+drwxr-xr-x 1 hopx hopx   32 22. Jun 13:06 reserved
+drwxr-xr-x 1 hopx hopx  156 22. Jun 13:06 rule
+drwxr-xr-x 1 hopx hopx   56 22. Jun 13:06 state
+drwxr-xr-x 1 hopx hopx   86 22. Jun 13:06 types
+drwxr-xr-x 1 hopx hopx  230 22. Jun 13:06 view
+-rw-r--r-- 1 hopx hopx 3352 22. Jun 13:06 Workspace.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/desktop/history:
+insgesamt 8
+drwxr-xr-x 1 hopx hopx  102 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx  124 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx  874 22. Jun 13:06 WindowHistoryTracker.hpp
+-rw-r--r-- 1 hopx hopx 1633 22. Jun 13:06 WorkspaceHistoryTracker.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/desktop/reserved:
+insgesamt 4
+drwxr-xr-x 1 hopx hopx   32 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx  124 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx 1443 22. Jun 13:06 ReservedArea.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/desktop/rule:
+insgesamt 12
+drwxr-xr-x 1 hopx hopx  156 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx  124 22. Jun 13:06 ..
+drwxr-xr-x 1 hopx hopx   38 22. Jun 13:06 effect
+-rw-r--r-- 1 hopx hopx  707 22. Jun 13:06 Engine.hpp
+drwxr-xr-x 1 hopx hopx  128 22. Jun 13:06 layerRule
+drwxr-xr-x 1 hopx hopx  228 22. Jun 13:06 matchEngine
+-rw-r--r-- 1 hopx hopx 3505 22. Jun 13:06 Rule.hpp
+-rw-r--r-- 1 hopx hopx 1711 22. Jun 13:06 RuleWithEffects.hpp
+drwxr-xr-x 1 hopx hopx   24 22. Jun 13:06 utils
+drwxr-xr-x 1 hopx hopx  134 22. Jun 13:06 windowRule
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/desktop/rule/effect:
+insgesamt 4
+drwxr-xr-x 1 hopx hopx   38 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx  156 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx 2483 22. Jun 13:06 EffectContainer.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/desktop/rule/layerRule:
+insgesamt 12
+drwxr-xr-x 1 hopx hopx  128 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx  156 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx 3844 22. Jun 13:06 LayerRuleApplicator.hpp
+-rw-r--r-- 1 hopx hopx  881 22. Jun 13:06 LayerRuleEffectContainer.hpp
+-rw-r--r-- 1 hopx hopx 1125 22. Jun 13:06 LayerRule.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/desktop/rule/matchEngine:
+insgesamt 24
+drwxr-xr-x 1 hopx hopx 228 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx 156 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx 321 22. Jun 13:06 BoolMatchEngine.hpp
+-rw-r--r-- 1 hopx hopx 312 22. Jun 13:06 IntMatchEngine.hpp
+-rw-r--r-- 1 hopx hopx 662 22. Jun 13:06 MatchEngine.hpp
+-rw-r--r-- 1 hopx hopx 483 22. Jun 13:06 RegexMatchEngine.hpp
+-rw-r--r-- 1 hopx hopx 352 22. Jun 13:06 TagMatchEngine.hpp
+-rw-r--r-- 1 hopx hopx 364 22. Jun 13:06 WorkspaceMatchEngine.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/desktop/rule/utils:
+insgesamt 4
+drwxr-xr-x 1 hopx hopx  24 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx 156 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx 386 22. Jun 13:06 SetUtils.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/desktop/rule/windowRule:
+insgesamt 20
+drwxr-xr-x 1 hopx hopx  134 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx  156 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx 9712 22. Jun 13:06 WindowRuleApplicator.hpp
+-rw-r--r-- 1 hopx hopx 2707 22. Jun 13:06 WindowRuleEffectContainer.hpp
+-rw-r--r-- 1 hopx hopx 2468 22. Jun 13:06 WindowRule.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/desktop/state:
+insgesamt 8
+drwxr-xr-x 1 hopx hopx   56 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx  124 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx 1678 22. Jun 13:06 FloatState.hpp
+-rw-r--r-- 1 hopx hopx 2057 22. Jun 13:06 FocusState.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/desktop/types:
+insgesamt 16
+drwxr-xr-x 1 hopx hopx   86 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx  124 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx 4958 22. Jun 13:06 MultiAnimatedVariable.hpp
+-rw-r--r-- 1 hopx hopx 5433 22. Jun 13:06 OverridableVar.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/desktop/view:
+insgesamt 60
+drwxr-xr-x 1 hopx hopx   230 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx   124 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx   177 22. Jun 13:06 GlobalViewMethods.hpp
+-rw-r--r-- 1 hopx hopx  2604 22. Jun 13:06 Group.hpp
+-rw-r--r-- 1 hopx hopx  3505 22. Jun 13:06 LayerSurface.hpp
+-rw-r--r-- 1 hopx hopx  4204 22. Jun 13:06 Popup.hpp
+-rw-r--r-- 1 hopx hopx   958 22. Jun 13:06 SessionLock.hpp
+-rw-r--r-- 1 hopx hopx  3009 22. Jun 13:06 Subsurface.hpp
+-rw-r--r-- 1 hopx hopx  1083 22. Jun 13:06 View.hpp
+-rw-r--r-- 1 hopx hopx 20725 22. Jun 13:06 Window.hpp
+-rw-r--r-- 1 hopx hopx  3757 22. Jun 13:06 WLSurface.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/devices:
+insgesamt 48
+drwxr-xr-x 1 hopx hopx  252 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx  372 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx  929 22. Jun 13:06 IHID.hpp
+-rw-r--r-- 1 hopx hopx 4816 22. Jun 13:06 IKeyboard.hpp
+-rw-r--r-- 1 hopx hopx 3580 22. Jun 13:06 IPointer.hpp
+-rw-r--r-- 1 hopx hopx 1103 22. Jun 13:06 ITouch.hpp
+-rw-r--r-- 1 hopx hopx  507 22. Jun 13:06 Keyboard.hpp
+-rw-r--r-- 1 hopx hopx  924 22. Jun 13:06 Mouse.hpp
+-rw-r--r-- 1 hopx hopx 6418 22. Jun 13:06 Tablet.hpp
+-rw-r--r-- 1 hopx hopx  589 22. Jun 13:06 TouchDevice.hpp
+-rw-r--r-- 1 hopx hopx  660 22. Jun 13:06 VirtualKeyboard.hpp
+-rw-r--r-- 1 hopx hopx  989 22. Jun 13:06 VirtualPointer.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/errorOverlay:
+insgesamt 4
+drwxr-xr-x 1 hopx hopx   22 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx  372 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx 1962 22. Jun 13:06 Overlay.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/event:
+insgesamt 8
+drwxr-xr-x 1 hopx hopx   24 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx  372 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx 4969 22. Jun 13:06 EventBus.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/helpers:
+insgesamt 104
+drwxr-xr-x 1 hopx hopx   734 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx   372 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx  2007 22. Jun 13:06 AnimatedVariable.hpp
+-rw-r--r-- 1 hopx hopx  2065 22. Jun 13:06 AsyncDialogBox.hpp
+-rw-r--r-- 1 hopx hopx  1614 22. Jun 13:06 ByteOperations.hpp
+drwxr-xr-x 1 hopx hopx    38 22. Jun 13:06 cm
+-rw-r--r-- 1 hopx hopx   812 22. Jun 13:06 CMType.hpp
+-rw-r--r-- 1 hopx hopx  2139 22. Jun 13:06 Color.hpp
+-rw-r--r-- 1 hopx hopx   722 22. Jun 13:06 CursorShapes.hpp
+-rw-r--r-- 1 hopx hopx   603 22. Jun 13:06 DamageRing.hpp
+drwxr-xr-x 1 hopx hopx    22 22. Jun 13:06 defer
+-rw-r--r-- 1 hopx hopx   174 22. Jun 13:06 Drm.hpp
+drwxr-xr-x 1 hopx hopx    14 22. Jun 13:06 env
+-rw-r--r-- 1 hopx hopx   544 22. Jun 13:06 Format.hpp
+drwxr-xr-x 1 hopx hopx    22 22. Jun 13:06 fs
+-rw-r--r-- 1 hopx hopx   779 22. Jun 13:06 MainLoopExecutor.hpp
+drwxr-xr-x 1 hopx hopx    70 22. Jun 13:06 math
+drwxr-xr-x 1 hopx hopx    20 22. Jun 13:06 memory
+-rw-r--r-- 1 hopx hopx  2843 22. Jun 13:06 MiscFunctions.hpp
+-rw-r--r-- 1 hopx hopx  1151 22. Jun 13:06 MonitorFrameScheduler.hpp
+-rw-r--r-- 1 hopx hopx 16992 22. Jun 13:06 Monitor.hpp
+-rw-r--r-- 1 hopx hopx  2532 22. Jun 13:06 MonitorResources.hpp
+-rw-r--r-- 1 hopx hopx   690 22. Jun 13:06 MonitorZoomController.hpp
+-rw-r--r-- 1 hopx hopx   121 22. Jun 13:06 SdDaemon.hpp
+drwxr-xr-x 1 hopx hopx    20 22. Jun 13:06 signal
+-rw-r--r-- 1 hopx hopx  4761 22. Jun 13:06 Splashes.hpp
+drwxr-xr-x 1 hopx hopx    64 22. Jun 13:06 sync
+-rw-r--r-- 1 hopx hopx   237 22. Jun 13:06 SystemInfo.hpp
+-rw-r--r-- 1 hopx hopx   427 22. Jun 13:06 TagKeeper.hpp
+drwxr-xr-x 1 hopx hopx    34 22. Jun 13:06 time
+-rw-r--r-- 1 hopx hopx   410 22. Jun 13:06 TransferFunction.hpp
+drwxr-xr-x 1 hopx hopx    22 22. Jun 13:06 varlist
+-rw-r--r-- 1 hopx hopx   658 22. Jun 13:06 WLClasses.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/helpers/cm:
+insgesamt 20
+drwxr-xr-x 1 hopx hopx    38 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx   734 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx 20348 22. Jun 13:06 ColorManagement.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/helpers/defer:
+insgesamt 4
+drwxr-xr-x 1 hopx hopx   22 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx  734 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx 2961 22. Jun 13:06 Promise.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/helpers/env:
+insgesamt 4
+drwxr-xr-x 1 hopx hopx  14 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx 734 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx 116 22. Jun 13:06 Env.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/helpers/fs:
+insgesamt 4
+drwxr-xr-x 1 hopx hopx  22 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx 734 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx 432 22. Jun 13:06 FsUtils.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/helpers/math:
+insgesamt 12
+drwxr-xr-x 1 hopx hopx  70 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx 734 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx 881 22. Jun 13:06 Direction.hpp
+-rw-r--r-- 1 hopx hopx 882 22. Jun 13:06 Expression.hpp
+-rw-r--r-- 1 hopx hopx 572 22. Jun 13:06 Math.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/helpers/memory:
+insgesamt 4
+drwxr-xr-x 1 hopx hopx  20 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx 734 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx 419 22. Jun 13:06 Memory.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/helpers/signal:
+insgesamt 4
+drwxr-xr-x 1 hopx hopx  20 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx 734 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx 106 22. Jun 13:06 Signal.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/helpers/sync:
+insgesamt 8
+drwxr-xr-x 1 hopx hopx   64 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx  734 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx  751 22. Jun 13:06 SyncReleaser.hpp
+-rw-r--r-- 1 hopx hopx 1513 22. Jun 13:06 SyncTimeline.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/helpers/time:
+insgesamt 8
+drwxr-xr-x 1 hopx hopx  34 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx 734 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx 911 22. Jun 13:06 Time.hpp
+-rw-r--r-- 1 hopx hopx 324 22. Jun 13:06 Timer.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/helpers/varlist:
+insgesamt 4
+drwxr-xr-x 1 hopx hopx  22 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx 734 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx 148 22. Jun 13:06 VarList.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/i18n:
+insgesamt 4
+drwxr-xr-x 1 hopx hopx   20 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx  372 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx 1764 22. Jun 13:06 Engine.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/init:
+insgesamt 4
+drwxr-xr-x 1 hopx hopx  30 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx 372 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx 105 22. Jun 13:06 initHelpers.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/layout:
+insgesamt 4
+drwxr-xr-x 1 hopx hopx  100 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx  372 22. Jun 13:06 ..
+drwxr-xr-x 1 hopx hopx  164 22. Jun 13:06 algorithm
+-rw-r--r-- 1 hopx hopx 3842 22. Jun 13:06 LayoutManager.hpp
+drwxr-xr-x 1 hopx hopx   18 22. Jun 13:06 space
+drwxr-xr-x 1 hopx hopx   84 22. Jun 13:06 supplementary
+drwxr-xr-x 1 hopx hopx   94 22. Jun 13:06 target
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/layout/algorithm:
+insgesamt 16
+drwxr-xr-x 1 hopx hopx  164 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx  100 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx 2991 22. Jun 13:06 Algorithm.hpp
+drwxr-xr-x 1 hopx hopx   14 22. Jun 13:06 floating
+-rw-r--r-- 1 hopx hopx  835 22. Jun 13:06 FloatingAlgorithm.hpp
+-rw-r--r-- 1 hopx hopx 2442 22. Jun 13:06 ModeAlgorithm.hpp
+drwxr-xr-x 1 hopx hopx   58 22. Jun 13:06 tiled
+-rw-r--r-- 1 hopx hopx  808 22. Jun 13:06 TiledAlgorithm.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/layout/algorithm/floating:
+insgesamt 0
+drwxr-xr-x 1 hopx hopx  14 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx 164 22. Jun 13:06 ..
+drwxr-xr-x 1 hopx hopx  56 22. Jun 13:06 default
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/layout/algorithm/floating/default:
+insgesamt 4
+drwxr-xr-x 1 hopx hopx   56 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx   14 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx 1247 22. Jun 13:06 DefaultFloatingAlgorithm.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/layout/algorithm/tiled:
+insgesamt 0
+drwxr-xr-x 1 hopx hopx  58 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx 164 22. Jun 13:06 ..
+drwxr-xr-x 1 hopx hopx  40 22. Jun 13:06 dwindle
+drwxr-xr-x 1 hopx hopx  38 22. Jun 13:06 master
+drwxr-xr-x 1 hopx hopx  40 22. Jun 13:06 monocle
+drwxr-xr-x 1 hopx hopx  92 22. Jun 13:06 scrolling
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/layout/algorithm/tiled/dwindle:
+insgesamt 4
+drwxr-xr-x 1 hopx hopx   40 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx   58 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx 3527 22. Jun 13:06 DwindleAlgorithm.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/layout/algorithm/tiled/master:
+insgesamt 4
+drwxr-xr-x 1 hopx hopx   38 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx   58 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx 3778 22. Jun 13:06 MasterAlgorithm.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/layout/algorithm/tiled/monocle:
+insgesamt 4
+drwxr-xr-x 1 hopx hopx   40 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx   58 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx 1999 22. Jun 13:06 MonocleAlgorithm.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/layout/algorithm/tiled/scrolling:
+insgesamt 12
+drwxr-xr-x 1 hopx hopx   92 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx   58 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx 7829 22. Jun 13:06 ScrollingAlgorithm.hpp
+-rw-r--r-- 1 hopx hopx 3621 22. Jun 13:06 ScrollTapeController.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/layout/space:
+insgesamt 4
+drwxr-xr-x 1 hopx hopx   18 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx  100 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx 3188 22. Jun 13:06 Space.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/layout/supplementary:
+insgesamt 8
+drwxr-xr-x 1 hopx hopx   84 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx  100 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx 1921 22. Jun 13:06 DragController.hpp
+-rw-r--r-- 1 hopx hopx 1785 22. Jun 13:06 WorkspaceAlgoMatcher.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/layout/target:
+insgesamt 12
+drwxr-xr-x 1 hopx hopx   94 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx  100 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx 3634 22. Jun 13:06 Target.hpp
+-rw-r--r-- 1 hopx hopx 2009 22. Jun 13:06 WindowGroupTarget.hpp
+-rw-r--r-- 1 hopx hopx 1746 22. Jun 13:06 WindowTarget.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/managers:
+insgesamt 68
+drwxr-xr-x 1 hopx hopx  614 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx  372 22. Jun 13:06 ..
+drwxr-xr-x 1 hopx hopx   94 22. Jun 13:06 animation
+-rw-r--r-- 1 hopx hopx 1817 22. Jun 13:06 ANRManager.hpp
+drwxr-xr-x 1 hopx hopx   66 22. Jun 13:06 cursor
+-rw-r--r-- 1 hopx hopx 3099 22. Jun 13:06 CursorManager.hpp
+-rw-r--r-- 1 hopx hopx  480 22. Jun 13:06 DonationNagManager.hpp
+drwxr-xr-x 1 hopx hopx   76 22. Jun 13:06 eventLoop
+-rw-r--r-- 1 hopx hopx 1168 22. Jun 13:06 EventManager.hpp
+drwxr-xr-x 1 hopx hopx  218 22. Jun 13:06 input
+-rw-r--r-- 1 hopx hopx 7635 22. Jun 13:06 KeybindManager.hpp
+drwxr-xr-x 1 hopx hopx   56 22. Jun 13:06 permissions
+-rw-r--r-- 1 hopx hopx 6398 22. Jun 13:06 PointerManager.hpp
+-rw-r--r-- 1 hopx hopx  529 22. Jun 13:06 ProtocolManager.hpp
+drwxr-xr-x 1 hopx hopx   44 22. Jun 13:06 screenshare
+-rw-r--r-- 1 hopx hopx 5706 22. Jun 13:06 SeatManager.hpp
+-rw-r--r-- 1 hopx hopx 2172 22. Jun 13:06 SessionLockManager.hpp
+-rw-r--r-- 1 hopx hopx  819 22. Jun 13:06 TokenManager.hpp
+-rw-r--r-- 1 hopx hopx  358 22. Jun 13:06 VersionKeeperManager.hpp
+-rw-r--r-- 1 hopx hopx  273 22. Jun 13:06 WelcomeManager.hpp
+-rw-r--r-- 1 hopx hopx 1574 22. Jun 13:06 XCursorManager.hpp
+-rw-r--r-- 1 hopx hopx 1079 22. Jun 13:06 XWaylandManager.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/managers/animation:
+insgesamt 8
+drwxr-xr-x 1 hopx hopx   94 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx  614 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx 2468 22. Jun 13:06 AnimationManager.hpp
+-rw-r--r-- 1 hopx hopx 1174 22. Jun 13:06 DesktopAnimationManager.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/managers/cursor:
+insgesamt 4
+drwxr-xr-x 1 hopx hopx   66 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx  614 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx 1592 22. Jun 13:06 CursorShapeOverrideController.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/managers/eventLoop:
+insgesamt 8
+drwxr-xr-x 1 hopx hopx   76 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx  614 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx 3529 22. Jun 13:06 EventLoopManager.hpp
+-rw-r--r-- 1 hopx hopx  948 22. Jun 13:06 EventLoopTimer.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/managers/input:
+insgesamt 28
+drwxr-xr-x 1 hopx hopx   218 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx   614 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx 11184 22. Jun 13:06 InputManager.hpp
+-rw-r--r-- 1 hopx hopx  1176 22. Jun 13:06 InputMethodPopup.hpp
+-rw-r--r-- 1 hopx hopx  1811 22. Jun 13:06 InputMethodRelay.hpp
+-rw-r--r-- 1 hopx hopx  1725 22. Jun 13:06 TextInput.hpp
+drwxr-xr-x 1 hopx hopx    88 22. Jun 13:06 trackpad
+-rw-r--r-- 1 hopx hopx   735 22. Jun 13:06 UnifiedWorkspaceSwipeGesture.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/managers/input/trackpad:
+insgesamt 8
+drwxr-xr-x 1 hopx hopx   88 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx  218 22. Jun 13:06 ..
+drwxr-xr-x 1 hopx hopx  484 22. Jun 13:06 gestures
+-rw-r--r-- 1 hopx hopx  444 22. Jun 13:06 GestureTypes.hpp
+-rw-r--r-- 1 hopx hopx 2206 22. Jun 13:06 TrackpadGestures.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/managers/input/trackpad/gestures:
+insgesamt 48
+drwxr-xr-x 1 hopx hopx  484 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx   88 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx  671 22. Jun 13:06 CloseGesture.hpp
+-rw-r--r-- 1 hopx hopx  816 22. Jun 13:06 CursorZoomGesture.hpp
+-rw-r--r-- 1 hopx hopx  533 22. Jun 13:06 DispatcherGesture.hpp
+-rw-r--r-- 1 hopx hopx  781 22. Jun 13:06 FloatGesture.hpp
+-rw-r--r-- 1 hopx hopx  925 22. Jun 13:06 FullscreenGesture.hpp
+-rw-r--r-- 1 hopx hopx 1565 22. Jun 13:06 ITrackpadGesture.hpp
+-rw-r--r-- 1 hopx hopx  450 22. Jun 13:06 LuaFunctionGesture.hpp
+-rw-r--r-- 1 hopx hopx  548 22. Jun 13:06 MoveGesture.hpp
+-rw-r--r-- 1 hopx hopx  524 22. Jun 13:06 ResizeGesture.hpp
+-rw-r--r-- 1 hopx hopx  917 22. Jun 13:06 ScrollMoveGesture.hpp
+-rw-r--r-- 1 hopx hopx  941 22. Jun 13:06 SpecialWorkspaceGesture.hpp
+-rw-r--r-- 1 hopx hopx  526 22. Jun 13:06 WorkspaceSwipeGesture.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/managers/permissions:
+insgesamt 8
+drwxr-xr-x 1 hopx hopx   56 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx  614 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx 4318 22. Jun 13:06 DynamicPermissionManager.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/managers/screenshare:
+insgesamt 12
+drwxr-xr-x 1 hopx hopx   44 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx  614 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx 9462 22. Jun 13:06 ScreenshareManager.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/notification:
+insgesamt 12
+drwxr-xr-x 1 hopx hopx  112 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx  372 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx 2033 22. Jun 13:06 Notification.hpp
+-rw-r--r-- 1 hopx hopx 1602 22. Jun 13:06 NotificationOverlay.hpp
+-rw-r--r-- 1 hopx hopx 1491 22. Jun 13:06 SharedDefines.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/pch:
+insgesamt 4
+drwxr-xr-x 1 hopx hopx  14 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx 372 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx 465 22. Jun 13:06 pch.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/plugins:
+insgesamt 24
+drwxr-xr-x 1 hopx hopx    86 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx   372 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx  2253 22. Jun 13:06 HookSystem.hpp
+-rw-r--r-- 1 hopx hopx 12559 22. Jun 13:06 PluginAPI.hpp
+-rw-r--r-- 1 hopx hopx  2272 22. Jun 13:06 PluginSystem.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/protocols:
+insgesamt 284
+drwxr-xr-x 1 hopx hopx 2010 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx  372 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx 1547 22. Jun 13:06 AlphaModifier.hpp
+-rw-r--r-- 1 hopx hopx 8445 22. Jun 13:06 ColorManagement.hpp
+-rw-r--r-- 1 hopx hopx 1549 22. Jun 13:06 CommitTiming.hpp
+-rw-r--r-- 1 hopx hopx 1580 22. Jun 13:06 ContentType.hpp
+drwxr-xr-x 1 hopx hopx  140 22. Jun 13:06 core
+-rw-r--r-- 1 hopx hopx 1517 22. Jun 13:06 CTMControl.hpp
+-rw-r--r-- 1 hopx hopx 1337 22. Jun 13:06 CursorShape.hpp
+-rw-r--r-- 1 hopx hopx 3666 22. Jun 13:06 DataDeviceWlr.hpp
+-rw-r--r-- 1 hopx hopx 4363 22. Jun 13:06 DRMLease.hpp
+-rw-r--r-- 1 hopx hopx 3401 22. Jun 13:06 DRMSyncobj.hpp
+-rw-r--r-- 1 hopx hopx 3654 22. Jun 13:06 ExtDataDevice.hpp
+-rw-r--r-- 1 hopx hopx 4038 22. Jun 13:06 ExtWorkspace.hpp
+-rw-r--r-- 1 hopx hopx 1493 22. Jun 13:06 Fifo.hpp
+-rw-r--r-- 1 hopx hopx 2607 22. Jun 13:06 FocusGrab.hpp
+-rw-r--r-- 1 hopx hopx 1921 22. Jun 13:06 ForeignToplevel.hpp
+-rw-r--r-- 1 hopx hopx 2379 22. Jun 13:06 ForeignToplevelWlr.hpp
+-rw-r--r-- 1 hopx hopx 1938 22. Jun 13:06 FractionalScale.hpp
+-rw-r--r-- 1 hopx hopx 1583 22. Jun 13:06 GammaControl.hpp
+-rw-r--r-- 1 hopx hopx 1308 22. Jun 13:06 GlobalShortcuts.hpp
+-rw-r--r-- 1 hopx hopx 1861 22. Jun 13:06 HyprlandSurface.hpp
+-rw-r--r-- 1 hopx hopx 1771 22. Jun 13:06 IdleInhibit.hpp
+-rw-r--r-- 1 hopx hopx 1722 22. Jun 13:06 IdleNotify.hpp
+-rw-r--r-- 1 hopx hopx 2460 22. Jun 13:06 ImageCaptureSource.hpp
+-rw-r--r-- 1 hopx hopx 4088 22. Jun 13:06 ImageCopyCapture.hpp
+-rw-r--r-- 1 hopx hopx 4925 22. Jun 13:06 InputMethodV2.hpp
+-rw-r--r-- 1 hopx hopx 3575 22. Jun 13:06 LayerShell.hpp
+-rw-r--r-- 1 hopx hopx 4327 22. Jun 13:06 LinuxDMABUF.hpp
+-rw-r--r-- 1 hopx hopx 1298 22. Jun 13:06 LockNotify.hpp
+-rw-r--r-- 1 hopx hopx 1346 22. Jun 13:06 MesaDRM.hpp
+-rw-r--r-- 1 hopx hopx 5806 22. Jun 13:06 OutputManagement.hpp
+-rw-r--r-- 1 hopx hopx 1265 22. Jun 13:06 OutputPower.hpp
+-rw-r--r-- 1 hopx hopx 3077 22. Jun 13:06 PointerConstraints.hpp
+-rw-r--r-- 1 hopx hopx 2563 22. Jun 13:06 PointerGestures.hpp
+-rw-r--r-- 1 hopx hopx  521 22. Jun 13:06 PointerWarp.hpp
+-rw-r--r-- 1 hopx hopx 2231 22. Jun 13:06 PresentationTime.hpp
+-rw-r--r-- 1 hopx hopx 3922 22. Jun 13:06 PrimarySelection.hpp
+-rw-r--r-- 1 hopx hopx 1508 22. Jun 13:06 RelativePointer.hpp
+-rw-r--r-- 1 hopx hopx 2196 22. Jun 13:06 Screencopy.hpp
+-rw-r--r-- 1 hopx hopx 2824 22. Jun 13:06 SecurityContext.hpp
+-rw-r--r-- 1 hopx hopx 1606 22. Jun 13:06 ServerDecorationKDE.hpp
+-rw-r--r-- 1 hopx hopx 2830 22. Jun 13:06 SessionLock.hpp
+-rw-r--r-- 1 hopx hopx 1402 22. Jun 13:06 ShortcutsInhibit.hpp
+-rw-r--r-- 1 hopx hopx 2148 22. Jun 13:06 SinglePixel.hpp
+-rw-r--r-- 1 hopx hopx 7486 22. Jun 13:06 Tablet.hpp
+-rw-r--r-- 1 hopx hopx 1654 22. Jun 13:06 TearingControl.hpp
+-rw-r--r-- 1 hopx hopx 2344 22. Jun 13:06 TextInputV1.hpp
+-rw-r--r-- 1 hopx hopx 2708 22. Jun 13:06 TextInputV3.hpp
+-rw-r--r-- 1 hopx hopx 2275 22. Jun 13:06 ToplevelExport.hpp
+-rw-r--r-- 1 hopx hopx 1346 22. Jun 13:06 ToplevelMapping.hpp
+drwxr-xr-x 1 hopx hopx  232 22. Jun 13:06 types
+-rw-r--r-- 1 hopx hopx 1312 22. Jun 13:06 Viewporter.hpp
+-rw-r--r-- 1 hopx hopx 1828 22. Jun 13:06 VirtualKeyboard.hpp
+-rw-r--r-- 1 hopx hopx 2417 22. Jun 13:06 VirtualPointer.hpp
+-rw-r--r-- 1 hopx hopx 5961 22. Jun 13:06 WaylandProtocol.hpp
+-rw-r--r-- 1 hopx hopx 1373 22. Jun 13:06 XDGActivation.hpp
+-rw-r--r-- 1 hopx hopx  803 22. Jun 13:06 XDGBell.hpp
+-rw-r--r-- 1 hopx hopx 1495 22. Jun 13:06 XDGDecoration.hpp
+-rw-r--r-- 1 hopx hopx 1348 22. Jun 13:06 XDGDialog.hpp
+-rw-r--r-- 1 hopx hopx 3198 22. Jun 13:06 XDGForeignV2.hpp
+-rw-r--r-- 1 hopx hopx 1285 22. Jun 13:06 XDGOutput.hpp
+-rw-r--r-- 1 hopx hopx 8539 22. Jun 13:06 XDGShell.hpp
+-rw-r--r-- 1 hopx hopx  856 22. Jun 13:06 XDGTag.hpp
+-rw-r--r-- 1 hopx hopx 1686 22. Jun 13:06 XWaylandShell.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/protocols/core:
+insgesamt 36
+drwxr-xr-x 1 hopx hopx  140 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx 2010 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx 7391 22. Jun 13:06 Compositor.hpp
+-rw-r--r-- 1 hopx hopx 7210 22. Jun 13:06 DataDevice.hpp
+-rw-r--r-- 1 hopx hopx 2034 22. Jun 13:06 Output.hpp
+-rw-r--r-- 1 hopx hopx 6301 22. Jun 13:06 Seat.hpp
+-rw-r--r-- 1 hopx hopx 3024 22. Jun 13:06 Shm.hpp
+-rw-r--r-- 1 hopx hopx 2279 22. Jun 13:06 Subcompositor.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/protocols/types:
+insgesamt 32
+drwxr-xr-x 1 hopx hopx  232 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx 2010 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx 2568 22. Jun 13:06 Buffer.hpp
+-rw-r--r-- 1 hopx hopx  464 22. Jun 13:06 ContentType.hpp
+-rw-r--r-- 1 hopx hopx 3531 22. Jun 13:06 DataDevice.hpp
+-rw-r--r-- 1 hopx hopx 1111 22. Jun 13:06 DMABuffer.hpp
+-rw-r--r-- 1 hopx hopx  336 22. Jun 13:06 SurfaceRole.hpp
+-rw-r--r-- 1 hopx hopx 3663 22. Jun 13:06 SurfaceState.hpp
+-rw-r--r-- 1 hopx hopx  906 22. Jun 13:06 SurfaceStateQueue.hpp
+-rw-r--r-- 1 hopx hopx  709 22. Jun 13:06 WLBuffer.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/render:
+insgesamt 92
+drwxr-xr-x 1 hopx hopx   426 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx   372 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx   249 22. Jun 13:06 AsyncResourceGatherer.hpp
+drwxr-xr-x 1 hopx hopx   316 22. Jun 13:06 decorations
+-rw-r--r-- 1 hopx hopx  2539 22. Jun 13:06 ElementRenderer.hpp
+-rw-r--r-- 1 hopx hopx  2178 22. Jun 13:06 Framebuffer.hpp
+drwxr-xr-x 1 hopx hopx   138 22. Jun 13:06 gl
+-rw-r--r-- 1 hopx hopx  3023 22. Jun 13:06 GLRenderer.hpp
+-rw-r--r-- 1 hopx hopx 16431 22. Jun 13:06 OpenGL.hpp
+drwxr-xr-x 1 hopx hopx   518 22. Jun 13:06 pass
+-rw-r--r-- 1 hopx hopx   753 22. Jun 13:06 Renderbuffer.hpp
+-rw-r--r-- 1 hopx hopx 20367 22. Jun 13:06 Renderer.hpp
+-rw-r--r-- 1 hopx hopx  4789 22. Jun 13:06 Shader.hpp
+-rw-r--r-- 1 hopx hopx  3458 22. Jun 13:06 ShaderLoader.hpp
+drwxr-xr-x 1 hopx hopx   944 22. Jun 13:06 shaders
+-rw-r--r-- 1 hopx hopx   479 22. Jun 13:06 SyncFDManager.hpp
+-rw-r--r-- 1 hopx hopx  2357 22. Jun 13:06 Texture.hpp
+-rw-r--r-- 1 hopx hopx   831 22. Jun 13:06 Transformer.hpp
+-rw-r--r-- 1 hopx hopx  4778 22. Jun 13:06 types.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/render/decorations:
+insgesamt 28
+drwxr-xr-x 1 hopx hopx  316 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx  426 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx 1080 22. Jun 13:06 CHyprBorderDecoration.hpp
+-rw-r--r-- 1 hopx hopx 1649 22. Jun 13:06 CHyprDropShadowDecoration.hpp
+-rw-r--r-- 1 hopx hopx 2576 22. Jun 13:06 CHyprGroupBarDecoration.hpp
+-rw-r--r-- 1 hopx hopx 1037 22. Jun 13:06 CHyprInnerGlowDecoration.hpp
+-rw-r--r-- 1 hopx hopx 4114 22. Jun 13:06 DecorationPositioner.hpp
+-rw-r--r-- 1 hopx hopx 2082 22. Jun 13:06 IHyprWindowDecoration.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/render/gl:
+insgesamt 16
+drwxr-xr-x 1 hopx hopx  138 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx  426 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx 1019 22. Jun 13:06 GLElementRenderer.hpp
+-rw-r--r-- 1 hopx hopx 1026 22. Jun 13:06 GLFramebuffer.hpp
+-rw-r--r-- 1 hopx hopx  486 22. Jun 13:06 GLRenderbuffer.hpp
+-rw-r--r-- 1 hopx hopx 1937 22. Jun 13:06 GLTexture.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/render/pass:
+insgesamt 52
+drwxr-xr-x 1 hopx hopx  518 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx  426 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx  934 22. Jun 13:06 BorderPassElement.hpp
+-rw-r--r-- 1 hopx hopx  634 22. Jun 13:06 ClearPassElement.hpp
+-rw-r--r-- 1 hopx hopx  656 22. Jun 13:06 FramebufferElement.hpp
+-rw-r--r-- 1 hopx hopx  652 22. Jun 13:06 InnerGlowPassElement.hpp
+-rw-r--r-- 1 hopx hopx 1169 22. Jun 13:06 PassElement.hpp
+-rw-r--r-- 1 hopx hopx 1218 22. Jun 13:06 Pass.hpp
+-rw-r--r-- 1 hopx hopx  495 22. Jun 13:06 PreBlurElement.hpp
+-rw-r--r-- 1 hopx hopx 1008 22. Jun 13:06 RectPassElement.hpp
+-rw-r--r-- 1 hopx hopx  631 22. Jun 13:06 RendererHintsPassElement.hpp
+-rw-r--r-- 1 hopx hopx  630 22. Jun 13:06 ShadowPassElement.hpp
+-rw-r--r-- 1 hopx hopx 2326 22. Jun 13:06 SurfacePassElement.hpp
+-rw-r--r-- 1 hopx hopx 2019 22. Jun 13:06 TexPassElement.hpp
+-rw-r--r-- 1 hopx hopx  783 22. Jun 13:06 TextureMatteElement.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/render/shaders:
+insgesamt 140
+drwxr-xr-x 1 hopx hopx  944 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx  426 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx  509 22. Jun 13:06 blur1.frag.inc
+-rw-r--r-- 1 hopx hopx 4546 22. Jun 13:06 blur1.glsl.inc
+-rw-r--r-- 1 hopx hopx  381 22. Jun 13:06 blur2.frag.inc
+-rw-r--r-- 1 hopx hopx  760 22. Jun 13:06 blur2.glsl.inc
+-rw-r--r-- 1 hopx hopx  737 22. Jun 13:06 blurfinish.frag.inc
+-rw-r--r-- 1 hopx hopx 1100 22. Jun 13:06 blurFinish.glsl.inc
+-rw-r--r-- 1 hopx hopx  957 22. Jun 13:06 blurprepare.frag.inc
+-rw-r--r-- 1 hopx hopx  981 22. Jun 13:06 blurprepare.glsl.inc
+-rw-r--r-- 1 hopx hopx 1838 22. Jun 13:06 border.frag.inc
+-rw-r--r-- 1 hopx hopx 7636 22. Jun 13:06 border.glsl.inc
+-rw-r--r-- 1 hopx hopx  550 22. Jun 13:06 CM.glsl.inc
+-rw-r--r-- 1 hopx hopx 9753 22. Jun 13:06 cm_helpers.glsl.inc
+-rw-r--r-- 1 hopx hopx 1805 22. Jun 13:06 constants.h.inc
+-rw-r--r-- 1 hopx hopx  544 22. Jun 13:06 defines.h.inc
+-rw-r--r-- 1 hopx hopx 1095 22. Jun 13:06 ext.frag.inc
+-rw-r--r-- 1 hopx hopx  209 22. Jun 13:06 gain.glsl.inc
+-rw-r--r-- 1 hopx hopx 2435 22. Jun 13:06 glitch.frag.inc
+drwxr-xr-x 1 hopx hopx   40 22. Jun 13:06 glsl
+-rw-r--r-- 1 hopx hopx  857 22. Jun 13:06 inner_glow.frag.inc
+-rw-r--r-- 1 hopx hopx 2116 22. Jun 13:06 inner_glow.glsl.inc
+-rw-r--r-- 1 hopx hopx  204 22. Jun 13:06 passthru.frag.inc
+-rw-r--r-- 1 hopx hopx  779 22. Jun 13:06 quad.frag.inc
+-rw-r--r-- 1 hopx hopx  565 22. Jun 13:06 rgbamatte.frag.inc
+-rw-r--r-- 1 hopx hopx 1128 22. Jun 13:06 rounding.glsl.inc
+-rw-r--r-- 1 hopx hopx 1527 22. Jun 13:06 Shaders.hpp
+-rw-r--r-- 1 hopx hopx 1114 22. Jun 13:06 shadow.frag.inc
+-rw-r--r-- 1 hopx hopx 4714 22. Jun 13:06 shadow.glsl.inc
+-rw-r--r-- 1 hopx hopx 3365 22. Jun 13:06 surface.frag.inc
+-rw-r--r-- 1 hopx hopx  339 22. Jun 13:06 tex300.vert.inc
+-rw-r--r-- 1 hopx hopx  339 22. Jun 13:06 tex320.vert.inc
+-rw-r--r-- 1 hopx hopx 2978 22. Jun 13:06 tonemap.glsl.inc
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/render/shaders/glsl:
+insgesamt 8
+drwxr-xr-x 1 hopx hopx   40 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx  944 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx 1797 22. Jun 13:06 constants.h
+-rw-r--r-- 1 hopx hopx  536 22. Jun 13:06 defines.h
+
+./airootfs/opt/trafktux-hyprpm-cache/headersRoot/include/hyprland/src/xwayland:
+insgesamt 32
+drwxr-xr-x 1 hopx hopx  126 22. Jun 13:06 .
+drwxr-xr-x 1 hopx hopx  372 22. Jun 13:06 ..
+-rw-r--r-- 1 hopx hopx 3245 22. Jun 13:06 Dnd.hpp
+-rw-r--r-- 1 hopx hopx 1356 22. Jun 13:06 Server.hpp
+-rw-r--r-- 1 hopx hopx  781 22. Jun 13:06 XDataSource.hpp
+-rw-r--r-- 1 hopx hopx 4057 22. Jun 13:06 XSurface.hpp
+-rw-r--r-- 1 hopx hopx 3998 22. Jun 13:06 XWayland.hpp
+-rw-r--r-- 1 hopx hopx 8578 22. Jun 13:06 XWM.hpp
+
+./airootfs/opt/trafktux-hyprpm-cache/HyprGlass:
+insgesamt 14096
+drwxr-xr-x 1 hopx hopx       44 11. Jul 13:59 .
+drwxr-xr-x 1 hopx hopx      158 11. Jul 13:58 ..
+-rwxr-xr-x 1 hopx hopx 14429368 10. Jul 22:43 hyprglass.so
+-rw-r--r-- 1 hopx hopx      223 11. Jul 13:59 state.toml
+
+./airootfs/opt/trafktux-hyprpm-cache/hyprgrass:
+insgesamt 1260
+drwxr-xr-x 1 hopx hopx    124 11. Jul 13:59 .
+drwxr-xr-x 1 hopx hopx    158 11. Jul 13:58 ..
+-rwxr-xr-x 1 hopx hopx 282680 10. Jul 22:42 hyprgrass-backlight.so
+-rwxr-xr-x 1 hopx hopx 251952 10. Jul 22:42 hyprgrass-pulse.so
+-rwxr-xr-x 1 hopx hopx 744792 10. Jul 22:42 hyprgrass.so
+-rw-r--r-- 1 hopx hopx    405 11. Jul 13:59 state.toml
+
+./airootfs/opt/trafktux-hyprpm-cache/hyprland-plugins:
+insgesamt 1012
+drwxr-xr-x 1 hopx hopx    142 11. Jul 13:59 .
+drwxr-xr-x 1 hopx hopx    158 11. Jul 13:58 ..
+-rwxr-xr-x 1 hopx hopx 259792 10. Jul 22:41 borders-plus-plus.so
+-rwxr-xr-x 1 hopx hopx 191824 10. Jul 22:41 csgo-vulkan-fix.so
+-rwxr-xr-x 1 hopx hopx 480824 10. Jul 22:41 hyprbars.so
+-rwxr-xr-x 1 hopx hopx  92168 10. Jul 22:41 hyprfocus.so
+-rw-r--r-- 1 hopx hopx    470 11. Jul 13:59 state.toml
+
+./airootfs/opt/trafktux-hyprpm-cache/Hyprspace:
+insgesamt 11712
+drwxr-xr-x 1 hopx hopx       44 11. Jul 13:59 .
+drwxr-xr-x 1 hopx hopx      158 11. Jul 13:58 ..
+-rwxr-xr-x 1 hopx hopx 11988856 10. Jul 22:18 Hyprspace.so
+-rw-r--r-- 1 hopx hopx      219 11. Jul 13:59 state.toml
+
+./airootfs/opt/trafktux-repo:
+insgesamt 70772
+drwxr-xr-x 1 hopx hopx     1200 11. Jul 14:03 .
+drwxr-xr-x 1 hopx hopx       68 11. Jul 13:59 ..
+-rw-r--r-- 1 hopx hopx  4899971 11. Jul 14:01 calamares-3.4.2-2-x86_64.pkg.tar.zst
+-rw-r--r-- 1 hopx hopx 62549497 11. Jul 14:01 calamares-debug-3.4.2-2-x86_64.pkg.tar.zst
+-rw-r--r-- 1 hopx hopx  1612095 11. Jul 14:03 hyprland-minimizer-git-0.1.0.r22.ee6560e-1-x86_64.pkg.tar.zst
+-rw-r--r-- 1 hopx hopx   232978 11. Jul 14:03 hyprland-minimizer-git-debug-0.1.0.r22.ee6560e-1-x86_64.pkg.tar.zst
+-rw-r--r-- 1 hopx hopx    30366 11. Jul 14:02 hyprshade-5.0.0-1-any.pkg.tar.zst
+-rw-r--r-- 1 hopx hopx   210468 11. Jul 14:02 pamac-all-11.7.5-1-x86_64.pkg.tar.zst
+-rw-r--r-- 1 hopx hopx  1053213 11. Jul 14:02 pamac-all-debug-11.7.5-1-x86_64.pkg.tar.zst
+lrwxrwxrwx 1 hopx hopx       18 11. Jul 14:03 trafktux.db -> trafktux.db.tar.gz
+-rw-r--r-- 1 hopx hopx     2705 11. Jul 14:03 trafktux.db.tar.gz
+-rw-r--r-- 1 hopx hopx     2698 11. Jul 13:08 trafktux.db.tar.gz.old
+lrwxrwxrwx 1 hopx hopx       21 11. Jul 14:03 trafktux.files -> trafktux.files.tar.gz
+-rw-r--r-- 1 hopx hopx    16704 11. Jul 14:03 trafktux.files.tar.gz
+-rw-r--r-- 1 hopx hopx    16700 11. Jul 13:08 trafktux.files.tar.gz.old
+-rw-r--r-- 1 hopx hopx    66449 11. Jul 14:03 wvkbd-0.19.4-1-x86_64.pkg.tar.zst
+-rw-r--r-- 1 hopx hopx   126169 11. Jul 14:03 wvkbd-debug-0.19.4-1-x86_64.pkg.tar.zst
+-rw-r--r-- 1 hopx hopx    75188 11. Jul 14:01 xwaylandvideobridge-0.4.0-3-x86_64.pkg.tar.zst
+-rw-r--r-- 1 hopx hopx  1535030 11. Jul 14:01 xwaylandvideobridge-debug-0.4.0-3-x86_64.pkg.tar.zst
+
+./airootfs/usr:
+insgesamt 0
+drwxr-xr-x 1 hopx hopx 26 10. Jul 22:52 .
+drwxr-xr-x 1 hopx hopx 18  5. Jul 12:27 ..
+drwxr-xr-x 1 root root  0 10. Jul 23:04 lib
+drwxr-xr-x 1 hopx hopx  6  5. Jul 12:27 local
+
+./airootfs/usr/lib:
+insgesamt 0
+drwxr-xr-x 1 root root  0 10. Jul 23:04 .
+drwxr-xr-x 1 hopx hopx 26 10. Jul 22:52 ..
+
+./airootfs/usr/local:
+insgesamt 0
+drwxr-xr-x 1 hopx hopx   6  5. Jul 12:27 .
+drwxr-xr-x 1 hopx hopx  26 10. Jul 22:52 ..
+drwxr-xr-x 1 hopx hopx 198 25. Jul 22:02 bin
+
+./airootfs/usr/local/bin:
+insgesamt 32
+drwxr-xr-x 1 hopx hopx   198 25. Jul 22:02 .
+drwxr-xr-x 1 hopx hopx     6  5. Jul 12:27 ..
+-rwxr-xr-x 1 hopx hopx   794  5. Jul 11:26 create-liveuser.sh
+-rwxr-xr-x 1 hopx hopx   693  5. Jul 11:30 Installation_guide
+-rw------- 1 hopx hopx  1275 25. Jul 22:02 install-aur-packages.sh
+-rwxr-xr-x 1 hopx hopx  1669 11. Jul 13:00 install-hyprpm-plugins.sh
+-rwsr-xr-x 1 root root 16336 25. Jul 02:13 wb-power-helper
+
+./efiboot:
+insgesamt 0
+drwxr-xr-x 1 hopx hopx  12 29. Jun 12:03 .
+drwxr-xr-x 1 hopx hopx 388 30. Jul 01:38 ..
+drwxr-xr-x 1 hopx hopx  36 29. Jun 12:21 loader
+
+./efiboot/loader:
+insgesamt 4
+drwxr-xr-x 1 hopx hopx  36 29. Jun 12:21 .
+drwxr-xr-x 1 hopx hopx  12 29. Jun 12:03 ..
+drwxr-xr-x 1 hopx hopx 100 29. Jun 12:22 entries
+-rw-r--r-- 1 hopx hopx  49 29. Jun 12:21 loader.conf
+
+./efiboot/loader/entries:
+insgesamt 8
+drwxr-xr-x 1 hopx hopx 100 29. Jun 12:22 .
+drwxr-xr-x 1 hopx hopx  36 29. Jun 12:21 ..
+-rw-r--r-- 1 hopx hopx 237 29. Jun 12:21 01-archiso-linux.conf
+-rw-r--r-- 1 hopx hopx  87 29. Jun 12:03 03-archiso-memtest86+x64.conf
+
+./grub:
+insgesamt 8
+drwxr-xr-x 1 hopx hopx   40  9. Jul 19:51 .
+drwxr-xr-x 1 hopx hopx  388 30. Jul 01:38 ..
+-rw-r--r-- 1 hopx hopx 1202  9. Jul 19:51 grub.cfg
+-rw-r--r-- 1 hopx hopx  269  5. Jul 12:33 loopback.cfg
+
+./syslinux:
+insgesamt 76
+drwxr-xr-x 1 hopx hopx   252 29. Jun 12:17 .
+drwxr-xr-x 1 hopx hopx   388 30. Jul 01:38 ..
+-rw-r--r-- 1 hopx hopx   815 29. Jun 12:15 archiso_head.cfg
+-rw-r--r-- 1 hopx hopx    82 29. Jun 12:03 archiso_pxe.cfg
+-rw-r--r-- 1 hopx hopx  1220 29. Jun 12:16 archiso_pxe-linux.cfg
+-rw-r--r-- 1 hopx hopx   108 29. Jun 12:03 archiso_sys.cfg
+-rw-r--r-- 1 hopx hopx   825 29. Jun 12:17 archiso_sys-linux.cfg
+-rw-r--r-- 1 hopx hopx   748 29. Jun 12:03 archiso_tail.cfg
+-rw-r--r-- 1 hopx hopx 45400 29. Jun 12:03 splash.png
+-rw-r--r-- 1 hopx hopx   153 29. Jun 12:03 syslinux.cfg

@@ -186,19 +186,19 @@ ISO size: 3.0GB
 
 | State | ~ RAM |
 |---|---|
-| Desktop no open Apps | ~1,35 GB |
+| Desktop no open Apps | ~1,10 GB |
 | + Firefox (1–5 Tabs) | + ~ 1,35 GB |
 | + Firefox (many Tabs; ~30) | + ~ 1,98 GB |
 | + Thunar + Xfce4-terminal open | + ~ 0,02 GB |
 | + Discord + Steam open | + ~ 1,35 GB |
-
+(Originally, our Distro used 2GB of ram in idle, after that we got it down to 1,35gb and right now 1,1gb)
 ## Comparison
 
 | System | Idle RAM (approx.) |
 |---|---|
 | Windows 11 | ~3.5 GB |
 | Ubuntu (GNOME) | ~1.5 GB |
-| **TrafkTux** | **~1,35 GB** |
+| **TrafkTux** | **~1,10 GB** |
 | KDE Plasma | ~900 MB |
 | Arch Linux with i3 | ~400–500 MB |
 | SnowFoxOS | ~350–420 MB |
@@ -297,7 +297,7 @@ The Installer is completely offline! No Internet required!
 We have themed a lot of apps:
 * Dunst
 * GTK 2-3-4
-* Kvantum (Kate, Kolourpaint, KDE apps)
+* Kvantum
 * HyprCursor v1
 * HyprLock
 * Fastfetch
@@ -313,30 +313,20 @@ We have themed a lot of apps:
 * Mouse Cursor redesign
 * Widgets Redesign!!
 * App Editor
-Rofi App Menu apps editor, autostarted apps, waybar shortcuts, add custom things as apps to rofi
 * new Kernel + security things (optimisation somewhat done)
 
 ## Known Bugs:
-* The ISO does not boot at the moment....
-* The apply button and other things in the widgetc cause massive performance issues. The fix is almost done though!
+* The ISO does not boot at the moment.... but as this distro is still in development, this is mostly a nin issue that will be fixed sooner than later
 
 
-### Widgets (in progress and a bit outdated as some of those features are already in place) (From now on only Developer Notes, do not take this into account)
-* Add advanced brighness control to individual monitors and add a second tab for other devices with an openrgb integration wich will only open on a button press. either you can already detect all of the glowing devices and can control the brightness and color with an already running daemon or you start the app in the background when you press a button or we just implement a button wich will launch the app wich will open in the widget as a fixed object (1. preferred 3. last chance)
-* Add for the calender an integration with a calender app for fast appointments, etc. and also add a button for UI location change.
-* *Check Network for LAN and other methods of connectivity and implement snowfoxOS's Mesh connect when released (wich it has not).
-* Maybe advanced battery options
-* Add another widget called settings where you can access all of those widgets and other apps like the to be made app launcher editor and files like the hyprland.lua and some other settings like system language, preffered colour sceme and some other important apps and qol improvments that automaticly edits some system files like kvantum and nwg look or something else.
-OK so the settings app is also a widget that will be at the right of the waybar. this widget will open many other widgets, the ones on the desktop and many new widgets for more advanced settings.
+### Widgets to implement
 
-Some settings:
-1. Display: {
-Resolution (some base res and a custom one)
-Framerate
-hdr
-terring
-other screeen options }
-
-Just think yourself......... idk settings, you can and should ask me, give me a list and ill think.
-
-End of Notes
+* advanced brightness and night mode control for individual monitors and make the second tab be always shown to see that you have currently no things to change colour.
+* In the Calender, add the function to delete appointments and remove the right click action
+* check if lan connections show up in network + add other methods of connection + dns change + other internet security features + vpn integration maybe, but not important + later if released implement snowfoxOSv3's Mesh Connect feature.
+* In settings/Display, add a hdr toggle + other hyprland display options (per monitor ofc). And fix that you cannot configure other monitors as they are not written in the config or something like that.
+* Appearance + Language The Dark/Lightmode should always be changed, even if in the settings, the setting was not changed + fix not always applying the themes (gtk + kvantum, kvantum is even worse). + maybe something that makes all apps switch the theme without needing to restart them all.
+* The Apps * Editor;
+3. you can add/remove autostart applications (but hide the standard ones as they are essential).
+2. you can add/remove the shortcuts of apps on the waybar on the "left".
+1. you will be able; Rofi launcher menu, it has 9 Folders where you can put apps in. In this third menu, you will be able to drag any app + custom commands in the folders + as many subfolders in subfolders as you want. You can sort by all packages, all apps, unordered apps, custom apps, ordered apps. This will be the main menu to sort all of your apps!

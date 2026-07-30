@@ -804,7 +804,7 @@ def _network_content(win: Gtk.Window) -> Gtk.Box:
             time.sleep(3)
             GLib.idle_add(_populate, _wifi_list())
             GLib.idle_add(lambda: (scan_b.set_label("󰑐  Scan"),
-                                   scan_b.set_sensitive(True)))
+                                   scan_b.set_sensitive(True), False)[2])
         in_thread(_scan)
 
     scan_b.connect("clicked", _do_scan)
@@ -913,13 +913,27 @@ def _bluetooth_content() -> Gtk.Box:
         def _do():
             _bt("power " + ("off" if powered[0] else "on"))
             powered[0] = not powered[0]
-            GLib.idle_add(lambda: (
-                pwr_b.set_label("󰂯  On" if powered[0] else "󰂲  Off"),
-                (pwr_b.get_style_context().add_class("active")
-                 if powered[0]
-                 else pwr_b.get_style_context().remove_class("active")),
-                scan_b.set_sensitive(powered[0]),
-                _refresh()))
+            # WICHTIG: derselbe Bug-Typ wie bei apply_all()/
+            # _apply_bar_refresh - ein unindiziertes Tupel-Literal ist
+            # in Python IMMER wahr, unabhängig vom Inhalt (auch ein
+            # Tupel aus lauter None-Werten ist wahr, da Tupel-
+            # Wahrheitswert an der LÄNGE hängt, nicht am Inhalt). GLib
+            # hätte diesen Callback dadurch für immer erneut
+            # aufgerufen - bei JEDEM Klick auf den Bluetooth-Ein/Aus-
+            # Schalter ein ungedrosselter Busy-Loop, der zusätzlich
+            # jedes Mal _refresh() (inkl. bluetoothctl-Subprozess-
+            # Aufrufen) erneut angestoßen hätte. Explizit False
+            # zurückgeben, damit die Idle-Source sich selbst entfernt.
+            def _apply_ui():
+                pwr_b.set_label("󰂯  On" if powered[0] else "󰂲  Off")
+                if powered[0]:
+                    pwr_b.get_style_context().add_class("active")
+                else:
+                    pwr_b.get_style_context().remove_class("active")
+                scan_b.set_sensitive(powered[0])
+                _refresh()
+                return False
+            GLib.idle_add(_apply_ui)
         in_thread(_do)
 
     def _on_scan(_):
@@ -936,7 +950,7 @@ def _bluetooth_content() -> Gtk.Box:
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             GLib.idle_add(_refresh)
             GLib.idle_add(lambda: (scan_b.set_label("󰑐  Scan"),
-                                   scan_b.set_sensitive(True)))
+                                   scan_b.set_sensitive(True), False)[2])
         in_thread(_do)
 
     pwr_b.connect("clicked",  _on_power)
@@ -2660,7 +2674,24 @@ def apply_all() -> list[str]:
             del PENDING[key]
         except Exception as e:
             errors.append(f"{ch.desc}: {e}")
-    GLib.idle_add(_apply_bar_refresh[0])
+    # WICHTIG: NICHT einfach GLib.idle_add(_apply_bar_refresh[0]) - das
+    # war der eigentliche Grund für "100% CPU sobald Apply gedrückt
+    # wird, auch bei leerem PENDING". _apply_bar_refresh[0] ist
+    # "lambda: GLib.idle_add(_refresh_bar)" - der Lambda-KÖRPER gibt
+    # den Rückgabewert von GLib.idle_add() zurück, also eine neu
+    # erzeugte Source-ID (eine Zahl ungleich 0). GLib behandelt JEDEN
+    # wahren Rückgabewert eines idle_add-Callbacks als "ruf mich
+    # nochmal auf" - eine Source-ID ist nie 0, also "wahr". Diese
+    # äußere Lambda wurde dadurch für immer erneut aufgerufen, bei
+    # JEDEM einzelnen Main-Loop-Durchlauf, ohne jede Verzögerung
+    # (Idle-Sources haben - anders als timeout_add - kein
+    # Mindestintervall) - ein ungedrosselter Busy-Loop, der exakt bei
+    # jedem Apply-Klick startete (dieser Aufruf steht unbedingt am
+    # Ende von apply_all(), unabhängig vom PENDING-Inhalt) und nie
+    # von selbst aufhörte. Fix: Callback explizit False zurückgeben
+    # lassen (dasselbe (x, False)[1]-Muster wie an anderen Stellen in
+    # dieser Datei für Einmal-Timer).
+    GLib.idle_add(lambda: (_apply_bar_refresh[0](), False)[1])
     return errors
 
 def apply_all_async(on_done) -> None:
@@ -3563,12 +3594,74 @@ import socket
 
 SOCK_PATH = os.environ.get("WB_DAEMON_SOCK", "/tmp/wb-daemon.sock")
 
+def _diag_report() -> str:
+    """Eingebaute Selbstdiagnose: soll beim nächsten Auftreten des
+    100%-CPU-Problems SOFORT zeigen, ob heimlich noch Fenster/Timer im
+    Hintergrund laufen, ohne dass wir nochmal manuell strace/py-spy
+    durchgehen müssen. Aufrufbar z.B. per
+    `echo diag | socat - UNIX-CONNECT:/tmp/wb-daemon.sock`.
+
+    Kernidee: _open und _timers_by_win SOLLTEN exakt übereinstimmen mit
+    dem, was GTK selbst als offene Top-Level-Fenster kennt
+    (Gtk.Window.list_toplevels()). Klaffen diese auseinander, ist genau
+    das der "unsichtbares Fenster hängt noch im Hintergrund"-Leck, den
+    wir zuvor nur indirekt per py-spy vermuten konnten.
+    """
+    lines = []
+    lines.append(f"open widgets (_open):        {sorted(_open.keys()) or '(keine)'}")
+
+    total_timers = sum(len(v) for v in _timers_by_win.values())
+    lines.append(f"tracked timers total:         {total_timers}")
+    for win, tids in _timers_by_win.items():
+        wname = next((n for n, w in _open.items() if w is win), "???")
+        lines.append(f"  '{wname}': {len(tids)} timer(s), ids={tids}")
+
+    try:
+        toplevels = Gtk.Window.list_toplevels()
+        visible = [w for w in toplevels if w.get_visible()]
+        tracked = set(_open.values())
+        untracked = [w for w in toplevels if w not in tracked]
+        lines.append(f"GTK toplevels total:          {len(toplevels)} (visible: {len(visible)})")
+        if untracked:
+            lines.append(f"⚠ UNTRACKED toplevels (nicht in _open!): {len(untracked)}")
+            for w in untracked:
+                try:
+                    title = w.get_title()
+                except Exception:
+                    title = "?"
+                lines.append(f"    - title={title!r} visible={w.get_visible()}")
+        else:
+            lines.append("no untracked toplevels — kein Fenster-Leck erkennbar")
+    except Exception as e:
+        lines.append(f"(konnte GTK-Toplevels nicht auflisten: {e})")
+
+    try:
+        qsize = _THREAD_POOL._work_queue.qsize()
+        nthreads = len(_THREAD_POOL._threads)
+        lines.append(f"thread pool: {nthreads} worker thread(s), {qsize} queued task(s)")
+    except Exception as e:
+        lines.append(f"(konnte Thread-Pool-Status nicht lesen: {e})")
+
+    try:
+        import psutil
+        p = psutil.Process()
+        lines.append(f"process: {p.num_threads()} OS thread(s), "
+                      f"{p.cpu_percent(interval=0.2):.1f}% CPU")
+    except Exception as e:
+        lines.append(f"(konnte Prozess-Info nicht lesen: {e})")
+
+    return "\n".join(lines)
+
 def _on_client_readable(conn, _cond):
     try:
         data = conn.recv(256)
         if data:
             name = data.decode("utf-8", "ignore").strip()
-            if name:
+            if name in ("diag", "--diag"):
+                result = _diag_report()
+                try: conn.sendall((result + "\n").encode())
+                except Exception: pass
+            elif name:
                 result = toggle_widget(name)
                 try: conn.sendall((result + "\n").encode())
                 except Exception: pass
@@ -3667,16 +3760,48 @@ def _cli_show_weather_location() -> int:
     print(f"Config file: {WEATHER_CONF}")
     return 0
 
+def _cli_diag() -> int:
+    """Verbindet sich mit dem laufenden Daemon über dessen Unix-Socket
+    und fragt den Selbstdiagnose-Report ab (siehe _diag_report()). So
+    lässt sich beim nächsten "100% CPU"-Verdacht sofort prüfen, ob
+    heimlich noch Fenster/Timer offen sind, ohne socat/py-spy/strace:
+
+        python3 widgets_daemon.py --diag
+    """
+    try:
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        s.settimeout(3)
+        s.connect(SOCK_PATH)
+        s.sendall(b"diag")
+        s.shutdown(socket.SHUT_WR)
+        chunks = []
+        while True:
+            chunk = s.recv(4096)
+            if not chunk:
+                break
+            chunks.append(chunk)
+        s.close()
+    except Exception as e:
+        print(f"Konnte keine Verbindung zum Daemon herstellen ({SOCK_PATH}): {e}",
+              file=sys.stderr)
+        print("Läuft der Daemon? (systemctl --user status wb-daemon.service)",
+              file=sys.stderr)
+        return 1
+    print(b"".join(chunks).decode("utf-8", "ignore"))
+    return 0
+
 def _print_cli_usage() -> None:
     print(
         "widgets_daemon.py [--set-weather \"<Location>\" | "
         "--set-weather-coords <lat> <lon> \"<Name>\" | "
-        "--show-weather]\n"
+        "--show-weather | --diag]\n"
         "Without arguments: starts the daemon (typically via systemd --user wb-daemon.service).",
         file=sys.stderr)
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] == "--set-weather":
+    if len(sys.argv) > 1 and sys.argv[1] == "--diag":
+        sys.exit(_cli_diag())
+    elif len(sys.argv) > 1 and sys.argv[1] == "--set-weather":
         if len(sys.argv) < 3:
             _print_cli_usage()
             sys.exit(1)

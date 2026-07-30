@@ -159,6 +159,12 @@ if not f then return default end
             no_anim      = false,
         })
 
+        hl.config({
+            xwayland = {
+                force_zero_scaling = true,
+            },
+        })
+
         hl.permission("/usr/(bin|local/bin)/hyprpm", "plugin", "allow")
 
         -- Touch-Geste: Wisch von unten nach oben pingt den waybar-autohide-Daemon an
@@ -243,7 +249,7 @@ if not f then return default end
                 hl.config({
                     input = {
                         kb_layout    = "de",
-                        follow_mouse = 1,
+                        follow_mouse = 0,
                         float_switch_override_focus = 0,
                         sensitivity  = 0,
                         touchpad = {
@@ -280,26 +286,155 @@ if not f then return default end
 
                 hl.config({
                     scrolling = {
-                        wrap_focus   = true,
+                        wrap_focus   = false,
                         column_width = 0.5,
                     },
                 })
 
-                -- Fokus-Wechsel: layoutabhängig zwischen movefocus und cycle wählen
-                local function focusOrCycle(direction, cycleAction)
-                return function()
-                local ws = hl.get_active_special_workspace() or hl.get_active_workspace()
 
-                if ws ~= nil and ws.tiled_layout == "scrolling" and (direction == "left" or direction == "right") then
-                    local dir = (direction == "left") and "l" or "r"
-                    hl.dispatch(hl.dsp.layout("focus " .. dir))
-                    elseif ws ~= nil and ws.tiled_layout == "monocle" and (direction == "left" or direction == "right") then
-                        hl.dispatch(hl.dsp.layout(cycleAction))
-                        else
-                            hl.dispatch(hl.dsp.focus({ direction = direction }))
-                            end
-                            end
-                            end
+
+-- Gibt den Monitor in der angegebenen Richtung zurück (nur horizontal)
+local function get_monitor_in_direction(current_monitor, direction)
+    local monitors = hl.get_monitors()
+    local best = nil
+    for _, m in ipairs(monitors) do
+        if direction == "right" and m.x > current_monitor.x then
+            if not best or m.x < best.x then best = m end
+        elseif direction == "left" and m.x < current_monitor.x then
+            if not best or m.x > best.x then best = m end
+        end
+    end
+    return best
+end
+
+-- Prüft, ob auf einem Monitor (irgendein Workspace) Fenster existieren
+local function monitor_has_windows(monitor)
+    for _, ws in ipairs(hl.get_workspaces()) do
+        if ws.monitor and ws.monitor.name == monitor.name then
+            local wins = hl.get_workspace_windows(ws)
+            if wins and #wins > 0 then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+
+
+-- ============================================================
+-- Scrolling: native focus r/l + Monitorwechsel mit Prüfung
+-- ============================================================
+local function scrolling_focus(direction)
+    local ws = hl.get_active_workspace()
+    if not ws or ws.tiled_layout ~= "scrolling" then return end
+
+    local wins = hl.get_workspace_windows(ws)
+    if not wins or #wins == 0 then return end
+
+    local active = hl.get_active_window()
+    local idx
+    for i, win in ipairs(wins) do
+        if win == active then
+            idx = i
+            break
+        end
+    end
+    if not idx then return end
+
+    if direction == "right" then
+        if idx == #wins then
+            local current_mon = hl.get_active_monitor()
+            local target_mon = get_monitor_in_direction(current_mon, "right")
+            if target_mon and monitor_has_windows(target_mon) then
+                hl.dispatch(hl.dsp.focus({ monitor = target_mon.name }))
+            end
+        else
+            hl.dispatch(hl.dsp.layout("focus r"))
+        end
+    else -- left
+        if idx == 1 then
+            local current_mon = hl.get_active_monitor()
+            local target_mon = get_monitor_in_direction(current_mon, "left")
+            if target_mon and monitor_has_windows(target_mon) then
+                hl.dispatch(hl.dsp.focus({ monitor = target_mon.name }))
+            end
+        else
+            hl.dispatch(hl.dsp.layout("focus l"))
+        end
+    end
+end
+
+-- ============================================================
+-- Monocle: cyclenext/prev + Monitorwechsel mit Prüfung
+-- ============================================================
+local function monocle_focus(direction, cycleAction)
+    local ws = hl.get_active_workspace()
+    if not ws or ws.tiled_layout ~= "monocle" then return end
+
+    local wins = hl.get_workspace_windows(ws)
+    if not wins or #wins == 0 then return end
+
+    local active = hl.get_active_window()
+    local idx
+    for i, win in ipairs(wins) do
+        if win == active then
+            idx = i
+            break
+        end
+    end
+    if not idx then return end
+
+    if direction == "right" then
+        if idx == #wins then
+            local current_mon = hl.get_active_monitor()
+            local target_mon = get_monitor_in_direction(current_mon, "right")
+            if target_mon and monitor_has_windows(target_mon) then
+                hl.dispatch(hl.dsp.focus({ monitor = target_mon.name }))
+            end
+        else
+            hl.dispatch(hl.dsp.layout(cycleAction))   -- cyclenext
+        end
+    else -- left
+        if idx == 1 then
+            local current_mon = hl.get_active_monitor()
+            local target_mon = get_monitor_in_direction(current_mon, "left")
+            if target_mon and monitor_has_windows(target_mon) then
+                hl.dispatch(hl.dsp.focus({ monitor = target_mon.name }))
+            end
+        else
+            hl.dispatch(hl.dsp.layout(cycleAction))   -- cycleprev
+        end
+    end
+end
+
+
+
+                -- Fokus-Wechsel: layoutabhängig zwischen movefocus und cycle wählen
+                -- Fokus-Wechsel: layoutabhängig zwischen movefocus und cycle wählen
+local function focusOrCycle(direction, cycleAction)
+    return function()
+        local ws = hl.get_active_special_workspace() or hl.get_active_workspace()
+        if not ws then return end
+
+        local layout = ws.tiled_layout
+
+        if layout == "scrolling" and (direction == "left" or direction == "right") then
+            scrolling_focus(direction)
+            return
+        end
+
+        if layout == "monocle" and (direction == "left" or direction == "right") then
+            monocle_focus(direction, cycleAction)
+            return
+        end
+
+        -- Alle anderen Layouts (Master, Dwindle, Float) oder vertikale Richtungen
+        hl.dispatch(hl.dsp.focus({ direction = direction }))
+    end
+end
+
+
 
                             hl.bind(mainMod .. " + a", focusOrCycle("left",  "cycleprev"))
                             hl.bind(mainMod .. " + d", focusOrCycle("right", "cyclenext"))

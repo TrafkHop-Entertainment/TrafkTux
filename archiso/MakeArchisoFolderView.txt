@@ -1,0 +1,1 @@
+ls -laR --ignore="share" --ignore=".themes" > archiso.txt
