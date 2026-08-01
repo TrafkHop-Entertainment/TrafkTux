@@ -1,7 +1,5 @@
-Also wenn du fertig bist, hier ein paar bugs:
-
 Wenn es einen 2. Bildschirm gibt und man den einstellt, dann wird nix übernommen.
 Außerdem fehlt noch immer der hdr ein aus knopf...
 Es fehlt auch die Monitor Auswahl wo man sagen kann, dass der über dem ist oder der an der Seite ist und so.
 Außerdem ist bei der resolution manchmal bei den auswahlmöglichkeiten was dabei was der monitor gar nicht kann, bei mir z.B. 2160p obwol mein monitor nur 1080p kann.
-Andersrum ist es bei der refresh rate, wo nur 120hz angezeigt wird, obwohl mein monitor 165hz kann.
+Andersrum ist es bei der refresh rate, wo nur 120hz angezeigt wird, obwohl einer meiner monitore 165hz kann.

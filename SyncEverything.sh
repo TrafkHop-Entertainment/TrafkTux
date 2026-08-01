@@ -9,7 +9,7 @@
 # vorhanden). Dauert dafuer bei den grossen Icon-Ordnern entsprechend
 # laenger als frueher.
 #
-# Hat 2 Modi:
+# Hat 3 Modi (kombinierbar):
 #
 #   1. Normal (Standard, kein Flag):
 #      nur etc/skel, kein Grub/Plymouth/Boot.
@@ -20,26 +20,35 @@
 #      wenn da noch keine Dateien drin sind). Wird dabei tatsaechlich
 #      was kopiert, laeuft am Ende automatisch grub-mkconfig + mkinitcpio.
 #
+#   3. Schnell (--fast):
+#      wie der jeweils aktive Modus, PLUS die grossen Icon-/Theme-Dumps
+#      (.icons, .themes, .local/share/icons, .local/share/themes,
+#      .local/share/fonts) werden komplett uebersprungen. Fuer den Fall,
+#      dass sich an denen eh nichts geaendert hat und man nur schnell
+#      die restlichen Configs nachziehen will. Kombinierbar mit --full.
+#
 # Die harte Blacklist (Passwoerter, SSH-Host-Keys, sudoers, Calamares,
 # ...) bleibt in JEDEM Fall tabu, egal welcher Modus - auch wenn diese
 # Pfade beim aktuellen Scope eh nicht vorkommen sollten, sie bleiben
 # als Sicherheitsnetz drin.
 #
-# Aufruf: ./sync-systemupdate.sh [--dry-run] [--full]
+# Aufruf: ./sync-systemupdate.sh [--dry-run] [--full] [--fast]
 
 AIROOTFS_DIR="/run/media/hopx/HopxSSD/TrafkSite/Projects/TrafkTux/TrafkTux/archiso/airootfs"
 BACKUP_DIR="$HOME/.trafktux-sync-backups/$(date +%Y%m%d-%H%M%S)"
 
 DRY_RUN=0
 WITH_FULL=0
+FAST=0
 
 for arg in "$@"; do
     case "$arg" in
         --dry-run) DRY_RUN=1 ;;
         --full) WITH_FULL=1 ;;
+        --fast) FAST=1 ;;
         *)
             echo "Unbekannte Option: $arg"
-            echo "Erlaubt: --dry-run, --full"
+            echo "Erlaubt: --dry-run, --full, --fast"
             exit 1
             ;;
     esac
@@ -80,6 +89,26 @@ SENSITIVE_PREFIXES=(
     "etc/default/grub"
     "etc/mkinitcpio.conf"
     "etc/mkinitcpio.d"
+    "boot/grub/themes"
+)
+
+# ---------------------------------------------------------------------
+# Grosse Icon-/Theme-/Cursor-Dumps - werden nur mit --fast uebersprungen
+# (in JEDEM anderen Fall, egal ob normal oder --full, ganz normal mit
+# synct). Prefix-Match relativ zu airootfs. Ergaenze die Liste einfach,
+# falls euer Projekt weitere grosse Dump-Ordner bekommt. Deckt auch das
+# ab, was frueher sync-arbeitsskript.sh (clay-icons, TrafkCursor_Build)
+# uebersprungen hat.
+# ---------------------------------------------------------------------
+HEAVY_PREFIXES=(
+    "etc/skel/.icons"
+    "etc/skel/.themes"
+    "etc/skel/.local/share/icons"
+    "etc/skel/.local/share/themes"
+    "etc/skel/.local/share/fonts"
+    "etc/skel/.config/clay-icons"
+    "etc/skel/.config/hypr/TrafkCursor_Build"
+    "usr/share"
 )
 
 is_blacklisted() {
@@ -119,6 +148,9 @@ if [[ $WITH_FULL -eq 1 ]]; then
 else
     echo "--- Normaler Modus: Grub/Plymouth/Boot-relevantes wird NICHT angefasst (--full fuer alles) ---"
 fi
+if [[ $FAST -eq 1 ]]; then
+    echo "--- SCHNELL-Modus: Icon-/Theme-Dumps (.icons, .themes, ...) werden UEBERSPRUNGEN ---"
+fi
 
 echo "WARNUNG: Dieses Skript KOPIERT Dateien aus deinem Archiso-Ordner in dein lokales System."
 echo "Synct das komplette etc/skel (mehr als das Arbeitsskript, das nur .config macht)."
@@ -133,6 +165,7 @@ fi
 COPIED=0
 SKIPPED_BLACKLIST=0
 SKIPPED_SENSITIVE=0
+SKIPPED_HEAVY=0
 BACKED_UP=0
 SENSITIVE_COPIED=0
 
@@ -189,6 +222,12 @@ while read -r FILE; do
         fi
     fi
 
+    if [[ $FAST -eq 1 ]] && matches_prefix_list "$REL_PATH" "${HEAVY_PREFIXES[@]}"; then
+        echo "UEBERSPRUNGEN (Icon/Theme-Dump, --fast gesetzt): $REL_PATH"
+        SKIPPED_HEAVY=$((SKIPPED_HEAVY + 1))
+        continue
+    fi
+
     resolve_target "$REL_PATH"
 
     if [[ $DRY_RUN -eq 1 ]]; then
@@ -223,6 +262,7 @@ echo "Systemupdate abgeschlossen!"
 echo "  Kopiert:                        $COPIED"
 echo "  Geschuetzt (Blacklist):         $SKIPPED_BLACKLIST"
 echo "  Uebersprungen (Grub/Plymouth):  $SKIPPED_SENSITIVE"
+echo "  Uebersprungen (Icon/Theme):     $SKIPPED_HEAVY"
 echo "  Gesichert vor Ueberschreiben:   $BACKED_UP"
 if [[ $DRY_RUN -eq 0 && $BACKED_UP -gt 0 ]]; then
     echo "  Backups liegen unter: $BACKUP_DIR"
@@ -244,3 +284,4 @@ fi
 echo ""
 echo "Tipp: mit '--dry-run' kannst du vorher unverbindlich schauen, was passieren wuerde."
 echo "Mit '--full' wird auch Grub/Plymouth/Boot mit synct (inkl. leerer Ordner)."
+echo "Mit '--fast' werden die grossen Icon-/Theme-Dumps uebersprungen (kombinierbar mit --full)."

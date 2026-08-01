@@ -1,0 +1,50 @@
+[Default Applications]
+# Ordner
+inode/directory=Thunar.desktop
+
+# Text- und Code-Dateien (immer mit Xed öffnen)
+text/plain=xed.desktop
+text/x-shellscript=xed.desktop
+text/x-csrc=xed.desktop
+text/x-python=xed.desktop
+text/markdown=xed.desktop
+text/x-lua=xed.desktop
+text/x-perl=xed.desktop
+application/json=xed.desktop
+application/xml=xed.desktop
+application/typescript=xed.desktop
+application/sql=xed.desktop
+
+# Webseiten
+text/html=firefox.desktop
+
+# Bilder (Betrachten mit Loupe)
+image/png=org.gnome.Loupe.desktop
+image/jpeg=org.gnome.Loupe.desktop
+image/gif=org.gnome.Loupe.desktop
+image/svg+xml=org.gnome.Loupe.desktop
+image/webp=org.gnome.Loupe.desktop
+
+# Videos (mit VLC)
+video/mp4=vlc.desktop
+video/webm=vlc.desktop
+video/matroska=vlc.desktop
+video/quicktime=vlc.desktop
+
+# Audio (ebenfalls VLC)
+audio/mpeg=vlc.desktop
+audio/x-mpegurl=vlc.desktop
+audio/ogg=vlc.desktop
+
+# Archive (mit Ark)
+application/zip=ark.desktop
+application/x-7z-compressed=ark.desktop
+application/x-rar=ark.desktop
+application/x-tar=ark.desktop
+application/gzip=ark.desktop
+
+# PDF (Firefox kann es anzeigen, da wir keinen dedizierten PDF-Betrachter installiert haben)
+application/pdf=firefox.desktop
+
+# Ausführbare Dateien (im Terminal öffnen – Vorsicht, das startet sie nicht, sondern zeigt den Ordner? Besser weglassen, aber du kannst es auf xfce4-terminal setzen, falls gewünscht)
+# application/x-executable=xfce4-terminal.desktop

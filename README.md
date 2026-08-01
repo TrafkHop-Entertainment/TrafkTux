@@ -234,7 +234,7 @@ In Media you can see what plays at the moment, buttons for pause and next/last a
 IN Devices you can select the input and output Devices
 in Apps you can control the individual volume of any app
 2. Internet
-Here you can select all internet access points (password is not stored, you need to type it in every time you manually connect, so just wait a bit until it automaticly connects)
+Here you can select all internet access points and also do a quick speed test
 3. Bluetooth
 Connect, disconnect, sync and delete all of your bluetooth devicces
 4. Brightness
@@ -318,10 +318,13 @@ We have themed a lot of apps:
 ## Known Bugs:
 * The ISO does not boot at the moment.... but as this distro is still in development, this is mostly a nin issue that will be fixed sooner than later
 
+The Internet when connected to the Distro, if you want to play a game on e.g. a switch 2 like e.g. Fortnite, the game is almost unplayable duo the lack of internet. There is a permanent yellow or red arrow. This is only if the same internet is connected to the OS. This needs to be fixed asap!!!
+
 
 ### Widgets to implement
 
 * advanced brightness and night mode control for individual monitors and make the second tab be always shown to see that you have currently no things to change colour.
+* In the Internet Tab add a little speed Test, nothing special, just upload, download and ping and stuff like that. That should be a second tab with a start button.
 * In the Calender, add the function to delete appointments and remove the right click action
 * check if lan connections show up in network + add other methods of connection + dns change + other internet security features + vpn integration maybe, but not important + later if released implement snowfoxOSv3's Mesh Connect feature.
 * In settings/Display, add a hdr toggle + other hyprland display options (per monitor ofc). And fix that you cannot configure other monitors as they are not written in the config or something like that.

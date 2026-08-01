@@ -1,0 +1,90 @@
+# TrafkTux GRUB Theme
+# Farben 1:1 aus gtk-dark.css und theme.rasi übernommen, damit
+# GRUB → Login → Desktop optisch nahtlos ineinander übergeht.
+#
+#   Hintergrund (GTK theme_bg_color)   #23163b
+#   Basis / dunkler (GTK theme_base)   #1a0d34
+#   Akzent (GTK theme_selected_bg)     #5a3998
+#   Text hell (GTK theme_fg_color)     #f6f3d5
+#   Text normal (rofi text-normal)     #dcd2ff
+#   Text selected (rofi text-selected) #ffffff
+#
+# Blasen-Konzept 1:1 vom rofi-Bubble-Menü übernommen:
+#   bubble_normal_c.png   -> inaktiver Menüpunkt (dunkle Blase)
+#   bubble_selected_c.png -> anvisierter Menüpunkt (helle Blase)
+# Wechselt automatisch beim Hoch/Runter-Navigieren, kein Extra-Code
+# nötig - das übernimmt GRUBs pixmap_style ganz genau wie rofi es
+# mit element/element-selected macht.
+
+title-text: ""
+desktop-color: "#23163b"
+
++label {
+    id = "__title__"
+    top = 6%
+    left = 0
+    width = 100%
+    height = 40
+    text = "TrafkTux"
+    align = "center"
+    color = "#fff495"
+    font = "Noto Sans Bold 28"
+}
+
++label {
+    top = 6%+46
+    left = 0
+    width = 100%
+    height = 24
+    text = "Choose your OS"
+    align = "center"
+    color = "#9c81cf"
+    font = "Noto Sans 14"
+}
+
+# ── Blasen-Menü ──────────────────────────────────────────────
+# Vertikale Liste, jede Zelle exakt so groß wie die Blasen-PNGs
+# (260x260) -> kein Stretching, 1:1 wie im rofi-Theme.
++boot_menu {
+    left = 50%-190
+    top = 22%
+    width = 380
+    height = 72%
+    item_height = 260
+    item_width = 260
+    item_spacing = 22
+    item_padding = 0
+    icon_width = 0
+    icon_height = 0
+    item_icon_space = 0
+
+    item_font = "Noto Sans Bold 16"
+    selected_item_font = "Noto Sans Bold 16"
+
+    item_color = "#f6f3d5"
+    selected_item_color = "#fff495"
+
+    item_align = "center"
+    item_valign = "center"
+
+    item_pixmap_style = "bubble_normal_*"
+    selected_item_pixmap_style = "bubble_selected_*"
+
+    scrollbar = false
+}
+
+# ── Countdown-Leiste ─────────────────────────────────────────
++progress_bar {
+    id = "__timeout__"
+    left = 50%-190
+    top = 94%
+    width = 380
+    height = 22
+    show_text = true
+    text = "@TIMEOUT_NOTIFICATION_MIDDLE@"
+    font = "Noto Sans 14"
+    text_color = "#f6f3d5"
+    bg_color = "#5a3998"
+    fg_color = "#7554B3"
+    border_color = "#38255B"
+}

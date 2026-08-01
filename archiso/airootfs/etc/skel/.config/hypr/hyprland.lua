@@ -280,7 +280,7 @@ if not f then return default end
                     "bash -c 'p=/tmp/waybar-autohide.pid; [ -f \"$p\" ] && kill -RTMIN+1 $(cat \"$p\")'"
                 ), { description = "Waybar-Autohide sperren/entsperren" })
 
-                hl.bind(mainMod .. " + R", hl.dsp.exec_cmd('xfce4-terminal -x bash -c "/run/media/hopx/HopxSSD/TrafkSite/Projects/TrafkTux/TrafkTux/SyncMainConfigs.sh"'), { description = "Sync with system" })
+                hl.bind(mainMod .. " + R", hl.dsp.exec_cmd('xfce4-terminal -x bash -c "/run/media/hopx/HopxSSD/TrafkSite/Projects/TrafkTux/TrafkTux/SyncEverything.sh --fast"'), { description = "Sync with system" })
 
                 hl.bind(mainMod .. " + H", hl.dsp.exec_cmd("bash ~/.config/waybar/scripts/hideall.sh toggle"), { description = "Alle Fenster verstecken/wiederherstellen" })
 
@@ -307,75 +307,92 @@ local function get_monitor_in_direction(current_monitor, direction)
     return best
 end
 
--- Prüft, ob auf einem Monitor (irgendein Workspace) Fenster existieren
-local function monitor_has_windows(monitor)
-    for _, ws in ipairs(hl.get_workspaces()) do
-        if ws.monitor and ws.monitor.name == monitor.name then
-            local wins = hl.get_workspace_windows(ws)
-            if wins and #wins > 0 then
-                return true
-            end
-        end
-    end
-    return false
-end
-
 
 
 -- ============================================================
--- Scrolling: native focus r/l + Monitorwechsel mit Prüfung
+-- Scrolling: native focus r/l + Monitorwechsel
 -- ============================================================
 local function scrolling_focus(direction)
     local ws = hl.get_active_workspace()
     if not ws or ws.tiled_layout ~= "scrolling" then return end
 
     local wins = hl.get_workspace_windows(ws)
-    if not wins or #wins == 0 then return end
-
     local active = hl.get_active_window()
-    local idx
-    for i, win in ipairs(wins) do
-        if win == active then
-            idx = i
-            break
+
+    -- NEU: Wenn der aktuelle Monitor/Workspace leer ist, direkt rüber springen!
+    if not wins or #wins == 0 or not active then
+        local current_mon = hl.get_active_monitor()
+        local target_mon = get_monitor_in_direction(current_mon, direction)
+        if target_mon then
+            hl.dispatch(hl.dsp.focus({ monitor = target_mon.name }))
         end
+        return
     end
-    if not idx then return end
+
+    -- Robuster Helfer: Findet die X-Koordinate des Fensters sicher heraus.
+    local function get_x(w)
+        if type(w.at) == "table" and type(w.at.x) == "number" then return w.at.x end
+        if type(w.at) == "table" and type(w.at[1]) == "number" then return w.at[1] end
+        if type(w.position) == "table" and type(w.position.x) == "number" then return w.position.x end
+        if type(w.x) == "number" then return w.x end
+        return 0
+    end
+
+    local active_x = get_x(active)
+    local is_edge = true
 
     if direction == "right" then
-        if idx == #wins then
-            local current_mon = hl.get_active_monitor()
-            local target_mon = get_monitor_in_direction(current_mon, "right")
-            if target_mon and monitor_has_windows(target_mon) then
-                hl.dispatch(hl.dsp.focus({ monitor = target_mon.name }))
+        -- Prüfen, ob IRGENDEIN Fenster auf diesem Workspace physisch weiter rechts liegt
+        for _, win in ipairs(wins) do
+            if get_x(win) > active_x then
+                is_edge = false
+                break
             end
-        else
-            hl.dispatch(hl.dsp.layout("focus r"))
         end
     else -- left
-        if idx == 1 then
-            local current_mon = hl.get_active_monitor()
-            local target_mon = get_monitor_in_direction(current_mon, "left")
-            if target_mon and monitor_has_windows(target_mon) then
-                hl.dispatch(hl.dsp.focus({ monitor = target_mon.name }))
+        -- Prüfen, ob IRGENDEIN Fenster auf diesem Workspace physisch weiter links liegt
+        for _, win in ipairs(wins) do
+            if get_x(win) < active_x then
+                is_edge = false
+                break
             end
-        else
-            hl.dispatch(hl.dsp.layout("focus l"))
         end
+    end
+
+    if is_edge then
+        -- Monitor wechseln (ohne Prüfung, ob der Ziel-Monitor Fenster hat!)
+        local current_mon = hl.get_active_monitor()
+        local target_mon = get_monitor_in_direction(current_mon, direction)
+        if target_mon then
+            hl.dispatch(hl.dsp.focus({ monitor = target_mon.name }))
+        end
+    else
+        -- Es gibt noch versteckte Fenster auf diesem Monitor -> normal Scroller-Fokus nutzen
+        local cmd = (direction == "right") and "focus r" or "focus l"
+        hl.dispatch(hl.dsp.layout(cmd))
     end
 end
 
 -- ============================================================
--- Monocle: cyclenext/prev + Monitorwechsel mit Prüfung
+-- Monocle: cyclenext/prev + Monitorwechsel
 -- ============================================================
 local function monocle_focus(direction, cycleAction)
     local ws = hl.get_active_workspace()
     if not ws or ws.tiled_layout ~= "monocle" then return end
 
     local wins = hl.get_workspace_windows(ws)
-    if not wins or #wins == 0 then return end
-
     local active = hl.get_active_window()
+
+    -- NEU: Wenn der aktuelle Monitor/Workspace leer ist, direkt rüber springen!
+    if not wins or #wins == 0 or not active then
+        local current_mon = hl.get_active_monitor()
+        local target_mon = get_monitor_in_direction(current_mon, direction)
+        if target_mon then
+            hl.dispatch(hl.dsp.focus({ monitor = target_mon.name }))
+        end
+        return
+    end
+
     local idx
     for i, win in ipairs(wins) do
         if win == active then
@@ -389,7 +406,8 @@ local function monocle_focus(direction, cycleAction)
         if idx == #wins then
             local current_mon = hl.get_active_monitor()
             local target_mon = get_monitor_in_direction(current_mon, "right")
-            if target_mon and monitor_has_windows(target_mon) then
+            -- Monitor wechseln (ohne Prüfung, ob der Ziel-Monitor Fenster hat!)
+            if target_mon then
                 hl.dispatch(hl.dsp.focus({ monitor = target_mon.name }))
             end
         else
@@ -399,7 +417,8 @@ local function monocle_focus(direction, cycleAction)
         if idx == 1 then
             local current_mon = hl.get_active_monitor()
             local target_mon = get_monitor_in_direction(current_mon, "left")
-            if target_mon and monitor_has_windows(target_mon) then
+            -- Monitor wechseln (ohne Prüfung, ob der Ziel-Monitor Fenster hat!)
+            if target_mon then
                 hl.dispatch(hl.dsp.focus({ monitor = target_mon.name }))
             end
         else

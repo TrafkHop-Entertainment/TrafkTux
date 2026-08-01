@@ -47,6 +47,56 @@ is_hidden() {
     [ -s "$STATE_FILE" ]
 }
 
+# --- Sync-Helfer -------------------------------------------------------
+# Grund: hyprctl dispatch ist "fire and forget". Ohne Wartezeit feuert der
+# naechste Loop-Durchlauf (naechstes focus/exec_cmd) oft schon, bevor
+# Hyprland den Fokuswechsel intern durchgesetzt bzw. hyprland-minimizer
+# (externer Prozess!) sein "activewindow" ueberhaupt abgefragt hat. Das
+# fuehrt dazu, dass der Minimizer zufaellig das FALSCHE (naemlich das
+# inzwischen schon fokussierte naechste) Fenster erwischt - ein Fenster
+# bleibt dadurch sichtbar, ein anderes "glitscht" (wird evtl. doppelt
+# getroffen). Deshalb aktiv pollen statt zu hoffen/sleepen.
+
+POLL_INTERVAL=0.02
+POLL_MAX_TRIES=50   # 50 * 0.02s = 1s Timeout, danach geben wir auf und machen trotzdem weiter
+
+# Wartet, bis hyprctl activewindow tatsaechlich die gewuenschte Adresse zeigt
+wait_for_focus() {
+    local addr="$1" i
+    for (( i=0; i<POLL_MAX_TRIES; i++ )); do
+        cur=$(hyprctl activewindow -j 2>/dev/null | jq -r '.address // empty')
+        [ "$cur" = "$addr" ] && return 0
+        sleep "$POLL_INTERVAL"
+    done
+    return 1
+}
+
+# Wartet, bis das Fenster mit dieser Adresse auf einem special:-Workspace liegt
+# (= hyprland-minimizer hat es tatsaechlich versteckt)
+wait_for_hidden() {
+    local addr="$1" i ws
+    for (( i=0; i<POLL_MAX_TRIES; i++ )); do
+        ws=$(hyprctl clients -j 2>/dev/null | jq -r --arg a "$addr" '.[] | select(.address==$a) | .workspace.name // empty')
+        # Fenster nicht mehr gefunden ODER liegt auf special: -> gilt als versteckt
+        if [ -z "$ws" ] || [[ "$ws" == special:* ]]; then
+            return 0
+        fi
+        sleep "$POLL_INTERVAL"
+    done
+    return 1
+}
+
+# Wartet, bis das Fenster mit dieser Adresse wieder auf dem Ziel-Workspace liegt
+wait_for_workspace() {
+    local addr="$1" target_ws="$2" i ws
+    for (( i=0; i<POLL_MAX_TRIES; i++ )); do
+        ws=$(hyprctl clients -j 2>/dev/null | jq -r --arg a "$addr" '.[] | select(.address==$a) | .workspace.id // empty')
+        [ "$ws" = "$target_ws" ] && return 0
+        sleep "$POLL_INTERVAL"
+    done
+    return 1
+}
+
 do_status() {
     if is_hidden; then
         echo '{"class":"active"}'
@@ -79,7 +129,15 @@ do_hide() {
 
     echo "$windows" | jq -r '.[].address' | while read -r addr; do
         hyprctl dispatch "hl.dsp.focus({window='address:$addr'})" >/dev/null 2>&1
+        # Erst warten, bis der Fokus WIRKLICH auf diesem Fenster sitzt, bevor wir
+        # den Minimizer feuern - sonst erwischt der (externe!) hyprland-minimizer
+        # ggf. noch das vorherige oder schon das naechste Fenster.
+        wait_for_focus "$addr"
         hyprctl dispatch "hl.dsp.exec_cmd(\"hyprland-minimizer\")" >/dev/null 2>&1
+        # Und erst weiter zum naechsten Fenster, wenn dieses hier tatsaechlich
+        # versteckt wurde - sonst laeuft der naechste focus-Dispatch dem noch
+        # laufenden Minimizer-Prozess davon.
+        wait_for_hidden "$addr"
     done
 }
 
@@ -88,7 +146,9 @@ do_restore() {
         addr=$(echo "$entry" | jq -r '.address')
         ws=$(echo "$entry" | jq -r '.workspace')
         hyprctl dispatch "hl.dsp.focus({window='address:$addr'})" >/dev/null 2>&1 || continue
+        wait_for_focus "$addr"
         hyprctl dispatch "hl.dsp.window.move({workspace=$ws})" >/dev/null 2>&1
+        wait_for_workspace "$addr" "$ws"
     done
     rm -f "$STATE_FILE"
 }

@@ -1,27 +1,27 @@
 .:
-insgesamt 5084
-drwxr-xr-x 1 hopx hopx     388 30. Jul 01:38 .
-drwxr-xr-x 1 hopx hopx     214 29. Jul 15:44 ..
-drwxr-xr-x 1 hopx hopx      18  5. Jul 12:27 airootfs
--rw-r--r-- 1 hopx hopx 5056988 23. Jul 23:01 archiso_structure.txt
--rw-r--r-- 1 hopx hopx       0 30. Jul 01:45 archiso.txt
--rw-r--r-- 1 hopx hopx      26 29. Jun 12:03 bootstrap_packages
--rw-r--r-- 1 hopx hopx    4792 13. Jul 00:03 build-hyprland-plugins.sh
--rwxr-xr-x 1 hopx hopx    2552 11. Jul 13:00 build-iso.sh
--rw------- 1 hopx hopx    1763 25. Jul 22:02 build-local-repo.sh
-drwxr-xr-x 1 hopx hopx      12 29. Jun 12:03 efiboot
-drwxr-xr-x 1 hopx hopx      40  9. Jul 19:51 grub
--rw-r--r-- 1 hopx hopx  108677 11. Jul 13:21 log.txt
--rw-r--r-- 1 hopx hopx     276  9. Jul 19:50 mkinitcpio.conf
--rw------- 1 hopx hopx    2759 28. Jul 23:35 packages.x86_64
--rw-r--r-- 1 hopx hopx    2839  7. Jul 20:00 pacman.conf
--rw-r--r-- 1 hopx hopx    1380 11. Jul 14:05 profiledef.sh
-drwxr-xr-x 1 hopx hopx     252 29. Jun 12:17 syslinux
+insgesamt 148
+drwxr-xr-x 1 hopx hopx    396 30. Jul 01:46 .
+drwxr-xr-x 1 hopx hopx    214 31. Jul 01:38 ..
+drwxr-xr-x 1 hopx hopx     18  5. Jul 12:27 airootfs
+-rw-r--r-- 1 hopx hopx      0 31. Jul 15:24 archiso.txt
+-rw-r--r-- 1 hopx hopx     26 29. Jun 12:03 bootstrap_packages
+-rw-r--r-- 1 hopx hopx   4792 13. Jul 00:03 build-hyprland-plugins.sh
+-rwxr-xr-x 1 hopx hopx   2552 11. Jul 13:00 build-iso.sh
+-rw------- 1 hopx hopx   1763 25. Jul 22:02 build-local-repo.sh
+drwxr-xr-x 1 hopx hopx     12 29. Jun 12:03 efiboot
+drwxr-xr-x 1 hopx hopx     40  9. Jul 19:51 grub
+-rw-r--r-- 1 hopx hopx 108677 11. Jul 13:21 log.txt
+-rw-r--r-- 1 hopx hopx     58 30. Jul 01:46 MakeArchisoFolderView.txt
+-rw-r--r-- 1 hopx hopx    276  9. Jul 19:50 mkinitcpio.conf
+-rw------- 1 hopx hopx   2759 28. Jul 23:35 packages.x86_64
+-rw-r--r-- 1 hopx hopx   2839  7. Jul 20:00 pacman.conf
+-rw-r--r-- 1 hopx hopx   1380 11. Jul 14:05 profiledef.sh
+drwxr-xr-x 1 hopx hopx    252 29. Jun 12:17 syslinux
 
 ./airootfs:
 insgesamt 0
 drwxr-xr-x 1 hopx hopx  18  5. Jul 12:27 .
-drwxr-xr-x 1 hopx hopx 388 30. Jul 01:38 ..
+drwxr-xr-x 1 hopx hopx 396 30. Jul 01:46 ..
 drwxr-xr-x 1 hopx hopx 228 25. Jul 21:33 etc
 drwxr-xr-x 1 hopx hopx  68 11. Jul 13:59 opt
 drwxr-xr-x 1 hopx hopx  26 10. Jul 22:52 usr
@@ -148,7 +148,7 @@ drwxr-xr-x 1 hopx hopx  14 28. Jul 21:29 dunst
 drwxr-xr-x 1 hopx hopx  50  1. Jul 21:47 fastfetch
 drwxr-xr-x 1 hopx hopx  56 27. Jul 16:04 gtk-3.0
 drwxr-xr-x 1 hopx hopx  74 27. Jul 16:04 gtk-4.0
-drwxr-xr-x 1 hopx hopx 274 30. Jul 01:01 hypr
+drwxr-xr-x 1 hopx hopx 242 30. Jul 22:32 hypr
 drwxr-xr-x 1 hopx hopx  76 27. Jul 16:04 Kvantum
 drwxr-xr-x 1 hopx hopx  12 27. Jul 16:04 nwg-look
 drwxr-xr-x 1 hopx hopx  72 26. Jul 03:16 qt5ct
@@ -190,11 +190,10 @@ lrwxrwxrwx 1 hopx hopx  73 27. Jul 16:04 gtk-dark.css -> /home/hopx/.local/share
 -rw-r--r-- 1 hopx hopx 209 27. Jul 16:03 settings.ini
 
 ./airootfs/etc/skel/.config/hypr:
-insgesamt 384
-drwxr-xr-x 1 hopx hopx    274 30. Jul 01:01 .
+insgesamt 352
+drwxr-xr-x 1 hopx hopx    242 30. Jul 22:32 .
 drwxr-xr-x 1 hopx hopx    170 27. Jul 02:40 ..
--rw-r--r-- 1 hopx hopx  40598 30. Jul 01:01 hyprland.lua
--rw-r--r-- 1 hopx hopx  39803 27. Jul 20:18 hyprland_old.lua
+-rw-r--r-- 1 hopx hopx  45607 30. Jul 20:20 hyprland.lua
 -rw-r--r-- 1 hopx hopx   1722  9. Jul 18:41 hyprlock.conf
 -rw-r--r-- 1 hopx hopx 282902  9. Jul 18:38 hyprlock.png
 -rw-r--r-- 1 hopx hopx    245 29. Jun 11:37 hyprpaper.conf
@@ -207,7 +206,7 @@ drwxr-xr-x 1 hopx hopx    142 28. Jul 18:53 wallpapers
 ./airootfs/etc/skel/.config/hypr/TrafkCursor_Build:
 insgesamt 12
 drwxr-xr-x 1 hopx hopx  178 15. Jul 00:12 .
-drwxr-xr-x 1 hopx hopx  274 30. Jul 01:01 ..
+drwxr-xr-x 1 hopx hopx  242 30. Jul 22:32 ..
 -rw-r--r-- 1 hopx hopx 3733 15. Jul 00:03 build_theme_hyprcursor.sh
 -rw-r--r-- 1 hopx hopx 4116 15. Jul 00:03 build_theme_xcursor.sh
 drwxr-xr-x 1 hopx hopx   80 15. Jul 00:12 Output
@@ -418,7 +417,7 @@ drwxr-xr-x 1 hopx hopx  178 15. Jul 00:12 ..
 ./airootfs/etc/skel/.config/hypr/wallpapers:
 insgesamt 14360
 drwxr-xr-x 1 hopx hopx     142 28. Jul 18:53 .
-drwxr-xr-x 1 hopx hopx     274 30. Jul 01:01 ..
+drwxr-xr-x 1 hopx hopx     242 30. Jul 22:32 ..
 -rw-r--r-- 1 hopx hopx 2284593 22. Jun 19:18 13WorldsBG3.png
 -rw-r--r-- 1 hopx hopx 2141526 28. Jul 18:52 Straßenklippe.png
 -rw-r--r-- 1 hopx hopx 8309408 28. Jul 18:52 Straßenklippe.png.kra
@@ -491,7 +490,7 @@ drwxr-xr-x 1 hopx hopx   170 27. Jul 02:40 ..
 drwxr-xr-x 1 hopx hopx    78 24. Jul 21:39 assets
 -rw-r--r-- 1 hopx hopx 47939 28. Jul 22:06 bubble-menu.py
 drwxr-xr-x 1 hopx hopx    38 28. Jul 23:35 launcher
-drwxr-xr-x 1 hopx hopx    38 25. Jul 17:15 powermenu
+drwxr-xr-x 1 hopx hopx    38 30. Jul 22:32 powermenu
 
 ./airootfs/etc/skel/.config/rofi/assets:
 insgesamt 756
@@ -517,7 +516,7 @@ drwxr-xr-x 1 hopx hopx   74 28. Jul 22:06 ..
 
 ./airootfs/etc/skel/.config/rofi/powermenu:
 insgesamt 8
-drwxr-xr-x 1 hopx hopx   38 25. Jul 17:15 .
+drwxr-xr-x 1 hopx hopx   38 30. Jul 22:32 .
 drwxr-xr-x 1 hopx hopx   74 28. Jul 22:06 ..
 -rw-r--r-- 1 hopx hopx 2748 25. Jul 17:15 menu.json
 -rw-r--r-- 1 hopx hopx 2927 25. Jul 01:11 theme.rasi
@@ -556,14 +555,14 @@ insgesamt 16
 drwxr-xr-x 1 hopx hopx   56 28. Jul 22:06 .
 drwxr-xr-x 1 hopx hopx  170 27. Jul 02:40 ..
 -rw-r--r-- 1 hopx hopx 7697 28. Jul 22:06 config.jsonc
-drwxr-xr-x 1 hopx hopx  310 30. Jul 01:00 scripts
+drwxr-xr-x 1 hopx hopx  310 30. Jul 22:32 scripts
 -rw-r--r-- 1 hopx hopx 5721 27. Jul 03:22 style.css
 
 ./airootfs/etc/skel/.config/waybar/scripts:
-insgesamt 376
-drwxr-xr-x 1 hopx hopx    310 30. Jul 01:00 .
+insgesamt 380
+drwxr-xr-x 1 hopx hopx    310 30. Jul 22:32 .
 drwxr-xr-x 1 hopx hopx     56 28. Jul 22:06 ..
--rwxr-xr-x 1 hopx hopx   4089 30. Jul 01:00 hideall.sh
+-rwxr-xr-x 1 hopx hopx   6741 30. Jul 20:44 hideall.sh
 -rwxr-xr-x 1 hopx hopx   1010  4. Jul 11:06 taskbar-click.sh
 -rwxr-xr-x 1 hopx hopx  26992 28. Jul 21:37 waybar_autohide
 -rw-r--r-- 1 hopx hopx  17550 28. Jul 21:37 waybar_autohide.c
@@ -1955,7 +1954,7 @@ drwxr-xr-x 1 hopx hopx     6  5. Jul 12:27 ..
 ./efiboot:
 insgesamt 0
 drwxr-xr-x 1 hopx hopx  12 29. Jun 12:03 .
-drwxr-xr-x 1 hopx hopx 388 30. Jul 01:38 ..
+drwxr-xr-x 1 hopx hopx 396 30. Jul 01:46 ..
 drwxr-xr-x 1 hopx hopx  36 29. Jun 12:21 loader
 
 ./efiboot/loader:
@@ -1975,14 +1974,14 @@ drwxr-xr-x 1 hopx hopx  36 29. Jun 12:21 ..
 ./grub:
 insgesamt 8
 drwxr-xr-x 1 hopx hopx   40  9. Jul 19:51 .
-drwxr-xr-x 1 hopx hopx  388 30. Jul 01:38 ..
+drwxr-xr-x 1 hopx hopx  396 30. Jul 01:46 ..
 -rw-r--r-- 1 hopx hopx 1202  9. Jul 19:51 grub.cfg
 -rw-r--r-- 1 hopx hopx  269  5. Jul 12:33 loopback.cfg
 
 ./syslinux:
 insgesamt 76
 drwxr-xr-x 1 hopx hopx   252 29. Jun 12:17 .
-drwxr-xr-x 1 hopx hopx   388 30. Jul 01:38 ..
+drwxr-xr-x 1 hopx hopx   396 30. Jul 01:46 ..
 -rw-r--r-- 1 hopx hopx   815 29. Jun 12:15 archiso_head.cfg
 -rw-r--r-- 1 hopx hopx    82 29. Jun 12:03 archiso_pxe.cfg
 -rw-r--r-- 1 hopx hopx  1220 29. Jun 12:16 archiso_pxe-linux.cfg
