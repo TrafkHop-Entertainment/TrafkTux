@@ -11,3 +11,5 @@ else
     fi
     hyprctl eval "hl.dispatch(hl.dsp.window.pin())"
 fi
+
+bash "$HOME/.config/hypr/soundctl.sh" toggle &

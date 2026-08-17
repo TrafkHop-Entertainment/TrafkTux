@@ -9,10 +9,19 @@
 # vorhanden). Dauert dafuer bei den grossen Icon-Ordnern entsprechend
 # laenger als frueher.
 #
+# Zusaetzlich zu etc/skel/etc/xdg/usr/share werden IMMER auch
+# etc/ufw und etc/default gescannt (SYSTEM_CONFIG_ROOTS) - das sind
+# System-weite Runtime-Configs (UFW, kuenftig z.B. systemd-resolved
+# fuer DNS-over-TLS), die kein Boot-relevantes Grub/Plymouth-Zeug
+# sind und daher nicht hinter --full liegen sollen, aber trotzdem
+# ausserhalb von etc/skel liegen. Einfach SYSTEM_CONFIG_ROOTS unten
+# erweitern, wenn weitere solche Pfade dazukommen.
+#
 # Hat 3 Modi (kombinierbar):
 #
 #   1. Normal (Standard, kein Flag):
-#      nur etc/skel, kein Grub/Plymouth/Boot.
+#      etc/skel, etc/xdg, usr/share, System-Configs (etc/ufw, etc/default
+#      etc.) - kein Grub/Plymouth/Boot.
 #
 #   2. Voll (--full):
 #      wie oben, PLUS das ganze Grub/Plymouth/Boot-relevante aus /etc -
@@ -78,18 +87,24 @@ BLACKLIST=(
 )
 
 # ---------------------------------------------------------------------
-# Grub/Plymouth/Boot-relevantes - nur mit --full synct. Prefix-Match
-# relativ zu airootfs (alles darunter zaehlt mit). Ergaenze die Liste
-# einfach, falls euer Projekt weitere bootloader-/initramfs-relevante
-# Pfade bekommt.
+# Grub/Boot-relevantes - nur mit --full synct (loest danach automatisch
+# grub-mkconfig + mkinitcpio aus). Prefix-Match relativ zu airootfs.
+# Plymouth-Theme (usr/share/plymouth) bewusst NICHT hier drin - synct
+# immer mit, egal welcher Modus, aber loest dafuer auch KEIN
+# automatisches mkinitcpio -P mehr aus. Fuers schnelle Optik-Testen
+# reicht eh "plymouth --show-splash" ohne frisches Initramfs; fuer den
+# echten Boot-Test danach manuell "sudo mkinitcpio -P" bzw.
+# "plymouth-set-default-theme -R trafktux" laufen lassen.
 # ---------------------------------------------------------------------
 SENSITIVE_PREFIXES=(
     "etc/grub"
+    "etc/grub.d"
     "etc/plymouth"
     "etc/default/grub"
     "etc/mkinitcpio.conf"
     "etc/mkinitcpio.d"
     "boot/grub/themes"
+    "etc/sddm.conf.d"
 )
 
 # ---------------------------------------------------------------------
@@ -108,7 +123,59 @@ HEAVY_PREFIXES=(
     "etc/skel/.local/share/fonts"
     "etc/skel/.config/clay-icons"
     "etc/skel/.config/hypr/TrafkCursor_Build"
-    "usr/share"
+    "usr/share/icons"
+)
+
+# ---------------------------------------------------------------------
+# System-weite Runtime-Configs (KEIN Boot-Zeug, also nicht hinter
+# --full versteckt) die ausserhalb von etc/skel/etc/xdg/usr/share
+# liegen. Werden IMMER gescannt, in jedem Modus. Achtung: die
+# BLACKLIST oben hat trotzdem Vorrang (z.B. falls hier mal versehentlich
+# ein Pfad reinrutscht der Passwoerter/Keys enthaelt).
+#
+# Aktuell drin: etc/ufw (UFW-Firewall-Konfiguration), etc/default
+# (u.a. etc/default/ufw - Achtung, etc/default/grub liegt zwar
+# technisch auch hier drunter, ist aber oben in SENSITIVE_PREFIXES
+# explizit gelistet und wird daher trotzdem nur mit --full mitgenommen,
+# die beiden Listen ueberschneiden sich hier bewusst nicht destruktiv),
+# etc/systemd (u.a. resolved.conf fuer DNS-over-TLS, sowie die
+# system/*.service Symlinks - keine Secrets drin, daher unproblematisch)
+# und etc/NetworkManager (u.a. conf.d/dns.conf, das NM anweist DNS an
+# systemd-resolved abzugeben statt /etc/resolv.conf selbst zu schreiben).
+# Neu dazu: etc/sysctl.d (u.a. 99-trafktux-hardening.conf mit den
+# sysctl-Haertungen - kernel/net/fs Settings, keine Secrets drin),
+# etc/security (u.a. pwquality.conf - die Passwort-Policy selbst,
+# keine Secrets) und etc/pam.d (u.a. die "passwd"-Datei die
+# pam_pwquality einbindet - ACHTUNG: liegt zwar im selben Ordner wie
+# potenziell sensible PAM-Stacks, aber etc/pam.d/* enthaelt selbst nie
+# Passwoerter/Hashes, nur Regeln WIE Auth ablaeuft - unproblematisch
+# fuer den Sync).
+#
+# Einfach weiter erweitern falls kuenftig noch mehr System-Configs
+# dazukommen.
+# ---------------------------------------------------------------------
+SYSTEM_CONFIG_ROOTS=(
+    "etc/ufw"
+    "etc/default"
+    "etc/systemd"
+    "etc/NetworkManager"
+    "etc/sysctl.d"
+    "etc/security"
+    "etc/pam.d"
+)
+
+# ---------------------------------------------------------------------
+# Einzelne Top-Level-Dateien (KEINE Ordner!) die trotzdem immer mit
+# synct werden sollen. Der find-basierte Scan oben erfasst nur Dateien
+# INNERHALB von SCAN_ROOTS-Ordnern - eine einzelne Datei direkt in
+# etc/ (wie etc/resolv.conf, i.d.R. ein Symlink auf
+# /run/systemd/resolve/stub-resolv.conf fuer DNS-over-TLS) faellt sonst
+# komplett durchs Raster, selbst wenn sie inhaltlich zu den System-
+# Configs gehoert. Werden wie SYSTEM_CONFIG_ROOTS immer gescannt (auch
+# ohne --full), die BLACKLIST hat aber trotzdem Vorrang.
+# ---------------------------------------------------------------------
+SYSTEM_CONFIG_FILES=(
+    "etc/resolv.conf"
 )
 
 is_blacklisted() {
@@ -139,6 +206,40 @@ resolve_target() {
     else
         TARGET_PATH="/$rel_path"
         USE_SUDO="sudo"
+    fi
+}
+
+# ---------------------------------------------------------------------
+# Baut das find-Kommando als Array. Im --fast Modus werden die
+# HEAVY_PREFIXES Ordner per "-prune" komplett von der Traversierung
+# ausgeschlossen, statt (wie vorher) jede einzelne Datei darin erst
+# aufzulisten und danach pro Datei wieder zu verwerfen - bei grossen
+# Icon-/Theme-Dumps (oder gleich ganz usr/share) potenziell zehntausende
+# Dateien, die find/bash sonst unnoetig anfassen. Ergebnis ist exakt
+# dieselbe Dateimenge wie vorher, nur ohne den Umweg ueber "auflisten,
+# dann pro Datei wegwerfen".
+# ---------------------------------------------------------------------
+build_find_cmd() {
+    FIND_CMD=(find "${SCAN_ROOTS[@]}")
+
+    local prune_paths=()
+    if [[ $FAST -eq 1 ]]; then
+        for prefix in "${HEAVY_PREFIXES[@]}"; do
+            prune_paths+=("$AIROOTFS_DIR/$prefix")
+        done
+    fi
+
+    if [[ ${#prune_paths[@]} -gt 0 ]]; then
+        FIND_CMD+=("(")
+        local first=1
+        for p in "${prune_paths[@]}"; do
+            [[ $first -eq 0 ]] && FIND_CMD+=("-o")
+            FIND_CMD+=("-path" "$p" "-o" "-path" "$p/*")
+            first=0
+        done
+        FIND_CMD+=(")" "-prune" "-o" "(" "-type" "f" "-o" "-type" "l" ")" "-print")
+    else
+        FIND_CMD+=("(" "-type" "f" "-o" "-type" "l" ")")
     fi
 }
 
@@ -187,14 +288,19 @@ if [[ $DRY_RUN -eq 0 && $WITH_FULL -eq 1 ]]; then
 fi
 
 # ---------------------------------------------------------------------
-# Zu durchsuchende Wurzeln: immer etc/skel, im vollen Modus zusaetzlich
-# die tatsaechlich existierenden Grub/Plymouth/Boot-Pfade.
+# Zu durchsuchende Wurzeln: immer etc/skel, etc/xdg, usr/share und die
+# SYSTEM_CONFIG_ROOTS (etc/ufw, etc/default, ...) - im vollen Modus
+# zusaetzlich die tatsaechlich existierenden Grub/Plymouth/Boot-Pfade.
 # ---------------------------------------------------------------------
 SCAN_ROOTS=(
     "$AIROOTFS_DIR/etc/skel"
     "$AIROOTFS_DIR/etc/xdg"
     "$AIROOTFS_DIR/usr/share"
 )
+for prefix in "${SYSTEM_CONFIG_ROOTS[@]}"; do
+    SRC_PATH="$AIROOTFS_DIR/$prefix"
+    [ -e "$SRC_PATH" ] && SCAN_ROOTS+=("$SRC_PATH")
+done
 if [[ $WITH_FULL -eq 1 ]]; then
     for prefix in "${SENSITIVE_PREFIXES[@]}"; do
         SRC_PATH="$AIROOTFS_DIR/$prefix"
@@ -202,37 +308,47 @@ if [[ $WITH_FULL -eq 1 ]]; then
     done
 fi
 
-while read -r FILE; do
+if [[ $FAST -eq 1 ]]; then
+    for prefix in "${HEAVY_PREFIXES[@]}"; do
+        [ -e "$AIROOTFS_DIR/$prefix" ] || continue
+        echo "UEBERSPRUNGEN (Icon/Theme-Dump, --fast gesetzt): $prefix/"
+        SKIPPED_HEAVY=$((SKIPPED_HEAVY + 1))
+    done
+fi
 
-    REL_PATH="${FILE#$AIROOTFS_DIR/}"
+# ---------------------------------------------------------------------
+# Verarbeitet eine einzelne Quelldatei (Blacklist-Check, Sensitive-
+# Check, Dry-Run-Ausgabe, Backup, Kopieren, Zaehlung). Genutzt sowohl
+# fuer die find-Ergebnisse aus SCAN_ROOTS als auch fuer die einzelnen
+# SYSTEM_CONFIG_FILES (z.B. etc/resolv.conf) - beide sollen exakt
+# dieselbe Behandlung bekommen, daher hier zusammengefasst statt
+# doppelt geschrieben.
+# ---------------------------------------------------------------------
+process_file() {
+    local FILE="$1"
+    local REL_PATH="${FILE#$AIROOTFS_DIR/}"
 
     if is_blacklisted "$REL_PATH"; then
         echo "GESCHUETZT (Blacklist): $REL_PATH"
         SKIPPED_BLACKLIST=$((SKIPPED_BLACKLIST + 1))
-        continue
+        return
     fi
 
-    IS_SENS=0
+    local IS_SENS=0
     if matches_prefix_list "$REL_PATH" "${SENSITIVE_PREFIXES[@]}"; then
         IS_SENS=1
         if [[ $WITH_FULL -eq 0 ]]; then
             echo "UEBERSPRUNGEN (Grub/Plymouth/Boot, --full nicht gesetzt): $REL_PATH"
             SKIPPED_SENSITIVE=$((SKIPPED_SENSITIVE + 1))
-            continue
+            return
         fi
-    fi
-
-    if [[ $FAST -eq 1 ]] && matches_prefix_list "$REL_PATH" "${HEAVY_PREFIXES[@]}"; then
-        echo "UEBERSPRUNGEN (Icon/Theme-Dump, --fast gesetzt): $REL_PATH"
-        SKIPPED_HEAVY=$((SKIPPED_HEAVY + 1))
-        continue
     fi
 
     resolve_target "$REL_PATH"
 
     if [[ $DRY_RUN -eq 1 ]]; then
         echo "WUERDE KOPIEREN: $FILE -> $TARGET_PATH"
-        continue
+        return
     fi
 
     # Existierendes Ziel vor dem Ueberschreiben sichern
@@ -243,7 +359,7 @@ while read -r FILE; do
         BACKED_UP=$((BACKED_UP + 1))
     fi
 
-    TARGET_DIR="$(dirname "$TARGET_PATH")"
+    local TARGET_DIR="$(dirname "$TARGET_PATH")"
     if [ ! -d "$TARGET_DIR" ]; then
         $USE_SUDO mkdir -p "$TARGET_DIR"
     fi
@@ -255,14 +371,31 @@ while read -r FILE; do
     if [[ $IS_SENS -eq 1 ]]; then
         SENSITIVE_COPIED=$((SENSITIVE_COPIED + 1))
     fi
-done < <(find "${SCAN_ROOTS[@]}" \( -type f -o -type l \))
+}
+
+while read -r FILE; do
+    process_file "$FILE"
+done < <(build_find_cmd && "${FIND_CMD[@]}")
+
+# ---------------------------------------------------------------------
+# Einzelne Top-Level-Dateien aus SYSTEM_CONFIG_FILES (z.B.
+# etc/resolv.conf) - werden von find/SCAN_ROOTS nicht erfasst (siehe
+# Kommentar oben bei SYSTEM_CONFIG_FILES), daher separat behandelt.
+# Nur wenn die Datei/der Symlink im airootfs tatsaechlich existiert.
+# ---------------------------------------------------------------------
+for rel_file in "${SYSTEM_CONFIG_FILES[@]}"; do
+    SRC_FILE="$AIROOTFS_DIR/$rel_file"
+    if [ -e "$SRC_FILE" ] || [ -L "$SRC_FILE" ]; then
+        process_file "$SRC_FILE"
+    fi
+done
 
 echo ""
 echo "Systemupdate abgeschlossen!"
 echo "  Kopiert:                        $COPIED"
 echo "  Geschuetzt (Blacklist):         $SKIPPED_BLACKLIST"
 echo "  Uebersprungen (Grub/Plymouth):  $SKIPPED_SENSITIVE"
-echo "  Uebersprungen (Icon/Theme):     $SKIPPED_HEAVY"
+echo "  Uebersprungen (Icon/Theme-Ordner): $SKIPPED_HEAVY"
 echo "  Gesichert vor Ueberschreiben:   $BACKED_UP"
 if [[ $DRY_RUN -eq 0 && $BACKED_UP -gt 0 ]]; then
     echo "  Backups liegen unter: $BACKUP_DIR"

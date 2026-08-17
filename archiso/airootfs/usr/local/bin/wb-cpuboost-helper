@@ -1,0 +1,30 @@
+#!/bin/bash
+# wb-cpuboost-helper — wird ausschließlich über pkexec mit Root-Rechten
+# aufgerufen (siehe com.trafktux.wbdaemon.cpuboost.policy). Macht
+# GENAU EINE Sache: 0 oder 1 in
+# /sys/devices/system/cpu/cpufreq/boost schreiben, um den "Gaming
+# Mode"-Button in widgets_daemon.py zu bedienen (CPU-Boost aus =
+# mehr Power-Budget für die APU-GPU, siehe Chat-Historie).
+#
+# Bewusst SUID vermieden (anders als wb-power-helper für RAPL) - das
+# hier ist ein SCHREIB-Zugriff, kein reiner Read, und Polkit kann pro
+# Aufruf/Session sauber nachfragen statt permanent mit erhöhten
+# Rechten dazuliegen. Installationsort: /usr/local/bin/wb-cpuboost-helper
+# (siehe candidates-Liste in widgets_daemon.py:_cpuboost_helper_path()),
+# root:root 0755 (KEIN SUID-Bit nötig, pkexec übernimmt die Rechte).
+
+set -euo pipefail
+
+BOOST_PATH="/sys/devices/system/cpu/cpufreq/boost"
+
+if [[ $# -ne 1 || ( "$1" != "0" && "$1" != "1" ) ]]; then
+    echo "Usage: wb-cpuboost-helper <0|1>" >&2
+    exit 1
+fi
+
+if [[ ! -w "$BOOST_PATH" && ! -e "$BOOST_PATH" ]]; then
+    echo "Kein $BOOST_PATH auf diesem System (CPU/Treiber unterstützt keinen Boost-Toggle)." >&2
+    exit 2
+fi
+
+echo -n "$1" > "$BOOST_PATH"

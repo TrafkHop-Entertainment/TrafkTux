@@ -7,7 +7,7 @@ Encoding=UTF-8
 [X-GNOME-Metatheme]
 GtkTheme=TrafkTux-GTK-Theme
 MetacityTheme=TrafkTux-GTK-Theme
-IconTheme=Clay-Light
-CursorTheme=Colloid-cursors
+IconTheme=TrafkClay-Light
+CursorTheme=TrafkTuxCursorLegacy
 ButtonLayout=close,minimize,maximize:menu
 X-GNOME-SupportsDarkVariant=true

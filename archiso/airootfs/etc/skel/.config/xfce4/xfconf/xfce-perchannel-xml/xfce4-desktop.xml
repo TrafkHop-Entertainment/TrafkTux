@@ -1,0 +1,32 @@
+<?xml version="1.1" encoding="UTF-8"?>
+
+<channel name="xfce4-desktop" version="1.0">
+  <property name="last-settings-migration-version" type="uint" value="1"/>
+  <property name="backdrop" type="empty">
+    <property name="screen0" type="empty">
+      <property name="monitor0x20A7" type="empty">
+        <property name="workspace0" type="empty">
+          <property name="backdrop-cycle-enable" type="bool" value="true"/>
+          <property name="backdrop-cycle-random-order" type="bool" value="true"/>
+          <property name="backdrop-cycle-period" type="int" value="3"/>
+          <property name="last-image" type="string" value="/home/hopx/.config/hypr/wallpapers/13WorldsBG3.png"/>
+          <property name="color-style" type="int" value="3"/>
+        </property>
+      </property>
+    </property>
+  </property>
+  <property name="desktop-icons" type="empty">
+    <property name="style" type="int" value="2"/>
+    <property name="icon-size" type="uint" value="65"/>
+    <property name="use-custom-font-size" type="bool" value="false"/>
+    <property name="use-custom-label-background-color" type="bool" value="false"/>
+    <property name="tooltip-size" type="double" value="65"/>
+    <property name="show-hidden-files" type="bool" value="true"/>
+    <property name="file-icons" type="empty">
+      <property name="show-removable" type="bool" value="false"/>
+      <property name="show-home" type="bool" value="false"/>
+      <property name="show-filesystem" type="bool" value="false"/>
+      <property name="show-trash" type="bool" value="false"/>
+    </property>
+  </property>
+</channel>

@@ -1,0 +1,179 @@
+// ═══════════════════════════════════════════════════════════
+//  TrafkTux Waybar — Bubble Style  v4 (nur IDs)
+//  Height: 35px  |  Autohide via USR1
+// ═══════════════════════════════════════════════════════════
+{
+    "layer": "overlay",
+    "position": "bottom",
+    "height": 45,
+    "on-sigusr1": "hide",
+    "on-sigusr2": "show",
+    "spacing": 0,
+
+    "mode": "hide",
+    "modifier": "none",
+    "hidden-gap": 0,
+    "exclusive": false,
+
+    "reload_style_on_change": true,
+
+    "modules-left": [
+        "custom/appmenu",
+        "custom/powermenu",
+        "custom/workspaces-view",
+        "custom/hide-windows",
+        "custom/shortcut-kitty",
+        "custom/shortcut-thunar",
+        "custom/shortcut-firefox"
+    ],
+
+    "modules-center": [
+        "hyprland/workspaces"
+    ],
+
+    "modules-right": [
+        "custom/volume",
+        "custom/network",
+        "custom/bluetooth",
+        "custom/brightness",
+        "custom/akku",
+        "custom/osk",
+        "tray",
+        "clock",
+        "custom/settings"
+    ],
+
+    // ── LEFT ──────────────────────────────────────────────
+    // Zentrierungs-Fix (-monitor $(...)): Rofi kennt im nativen Wayland-Modus
+    // seinen Output erst NACHDEM die erste Layer-Surface gemappt wurde,
+    // "location: center" wird aber schon vorher berechnet -> der allererste
+    // Start eines neuen Rofi-Prozesses landet potenziell auf dem falschen
+    // Monitor. Fokussierten Monitor per hyprctl+jq VOR dem Start ermitteln
+    // und Rofi explizit mitgeben, statt Rofis eigener (racy) Erkennung zu
+    // vertrauen - direkt inline im on-click, kein separates Skript.
+    "custom/appmenu": {
+        "format": "󱄅",
+        "tooltip": "App Launcher",
+        "on-click": "rofi -show bubble -modi \"bubble:python3 $HOME/.config/rofi/bubble-menu.py --menu launcher --x11\" -theme $HOME/.config/rofi/launcher/theme.rasi -show-icons -no-custom -x11 -monitor \"$(hyprctl monitors -j | jq -r '.[] | select(.focused) | .name')\" -kb-row-up 'Up,Control+p,w' -kb-row-down 'Down,Control+n,s' -kb-row-left 'Control+Page_Up,a' -kb-row-right 'Control+Page_Down,d' -kb-accept-entry 'Control+j,Control+m,Return,KP_Enter,space,less' -kb-custom-1 'q' -kb-custom-2 'e' -kb-custom-3 'x'"
+    },
+    "custom/powermenu": {
+        "format": "⏻",
+        "tooltip": "Power Menu",
+        "on-click": "rofi -show bubble -modi \"bubble:python3 $HOME/.config/rofi/bubble-menu.py --menu powermenu --x11\" -theme $HOME/.config/rofi/powermenu/theme.rasi -show-icons -no-custom -x11 -monitor \"$(hyprctl monitors -j | jq -r '.[] | select(.focused) | .name')\" -kb-row-up 'Up,Control+p,w' -kb-row-down 'Down,Control+n,s' -kb-row-left 'Control+Page_Up,a' -kb-row-right 'Control+Page_Down,d' -kb-accept-entry 'Control+j,Control+m,Return,KP_Enter,space,less' -kb-custom-1 'q' -kb-custom-2 'e' -kb-custom-3 'x'"
+    },
+    "custom/workspaces-view": {
+    "format": "󰙀",
+    "tooltip": "Workspace Overview",
+    "on-click": "hyprctl eval 'hl.plugin.hyprexpo.expo(\"toggle\")' ; hyprctl eval 'hl.dispatch(hl.dsp.submap(\"hyprexpo\"))'"
+},
+    "custom/hide-windows": {
+        "format": "󰘿",
+        "tooltip": "Alle Fenster verstecken/wiederherstellen",
+        "interval": 1,
+        "exec": "~/.config/waybar/scripts/hideall.sh status",
+        "return-type": "json",
+        "on-click": "~/.config/waybar/scripts/hideall.sh toggle"
+    },
+    "custom/shortcut-kitty": {
+        "format": "",
+        "tooltip": "Xfce4 Terminal",
+        "on-click": "setsid xfce4-terminal"
+    },
+    "custom/shortcut-thunar": {
+        "format": "󰉋",
+        "tooltip": "Thunar",
+        "on-click": "setsid thunar"
+    },
+    "custom/shortcut-firefox": {
+        "format": "󰈹",
+        "tooltip": "Firefox",
+        "on-click": "setsid firefox"
+    },
+
+    // ── CENTER ─────────────────────────────────────────────
+    // wlr/taskbar is gone: it talks to the wlr-foreign-toplevel protocol,
+    // which has no idea what a Hyprland "special" workspace is, so windows
+    // parked in special:minimized always leaked through.
+    // hyprland/workspaces (>= Waybar 0.14) asks Hyprland directly, and by
+    // default (show-special: false) it never even enumerates special
+    // workspaces - so special:minimized and everything inside it is
+    // invisible here, which is exactly what we want.
+    "hyprland/workspaces": {
+        "format": "{id}  {windows}",
+        "format-window-separator": " ",
+        "on-click": "activate",
+        "active-only": false,
+        "all-outputs": true,
+        "show-special": false,
+        "special-visible-only": false,
+        "workspace-taskbar": {
+            "enable": true,
+            "update-active-window": true,
+            "format": "{icon}",
+            "icon-size": 18,
+            "on-click-window": "~/.config/waybar/scripts/taskbar-click.sh {address} {button}"
+        }
+    },
+
+    // ── RIGHT ──────────────────────────────────────────────
+    "custom/volume": {
+        "format": "󰕾",
+        "tooltip": "Volume & Audio",
+        "on-click": "socat - UNIX-CONNECT:/tmp/wb-daemon.sock <<< volume"
+    },
+    "custom/network": {
+        "format": "󰤨",
+        "tooltip": "Netzwerk / Wi-Fi",
+        "on-click": "socat - UNIX-CONNECT:/tmp/wb-daemon.sock <<< network"
+    },
+    "custom/bluetooth": {
+        "format": "󰂯",
+        "tooltip": "Bluetooth",
+        "on-click": "socat - UNIX-CONNECT:/tmp/wb-daemon.sock <<< bluetooth"
+    },
+    "custom/brightness": {
+        "format": "󰃠",
+        "tooltip": "Helligkeit & Nachtlicht",
+        "on-click": "socat - UNIX-CONNECT:/tmp/wb-daemon.sock <<< brightness"
+    },
+
+    "custom/akku": {
+        "format": "󰁹",
+        "tooltip": "Akku-Info",
+        "on-click": "socat - UNIX-CONNECT:/tmp/wb-daemon.sock <<< akku"
+    },
+
+    // Toggle für die On-Screen-Keyboard (wvkbd). "interval": 2 lässt Waybar
+    // regelmäßig exec (siehe unten) pollen, damit das Icon farblich anzeigt,
+    // ob die Tastatur gerade offen ist (per .active-Klasse in style.css) -
+    // exec/exec-if geben nur den Klassenstatus zurück, on-click togglet.
+    // Passe "wvkbd-mobintl" an, falls dein Paket/deine Distro einen anderen
+    // Binary-Namen nutzt (z.B. nur "wvkbd" oder ein eigenes Layout-Binary).
+    "custom/osk": {
+        "format": "󰌌",
+        "tooltip": "Bildschirmtastatur",
+        "interval": 2,
+        "exec": "pgrep -x wvkbd-mobintl >/dev/null && echo '{\"class\":\"active\"}' || echo '{\"class\":\"inactive\"}'",
+        "return-type": "json",
+        "on-click": "pgrep -x wvkbd-mobintl >/dev/null && pkill -x wvkbd-mobintl || setsid wvkbd-mobintl -L 300"
+    },
+
+    "tray": {
+        "icon-size": 18,
+        "spacing": 5,
+        "ignored-items": ["nm-applet", "blueman", "blueman-tray", "xwaylandvideobridge", "XWaylandVideoBridge"]
+    },
+
+    "clock": {
+        "format": "󰥔  {:%H:%M}",
+        "format-alt": "󰃭  {:%d.%m.%Y}",
+        "tooltip": false,
+        "on-click": "socat - UNIX-CONNECT:/tmp/wb-daemon.sock <<< clock"
+    },
+
+    "custom/settings": {
+        "format": "󰒓",
+        "tooltip": "Einstellungen",
+        "on-click": "socat - UNIX-CONNECT:/tmp/wb-daemon.sock <<< settings"
+    }
+}

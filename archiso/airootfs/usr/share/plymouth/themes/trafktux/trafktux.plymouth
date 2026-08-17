@@ -1,0 +1,8 @@
+[Plymouth Theme]
+Name=TrafkTux
+Description=TrafkTux Boot-Splash - selbe Optik wie GRUB (Logo oben, wandernde/rotierende Blase als Fortschrittsanzeige unten)
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/trafktux
+ScriptFile=/usr/share/plymouth/themes/trafktux/trafktux.script

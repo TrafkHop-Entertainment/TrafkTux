@@ -1,0 +1,76 @@
+# TrafkTux Plymouth Theme
+# Selbe Optik wie das GRUB-Theme: Hintergrund #23163b -> #1a0d34,
+# kleines Logo oben. Statt Blasen-Menue (macht bei einem Boot-Splash
+# ja keinen Sinn) eine einzelne Blase (bubble-selected), die als
+# Ladebalken von links nach rechts wandert - Position ist an den
+# echten Boot-Fortschritt gekoppelt - und sich dabei ueber 24
+# vorgedrehte Frames kontinuierlich dreht.
+
+# ── Hintergrund ──────────────────────────────────────────────
+# #23163b oben, #1a0d34 unten (RGB/255, exakt wie GRUB-Hintergrund).
+Window.SetBackgroundTopColor(0.1373, 0.0863, 0.2314);
+Window.SetBackgroundBottomColor(0.1020, 0.0510, 0.2039);
+
+# ── Logo ─────────────────────────────────────────────────────
+logo_image = Image("logo.png");
+logo_sprite = Sprite(logo_image);
+logo_sprite.SetX(Window.GetWidth() / 2 - logo_image.GetWidth() / 2);
+logo_sprite.SetY(Window.GetHeight() * 0.02);
+logo_sprite.SetZ(10);
+
+# ── Trennstrich (wie im GRUB-Theme) ─────────────────────────
+# Selbes 4x4px-Pixel wie bei GRUB, ueber Scale() auf volle
+# Bildschirmbreite gestreckt. Nur noch einer, unterm Logo (der
+# untere wurde auf Wunsch wieder entfernt).
+divider_raw = Image("divider_c.png");
+divider_image = divider_raw.Scale(Window.GetWidth(), 2);
+
+divider1_sprite = Sprite(divider_image);
+divider1_sprite.SetX(0);
+divider1_sprite.SetY(Window.GetHeight() * 0.02 + logo_image.GetHeight() + 15);
+divider1_sprite.SetZ(10);
+
+# ── Wandernde/rotierende Blase (Fortschrittsanzeige) ────────
+# 8 echte Blender-Renderframes (bubblepic1-8), keine prozedural
+# gedrehten Frames mehr - sieht dadurch deutlich besser aus.
+frame_count = 8;
+bubble_frame = [];
+for (i = 0; i < frame_count; i++) {
+    bubble_frame[i] = Image("bubble_spin_" + i + ".png");
+}
+
+bubble_sprite = Sprite(bubble_frame[0]);
+bubble_sprite.SetZ(10);
+
+bubble_w = bubble_frame[0].GetWidth();
+bubble_h = bubble_frame[0].GetHeight();
+
+bubble_y = Window.GetHeight() - 65 - bubble_h;
+start_x  = -bubble_w;
+end_x    = Window.GetWidth();
+
+bubble_sprite.SetY(bubble_y);
+bubble_sprite.SetX(start_x);
+
+spin_tick = 0;
+ticks_per_frame = 4;  # bei ~50 Refreshes/Sek. -> ca. 0.64s pro voller Drehung
+
+# Rotation laeuft unabhaengig vom Boot-Fortschritt weiter, damit sie
+# auch bei Boot-Haengern nicht einfriert.
+fun refresh_callback() {
+    spin_tick++;
+    if (spin_tick >= frame_count * ticks_per_frame) {
+        spin_tick = 0;
+    }
+    bubble_sprite.SetImage(bubble_frame[Math.Int(spin_tick / ticks_per_frame)]);
+}
+Plymouth.SetRefreshFunction(refresh_callback);
+
+# Horizontale Position ist an den echten Boot-Fortschritt (0..1)
+# gekoppelt - wandert also wirklich synchron mit dem tatsaechlichen
+# Boot-Verlauf, nicht nur Zeit-basiert geschaetzt.
+fun progress_callback(duration, progress) {
+    x = start_x + (end_x - start_x) * progress;
+    bubble_sprite.SetX(x);
+}
+Plymouth.SetBootProgressFunction(progress_callback);

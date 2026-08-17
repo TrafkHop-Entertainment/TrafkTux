@@ -1,0 +1,8 @@
+das fixt aber die grundlegenden probleme nicht (habs noch nicht getestet):
+
+1. es macht bis jetzt NUR SOUNDS BEIM ÖFFNEN/SCHLIE?EN von fenstern.
+bei den widgets hab ich ja andere sounds dann udn außerdem soll man ja jeden sound individuell auschalten können, z.b. den mausklick und dann soll man trotzdem hören, wenn man im widget den tab wechselt
+2. es dauert noch immer mindestens 0,4 sekunden bis der sound kommt. (ja im terminal gehts aber in der realität nicht)
+3. ich mach ein distro, das nur ich in der input gruppe bin reicht nicht, da müsste jeder user standard mäßig drinnen sein
+
+wir lassen das Mal mit dem daemon. mein rofi menü war am anfang auch ein daemon, jetzt ists ein non daemon skript und rennt instantly.

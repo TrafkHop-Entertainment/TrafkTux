@@ -27,7 +27,6 @@ calamares
 hyprland
 hypridle
 hyprlock
-hyprpaper
 hyprpolkitagent
 polkit
 waybar
@@ -41,7 +40,7 @@ wl-clipboard
 cliphist
 grim
 slurp
-kitty
+xfce4-terminal
 nwg-look
 kvantum
 kvantum-qt5
@@ -53,6 +52,7 @@ qt6-multimedia
 qt5-wayland
 qt6-wayland
 ddcutil
+xfdesktop
 
 # --- Grafik / GPU ---
 mesa
@@ -78,15 +78,14 @@ playerctl
 sof-firmware
 
 # --- Netzwerk / Bluetooth ---
-network-manager-applet
-blueman
 bluez-cups
 avahi
 
 # --- Firewall / Sicherheit / Policy ---
 ufw
-gufw
 keyd
+libpwquality
+clamav
 
 # --- Dateisystem / Datenträger ---
 ntfs-3g
@@ -97,7 +96,15 @@ gparted
 gvfs
 gvfs-mtp
 gvfs-smb
-power-profiles-daemon
+# tuned + tuned-ppd ersetzt power-profiles-daemon (bessere APU/Tuning-
+# Ergebnisse, siehe tuned-profiles(7) "battery" Profil). tuned-ppd
+# stellt dieselbe net.hadess.PowerProfiles DBus-API bereit, ACHTUNG:
+# tuned-ppd conflicted mit power-profiles-daemon, pacman entfernt es
+# beim Bauen automatisch - powerprofilesctl (CLI) verschwindet damit
+# ebenfalls, siehe widgets_daemon.py: _ppd_* nutzt deshalb direkt DBus
+# statt powerprofilesctl.
+tuned
+tuned-ppd
 upower
 
 # --- Dateimanager ---
@@ -109,21 +116,16 @@ xdg-user-dirs-gtk
 
 # --- Drucken ---
 cups-pdf
-system-config-printer
-print-manager
 hplip
 
 # --- Anwendungen ---
 firefox
 vlc
 vlc-plugins-all
-xed
 pinta
-loupe
 ark
 gparted
 fastfetch
-gsimplecal
 imagemagick
 
 # --- Kompression / Archive ---
@@ -151,7 +153,6 @@ cpio
 cmake
 ffmpeg
 flatpak
-btop
 htop
 nano
 bash-completion
@@ -163,6 +164,8 @@ ffmpegthumbnailer
 gst-plugins-base
 gst-plugins-good
 totem
+speedtest-cli
+tailscale
 
 # --- Anzeigemanager ---
 sddm

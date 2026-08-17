@@ -9,82 +9,67 @@
 #   Text normal (rofi text-normal)     #dcd2ff
 #   Text selected (rofi text-selected) #ffffff
 #
-# Blasen-Konzept 1:1 vom rofi-Bubble-Menü übernommen:
-#   bubble_normal_c.png   -> inaktiver Menüpunkt (dunkle Blase)
-#   bubble_selected_c.png -> anvisierter Menüpunkt (helle Blase)
-# Wechselt automatisch beim Hoch/Runter-Navigieren, kein Extra-Code
-# nötig - das übernimmt GRUBs pixmap_style ganz genau wie rofi es
-# mit element/element-selected macht.
+# ROLLBACK:
+# Zurueck auf die Version, die nachweislich sauber rund und zentriert
+# gerendert hat (Foto #1). Alles danach (Halo, Partikel, eckiger
+# Divider-Balken) ist erstmal wieder raus - das kam alles in einem
+# Rutsch dazu und irgendwas davon hat GRUB durcheinandergebracht.
+# Bauen wir jetzt einzeln wieder auf, mit Test zwischendrin, damit wir
+# sehen, welcher Schritt genau das Problem verursacht.
 
 title-text: ""
 desktop-color: "#23163b"
 
-+label {
-    id = "__title__"
-    top = 6%
+# ── Sternenstaub (voller Screen, keine Offset-Rechnerei noetig) ──
++image {
+    top = 0
     left = 0
     width = 100%
-    height = 40
-    text = "TrafkTux"
-    align = "center"
-    color = "#fff495"
-    font = "Noto Sans Bold 28"
+    height = 100%
+    file = "assets/particles.png"
 }
 
-+label {
-    top = 6%+46
+# ── Logo ─────────────────────────────────────────────────────
++image {
+    top = 2%
+    left = 50%-150
+    width = 300
+    height = 73
+    file = "assets/logo.png"
+}
+
+# ── Trennstrich: eckiger Balken (kleiner Eckradius) ──────────
++image {
+    top = 2%+67
     left = 0
     width = 100%
-    height = 24
-    text = "Choose your OS"
-    align = "center"
-    color = "#9c81cf"
-    font = "Noto Sans 14"
+    height = 45
+    file = "assets/divider_beam.png"
 }
 
-# ── Blasen-Menü ──────────────────────────────────────────────
-# Vertikale Liste, jede Zelle exakt so groß wie die Blasen-PNGs
-# (260x260) -> kein Stretching, 1:1 wie im rofi-Theme.
+# ── Blasen-Menü: eine grosse, mittige Blase ──────────────────
+# Formel fuer top: (2%+90) + (100% - (2%+90))/2 - 240 = 51%-195
 +boot_menu {
-    left = 50%-190
-    top = 22%
-    width = 380
-    height = 72%
-    item_height = 260
-    item_width = 260
-    item_spacing = 22
+    left = 50%-240
+    top = 51%-195
+    width = 480
+    height = 480
+    item_height = 480
+    item_width = 480
+    item_spacing = 0
     item_padding = 0
     icon_width = 0
     icon_height = 0
     item_icon_space = 0
 
-    item_font = "Noto Sans Bold 16"
-    selected_item_font = "Noto Sans Bold 16"
+    item_font = "Noto Sans Bold 22"
+    selected_item_font = "Noto Sans Bold 22"
 
     item_color = "#f6f3d5"
     selected_item_color = "#fff495"
 
-    item_align = "center"
-    item_valign = "center"
-
-    item_pixmap_style = "bubble_normal_*"
-    selected_item_pixmap_style = "bubble_selected_*"
+    item_pixmap_style = "assets/bubble_normal_*.png"
+    selected_item_pixmap_style = "assets/bubble_selected_*.png"
 
     scrollbar = false
-}
-
-# ── Countdown-Leiste ─────────────────────────────────────────
-+progress_bar {
-    id = "__timeout__"
-    left = 50%-190
-    top = 94%
-    width = 380
-    height = 22
-    show_text = true
-    text = "@TIMEOUT_NOTIFICATION_MIDDLE@"
-    font = "Noto Sans 14"
-    text_color = "#f6f3d5"
-    bg_color = "#5a3998"
-    fg_color = "#7554B3"
-    border_color = "#38255B"
 }

@@ -39,10 +39,10 @@
           "exec": "pinta"
         },
         {
-          "name": "Writing",
+          "name": "VScodium",
           "type": "app",
-          "icon": "kate",
-          "exec": "xed"
+          "icon": "vscodium",
+          "exec": "vscodium"
         }
       ]
     },
@@ -75,12 +75,6 @@
           "type": "app",
           "icon": "vlc",
           "exec": "vlc"
-        },
-        {
-          "name": "Loupe",
-          "type": "app",
-          "icon": "deepin-album",
-          "exec": "loupe"
         }
       ]
     },
@@ -116,58 +110,10 @@
       "icon": "preferences-system",
       "children": [
         {
-          "name": "Appearance",
-          "type": "app",
-          "icon": "preferences-desktop-theme",
-          "exec": "nwg-look"
-        },
-        {
-          "name": "Kvantum Manager",
-          "type": "app",
-          "icon": "preferences-desktop-theme",
-          "exec": "kvantummanager"
-        },
-        {
-          "name": "Qt5 Settings",
-          "type": "app",
-          "icon": "preferences-desktop-theme",
-          "exec": "qt5ct"
-        },
-        {
-          "name": "Qt6 Settings",
-          "type": "app",
-          "icon": "preferences-desktop-theme",
-          "exec": "qt6ct"
-        },
-        {
-          "name": "Bluetooth",
-          "type": "app",
-          "icon": "preferences-system-bluetooth",
-          "exec": "blueman-manager"
-        },
-        {
-          "name": "Network",
-          "type": "app",
-          "icon": "preferences-system-network",
-          "exec": "nm-connection-editor"
-        },
-        {
           "name": "Pavucontrol",
           "type": "app",
           "icon": "audio-card",
           "exec": "pavucontrol"
-        },
-        {
-          "name": "Firewall",
-          "type": "app",
-          "icon": "security-high",
-          "exec": "gufw"
-        },
-        {
-          "name": "Printers",
-          "type": "app",
-          "icon": "printer",
-          "exec": "system-config-printer"
         }
       ]
     },
@@ -176,12 +122,6 @@
       "type": "folder",
       "icon": "drive-harddisk",
       "children": [
-        {
-          "name": "Btop",
-          "type": "app",
-          "icon": "utilities-system-monitor",
-          "exec": "xfce4-terminal btop"
-        },
         {
           "name": "Htop",
           "type": "app",

@@ -18,7 +18,7 @@ if not f then return default end
             output   = "eDP-1",
             mode     = "1920x1200@60",
             position = "0x0",
-            scale    = 1.2,
+            scale    = 1.07,
         })
 
         -- Programme & Befehle
@@ -44,8 +44,14 @@ if not f then return default end
         -- Statt Rofis eigener (racy) Output-Erkennung zu vertrauen, wird der
         -- fokussierte Monitor per hyprctl+jq VOR dem Start ermittelt und Rofi
         -- explizit mitgegeben - direkt inline, kein separates Skript nötig.
-        local launcher_cmd   = "rofi -show bubble -modi \"bubble:python3 $HOME/.config/rofi/bubble-menu.py --menu launcher --x11\" -theme $HOME/.config/rofi/launcher/theme.rasi -show-icons -no-custom -x11 -monitor \"$(hyprctl monitors -j | jq -r '.[] | select(.focused) | .name')\" -kb-row-up 'Up,Control+p,w' -kb-row-down 'Down,Control+n,s' -kb-row-left 'Control+Page_Up,a' -kb-row-right 'Control+Page_Down,d' -kb-accept-entry 'Control+j,Control+m,Return,KP_Enter,space,less' -kb-custom-1 'q' -kb-custom-2 'e' -kb-custom-3 'x'"
-        local powermenu_cmd  = "rofi -show bubble -modi \"bubble:python3 $HOME/.config/rofi/bubble-menu.py --menu powermenu --x11\" -theme $HOME/.config/rofi/powermenu/theme.rasi -show-icons -no-custom -x11 -monitor \"$(hyprctl monitors -j | jq -r '.[] | select(.focused) | .name')\" -kb-row-up 'Up,Control+p,w' -kb-row-down 'Down,Control+n,s' -kb-row-left 'Control+Page_Up,a' -kb-row-right 'Control+Page_Down,d' -kb-accept-entry 'Control+j,Control+m,Return,KP_Enter,space,less' -kb-custom-1 'q' -kb-custom-2 'e' -kb-custom-3 'x'"
+        --local launcher_cmd   = "rofi -show bubble -modi \"bubble:python3 $HOME/.config/rofi/bubble-menu.py --menu launcher --x11\" -theme $HOME/.config/rofi/launcher/theme.rasi -show-icons -no-custom -x11 -monitor \"$(hyprctl monitors -j | jq -r '.[] | select(.focused) | .name')\" -kb-row-up 'Up,Control+p,w' -kb-row-down 'Down,Control+n,s' -kb-row-left 'Control+Page_Up,a' -kb-row-right 'Control+Page_Down,d' -kb-accept-entry 'Control+j,Control+m,Return,KP_Enter,space,less' -kb-custom-1 'q' -kb-custom-2 'e' -kb-custom-3 'x'"
+        --local powermenu_cmd  = "rofi -show bubble -modi \"bubble:python3 $HOME/.config/rofi/bubble-menu.py --menu powermenu --x11\" -theme $HOME/.config/rofi/powermenu/theme.rasi -show-icons -no-custom -x11 -monitor \"$(hyprctl monitors -j | jq -r '.[] | select(.focused) | .name')\" -kb-row-up 'Up,Control+p,w' -kb-row-down 'Down,Control+n,s' -kb-row-left 'Control+Page_Up,a' -kb-row-right 'Control+Page_Down,d' -kb-accept-entry 'Control+j,Control+m,Return,KP_Enter,space,less' -kb-custom-1 'q' -kb-custom-2 'e' -kb-custom-3 'x'"
+
+        --local launcher_cmd   = "rofi -show bubble -modi \"bubble:$HOME/.config/rofi/RofiTrafkBubbleMenus --menu launcher --x11\" -theme $HOME/.config/rofi/launcher/theme.rasi -show-icons -no-custom -x11 -monitor \"$(hyprctl monitors -j | jq -r '.[] | select(.focused) | .name')\" -kb-row-up 'Up,Control+p,w' -kb-row-down 'Down,Control+n,s' -kb-row-left 'Control+Page_Up,a' -kb-row-right 'Control+Page_Down,d' -kb-accept-entry 'Control+j,Control+m,Return,KP_Enter,space,less' -kb-custom-1 'q' -kb-custom-2 'e' -kb-custom-3 'x'"
+        --local powermenu_cmd  = "rofi -show bubble -modi \"bubble:$HOME/.config/rofi/RofiTrafkBubbleMenus --menu powermenu --x11\" -theme $HOME/.config/rofi/powermenu/theme.rasi -show-icons -no-custom -x11 -monitor \"$(hyprctl monitors -j | jq -r '.[] | select(.focused) | .name')\" -kb-row-up 'Up,Control+p,w' -kb-row-down 'Down,Control+n,s' -kb-row-left 'Control+Page_Up,a' -kb-row-right 'Control+Page_Down,d' -kb-accept-entry 'Control+j,Control+m,Return,KP_Enter,space,less' -kb-custom-1 'q' -kb-custom-2 'e' -kb-custom-3 'x'"
+
+        local launcher_cmd   = "rofi -show bubble -modi \"bubble:$HOME/.config/rofi/RofiTrafkBubbleMenus --menu launcher --x11\" -theme $HOME/.config/rofi/launcher/theme.rasi -show-icons -no-custom -x11 -monitor \"$(hyprctl monitors -j | jq -r '.[] | select(.focused) | .name')\" -kb-row-up 'Up,Control+p,w' -kb-row-down 'Down,Control+n,s' -kb-row-left 'Control+Page_Up,a' -kb-row-right 'Control+Page_Down,d' -kb-accept-entry 'Control+j,Control+m,Return,KP_Enter,space,less' -kb-custom-1 'q' -kb-custom-2 'e' -kb-custom-3 'x'"
+        local powermenu_cmd  = "rofi -show bubble -modi \"bubble:$HOME/.config/rofi/RofiTrafkBubbleMenus --menu powermenu --x11\" -theme $HOME/.config/rofi/powermenu/theme.rasi -show-icons -no-custom -x11 -monitor \"$(hyprctl monitors -j | jq -r '.[] | select(.focused) | .name')\" -kb-row-up 'Up,Control+p,w' -kb-row-down 'Down,Control+n,s' -kb-row-left 'Control+Page_Up,a' -kb-row-right 'Control+Page_Down,d' -kb-accept-entry 'Control+j,Control+m,Return,KP_Enter,space,less' -kb-custom-1 'q' -kb-custom-2 'e' -kb-custom-3 'x'"
 
         -- Cursor-Umgebungsvariablen
         hl.env("XCURSOR_THEME", "TrafkTuxCursorLegacy")
@@ -62,7 +68,8 @@ if not f then return default end
         hl.exec_cmd("gsettings set org.gnome.desktop.interface cursor-theme 'TrafkTuxCursorLegacy'")
         hl.exec_cmd("gsettings set org.gnome.desktop.interface cursor-size 35")
         hl.exec_cmd("bash -c 'hyprctl plugin list | grep -q hyprbars || (hyprpm reload -n && sleep 1 && hyprctl reload)'")
-        hl.exec_cmd("bash ~/.config/hypr/random_wallpaper.sh")
+        hl.exec_cmd("xfdesktop")
+        hl.exec_cmd("bash ~/.config/hypr/Wallpapers.sh")
         hl.exec_cmd("killall waybar; waybar")
         hl.exec_cmd("dunst")
         hl.exec_cmd("hypridle")
@@ -79,12 +86,80 @@ if not f then return default end
         -- Rofi im Script-Mode jetzt bei jedem Aufruf direkt selbst.
         end)
 
+        -- ============================================================
+        -- Systemsounds: Compositor-Ebene (Fenster öffnen/schließen,
+        -- Workspace-Wechsel). Alles läuft über soundctl.sh, das selbst
+        -- den globalen An/Aus-Zustand prüft - hier wird also blind bei
+        -- jedem Event "hl.exec_cmd" gefeuert, kein eigener Enable-Check
+        -- nötig. "&" wichtig, sonst blockiert exec_cmd auf pw-play/paplay.
+        --
+        -- NICHT für Klicks *innerhalb* von Rofi/Waybar/Widgets - das sind
+        -- Events, die Hyprland gar nicht sieht (siehe config.jsonc bzw.
+        -- widgets_daemon.py für die dortigen Hooks).
+        --
+        -- Eventnamen verifiziert per Live-Fehlermeldung deines eigenen
+        -- Hyprland (Known events: ... window.open, window.open_early,
+        -- window.close, ..., workspace.active, ...) -
+        -- "openwindow"/"closewindow"/"workspace" (die rohen socket2-IPC-
+        -- Namen) waren falsch, hl.on() will die gepunktete Schreibweise.
+        --
+        -- DEBUG-VERSUCH gegen die gemeldete Verzögerung: "window.open"
+        -- feuert vermutlich erst NACH internem Hyprland-Setup (Layout,
+        -- Animation-Vorbereitung) - "window.open_early" (separat in der
+        -- Known-Events-Liste gelistet) vermutlich früher, näher am
+        -- tatsächlichen visuellen Erscheinen des Fensters. Testweise
+        -- umgestellt + Zeitstempel-Logging direkt im Hook, damit wir
+        -- sehen: liegt die Verzögerung VOR unserem Hook (Hyprland feuert
+        -- spät) oder NACH dem Hook-Aufruf (in soundctl.sh/pw-play selbst)?
+        --
+        -- Log-Datei: /tmp/opentest.log - zwei Zeitstempel pro Fenster-
+        -- Öffnung: T_hook (Moment, in dem der Hook feuert - das ist der
+        -- früheste Zeitpunkt, den WIR beeinflussen/messen können) und
+        -- T_done (nachdem pw-play fertig abgespielt hat). Vergleich mit
+        -- der eigenen Wahrnehmung ("wann hab ich das Fenster geöffnet")
+        -- zeigt, ob die Lücke VOR T_hook liegt (Hyprland-intern, nicht
+        -- von uns beeinflussbar) oder danach (unser Code).
+        --
+        -- Nach dem Test: diesen Block wieder auf die einfache Version
+        -- ohne Logging zurücksetzen (siehe auskommentierter Fallback
+        -- unten).
+        local SOUNDCTL = "bash $HOME/.config/hypr/soundctl.sh"
+
+        hl.on("window.open_early", function()
+            hl.exec_cmd("bash -c 'date +%s.%N >> /tmp/opentest.log; " ..
+                SOUNDCTL .. " open; date +%s.%N >> /tmp/opentest.log; echo --- >> /tmp/opentest.log' &")
+        end)
+
+        -- Einfache Version ohne Logging, für nach dem Test:
+        -- hl.on("window.open_early", function()
+        --     hl.exec_cmd(SOUNDCTL .. " open &")
+        -- end)
+
+        hl.on("window.close", function()
+            hl.exec_cmd(SOUNDCTL .. " close &")
+        end)
+
+        hl.on("workspace.active", function()
+            hl.exec_cmd(SOUNDCTL .. " nav &")
+        end)
+
+        -- Fokuswechsel (Fenster A -> Fenster B, OHNE Workspace-Wechsel,
+        -- z.B. Alt+Tab, Klick oder - da follow_mouse = 1 aktiv ist -
+        -- auch reine Mausbewegung über ein anderes Fenster). Bewusst
+        -- weiterhin "nav" als Platzhalter; ersetz die Datei
+        -- ~/.config/hypr/sounds/nav.ogg bzw. hänge hier einen eigenen
+        -- "focus"-Event dran, sobald du den "nicen Sound" dafür hast.
+        hl.on("window.active", function()
+            hl.exec_cmd(SOUNDCTL .. " nav &")
+        end)
+
+
         -- Allgemeines Aussehen & Verhalten
         hl.config({
             general = {
-                gaps_in     = 8,
-                gaps_out    = 15,
-                border_size = 0,
+                gaps_in     = 6,
+                gaps_out    = 8,
+                border_size = 1,
 
                 col = {
                     active_border   = { colors = {"rgba(fff495ee)"}, angle = 45 },
@@ -107,14 +182,14 @@ if not f then return default end
 
                 shadow = {
                     enabled      = true,
-                    range        = 8,
+                    range        = 4,
                     render_power = 2,
                     color        = "rgba(fff495ff)",
                 },
 
                 blur = {
                     enabled  = false,
-                  size     = 5,
+                  size     = 3,
                   passes   = 2,
                   vibrancy = 0.1696,
                 },
@@ -192,10 +267,10 @@ if not f then return default end
                 hl.config({
                     plugin = {
                         hyprbars = {
-                            bar_height            = 15,
+                            bar_height            = 18,
                             bar_color             = "rgba(fff495ee)",
                           ["col.text"]          = "rgba(111111ee)",
-                          bar_text_size         = 12,
+                          bar_text_size         = 15,
                           bar_text_font         = "Noto Sans",
                           bar_buttons_alignment = "right",
                         },
@@ -205,35 +280,35 @@ if not f then return default end
                 hl.plugin.hyprbars.add_button({
                     bg_color = "rgba(ff5555ee)",
                                               fg_color = "rgba(111111ee)",
-                                              size     = 12,
+                                              size     = 15,
                                               icon     = "✕",
                                               action   = "hyprctl dispatch 'hl.dsp.window.close()'",
                 })
                 hl.plugin.hyprbars.add_button({
                     bg_color = "rgba(ffffffee)",
                                               fg_color = "rgba(111111ee)",
-                                              size     = 12,
+                                              size     = 15,
                                               icon     = "m",
                                               action   = "hyprctl dispatch 'hl.dsp.exec_cmd(\"hyprland-minimizer\")'",
                 })
                 hl.plugin.hyprbars.add_button({
                     bg_color = "rgba(ffffffee)",
                                               fg_color = "rgba(111111ee)",
-                                              size     = 10,
+                                              size     = 15,
                                               icon     = "FS1",
                                               action   = "hyprctl dispatch 'hl.dsp.window.fullscreen({ mode = 1 })'",
                 })
                 hl.plugin.hyprbars.add_button({
                     bg_color = "rgba(ffffffee)",
                                               fg_color = "rgba(111111ee)",
-                                              size     = 8,
+                                              size     = 15,
                                               icon     = "⇆",
                                               action   = "hyprctl dispatch 'hl.dsp.layout(\"swapwithmaster\", \"master\")'",
                 })
                 hl.plugin.hyprbars.add_button({
                     bg_color = "rgba(ffffffee)",
                                               fg_color = "rgba(111111ee)",
-                                              size     = 12,
+                                              size     = 15,
                                               icon     = "📌",
                                               action   = "hyprctl dispatch 'hl.dsp.exec_cmd(\"~/.config/hypr/pip.sh\")'",
                 })
@@ -280,9 +355,22 @@ if not f then return default end
                     "bash -c 'p=/tmp/waybar-autohide.pid; [ -f \"$p\" ] && kill -RTMIN+1 $(cat \"$p\")'"
                 ), { description = "Waybar-Autohide sperren/entsperren" })
 
-                hl.bind(mainMod .. " + R", hl.dsp.exec_cmd('xfce4-terminal -x bash -c "/run/media/hopx/HopxSSD/TrafkSite/Projects/TrafkTux/TrafkTux/SyncEverything.sh --fast"'), { description = "Sync with system" })
+                hl.bind(mainMod .. " + R", function()
+                    hl.exec_cmd("xfce4-terminal -e 'bash /run/media/hopx/HopxSSD/TrafkSite/Projects/TrafkTux/TrafkTux/SyncEverything.sh --fast'")
+                end, { description = "Sync with system" })
 
-                hl.bind(mainMod .. " + H", hl.dsp.exec_cmd("bash ~/.config/waybar/scripts/hideall.sh toggle"), { description = "Alle Fenster verstecken/wiederherstellen" })
+                hl.bind(mainMod .. " + SHIFT + R", function()
+                    hl.exec_cmd("xfce4-terminal -e 'bash /run/media/hopx/HopxSSD/TrafkSite/Projects/TrafkTux/TrafkTux/SyncEverything.sh --fast --full'")
+                end, { description = "Sync with system" })
+
+                hl.bind(mainMod .. " + ALT + R", function()
+                    hl.exec_cmd("xfce4-terminal -e 'bash /run/media/hopx/HopxSSD/TrafkSite/Projects/TrafkTux/TrafkTux/SyncEverything.sh --full'")
+                end, { description = "Sync with system" })
+
+                -- WICHTIG: "soundctl.sh toggle" (ohne --) ist der SOUND-EVENT-Name
+                -- "toggle" (spielt toggle.ogg ab) - NICHT der Enable/Disable-Schalter
+                -- für Systemsounds, der heißt "--toggle" (siehe soundctl.sh).
+                hl.bind(mainMod .. " + H", hl.dsp.exec_cmd("bash ~/.config/waybar/scripts/hideall.sh toggle && bash ~/.config/hypr/soundctl.sh toggle &"), { description = "Alle Fenster verstecken/wiederherstellen" })
 
                 hl.config({
                     scrolling = {
@@ -592,7 +680,7 @@ end
                                                 },
 
                                                 shake = {
-                                                    enabled = true,
+                                                    enabled = false,
 
                                                     threshold = 5.0,
                                                     base      = 1.0,

@@ -18,6 +18,8 @@ PACKAGES=(
   hyprland-minimizer-git
   wvkbd
   python-openrgb-git
+  vscodium-bin
+  clamav-unofficial-sigs
 )
 
 if [[ ! -d "${REPO_DIR}" ]]; then

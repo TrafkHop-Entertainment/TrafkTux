@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Austin Cooper S Racing
+Comment=Starte das Spiel mit Wine
+Exec=sh -c "cd '/home/hopx/.wine/drive_c/Program Files (x86)/Data Design Interactive/Austin Cooper S Racing/' && wine AustinCooperS.exe"
+Icon=/home/hopx/.wine/drive_c/Program Files (x86)/Data Design Interactive/Austin Cooper S Racing/mini.ICO
+Path=/home/hopx/.wine/drive_c/Program Files (x86)/Data Design Interactive/Austin Cooper S Racing
+Categories=Game;
+StartupNotify=true

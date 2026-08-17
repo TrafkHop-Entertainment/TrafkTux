@@ -1,0 +1,12 @@
+[SddmGreeterTheme]
+Name=TrafkTux
+Description=TrafkTux Login-Screen - selbe Optik wie GRUB/Plymouth (Logo, Trennstrich, Blasen-Nutzerauswahl, Blasen-Passwortfeld)
+Author=TrafkTux
+Copyright=(c) 2026
+Type=sddm-theme
+Version=1.0
+MainScript=Main.qml
+ConfigFile=theme.conf
+Theme-Id=trafktux
+Theme-API=2.0
+QtVersion=6

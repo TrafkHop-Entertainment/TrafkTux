@@ -27,6 +27,8 @@ AUR_PACKAGES=(
   hyprland-minimizer-git
   wvkbd
   python-openrgb-git
+  vscodium-bin
+  clamav-unofficial-sigs
 )
 
 mkdir -p "${REPO_DIR}" "${BUILD_DIR}"

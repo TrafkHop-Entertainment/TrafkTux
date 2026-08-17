@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC
+ "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<!--
+  Installationsort: /usr/share/polkit-1/actions/com.trafktux.wbdaemon.cpuboost.policy
+  (root:root 0644)
+
+  Bindet den pkexec-Aufruf von wb-cpuboost-helper an DIESE spezifische
+  Action-ID statt an das generische "beliebiges Programm als root
+  ausführen"-Prompt - siehe die "polkit.exec.path"-Annotation unten,
+  das ist der Standard-Mechanismus dafür (siehe polkit(8)/pkexec(1)).
+
+  auth_admin_keep statt auth_admin: der Klick auf "Gaming Mode" soll
+  sich nicht bei JEDEM Toggle erneut per Passwort bestätigen müssen -
+  polkit cached die Freigabe für ein paar Minuten (Standard-Verhalten
+  von *_keep), aendert an der Sicherheit nichts (weiterhin Admin-
+  Passwort noetig, nur eben nicht bei jedem einzelnen Klick neu).
+-->
+<policyconfig>
+  <vendor>TrafkTux</vendor>
+  <vendor_url>https://github.com/</vendor_url>
+
+  <action id="com.trafktux.wbdaemon.set-cpu-boost">
+    <description>CPU-Turbo-Boost aktivieren oder deaktivieren</description>
+    <message>Authentifizierung nötig, um den CPU-Boost-Zustand zu ändern</message>
+    <defaults>
+      <allow_any>auth_admin_keep</allow_any>
+      <allow_inactive>auth_admin_keep</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/local/bin/wb-cpuboost-helper</annotate>
+  </action>
+</policyconfig>

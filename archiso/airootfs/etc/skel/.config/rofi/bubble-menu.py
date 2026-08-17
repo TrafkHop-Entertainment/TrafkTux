@@ -26,6 +26,29 @@ EXIT_LABEL       = "Exit"
 EXIT_ICON        = "application-exit"
 PREV_WINDOW_FILE = "/tmp/rofi-prev-window"
 
+# --- Systemsounds ---
+# Läuft über das zentrale soundctl.sh (siehe ~/.config/hypr/soundctl.sh),
+# das selbst prüft ob Sounds gerade aktiviert sind - hier also einfach
+# fire-and-forget aufrufen, kein eigener Enable-Check nötig.
+#
+# WICHTIG: Da Rofi im Script-Mode EIN dauerhaftes Fenster bleibt (siehe
+# Modul-Docstring oben), feuert Hyprland "window.open"/"window.close"
+# bereits automatisch beim allerersten Öffnen bzw. beim finalen Schließen
+# der Bubble (siehe hyprland.lua). Hier drin geht es NUR um Bewegung
+# *innerhalb* des offenen Menüs (Seite vor/zurück, Ordner rein/raus,
+# Auswahl bestätigt) - für "open" gibt es deshalb bewusst KEINEN eigenen
+# Aufruf hier, das würde sich mit dem Compositor-Sound überlappen.
+SOUNDCTL_PATH = os.path.expanduser("~/.config/hypr/soundctl.sh")
+
+def _play_sound(event: str) -> None:
+    try:
+        subprocess.Popen(["bash", SOUNDCTL_PATH, event],
+                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                          start_new_session=True)
+    except Exception:
+        pass
+
+
 RAW_BACK = "BACK"
 RAW_EXIT = "EXIT"
 RAW_NEXT = "NEXT"
@@ -912,6 +935,7 @@ def handle_step(menu_name: str, x11: bool, retv: str, info: str | None) -> None:
     # Prozess-Exitcodes 10/11/12 im Dmenu-Modus ---
     if retv == RETV_CUSTOM_1:  # q -> vorherige Seite
         state["page"] = max(0, page - 1)
+        _play_sound("nav")
         emit_current()
         return
 
@@ -921,6 +945,7 @@ def handle_step(menu_name: str, x11: bool, retv: str, info: str | None) -> None:
             # NEXT_PAGE-Taste "e" wäre hier sonst wirkungslos (page+1 wird
             # unten sowieso auf 0 geklemmt). Konsistent zur Maus-Blase (siehe
             # RAW_SYNC_ICONS) macht "e" in der Root stattdessen den Icon-Sync.
+            _play_sound("enter")
             run_manual_icon_sync_and_notify()
             emit_current()
             return
@@ -931,6 +956,7 @@ def handle_step(menu_name: str, x11: bool, retv: str, info: str | None) -> None:
             total = len(node.get("children", []))
         total_pages = max(1, -(-total // PAGE_SIZE))
         state["page"] = min(total_pages - 1, page + 1)
+        _play_sound("nav")
         emit_current()
         return
 
@@ -939,14 +965,17 @@ def handle_step(menu_name: str, x11: bool, retv: str, info: str | None) -> None:
             # virtuelle Listen haben immer einen Parent -> zurück ins Hauptmenü
             state["vmode"] = None
             state["page"] = 0
+            _play_sound("nav")
             emit_current()
             return
         if path_str:
             state["path"] = "/".join(path_str.split("/")[:-1])
             state["page"] = 0
+            _play_sound("nav")
             emit_current()
             return
-        # kein Parent mehr -> wie Exit
+        # kein Parent mehr -> wie Exit (window.close-Sound übernimmt das
+        # Compositor-Hook, siehe Kommentar bei _play_sound oben)
         cleanup()
         return
 
@@ -965,14 +994,17 @@ def handle_step(menu_name: str, x11: bool, retv: str, info: str | None) -> None:
         else:
             state["path"] = "/".join(path_str.split("/")[:-1])
         state["page"] = 0
+        _play_sound("nav")
         emit_current()
         return
     if info == RAW_NEXT:
         state["page"] = page + 1
+        _play_sound("nav")
         emit_current()
         return
     if info == RAW_PREV:
         state["page"] = page - 1
+        _play_sound("nav")
         emit_current()
         return
     if info == RAW_NOOP:
@@ -986,6 +1018,7 @@ def handle_step(menu_name: str, x11: bool, retv: str, info: str | None) -> None:
         # User diese Blase anklickt - typischerweise 1-2 Sekunden, was hier
         # völlig in Ordnung ist (bewusster, seltener Klick statt etwas, das
         # beim normalen Menü-Öffnen im Weg steht).
+        _play_sound("enter")
         run_manual_icon_sync_and_notify()
         # Zurück zur (unveränderten) aktuellen Ansicht - der User bleibt
         # genau da, wo er war (in der Root, da dieser Eintrag nur dort
@@ -999,6 +1032,7 @@ def handle_step(menu_name: str, x11: bool, retv: str, info: str | None) -> None:
         child = entries_data[int(info)]
         exec_cmd = child.get("exec", "")
         if exec_cmd:
+            _play_sound("enter")
             exec_detached(exec_cmd)
             cleanup()
         return
@@ -1012,6 +1046,7 @@ def handle_step(menu_name: str, x11: bool, retv: str, info: str | None) -> None:
     if entry_type == "folder":
         state["path"] = (path_str + "/" + info).lstrip("/")
         state["page"] = 0
+        _play_sound("nav")
         emit_current()
         return
 
@@ -1020,24 +1055,28 @@ def handle_step(menu_name: str, x11: bool, retv: str, info: str | None) -> None:
         if addr:
             lua_expr = f"hl.dsp.window.close({{ window = \"address:{addr}\" }})"
             exec_detached_argv(["hyprctl", "dispatch", lua_expr])
+        _play_sound("enter")
         cleanup()
         return
 
     if entry_type == "special-drun":
         state["vmode"] = VMODE_DRUN
         state["page"] = 0
+        _play_sound("nav")
         emit_current()
         return
 
     if entry_type == "special-drun-filtered":
         state["vmode"] = VMODE_DRUN_FILTERED
         state["page"] = 0
+        _play_sound("nav")
         emit_current()
         return
 
     if entry_type == "special-run":
         state["vmode"] = VMODE_RUN
         state["page"] = 0
+        _play_sound("nav")
         emit_current()
         return
 
@@ -1052,6 +1091,7 @@ def handle_step(menu_name: str, x11: bool, retv: str, info: str | None) -> None:
         theme_path = os.path.join(ROFI_BASE, menu_name, "theme.rasi")
         monitor = focused_monitor_name()
         monitor_flag = f"-monitor {shlex.quote(monitor)} " if monitor else ""
+        _play_sound("enter")
         exec_detached(f"rofi -show window {x11_flag}{monitor_flag}-theme {shlex.quote(theme_path)} {wasd_flags}")
         cleanup()
         return
@@ -1101,6 +1141,7 @@ def handle_step(menu_name: str, x11: bool, retv: str, info: str | None) -> None:
                         f"done"
                     )
                     exec_cmd = f"{poll}; {exec_cmd} 2>>/tmp/bubble-menu-action.log"
+            _play_sound("enter")
             exec_detached(exec_cmd)
             cleanup()
         return
