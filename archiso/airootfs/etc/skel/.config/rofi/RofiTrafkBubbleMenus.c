@@ -46,7 +46,7 @@
 /* --------------------------- Konstanten --------------------------- */
 #define BLANK_ICON_PATH     "/tmp/.bubble-menu-blank.png"
 #define PREV_WINDOW_FILE    "/tmp/rofi-prev-window"
-#define SOUNDCTL_PATH       "~/.config/hypr/soundctl.sh"
+#define SOUNDCTL_PATH       "~/.config/hypr/SoundCenter.sh"
 
 #define RAW_BACK            "BACK"
 #define RAW_EXIT            "EXIT"
@@ -1177,7 +1177,7 @@ static GPtrArray* build_grid_entries(GPtrArray *content_entries, int page, int t
 static void render_menu(const char *menu_name, JsonObject *root, MenuState *state) {
     emit_header();
 
-    gboolean is_powermenu = (g_strcmp0(menu_name, "powermenu") == 0);
+    gboolean is_powermenu = (g_strcmp0(menu_name, "PowerMenu") == 0);
 
     if (is_powermenu) {
         /* Powermenü: flache Liste, KEINE Pagination/Grid-Logik (analog zu
@@ -1300,18 +1300,17 @@ void handle_step(const char *menu_name, gboolean x11, const char *retv, const ch
     /* --- Custom-Keys zuerst --- */
     if (g_strcmp0(retv, RETV_CUSTOM_1) == 0) {  /* q → prev page */
         state.page = MAX(0, state.page - 1);
-        play_sound("nav");
+        play_sound("FocusChange");
         render_menu(menu_name, root, &state);
         free_state(&state);
         return;
     }
     else if (g_strcmp0(retv, RETV_CUSTOM_2) == 0) {  /* e → next page / Sync in Root */
         if (!state.vmode && (!state.path || !*state.path)) {
-            play_sound("enter");
             run_manual_icon_sync_and_notify();
         } else {
             state.page++;
-            play_sound("nav");
+            play_sound("FocusChange");
         }
         render_menu(menu_name, root, &state);
         free_state(&state);
@@ -1321,7 +1320,7 @@ void handle_step(const char *menu_name, gboolean x11, const char *retv, const ch
         if (state.vmode) {
             g_free(state.vmode); state.vmode = NULL;
             state.page = 0;
-            play_sound("nav");
+            play_sound("FocusChange");
             render_menu(menu_name, root, &state);
             free_state(&state);
             return;
@@ -1330,7 +1329,7 @@ void handle_step(const char *menu_name, gboolean x11, const char *retv, const ch
             if (last_slash) *last_slash = '\0';
             else { g_free(state.path); state.path = g_strdup(""); }
             state.page = 0;
-            play_sound("nav");
+            play_sound("FocusChange");
             render_menu(menu_name, root, &state);
             free_state(&state);
             return;
@@ -1356,20 +1355,19 @@ void handle_step(const char *menu_name, gboolean x11, const char *retv, const ch
     }
     if (g_strcmp0(info, RAW_NEXT) == 0) {
         state.page++;
-        play_sound("nav");
+        play_sound("FocusChange");
         render_menu(menu_name, root, &state);
         free_state(&state);
         return;
     }
     if (g_strcmp0(info, RAW_PREV) == 0) {
         state.page = MAX(0, state.page - 1);
-        play_sound("nav");
+        play_sound("FocusChange");
         render_menu(menu_name, root, &state);
         free_state(&state);
         return;
     }
     if (g_strcmp0(info, RAW_SYNC_ICONS) == 0) {
-        play_sound("enter");
         run_manual_icon_sync_and_notify();
         render_menu(menu_name, root, &state);
         free_state(&state);
@@ -1385,7 +1383,7 @@ void handle_step(const char *menu_name, gboolean x11, const char *retv, const ch
             else { g_free(state.path); state.path = g_strdup(""); }
             state.page = 0;
         }
-        play_sound("nav");
+        play_sound("FocusChange");
         render_menu(menu_name, root, &state);
         free_state(&state);
         return;
@@ -1406,7 +1404,6 @@ void handle_step(const char *menu_name, gboolean x11, const char *retv, const ch
             if (apps && idx >= 0 && (guint)idx < apps->len) {
                 AppEntry *app = g_ptr_array_index(apps, idx);
                 if (app && app->exec) {
-                    play_sound("enter");
                     exec_detached(app->exec);
                     cleanup_files();
                     free_state(&state);
@@ -1443,7 +1440,7 @@ void handle_step(const char *menu_name, gboolean x11, const char *retv, const ch
                 g_free(state.path);
                 state.path = new_path;
                 state.page = 0;
-                play_sound("nav");
+                play_sound("FocusChange");
                 render_menu(menu_name, root, &state);
                 free_state(&state);
                 return;
@@ -1459,7 +1456,6 @@ void handle_step(const char *menu_name, gboolean x11, const char *retv, const ch
                     g_free(cmd); g_free(lua_q); g_free(lua);
                 }
                 g_free(addr);
-                play_sound("enter");
                 cleanup_files();
                 free_state(&state);
                 exit(0);
@@ -1476,13 +1472,12 @@ void handle_step(const char *menu_name, gboolean x11, const char *retv, const ch
                 else
                     state.vmode = g_strdup(VMODE_RUN);
                 state.page = 0;
-                play_sound("nav");
+                play_sound("FocusChange");
                 render_menu(menu_name, root, &state);
                 free_state(&state);
                 return;
             }
             else if (g_strcmp0(type, "special-window") == 0) {
-                play_sound("enter");
                 char *mon = focused_monitor_name();
                 gchar *theme_path = g_build_filename(g_get_home_dir(), ".config", "rofi", menu_name, "theme.rasi", NULL);
 
@@ -1514,7 +1509,6 @@ void handle_step(const char *menu_name, gboolean x11, const char *retv, const ch
             else {
                 const char *exec_cmd = json_object_get_string_member(child, "exec");
                 if (exec_cmd && *exec_cmd) {
-                    play_sound("enter");
                     if (g_strcmp0(type, "action") == 0) {
                         /* hyprctl-dispatch-Befehle (fullscreen, swapwithmaster,
                          * minimize, pin, ...) wirken implizit auf das "aktive
@@ -1564,7 +1558,7 @@ void handle_step(const char *menu_name, gboolean x11, const char *retv, const ch
 
 /* --------------------------- Hauptprogramm --------------------------- */
 int main(int argc, char *argv[]) {
-    char *menu_name = g_strdup("launcher");
+    char *menu_name = g_strdup("AppLauncher");
     gboolean x11 = FALSE;
     for (int i = 1; i < argc; i++) {
         if (g_strcmp0(argv[i], "--menu") == 0 && i + 1 < argc) {

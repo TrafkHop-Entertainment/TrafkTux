@@ -18,7 +18,7 @@
 # Kein Wechsel während der Laufzeit - nur einmal beim Aufruf
 # (z.B. Systemstart / Hyprland-Autostart).
 
-WALLPAPER_DIR="$HOME/.config/hypr/wallpapers"
+WALLPAPER_DIR="$HOME/.config/hypr/Wallpapers"
 CHANNEL="xfce4-desktop"
 
 # Zufälliges Bild auswählen (jpg, jpeg, png, webp)

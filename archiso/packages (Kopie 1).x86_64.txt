@@ -124,6 +124,7 @@ vlc
 vlc-plugins-all
 pinta
 ark
+gparted
 fastfetch
 imagemagick
 

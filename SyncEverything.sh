@@ -411,7 +411,19 @@ fi
 
 if [[ $DRY_RUN -eq 0 ]]; then
     systemctl --user daemon-reload
-    systemctl --user restart wb-autohide.service wb-daemon.service
+    # Alle 4 eigenen Daemons neustarten, damit frisch gebaute Binaries
+    # (siehe Sync oben) auch wirklich geladen werden - vorher standen
+    # hier nur 2 Services, und die auch noch unter veralteten Namen
+    # (wb-autohide.service / wb-daemon.service), die es laut
+    # ~/.config/systemd/user/ gar nicht mehr gibt. Ohne "set -e" lief
+    # der fehlgeschlagene restart einfach still durch, daher ist das
+    # nie aufgefallen - genau das Symptom "kompiliert+gesynct, aber
+    # trotzdem noch die alte Binary aktiv".
+    systemctl --user restart \
+        ScreenRotationDaemon.service \
+        WidgetsDaemon.service \
+        WaybarAutohideDaemon.service \
+        FocusFixDaemon.service
 fi
 
 echo ""

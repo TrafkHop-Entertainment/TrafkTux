@@ -44,14 +44,8 @@ if not f then return default end
         -- Statt Rofis eigener (racy) Output-Erkennung zu vertrauen, wird der
         -- fokussierte Monitor per hyprctl+jq VOR dem Start ermittelt und Rofi
         -- explizit mitgegeben - direkt inline, kein separates Skript nötig.
-        --local launcher_cmd   = "rofi -show bubble -modi \"bubble:python3 $HOME/.config/rofi/bubble-menu.py --menu launcher --x11\" -theme $HOME/.config/rofi/launcher/theme.rasi -show-icons -no-custom -x11 -monitor \"$(hyprctl monitors -j | jq -r '.[] | select(.focused) | .name')\" -kb-row-up 'Up,Control+p,w' -kb-row-down 'Down,Control+n,s' -kb-row-left 'Control+Page_Up,a' -kb-row-right 'Control+Page_Down,d' -kb-accept-entry 'Control+j,Control+m,Return,KP_Enter,space,less' -kb-custom-1 'q' -kb-custom-2 'e' -kb-custom-3 'x'"
-        --local powermenu_cmd  = "rofi -show bubble -modi \"bubble:python3 $HOME/.config/rofi/bubble-menu.py --menu powermenu --x11\" -theme $HOME/.config/rofi/powermenu/theme.rasi -show-icons -no-custom -x11 -monitor \"$(hyprctl monitors -j | jq -r '.[] | select(.focused) | .name')\" -kb-row-up 'Up,Control+p,w' -kb-row-down 'Down,Control+n,s' -kb-row-left 'Control+Page_Up,a' -kb-row-right 'Control+Page_Down,d' -kb-accept-entry 'Control+j,Control+m,Return,KP_Enter,space,less' -kb-custom-1 'q' -kb-custom-2 'e' -kb-custom-3 'x'"
-
-        --local launcher_cmd   = "rofi -show bubble -modi \"bubble:$HOME/.config/rofi/RofiTrafkBubbleMenus --menu launcher --x11\" -theme $HOME/.config/rofi/launcher/theme.rasi -show-icons -no-custom -x11 -monitor \"$(hyprctl monitors -j | jq -r '.[] | select(.focused) | .name')\" -kb-row-up 'Up,Control+p,w' -kb-row-down 'Down,Control+n,s' -kb-row-left 'Control+Page_Up,a' -kb-row-right 'Control+Page_Down,d' -kb-accept-entry 'Control+j,Control+m,Return,KP_Enter,space,less' -kb-custom-1 'q' -kb-custom-2 'e' -kb-custom-3 'x'"
-        --local powermenu_cmd  = "rofi -show bubble -modi \"bubble:$HOME/.config/rofi/RofiTrafkBubbleMenus --menu powermenu --x11\" -theme $HOME/.config/rofi/powermenu/theme.rasi -show-icons -no-custom -x11 -monitor \"$(hyprctl monitors -j | jq -r '.[] | select(.focused) | .name')\" -kb-row-up 'Up,Control+p,w' -kb-row-down 'Down,Control+n,s' -kb-row-left 'Control+Page_Up,a' -kb-row-right 'Control+Page_Down,d' -kb-accept-entry 'Control+j,Control+m,Return,KP_Enter,space,less' -kb-custom-1 'q' -kb-custom-2 'e' -kb-custom-3 'x'"
-
-        local launcher_cmd   = "rofi -show bubble -modi \"bubble:$HOME/.config/rofi/RofiTrafkBubbleMenus --menu launcher --x11\" -theme $HOME/.config/rofi/launcher/theme.rasi -show-icons -no-custom -x11 -monitor \"$(hyprctl monitors -j | jq -r '.[] | select(.focused) | .name')\" -kb-row-up 'Up,Control+p,w' -kb-row-down 'Down,Control+n,s' -kb-row-left 'Control+Page_Up,a' -kb-row-right 'Control+Page_Down,d' -kb-accept-entry 'Control+j,Control+m,Return,KP_Enter,space,less' -kb-custom-1 'q' -kb-custom-2 'e' -kb-custom-3 'x'"
-        local powermenu_cmd  = "rofi -show bubble -modi \"bubble:$HOME/.config/rofi/RofiTrafkBubbleMenus --menu powermenu --x11\" -theme $HOME/.config/rofi/powermenu/theme.rasi -show-icons -no-custom -x11 -monitor \"$(hyprctl monitors -j | jq -r '.[] | select(.focused) | .name')\" -kb-row-up 'Up,Control+p,w' -kb-row-down 'Down,Control+n,s' -kb-row-left 'Control+Page_Up,a' -kb-row-right 'Control+Page_Down,d' -kb-accept-entry 'Control+j,Control+m,Return,KP_Enter,space,less' -kb-custom-1 'q' -kb-custom-2 'e' -kb-custom-3 'x'"
+        local launcher_cmd   = "rofi -show bubble -modi \"bubble:$HOME/.config/rofi/RofiTrafkBubbleMenus --menu AppLauncher --x11\" -theme $HOME/.config/rofi/AppLauncher/theme.rasi -show-icons -no-custom -x11 -monitor \"$(hyprctl monitors -j | jq -r '.[] | select(.focused) | .name')\" -kb-row-up 'Up,Control+p,w' -kb-row-down 'Down,Control+n,s' -kb-row-left 'Control+Page_Up,a' -kb-row-right 'Control+Page_Down,d' -kb-accept-entry 'Control+j,Control+m,Return,KP_Enter,space,less' -kb-custom-1 'q' -kb-custom-2 'e' -kb-custom-3 'x'"
+        local powermenu_cmd  = "rofi -show bubble -modi \"bubble:$HOME/.config/rofi/RofiTrafkBubbleMenus --menu PowerMenu --x11\" -theme $HOME/.config/rofi/PowerMenu/theme.rasi -show-icons -no-custom -x11 -monitor \"$(hyprctl monitors -j | jq -r '.[] | select(.focused) | .name')\" -kb-row-up 'Up,Control+p,w' -kb-row-down 'Down,Control+n,s' -kb-row-left 'Control+Page_Up,a' -kb-row-right 'Control+Page_Down,d' -kb-accept-entry 'Control+j,Control+m,Return,KP_Enter,space,less' -kb-custom-1 'q' -kb-custom-2 'e' -kb-custom-3 'x'"
 
         -- Cursor-Umgebungsvariablen
         hl.env("XCURSOR_THEME", "TrafkTuxCursorLegacy")
@@ -79,78 +73,37 @@ if not f then return default end
         hl.exec_cmd("wl-paste --watch cliphist store")
         hl.exec_cmd("wl-clip-persist --clipboard regular")
         hl.exec_cmd("swayosd-server")
-        hl.exec_cmd("systemctl --user start wb-daemon.service wb-autohide.service")
+        hl.exec_cmd("systemctl --user start WidgetsDaemon.service WaybarAutohideDaemon.service FocusFixDaemon.service ScreenRotationDaemon.service SoundCenter.service")
         hl.exec_cmd("cp ~/.config/rofi/assets/bubble-normal.png /tmp/bubble-normal.png")
         hl.exec_cmd("cp ~/.config/rofi/assets/bubble-selected.png /tmp/bubble-selected.png")
         -- Kein Daemon-Autostart mehr nötig: launcher_cmd/powermenu_cmd starten
         -- Rofi im Script-Mode jetzt bei jedem Aufruf direkt selbst.
         end)
 
-        -- ============================================================
-        -- Systemsounds: Compositor-Ebene (Fenster öffnen/schließen,
-        -- Workspace-Wechsel). Alles läuft über soundctl.sh, das selbst
-        -- den globalen An/Aus-Zustand prüft - hier wird also blind bei
-        -- jedem Event "hl.exec_cmd" gefeuert, kein eigener Enable-Check
-        -- nötig. "&" wichtig, sonst blockiert exec_cmd auf pw-play/paplay.
-        --
-        -- NICHT für Klicks *innerhalb* von Rofi/Waybar/Widgets - das sind
-        -- Events, die Hyprland gar nicht sieht (siehe config.jsonc bzw.
-        -- widgets_daemon.py für die dortigen Hooks).
-        --
-        -- Eventnamen verifiziert per Live-Fehlermeldung deines eigenen
-        -- Hyprland (Known events: ... window.open, window.open_early,
-        -- window.close, ..., workspace.active, ...) -
-        -- "openwindow"/"closewindow"/"workspace" (die rohen socket2-IPC-
-        -- Namen) waren falsch, hl.on() will die gepunktete Schreibweise.
-        --
-        -- DEBUG-VERSUCH gegen die gemeldete Verzögerung: "window.open"
-        -- feuert vermutlich erst NACH internem Hyprland-Setup (Layout,
-        -- Animation-Vorbereitung) - "window.open_early" (separat in der
-        -- Known-Events-Liste gelistet) vermutlich früher, näher am
-        -- tatsächlichen visuellen Erscheinen des Fensters. Testweise
-        -- umgestellt + Zeitstempel-Logging direkt im Hook, damit wir
-        -- sehen: liegt die Verzögerung VOR unserem Hook (Hyprland feuert
-        -- spät) oder NACH dem Hook-Aufruf (in soundctl.sh/pw-play selbst)?
-        --
-        -- Log-Datei: /tmp/opentest.log - zwei Zeitstempel pro Fenster-
-        -- Öffnung: T_hook (Moment, in dem der Hook feuert - das ist der
-        -- früheste Zeitpunkt, den WIR beeinflussen/messen können) und
-        -- T_done (nachdem pw-play fertig abgespielt hat). Vergleich mit
-        -- der eigenen Wahrnehmung ("wann hab ich das Fenster geöffnet")
-        -- zeigt, ob die Lücke VOR T_hook liegt (Hyprland-intern, nicht
-        -- von uns beeinflussbar) oder danach (unser Code).
-        --
-        -- Nach dem Test: diesen Block wieder auf die einfache Version
-        -- ohne Logging zurücksetzen (siehe auskommentierter Fallback
-        -- unten).
-        local SOUNDCTL = "bash $HOME/.config/hypr/soundctl.sh"
+        -- Systemsounds: Compositor-Ebene (Fenster öffnen/schließen, Workspace-
+        -- Wechsel). SoundCenter.sh prüft selbst den globalen An/Aus-Zustand,
+        -- hier wird also blind gefeuert. "&" wichtig, sonst blockiert
+        -- exec_cmd auf pw-play/paplay. Gilt NICHT für Klicks innerhalb von
+        -- Rofi/Waybar/Widgets - die sieht Hyprland gar nicht.
+        local SOUNDCTL = "bash $HOME/.config/hypr/SoundCenter.sh"
 
         hl.on("window.open_early", function()
-            hl.exec_cmd("bash -c 'date +%s.%N >> /tmp/opentest.log; " ..
-                SOUNDCTL .. " open; date +%s.%N >> /tmp/opentest.log; echo --- >> /tmp/opentest.log' &")
+            hl.exec_cmd(SOUNDCTL .. " Open &")
         end)
 
-        -- Einfache Version ohne Logging, für nach dem Test:
-        -- hl.on("window.open_early", function()
-        --     hl.exec_cmd(SOUNDCTL .. " open &")
-        -- end)
-
         hl.on("window.close", function()
-            hl.exec_cmd(SOUNDCTL .. " close &")
+            hl.exec_cmd(SOUNDCTL .. " Close &")
         end)
 
         hl.on("workspace.active", function()
-            hl.exec_cmd(SOUNDCTL .. " nav &")
+            hl.exec_cmd(SOUNDCTL .. " FocusChange &")
         end)
 
         -- Fokuswechsel (Fenster A -> Fenster B, OHNE Workspace-Wechsel,
         -- z.B. Alt+Tab, Klick oder - da follow_mouse = 1 aktiv ist -
-        -- auch reine Mausbewegung über ein anderes Fenster). Bewusst
-        -- weiterhin "nav" als Platzhalter; ersetz die Datei
-        -- ~/.config/hypr/sounds/nav.ogg bzw. hänge hier einen eigenen
-        -- "focus"-Event dran, sobald du den "nicen Sound" dafür hast.
+        -- auch reine Mausbewegung über ein anderes Fenster).
         hl.on("window.active", function()
-            hl.exec_cmd(SOUNDCTL .. " nav &")
+            hl.exec_cmd(SOUNDCTL .. " FocusChange &")
         end)
 
 
@@ -310,7 +263,7 @@ if not f then return default end
                                               fg_color = "rgba(111111ee)",
                                               size     = 15,
                                               icon     = "📌",
-                                              action   = "hyprctl dispatch 'hl.dsp.exec_cmd(\"~/.config/hypr/pip.sh\")'",
+                                              action   = "hyprctl dispatch 'hl.dsp.exec_cmd(\"~/.config/hypr/PictureInPicture.sh\")'",
                 })
 
                 hl.window_rule({
@@ -348,7 +301,7 @@ if not f then return default end
                 hl.bind(mainMod .. " + SHIFT + code:49", hl.dsp.window.fullscreen({ mode = 0 }))
                 hl.bind(mainMod .. " + code:49",         hl.dsp.window.fullscreen({ mode = 1 }))
                 hl.bind(mainMod .. " + ALT + code:49",   hl.dsp.exec_cmd("hyprland-minimizer"))
-                hl.bind(mainMod .. " + CTRL + code:49",  hl.dsp.exec_cmd("hyprctl dispatch 'hl.dsp.exec_cmd(\"~/.config/hypr/pip.sh\")'"))
+                hl.bind(mainMod .. " + CTRL + code:49",  hl.dsp.exec_cmd("hyprctl dispatch 'hl.dsp.exec_cmd(\"~/.config/hypr/PictureInPicture.sh\")'"))
 
                 -- Waybar-Autohide dauerhaft sperren/entsperren
                 hl.bind(mainMod .. " + ALT + tab", hl.dsp.exec_cmd(
@@ -367,10 +320,14 @@ if not f then return default end
                     hl.exec_cmd("xfce4-terminal -e 'bash /run/media/hopx/HopxSSD/TrafkSite/Projects/TrafkTux/TrafkTux/SyncEverything.sh --full'")
                 end, { description = "Sync with system" })
 
-                -- WICHTIG: "soundctl.sh toggle" (ohne --) ist der SOUND-EVENT-Name
-                -- "toggle" (spielt toggle.ogg ab) - NICHT der Enable/Disable-Schalter
-                -- für Systemsounds, der heißt "--toggle" (siehe soundctl.sh).
-                hl.bind(mainMod .. " + H", hl.dsp.exec_cmd("bash ~/.config/waybar/scripts/hideall.sh toggle && bash ~/.config/hypr/soundctl.sh toggle &"), { description = "Alle Fenster verstecken/wiederherstellen" })
+                -- Kein eigener Sound-Aufruf mehr an dieser Stelle: HideAll.sh
+                -- feuert seinen "Minimize"-Sound inzwischen selbst, einmal am
+                -- Ende von do_hide - nachdem tatsächlich versteckt wurde,
+                -- nicht schon beim bloßen Tastendruck (der bis zu 1s vorher
+                -- liegen kann, siehe HideAll.sh's Polling-Kommentar). Ein
+                -- zweiter Aufruf hier würde denselben Sound nur doppelt
+                -- (und zu früh) auslösen.
+                hl.bind(mainMod .. " + H", hl.dsp.exec_cmd("bash ~/.config/waybar/Scripts/HideAll.sh toggle &"), { description = "Alle Fenster verstecken/wiederherstellen" })
 
                 hl.config({
                     scrolling = {
@@ -404,10 +361,18 @@ local function scrolling_focus(direction)
     local ws = hl.get_active_workspace()
     if not ws or ws.tiled_layout ~= "scrolling" then return end
 
-    local wins = hl.get_workspace_windows(ws)
+    -- hl.get_windows({filters}) statt hl.get_workspace_windows(ws) (letzteres
+    -- existiert nicht in der hl.*-API) - filtert direkt nach floating=false,
+    -- liefert also gleich nur die getilten Fenster.
+    --
+    -- Floatende (inkl. gepinnter PIP) werden hier bewusst NICHT mit
+    -- reingemischt: die erreicht man gezielt über SUPER+q/e/x/<
+    -- (floatingDiagonal, s.u.), das funktioniert von jedem Fenster aus,
+    -- getilt oder floatend. wasd bleibt dadurch rein "normale" Navigation.
+    local wins = hl.get_windows({ workspace = ws.id, floating = false })
     local active = hl.get_active_window()
 
-    -- NEU: Wenn der aktuelle Monitor/Workspace leer ist, direkt rüber springen!
+    -- Wenn der aktuelle Monitor/Workspace leer ist, direkt rüber springen
     if not wins or #wins == 0 or not active then
         local current_mon = hl.get_active_monitor()
         local target_mon = get_monitor_in_direction(current_mon, direction)
@@ -424,6 +389,25 @@ local function scrolling_focus(direction)
         if type(w.position) == "table" and type(w.position.x) == "number" then return w.position.x end
         if type(w.x) == "number" then return w.x end
         return 0
+    end
+
+    -- Ist das aktive Fenster selbst nicht Teil des getilten Scroller-Baums
+    -- (z.B. weil es floatend ist)? Dann von der passenden Seite einsteigen,
+    -- statt hängen zu bleiben.
+    local activeInTiled = false
+    for _, w in ipairs(wins) do
+        if w.address == active.address then
+            activeInTiled = true
+            break
+        end
+    end
+
+    if not activeInTiled then
+        local entry = (direction == "right") and wins[1] or wins[#wins]
+        if entry then
+            hl.dispatch(hl.dsp.focus({ window = entry }))
+        end
+        return
     end
 
     local active_x = get_x(active)
@@ -464,15 +448,21 @@ end
 -- ============================================================
 -- Monocle: cyclenext/prev + Monitorwechsel
 -- ============================================================
-local function monocle_focus(direction, cycleAction)
+local function monocle_focus(direction)
     local ws = hl.get_active_workspace()
     if not ws or ws.tiled_layout ~= "monocle" then return end
 
-    local wins = hl.get_workspace_windows(ws)
     local active = hl.get_active_window()
+    if not active then return end
 
-    -- NEU: Wenn der aktuelle Monitor/Workspace leer ist, direkt rüber springen!
-    if not wins or #wins == 0 or not active then
+    -- NUR getilte Fenster dieses Workspace als Cycle-Kandidaten. Floatende
+    -- (inkl. gepinnter, z.B. PIP) mischen wir bewusst nicht rein - sonst
+    -- springt das lineare Durchcyclen ungewollt zu einem floatenden Fenster
+    -- statt zum eigentlich anvisierten Tiling-Nachbarn. Floatende erreicht
+    -- man in Monocle gezielt über SUPER+q/e/x/< (floatingDiagonal, s.u.).
+    local all = hl.get_windows({ workspace = ws.id, floating = false })
+
+    if #all == 0 then
         local current_mon = hl.get_active_monitor()
         local target_mon = get_monitor_in_direction(current_mon, direction)
         if target_mon then
@@ -481,50 +471,269 @@ local function monocle_focus(direction, cycleAction)
         return
     end
 
+    -- Über .address statt Referenzgleichheit (==) vergleichen: zwei separat
+    -- abgefragte Fensterobjekte fürs selbe Fenster sind nicht zwangsläufig
+    -- dasselbe Lua-Table-Objekt.
     local idx
-    for i, win in ipairs(wins) do
-        if win == active then
+    for i, win in ipairs(all) do
+        if win.address == active.address then
             idx = i
             break
         end
     end
-    if not idx then return end
+
+    if not idx then
+        -- Aktives Fenster ist nicht in der Liste (Sonderfall) -> von der
+        -- passenden Seite einsteigen statt gar nichts zu tun.
+        local entry = (direction == "right") and all[1] or all[#all]
+        if entry then
+            hl.dispatch(hl.dsp.focus({ window = entry }))
+        end
+        return
+    end
 
     if direction == "right" then
-        if idx == #wins then
+        if idx == #all then
             local current_mon = hl.get_active_monitor()
             local target_mon = get_monitor_in_direction(current_mon, "right")
-            -- Monitor wechseln (ohne Prüfung, ob der Ziel-Monitor Fenster hat!)
             if target_mon then
                 hl.dispatch(hl.dsp.focus({ monitor = target_mon.name }))
             end
         else
-            hl.dispatch(hl.dsp.layout(cycleAction))   -- cyclenext
+            hl.dispatch(hl.dsp.focus({ window = all[idx + 1] }))
         end
     else -- left
         if idx == 1 then
             local current_mon = hl.get_active_monitor()
             local target_mon = get_monitor_in_direction(current_mon, "left")
-            -- Monitor wechseln (ohne Prüfung, ob der Ziel-Monitor Fenster hat!)
             if target_mon then
                 hl.dispatch(hl.dsp.focus({ monitor = target_mon.name }))
             end
         else
-            hl.dispatch(hl.dsp.layout(cycleAction))   -- cycleprev
+            hl.dispatch(hl.dsp.focus({ window = all[idx - 1] }))
         end
     end
 end
 
 
 
-                -- Fokus-Wechsel: layoutabhängig zwischen movefocus und cycle wählen
-                -- Fokus-Wechsel: layoutabhängig zwischen movefocus und cycle wählen
-local function focusOrCycle(direction, cycleAction)
+local function get_pos(w)
+    if type(w.at) == "table" and type(w.at.x) == "number" then return w.at.x, w.at.y end
+    if type(w.at) == "table" and type(w.at[1]) == "number" then return w.at[1], w.at[2] end
+    if type(w.position) == "table" and type(w.position.x) == "number" then return w.position.x, w.position.y end
+    return 0, 0
+end
+
+local function get_center(w)
+    local x, y = get_pos(w)
+    local sx = (type(w.size) == "table" and type(w.size.x) == "number") and w.size.x or 0
+    local sy = (type(w.size) == "table" and type(w.size.y) == "number") and w.size.y or 0
+    return x + sx / 2, y + sy / 2
+end
+
+-- DEBUG-SCHALTER: bei true feuert bei jedem SUPER+wasd/q/e/x/<-Versuch eine
+-- kurze Notification mit dem genauen Ergebnis der Floating-Navigation
+-- (wie viele Kandidaten, welches Ziel, Wraparound ja/nein, oder ob gar
+-- keine Kandidaten da waren/auf natives movefocus zurückgefallen wurde).
+-- Gleiches Debug-Prinzip wie schon beim opentest.log weiter oben in dieser
+-- Datei: am echten Compositor nachvollziehen statt nochmal blind raten.
+-- Nach dem Testen wieder auf false setzen.
+-- Prüft das Flag-File aus LayoutSwitcher.sh: ist der "floating"-Pseudo-Modus
+-- gerade aktiv? Das zugrunde liegende general.layout/tiled_layout bleibt beim
+-- Wechsel in "floating" BEWUSST unverändert (siehe Kommentar in
+-- LayoutSwitcher.sh) - "floating" ist kein eigenes Hyprland-Layout, sondern
+-- floatet nur die Fenster, während z.B. "scrolling" darunter weiterläuft.
+-- Genau DESHALB darf skipFloatFirst in focusOrCycle NICHT nur an
+-- tiled_layout == "monocle"/"scrolling" hängen: sonst wird im Floating-Modus
+-- fälschlich angenommen, man sei in echtem Scroller-/Monocle-Tiling, und die
+-- floatende wasd-Navigation wird übersprungen, obwohl man gerade NUR
+-- floatende Fenster vor sich hat (das war der gemeldete "a/d geht gar
+-- nicht"-Bug). Live pro Tastendruck neu gelesen (kein Caching, kein Reload
+-- nötig), damit's sofort nach Mod+Alt+4 wirkt.
+local FLOATING_MODE_FLAG = os.getenv("HOME") .. "/.cache/hypr/floating_mode_active"
+
+local function is_floating_mode_active()
+    local f = io.open(FLOATING_MODE_FLAG, "r")
+    if not f then return false end
+    f:close()
+    return true
+end
+
+local DEBUG_FLOAT_NAV = false
+-- Log-Datei zusaetzlich zur (zu schnell verschwindenden) Notification: bei
+-- jedem debug_float_nav()-Aufruf wird die Zeile MIT Zeitstempel angehaengt,
+-- damit man sie in Ruhe per "cat" oder "tail -f" nachlesen kann statt sie
+-- vom Bildschirm abfotografieren zu muessen, bevor sie weg ist.
+local FLOAT_NAV_LOG = os.getenv("HOME") .. "/floatnav_debug.log"
+
+local function debug_float_nav(msg)
+    if not DEBUG_FLOAT_NAV then return end
+    hl.notification.create({ text = "[FloatNav] " .. msg, timeout = 2500, icon = "info" })
+    local f = io.open(FLOAT_NAV_LOG, "a")
+    if f then
+        f:write(os.date("%H:%M:%S") .. "  " .. msg .. "\n")
+        f:close()
+    end
+end
+
+-- Richtungsvektoren: 0 = Achse frei (Kardinalrichtung), -1/1 = Achse
+-- erzwungen (bei Diagonalen beide Achsen erzwungen -> echter Quadrant).
+local FLOAT_DIRS = {
+    left      = { dx = -1, dy = 0  },
+    right     = { dx = 1,  dy = 0  },
+    up        = { dx = 0,  dy = -1 },
+    down      = { dx = 0,  dy = 1  },
+    upleft    = { dx = -1, dy = -1 },
+    upright   = { dx = 1,  dy = -1 },
+    downleft  = { dx = -1, dy = 1  },
+    downright = { dx = 1,  dy = 1  },
+}
+
+local function floating_focus_direction(active, direction)
+    local spec = FLOAT_DIRS[direction]
+    if not spec then return false end
+
+    local ws = hl.get_active_workspace()
+    local wsId = ws and ws.id
+    local acx, acy = get_center(active)
+
+    -- Klassen, die zwar floating sind, aber nie ein sinnvolles Navigationsziel
+    -- sind (Notification-Popups etc.) - dieselbe Ausnahme wie in
+    -- LayoutSwitcher.sh:unfloat_current_workspace (siehe Kommentar dort: dunst
+    -- ist floating/nicht gepinnt, poppt aber unvorhersehbar auf und wuerde
+    -- sonst mainMod+wasd/q/e/x/< kapern, sobald gerade eine Notification zu
+    -- sehen ist).
+    local NAV_EXCLUDED_CLASSES = { dunst = true }
+
+    local function is_navigable_float(w)
+        local class = w.class and w.class:lower() or ""
+        return not NAV_EXCLUDED_CLASSES[class]
+    end
+
+    local candidates = {}
+    for _, w in pairs(hl.get_windows()) do
+        if w.address ~= active.address and w.floating and is_navigable_float(w) then
+            local sameWs = wsId ~= nil and w.workspace and w.workspace.id == wsId
+            if w.pinned or sameWs then
+                table.insert(candidates, w)
+            end
+        end
+    end
+    if #candidates == 0 then
+        debug_float_nav("Richtung=" .. direction .. ": 0 floatende Kandidaten auf diesem Workspace (inkl. gepinnter) - falle auf natives movefocus zurück")
+        return false
+    end
+
+    local function matches(dx, dy)
+        if spec.dx < 0 and dx >= 0 then return false end
+        if spec.dx > 0 and dx <= 0 then return false end
+        if spec.dy < 0 and dy >= 0 then return false end
+        if spec.dy > 0 and dy <= 0 then return false end
+        return true
+    end
+
+    -- Kardinalrichtung (nur eine Achse erzwungen): primäre Achse zählt am
+    -- meisten, Abweichung auf der freien Achse wird stark bestraft, sonst
+    -- gewinnt leicht ein diagonal weit abseits liegendes Fenster gegen ein
+    -- gut ausgerichtetes - genau das beschriebene "springt quer"-Problem.
+    -- Diagonalrichtung (beide Achsen erzwungen): reiner Abstand reicht,
+    -- der Quadrant ist durch matches() schon erzwungen.
+    local function score(dx, dy)
+        if spec.dx ~= 0 and spec.dy ~= 0 then
+            return math.sqrt(dx * dx + dy * dy)
+        elseif spec.dx ~= 0 then
+            return math.abs(dx) + math.abs(dy) * 3
+        else
+            return math.abs(dy) + math.abs(dx) * 3
+        end
+    end
+
+    local best, bestScore = nil, nil
+    for _, w in ipairs(candidates) do
+        local cx, cy = get_center(w)
+        local dx, dy = cx - acx, cy - acy
+        if matches(dx, dy) then
+            local s = score(dx, dy)
+            if not bestScore or s < bestScore then
+                best, bestScore = w, s
+            end
+        end
+    end
+
+    local wrapped = false
+    if not best then
+        -- Wraparound: nichts mehr in der Richtung -> auf die
+        -- gegenüberliegende Seite springen (Extremwert der Gegenrichtung
+        -- auf jeder erzwungenen Achse).
+        wrapped = true
+        local bestWrap
+        for _, w in ipairs(candidates) do
+            local cx, cy = get_center(w)
+            local dx, dy = cx - acx, cy - acy
+            local val = -(spec.dx * dx + spec.dy * dy)
+            if not bestWrap or val > bestWrap then
+                bestWrap, best = val, w
+            end
+        end
+    end
+
+    if best then
+        debug_float_nav("Richtung=" .. direction .. ": " .. #candidates .. " Kandidaten, Ziel=" ..
+            (best.class or "?") .. " " .. (best.address or "?") ..
+            (wrapped and " (per Wraparound, kein Fenster direkt in der Richtung)" or ""))
+        hl.dispatch(hl.dsp.focus({ window = best }))
+        return true
+    end
+    debug_float_nav("Richtung=" .. direction .. ": " .. #candidates .. " Kandidaten, aber KEINER hat gepasst (auch Wraparound leer) - falle auf natives movefocus zurück")
+    return false
+end
+
+local function focusOrCycle(direction)
     return function()
         local ws = hl.get_active_special_workspace() or hl.get_active_workspace()
-        if not ws then return end
+        local layout = ws and ws.tiled_layout
 
-        local layout = ws.tiled_layout
+        -- In ECHTEM Monocle/Scroller-Tiling ist wasd bewusst NUR die normale
+        -- (getilte) Navigation - floatende Fenster (inkl. PIP) erreicht man
+        -- dort gezielt über SUPER+q/e/x/< (floatingDiagonal). Grund: beim
+        -- linearen Durchcyclen will man nicht ungewollt zu einem
+        -- floatenden Fenster abspringen, weg vom eigentlich anvisierten
+        -- Nachbarn im Stapel.
+        --
+        -- WICHTIG: der "floating"-Pseudo-Modus (LayoutSwitcher.sh floating)
+        -- ändert general.layout/tiled_layout BEWUSST NICHT - das zuletzt
+        -- aktive Tiling-Layout bleibt darunter "geparkt" (z.B. scrolling).
+        -- Ohne die is_floating_mode_active()-Prüfung würde obige Bedingung
+        -- also fälschlich glauben, man sei in echtem Scroller-/Monocle-
+        -- Tiling, und die floatende wasd-Navigation würde übersprungen,
+        -- obwohl man gerade NUR floatende Fenster vor sich hat - genau der
+        -- gemeldete "a/d im Floating-Layout geht gar nicht"-Bug (siehe Log:
+        -- kein einziger Fallback-Log-Eintrag bei links/rechts während
+        -- active.floating=true und layout=scrolling).
+        --
+        -- Im default/dwindle/master-Layout (und jetzt auch im Floating-
+        -- Modus) bleibt die ursprüngliche Priorität erhalten: ist das aktive
+        -- Fenster floatend, erst räumliche Floating-Navigation versuchen
+        -- (das war der ursprüngliche "PIP mit wasd fokussieren"-Wunsch) und
+        -- nur bei fehlendem Ziel auf normale Navigation durchfallen.
+        local skipFloatFirst = (layout == "monocle" or layout == "scrolling") and not is_floating_mode_active()
+
+        local active = hl.get_active_window()
+        debug_float_nav("focusOrCycle Start: layout=" .. tostring(layout) .. " skipFloatFirst=" .. tostring(skipFloatFirst) ..
+            " floatingMode=" .. tostring(is_floating_mode_active()) ..
+            " active.floating=" .. tostring(active and active.floating))
+
+        if not skipFloatFirst and active and active.floating then
+            if floating_focus_direction(active, direction) then
+                return
+            end
+        elseif skipFloatFirst then
+            debug_float_nav("Richtung=" .. direction .. ": floating_focus_direction uebersprungen, weil layout=" .. tostring(layout) .. " (monocle/scrolling)")
+        elseif not (active and active.floating) then
+            debug_float_nav("Richtung=" .. direction .. ": aktives Fenster ist NICHT floatend (oder gar nicht ermittelbar) -> floating_focus_direction wird nicht versucht")
+        end
+
+        if not ws then return end
 
         if layout == "scrolling" and (direction == "left" or direction == "right") then
             scrolling_focus(direction)
@@ -532,41 +741,81 @@ local function focusOrCycle(direction, cycleAction)
         end
 
         if layout == "monocle" and (direction == "left" or direction == "right") then
-            monocle_focus(direction, cycleAction)
+            monocle_focus(direction)
             return
         end
 
-        -- Alle anderen Layouts (Master, Dwindle, Float) oder vertikale Richtungen
+        debug_float_nav("Richtung=" .. direction .. ": lande beim nativen hl.dsp.focus({direction=...}) (letzter Fallback)")
         hl.dispatch(hl.dsp.focus({ direction = direction }))
     end
 end
 
+                            -- Workspaces zyklisch (1-9, mit Wraparound), jetzt auf SHIFT
+                            -- verschoben - bare q/e sind jetzt für Diagonal-Fokus (floating)
+                            -- frei, passend zu den bestehenden Eck-Snap-Tasten q/e/x/<
+                            -- (SUPER+CTRL+...) weiter unten.
+                            hl.bind(mainMod .. " + SHIFT + q", function()
+                                local ws = hl.get_active_workspace()
+                                if not ws or not ws.id then return end
+                                local target = ws.id - 1
+                                if target < 1 then target = 9 end
+                                hl.dispatch(hl.dsp.focus({ workspace = target }))
+                            end)
+                            hl.bind(mainMod .. " + SHIFT + e", function()
+                                local ws = hl.get_active_workspace()
+                                if not ws or not ws.id then return end
+                                local target = ws.id + 1
+                                if target > 9 then target = 1 end
+                                hl.dispatch(hl.dsp.focus({ workspace = target }))
+                            end)
 
+                            hl.bind(mainMod .. " + a", focusOrCycle("left"))
+                            hl.bind(mainMod .. " + d", focusOrCycle("right"))
+                            hl.bind(mainMod .. " + w", focusOrCycle("up"))
+                            hl.bind(mainMod .. " + s", focusOrCycle("down"))
 
-                            hl.bind(mainMod .. " + a", focusOrCycle("left",  "cycleprev"))
-                            hl.bind(mainMod .. " + d", focusOrCycle("right", "cyclenext"))
-                            hl.bind(mainMod .. " + w", focusOrCycle("up",    "cycleprev"))
-                            hl.bind(mainMod .. " + s", focusOrCycle("down",  "cyclenext"))
+                            -- Diagonal-Fokus zwischen floating Fenstern (inkl. PIP), bei
+                            -- Tiling ohne Wirkung. Selbe Tastenzuordnung wie die
+                            -- bestehenden Eck-Snap-Bindings (SUPER+CTRL+q/e/</x), nur ohne
+                            -- CTRL und für Fokus statt Snap: q=oben-links, e=oben-rechts,
+                            -- x=unten-rechts, <=unten-links.
+                            local function floatingDiagonal(direction)
+                                return function()
+                                    -- Bewusst OHNE "active.floating"-Guard: sonst kommt man von
+                                    -- einem getilten Fenster nie zu einem floatenden rüber (genau
+                                    -- der gemeldete Bug). floating_focus_direction braucht nur
+                                    -- Position/Größe des aktiven Fensters als Ausgangspunkt - das
+                                    -- haben getilte Fenster genauso wie floatende.
+                                    local active = hl.get_active_window()
+                                    if active then
+                                        floating_focus_direction(active, direction)
+                                    end
+                                end
+                            end
+                            hl.bind(mainMod .. " + q",    floatingDiagonal("upleft"))
+                            hl.bind(mainMod .. " + e",    floatingDiagonal("upright"))
+                            hl.bind(mainMod .. " + x",    floatingDiagonal("downright"))
+                            hl.bind(mainMod .. " + less", floatingDiagonal("downleft"))
 
                             -- Touch: 2-Finger-Wisch links/rechts für Fokuswechsel
                             if hl.plugin and hl.plugin.hyprgrass then
                                 hl.plugin.hyprgrass.bind({
                                     pattern = { kind = "swipe", fingers = 2, direction = "r" },
-                                    action = focusOrCycle("right", "cyclenext"),
+                                    action = focusOrCycle("right"),
                                 })
 
                                 hl.plugin.hyprgrass.bind({
                                     pattern = { kind = "swipe", fingers = 2, direction = "l" },
-                                    action = focusOrCycle("left", "cycleprev"),
+                                    action = focusOrCycle("left"),
                                 })
                                 end
 
                                 -- Layout wechseln
-                                hl.bind(mainMod .. " + ALT + 1", hl.dsp.exec_cmd("bash ~/.config/hypr/layout_switcher.sh master"))
-                                hl.bind(mainMod .. " + ALT + 2", hl.dsp.exec_cmd("bash ~/.config/hypr/layout_switcher.sh dwindle"))
-                                hl.bind(mainMod .. " + ALT + 3", hl.dsp.exec_cmd("bash ~/.config/hypr/layout_switcher.sh scroller"))
-                                hl.bind(mainMod .. " + ALT + 4", hl.dsp.exec_cmd("bash ~/.config/hypr/layout_switcher.sh floating"))
-                                hl.bind(mainMod .. " + ALT + 5", hl.dsp.exec_cmd("bash ~/.config/hypr/layout_switcher.sh bigscreen"))
+                                hl.bind(mainMod .. " + ALT + 1", hl.dsp.exec_cmd("bash ~/.config/hypr/LayoutSwitcher.sh master"))
+                                hl.bind(mainMod .. " + ALT + 2", hl.dsp.exec_cmd("bash ~/.config/hypr/LayoutSwitcher.sh dwindle"))
+                                hl.bind(mainMod .. " + ALT + 3", hl.dsp.exec_cmd("bash ~/.config/hypr/LayoutSwitcher.sh scroller"))
+                                hl.bind(mainMod .. " + ALT + 4", hl.dsp.exec_cmd("bash ~/.config/hypr/LayoutSwitcher.sh floating"))
+                                hl.bind(mainMod .. " + ALT + 5", hl.dsp.exec_cmd("bash ~/.config/hypr/LayoutSwitcher.sh bigscreen"))
 
                                 -- Workspaces per Zahlentaste
                                 for i = 1, 9 do
@@ -647,7 +896,7 @@ end
                                         })
 
                                         -- wb-daemon: die kleinen Bubble-Widgets (Settings, Lautstärke,
-                                        -- Netzwerk, ...) aus widgets_daemon.py sollen den Glass-Effekt
+                                        -- Netzwerk, ...) aus WidgetsDaemon.py sollen den Glass-Effekt
                                         -- NICHT bekommen - der sichtbare "Rahmen" darauf war genau dieser
                                         -- Effekt, nicht ein GTK-Fokus-/Hover-Rahmen.
                                         hg.layer("wb-daemon", { exclude = true })
@@ -789,7 +1038,7 @@ end
 
                                                 hl.window_rule({
                                                     match = {
-                                                        class = "widgets_daemon.py",
+                                                        class = "WidgetsDaemon.py",
                                                     },
                                                     float = true,
                                                     pin = true,
@@ -833,6 +1082,96 @@ end
                                                     -- mit dem oberen Bildschirmrand bzw. reserved-Bereichen.
                                                     local HYPRBARS_HEIGHT = 15
 
+                                                    -- ============================================================
+                                                    -- Floating-"Layout": neue Fenster sollen floaten, solange
+                                                    -- zuletzt LayoutSwitcher.sh floating gewählt wurde
+                                                    -- ============================================================
+                                                    -- "floating" ist kein general.layout-Wert (siehe LayoutSwitcher.sh):
+                                                    -- es floatet nur die gerade offenen Fenster, general.layout bleibt
+                                                    -- unverändert. Neue Fenster brauchen deshalb ein eigenes Flag-File
+                                                    -- (is_floating_mode_active(), global definiert bei DEBUG_FLOAT_NAV
+                                                    -- weiter oben), das LayoutSwitcher.sh setzt/löscht.
+                                                    --
+                                                    -- Klassen, die NIE von der automatischen Größen-Klemmung betroffen
+                                                    -- sein sollen: Rofi und Dunst sind beide floatend, aber ihre Größe
+                                                    -- wird von ihnen selbst (Theme/Notification-Inhalt) bestimmt - ein
+                                                    -- erzwungenes Runterklemmen auf 35% der Monitorbreite macht sie
+                                                    -- sichtbar kaputt/verzerrt ("scuffed"). Gleiche Prüfmethode wie
+                                                    -- NAV_EXCLUDED_CLASSES weiter oben.
+                                                    local SIZE_CLAMP_EXCLUDED_CLASSES = { dunst = true, rofi = true }
+
+                                                    local function is_size_clamp_excluded(win)
+                                                        local class = win.class and win.class:lower() or ""
+                                                        return SIZE_CLAMP_EXCLUDED_CLASSES[class] or false
+                                                    end
+
+                                                    -- ============================================================
+                                                    -- Max-Größe für floatende Fenster: 35% der (logischen) Monitorgröße
+                                                    -- ============================================================
+                                                    -- Greift nur in genau zwei Fällen (nicht deklarativ per
+                                                    -- window_rule max_size, weil das beim ERSTEN Floaten laut
+                                                    -- dokumentierten Hyprland-Bugs nicht zuverlässig zieht):
+                                                    -- 1. window.open, wenn der Floating-Modus aktiv ist (Hook unten)
+                                                    -- 2. Layout-Wechsel auf "floating" - LayoutSwitcher.sh ruft dafür
+                                                    --    hlClampFloatingWindow direkt und synchron auf (s.u.)
+                                                    -- Verkleinert nur, vergrößert nie.
+                                                    local FLOAT_MAX_FRACTION = 0.35
+
+                                                    local function clamp_floating_window(win)
+                                                        if not win or not win.floating or not win.monitor then return end
+                                                        if is_size_clamp_excluded(win) then return end
+                                                        local mon = win.monitor
+                                                        local scale = mon.scale or 1
+                                                        local maxW = math.floor((mon.width / scale) * FLOAT_MAX_FRACTION)
+                                                        local maxH = math.floor((mon.height / scale) * FLOAT_MAX_FRACTION)
+
+                                                        local curW = win.size and win.size.x or 0
+                                                        local curH = win.size and win.size.y or 0
+                                                        if curW <= 0 or curH <= 0 then return end
+
+                                                        local newW = math.min(curW, maxW)
+                                                        local newH = math.min(curH, maxH)
+
+                                                        if newW ~= curW or newH ~= curH then
+                                                            hl.dispatch(hl.dsp.window.resize({
+                                                                x = newW, y = newH,
+                                                                window = "address:" .. win.address,
+                                                            }))
+                                                        end
+                                                    end
+
+                                                    -- Extern per "hyprctl eval" aufrufbar (nutzt "hyprctl eval" wieder
+                                                    -- denselben persistenten Lua-State, den hyprland.lua geladen hat -
+                                                    -- gleiches Prinzip wie die hl.dispatch(...)-Aufrufe im Skript
+                                                    -- selbst). LayoutSwitcher.sh ruft das synchron auf, statt sich auf
+                                                    -- ein extern getriggertes Event zu verlassen (Fall 2 oben).
+                                                    _G.hlClampFloatingWindow = clamp_floating_window
+
+                                                    hl.on("window.open", function(win)
+                                                        if not win then return end
+
+                                                        -- Selektor-Format "address:0x..." wie im LayoutSwitcher-Skript.
+                                                        -- action="set" statt "toggle": wir wollen zwingend floaten.
+                                                        if is_floating_mode_active() and not win.floating and not is_size_clamp_excluded(win) then
+                                                            hl.dispatch(hl.dsp.window.float({
+                                                                action = "set",
+                                                                window = "address:" .. win.address,
+                                                            }))
+                                                        end
+
+                                                        -- Frisches Fensterobjekt nachladen: "win" aus dem Event kann
+                                                        -- nach dem obigen float-Dispatch veraltet sein (floating/size).
+                                                        local fresh = hl.get_window("address:" .. win.address) or win
+                                                        clamp_floating_window(fresh)
+                                                    end)
+
+                                                    -- Bewusst KEIN window.update_rules-Hook für die Klemmung: das
+                                                    -- Event feuert bei jeder Änderung eines dynamischen
+                                                    -- Match-Kriteriums (auch Titel/Fokus, nicht nur floating) und
+                                                    -- würde bei JEDEM manuellen Float-Toggle mitklemmen - nicht nur
+                                                    -- bei den zwei oben genannten Fällen. Fall 2 läuft deshalb
+                                                    -- ausschließlich über hlClampFloatingWindow aus LayoutSwitcher.sh.
+
                                                     -- Snap: bewegt und resized das aktive Fenster auf Bruchteile des Monitors,
 -- mit SNAP_GAP Rand zu Bildschirmkanten und zwischen Snap-Zonen.
 local function snap_window_fraction(x_frac, y_frac, w_frac, h_frac)
@@ -870,7 +1209,7 @@ if not geo then return end
             -- ============================================================
             -- 1. Fenster resize mit SUPER + SHIFT + wasd (50 px Schritte)
             -- ============================================================
-            -- BEHOBEN: repeating = true hinzugefügt, damit man die Taste gedrückt halten kann
+            -- repeating = true: Taste gedrückt halten wiederholt den Resize-Schritt
             hl.bind(mainMod .. " + SHIFT + s", function()
             local win = hl.get_active_window()
             if win then hl.dispatch(hl.dsp.window.resize({ x = win.size.x, y = win.size.y - 50 })) end
@@ -940,13 +1279,24 @@ if layout == "scrolling" and (direction == "left" or direction == "right") then
                 end)
 
         -- ============================================================
-        -- 3. Floating-Snaps für die 4 Ecken mit SUPER + CTRL + q/e/y/c
+        -- 3. Floating-Snaps für die 4 Ecken mit SUPER + CTRL + q/e/x/<
         -- ============================================================
-        -- BEHOBEN: "w + a" etc. war ungültig. Auf DE-Tastatur optimierte Einzeltasten gelegt.
-        hl.bind(mainMod .. " + CTRL + q", function() snap_window_fraction(0, 0, 0.5, 0.5) end)   -- oben links
-        hl.bind(mainMod .. " + CTRL + e", function() snap_window_fraction(0.5, 0, 0.5, 0.5) end) -- oben rechts
-        hl.bind(mainMod .. " + CTRL + less", function() snap_window_fraction(0, 0.5, 0.5, 0.5) end) -- unten links
-        hl.bind(mainMod .. " + CTRL + x", function() snap_window_fraction(0.5, 0.5, 0.5, 0.5) end) -- unten rechts
+        -- Nur bei floatenden Fenstern: snap_window_fraction() resized/moved
+        -- direkt und hart, das würde bei getilten Fenstern das Tiling-Layout
+        -- durcheinanderbringen. Analog zum Floating-Check bei den
+        -- Seiten-Snaps (SUPER+CTRL+wasd) weiter oben - dort gab's dieselbe
+        -- Prüfung schon, hier fehlte sie versehentlich.
+        local function cornerSnap(x_frac, y_frac, w_frac, h_frac)
+            return function()
+                if is_window_floating() then
+                    snap_window_fraction(x_frac, y_frac, w_frac, h_frac)
+                end
+            end
+        end
+        hl.bind(mainMod .. " + CTRL + q",    cornerSnap(0, 0, 0.5, 0.5))     -- oben links
+        hl.bind(mainMod .. " + CTRL + e",    cornerSnap(0.5, 0, 0.5, 0.5))   -- oben rechts
+        hl.bind(mainMod .. " + CTRL + less", cornerSnap(0, 0.5, 0.5, 0.5))   -- unten links
+        hl.bind(mainMod .. " + CTRL + x",    cornerSnap(0.5, 0.5, 0.5, 0.5)) -- unten rechts
 
 
         hl.window_rule({
@@ -955,3 +1305,11 @@ if layout == "scrolling" and (direction == "left" or direction == "right") then
                        float    = true,
                        no_focus = true,
         })
+
+        -- xfdesktop taucht nie als regulärer Client in "hyprctl clients" auf
+        -- (Desktop-Fenstertyp) - eine class-basierte Windowrule kann es also
+        -- gar nicht matchen. Der Fokus-Grab-Bug ist bekannt und wurde von
+        -- Hyprland "closed as not planned":
+        -- https://github.com/hyprwm/Hyprland/issues/9326
+        -- Fix stattdessen über FocusFixDaemon (C, siehe systemctl-Start oben),
+        -- der bei jedem neuen Fenster zwangsweise fokussiert.

@@ -57,17 +57,17 @@
     // Ein/Aus-Schaltern). soundctl.sh prüft selbst, ob Sounds gerade
     // aktiviert sind - hier wird also blind angehängt. Die socat-Module
     // rechts (volume/network/.../settings) bekommen ihren Sound dagegen
-    // NICHT hier, sondern zentral in widgets_daemon.py (toggle_widget()),
+    // NICHT hier, sondern zentral in WidgetsDaemon.py (toggle_widget()),
     // weil die dortige Klick-Logik nicht über waybar läuft.
     "custom/appmenu": {
         "format": "󱄅",
         "tooltip": "App Launcher",
-        "on-click": "rofi -show bubble -modi \"bubble:$HOME/.config/rofi/RofiTrafkBubbleMenus --menu launcher --x11\" -theme $HOME/.config/rofi/launcher/theme.rasi -show-icons -no-custom -x11 -monitor \"$(hyprctl monitors -j | jq -r '.[] | select(.focused) | .name')\" -kb-row-up 'Up,Control+p,w' -kb-row-down 'Down,Control+n,s' -kb-row-left 'Control+Page_Up,a' -kb-row-right 'Control+Page_Down,d' -kb-accept-entry 'Control+j,Control+m,Return,KP_Enter,space,less' -kb-custom-1 'q' -kb-custom-2 'e' -kb-custom-3 'x'"
+        "on-click": "rofi -show bubble -modi \"bubble:$HOME/.config/rofi/RofiTrafkBubbleMenus --menu AppLauncher --x11\" -theme $HOME/.config/rofi/AppLauncher/theme.rasi -show-icons -no-custom -x11 -monitor \"$(hyprctl monitors -j | jq -r '.[] | select(.focused) | .name')\" -kb-row-up 'Up,Control+p,w' -kb-row-down 'Down,Control+n,s' -kb-row-left 'Control+Page_Up,a' -kb-row-right 'Control+Page_Down,d' -kb-accept-entry 'Control+j,Control+m,Return,KP_Enter,space,less' -kb-custom-1 'q' -kb-custom-2 'e' -kb-custom-3 'x'"
     },
     "custom/powermenu": {
         "format": "⏻",
         "tooltip": "Power Menu",
-        "on-click": "rofi -show bubble -modi \"bubble:$HOME/.config/rofi/RofiTrafkBubbleMenus --menu powermenu --x11\" -theme $HOME/.config/rofi/powermenu/theme.rasi -show-icons -no-custom -x11 -monitor \"$(hyprctl monitors -j | jq -r '.[] | select(.focused) | .name')\" -kb-row-up 'Up,Control+p,w' -kb-row-down 'Down,Control+n,s' -kb-row-left 'Control+Page_Up,a' -kb-row-right 'Control+Page_Down,d' -kb-accept-entry 'Control+j,Control+m,Return,KP_Enter,space,less' -kb-custom-1 'q' -kb-custom-2 'e' -kb-custom-3 'x'"
+        "on-click": "rofi -show bubble -modi \"bubble:$HOME/.config/rofi/RofiTrafkBubbleMenus --menu PowerMenu --x11\" -theme $HOME/.config/rofi/PowerMenu/theme.rasi -show-icons -no-custom -x11 -monitor \"$(hyprctl monitors -j | jq -r '.[] | select(.focused) | .name')\" -kb-row-up 'Up,Control+p,w' -kb-row-down 'Down,Control+n,s' -kb-row-left 'Control+Page_Up,a' -kb-row-right 'Control+Page_Down,d' -kb-accept-entry 'Control+j,Control+m,Return,KP_Enter,space,less' -kb-custom-1 'q' -kb-custom-2 'e' -kb-custom-3 'x'"
     },
     "custom/workspaces-view": {
     "format": "󰙀",
@@ -78,9 +78,9 @@
         "format": "󰘿",
         "tooltip": "Alle Fenster verstecken/wiederherstellen",
         "interval": 1,
-        "exec": "~/.config/waybar/scripts/hideall.sh status",
+        "exec": "~/.config/waybar/Scripts/HideAll.sh status",
         "return-type": "json",
-        "on-click": "~/.config/waybar/scripts/hideall.sh toggle && bash ~/.config/hypr/soundctl.sh toggle &"
+        "on-click": "~/.config/waybar/Scripts/HideAll.sh toggle && bash ~/.config/hypr/soundctl.sh toggle &"
     },
     "custom/shortcut-kitty": {
         "format": "",
@@ -119,7 +119,7 @@
             "update-active-window": true,
             "format": "{icon}",
             "icon-size": 18,
-            "on-click-window": "~/.config/waybar/scripts/taskbar-click.sh {address} {button}; bash ~/.config/hypr/soundctl.sh click &"
+            "on-click-window": "~/.config/waybar/Scripts/WaybarClicks.sh {address} {button}; bash ~/.config/hypr/soundctl.sh click &"
         }
     },
 
@@ -127,7 +127,7 @@
     // Kein "&& soundctl.sh ..." hier: diese Module öffnen alle die
     // wb-daemon-Bubble über den selben Weg (toggle_widget()) - der
     // Open/Close-Sound sitzt deshalb EINMAL zentral dort statt siebenmal
-    // hier dupliziert. Siehe widgets_daemon.py.
+    // hier dupliziert. Siehe WidgetsDaemon.py.
     "custom/volume": {
         "format": "󰕾",
         "tooltip": "Volume & Audio",

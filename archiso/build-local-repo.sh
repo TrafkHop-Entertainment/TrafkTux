@@ -29,6 +29,9 @@ AUR_PACKAGES=(
   python-openrgb-git
   vscodium-bin
   clamav-unofficial-sigs
+  mediawriter
+  cnijfilter2
+  gnome-network-displays
 )
 
 mkdir -p "${REPO_DIR}" "${BUILD_DIR}"

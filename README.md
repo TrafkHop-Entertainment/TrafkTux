@@ -206,7 +206,7 @@ TrafkTux comes Preinstalled with a bunch of Software while still not overdoing i
 
 **System & Monitoring**
 - Htop
-- GParted, Fedora Media Writer
+- gnome-disk-utility, Fedora Media Writer
 - pamac (software manager)
 
 **Networking & Security**
@@ -220,15 +220,22 @@ TrafkTux comes Preinstalled with a bunch of Software while still not overdoing i
 - CUPS, HPLIP
 - pipewire and all other audio stuff
 - Bluetooth
+- canon printer drivers
+- gnome-network-displays
 
 **Boot & Display**
-- GRUB + Plymouth boot splash
-- SDDM (display manager)
+- GRUB + Plymouth
+- SDDM
 - Calamares (installer)
 
 **Fonts**
 - Noto Fonts (incl. Emoji & CJK)
 - JetBrains Mono Nerd Font
+
+**Gaming**
+- mangohud
+- winetricks & wine-staging & wine-gecko
+- gamemode
 
 ...plus a bunch of other system-related packages and sensible defaults, tuned out of the box.
 
@@ -253,10 +260,9 @@ Those Apps are **NOT PREINSTALLED** and can be installed via the App Settings Me
 - handbrake *(pacman)*
 
 **Work**
-- python, cmake *(pacman)*
 - jetbrains-toolbox *(aur)*
 - bambustudio-bin *(aur)*
-- kdenlive, audacity, obs-studio, gimp, qalculate-gtk, libreoffice-fresh, lmms *(pacman)*
+- audacity, obs-studio, gimp, qalculate-gtk, libreoffice-fresh, lmms *(pacman)*
 - davinci-resolve, onlyoffice-bin *(aur)*
 - docker & docker-desktop *(pacman & aur)*
   ```bash
@@ -274,8 +280,7 @@ Those Apps are **NOT PREINSTALLED** and can be installed via the App Settings Me
   ```
 
 **Drivers**
-- opentabletdriver, webcamoid, webkitgtk2 *(pacman)*
-- cnijfilter2, gnome-network-displays *(aur)*
+- opentabletdriver, webcamoid
 
 **Other**
 - timeshift *(pacman)*
@@ -287,7 +292,7 @@ Those Apps are **NOT PREINSTALLED** and can be installed via the App Settings Me
   ```
 
 **Games**
-- steam, mangohud, winetricks wine-staging wine-gecko wine-mono, waydroid, gamemode *(pacman)*
+- steam, waydroid *(pacman)*
 - itch-bin, heroic-games-launcher-bin, lsfg-vk-bin, bedrock-on-linux-bin *(aur)*
 
 **Game launchers / titles:**
@@ -363,9 +368,10 @@ Also we use the Hyprland Plugin Dynamic Cursors to make the cusor more dynamic, 
 We use a recoloured Theme called "Clay"! *(blue swapped for yellow)*
 
 ### GTK, Kvantum, Theming
-We have Themes for GTK2-3-4 and Kvantum to enshure consistent looks across most applications (excluding Apps like Firefox, Steam, Programms with custom colours)
+We have compleately custom Themes for GTK2-3-4 and Kvantum to enshure consistent looks across almost all applications (excluding Apps like Firefox, Steam, Programms with custom colours).
+They are all heavily altered versions of popular Themes edited to fit our style!
 
-We've also themed: Dunst, HyprCursor, HyprLock, Fastfetch, GRUB, Plymouth and SDDM.
+We've also themed: Dunst, HyprCursor, HyprLock, Fastfetch, GRUB, Plymouth, SDDM and more!.
 
 ### Waybar
 We have a waybar, that – like in Windos/KDEPlasma – hides itself as long as the mouse in not at the bottom of the screen/s!
@@ -541,7 +547,11 @@ Change where your other monitors are.
 Still to be themed / done:
 - Calamares
 - Optional package installer
+
 - Mouse cursor redesign
+- waybar redesign
+- grub, plymouth, sddm redesign
+
 - Editor for: Rofi folders/apps, Waybar widgets/shortcuts, autostart apps, default apps
 - Finish and fix System Sounds
 - Input/Output Device volumes
@@ -555,6 +565,9 @@ Also add a 3rd tab wich shows – maybe via htop – all programs and to kill th
 
 ## Known Bugs
 - The ISO doesn't currently boot – since the distro is still in development, this is a minor issue that will be fixed soon.
+
+- in floating layout new windows are not floating
+- widgets if openen and closed and opened in a quick sucession make a duplicate that always stays on screen and does nothing
 
 ---
 ---

@@ -9,49 +9,39 @@
 #   Text normal (rofi text-normal)     #dcd2ff
 #   Text selected (rofi text-selected) #ffffff
 #
-# ROLLBACK:
-# Zurueck auf die Version, die nachweislich sauber rund und zentriert
-# gerendert hat (Foto #1). Alles danach (Halo, Partikel, eckiger
-# Divider-Balken) ist erstmal wieder raus - das kam alles in einem
-# Rutsch dazu und irgendwas davon hat GRUB durcheinandergebracht.
-# Bauen wir jetzt einzeln wieder auf, mit Test zwischendrin, damit wir
-# sehen, welcher Schritt genau das Problem verursacht.
+# v12:
+# 1) Vignette ist keine +image-Ebene mehr, sondern als desktop-image
+#    direkt eingebrannt. GRUBs Stapel-Reihenfolge fuer +image-Elemente
+#    war ueber die letzten Runden nicht zuverlaessig vorhersagbar
+#    (boot_menu verhielt sich reversed, die Vignette selbst inkonsistent
+#    zwischen zwei Tests) - mit desktop-image umgehen wir das Problem
+#    komplett, das ist strukturell IMMER die unterste Ebene.
+# 2) Vignette faengt spaeter an (Schwellwert 0.35 -> 0.50).
+# 3) Blase (und ihr Halo) 45px nach unten korrigiert, war noch zu hoch.
+#
+# Blasen-Zentrierung:
+#   Basisformel: top_avail(2%+158) -> center_y = 51%+79
+#   + manuelle Korrektur (zu hoch gemeldet): +45
+#   boot_menu.top = 51%+79-240+45 = 51%-116
+#   bubble_halo.top (1500 hoch) = 51%+79-750+45 = 51%-626
 
 title-text: ""
 desktop-color: "#23163b"
+desktop-image: "assets/background.png"
 
-# ── Sternenstaub (voller Screen, keine Offset-Rechnerei noetig) ──
+# ── Logo ───────────────────────────────────────────────────
 +image {
-    top = 0
-    left = 0
-    width = 100%
-    height = 100%
-    file = "assets/particles.png"
-}
-
-# ── Logo ─────────────────────────────────────────────────────
-+image {
-    top = 2%
-    left = 50%-150
-    width = 300
-    height = 73
+    top = 2%+30
+    left = 50%-190
+    width = 380
+    height = 93
     file = "assets/logo.png"
 }
 
-# ── Trennstrich: eckiger Balken (kleiner Eckradius) ──────────
-+image {
-    top = 2%+67
-    left = 0
-    width = 100%
-    height = 45
-    file = "assets/divider_beam.png"
-}
-
 # ── Blasen-Menü: eine grosse, mittige Blase ──────────────────
-# Formel fuer top: (2%+90) + (100% - (2%+90))/2 - 240 = 51%-195
 +boot_menu {
     left = 50%-240
-    top = 51%-195
+    top = 51%-116
     width = 480
     height = 480
     item_height = 480
@@ -72,4 +62,31 @@ desktop-color: "#23163b"
     selected_item_pixmap_style = "assets/bubble_selected_*.png"
 
     scrollbar = false
+}
+
+# ── Glow hinter dem Logo (gross, dezent) ──────────────────────
++image {
+    top = 2%-150
+    left = 50%-370
+    width = 740
+    height = 453
+    file = "assets/logo_glow.png"
+}
+
+# ── Lichthof hinter der Blase (gross, dezent) ─────────────────
++image {
+    top = 51%-626
+    left = 50%-750
+    width = 1500
+    height = 1500
+    file = "assets/bubble_halo.png"
+}
+
+# ── Sternenstaub eng um/hinter die Blase ──────────────────────
++image {
+    top = 0
+    left = 0
+    width = 100%
+    height = 100%
+    file = "assets/particles.png"
 }

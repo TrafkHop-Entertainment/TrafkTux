@@ -1,0 +1,36 @@
+[Unit]
+Description=SoundCenter — persistenter PipeWire-Systemsound-Daemon
+After=pipewire.service wireplumber.service pipewire.socket
+Requires=pipewire.service
+StartLimitIntervalSec=30
+StartLimitBurst=5
+
+[Service]
+Type=simple
+#
+# WICHTIG (recherchiert, nicht geraten): "ExecStart=SoundDaemon" (bloßer
+# Name, kein Pfad) funktioniert NUR, wenn SoundDaemon in einem der von
+# systemd fest einkompilierten Standardverzeichnisse liegt
+# (/usr/local/bin, /usr/bin, /bin bzw. deren sbin-Pendants). Das ist NICHT
+# dasselbe wie deine Login-Shell-$PATH - systemd nutzt dafür eine eigene,
+# feste Liste, nicht $PATH aus der Umgebung (siehe `man systemd.exec`,
+# ExecSearchPath=).
+#
+# Liegt SoundDaemon bei dir woanders (z.B. Teil eines ArchISO-Overlays an
+# einem eigenen Pfad), dann entweder:
+#   a) hier den vollen Pfad eintragen, z.B.:
+#        ExecStart=/usr/local/bin/SoundDaemon
+#   b) oder ExecSearchPath= mit deinem Verzeichnis ergänzen:
+#        ExecSearchPath=/dein/eigener/pfad
+#        ExecStart=SoundDaemon
+#
+# (SoundControl.c's Selbstheilungs-exec läuft davon UNBERÜHRT - das ist
+# ein normaler execlp() aus einem normalen Prozess heraus und nutzt somit
+# ganz regulär die echte $PATH-Umgebungsvariable, egal was hier steht.)
+ExecStart=%h/.config/hypr/SoundDaemon
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=1
+
+[Install]
+WantedBy=default.target

@@ -89,6 +89,7 @@
     foreground = "#f6f3d5"
     timeout    = 5
     default_icon = dialog-information
+    script = /home/hopx/.config/dunst/notify-sound.sh
 
 [urgency_normal]
     background = "#5a3998"
@@ -96,6 +97,7 @@
     timeout    = 8
     override_pause_level = 30
     default_icon = dialog-information
+    script = /home/hopx/.config/dunst/notify-sound.sh
 
 [urgency_critical]
     background   = "#983939"
@@ -103,3 +105,4 @@
     timeout      = 65
     override_pause_level = 65
     default_icon = dialog-warning
+    script = /home/hopx/.config/dunst/notify-sound.sh

@@ -1,0 +1,14 @@
+[Unit]
+Description=Hyprland Screen Rotation Daemon
+Documentation=file:%h/.config/waybar/Scripts/ScreenRotationDaemon.c
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.config/waybar/Scripts/ScreenRotationDaemon
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=graphical-session.target
