@@ -1,0 +1,147 @@
+/**
+ * Bubble Launcher Theme — 5×3 Grid, touch-freundlich
+ *
+ * Spalte 1-3 (nur Wurzelebene): 3×3-Ordner-Raster ("1 System" ... "9 Drivers")
+ * Spalte 4   (nur Wurzelebene): Other / All Apps / App Packages
+ * Spalte 5   (alle Ebenen):     Next Page / Last Page / Zurück-Exit
+ *   (Exit nur in der Wurzel, sonst Zurück - siehe bubble-menu.py build_entries())
+ *
+ * In Unterordnern (und den virtuellen Alle-Apps-/Programme-Listen) füllen
+ * sich Spalte 1-4 stattdessen gleichmäßig zeilenweise mit bis zu 12
+ * Einträgen pro Seite; reicht das nicht, blättert Next/Last Page.
+ *
+ * WICHTIG: flow: horizontal in listview sorgt dafür, dass rofi die
+ * Einträge zeilenweise (links nach rechts) einsortiert - genau die
+ * Reihenfolge, in der bubble-menu.py sie liefert. Ohne das würde die
+ * Nav-Spalte (5) nicht zuverlässig ganz rechts landen.
+ *
+ * Assets (lege sie in ~/.config/rofi/assets/ ab):
+ *   bubble-normal.png   → dunkle lila Blase (inaktiv)
+ *   bubble-selected.png → helle/leuchtende Blase (aktiv)
+ *
+ * Größe der Blasen: ~190x190 px empfohlen (quadratisch).
+ * Passe CELL_SIZE unten an deine tatsächlichen Asset-Dimensionen an.
+ */
+
+configuration {
+    ml-row-right: "ScrollDown";
+    ml-row-left:  "ScrollUp";
+    ml-row-down:  "";
+    ml-row-up:    "";
+}
+
+* {
+    /* ── Farben ──────────────────────────────────── */
+    bg-transparent:     rgba(0,0,0,0);
+    text-normal:        rgba(220,210,255,1);
+    text-selected:      rgba(255,255,255,1);
+    text-shadow-color:  rgba(0,0,0,0.8);
+
+    /* ── Pfade ───────────────────────────────────── */
+    /* HIER ANPASSEN falls deine Assets woanders liegen */
+    bubble-normal:      url("/tmp/bubble-normal.png",   both);
+    bubble-selected:    url("/tmp/bubble-selected.png", both);
+
+    /* ── Layout ──────────────────────────────────── */
+    /* Zellgröße = Breite/Höhe einer Blase. Muss zu deinen PNGs passen. */
+    cell-size:          1080px;
+    columns:            5;
+    rows:               3;
+    cell-gap:           35px;
+
+    font:               "Sans Bold 8";
+}
+
+/* ── Fenster ─────────────────────────────────────────── */
+window {
+    transparency:       "real";
+    background-color:   rgba(0,0,0,0);
+    border:             0px;
+    padding:            0px;
+    /* Breite = 5 Zellen (@cell-size) + 4 Lücken (@cell-gap) + 2× Outer-Padding (35px) */
+    width: 1080px;
+    max-width: 100%;
+    location:           center;
+    anchor:             center;
+}
+
+/* ── Kein Eingabefeld ────────────────────────────────── */
+mainbox {
+    background-color:   @bg-transparent;
+    children:           [ listview ];
+    padding:            35px;
+    spacing:            0px;
+}
+
+/* Eingabefeld komplett verstecken */
+inputbar {
+    enabled:            false;
+}
+
+/* ── Grid ────────────────────────────────────────────── */
+listview {
+    background-color:   @bg-transparent;
+    columns:            @columns;
+    lines:              @rows;
+    flow:               horizontal;
+    fixed-columns:      true;
+    fixed-height:       false;
+    scrollbar:          false;
+    spacing:            @cell-gap;
+    cycle:              false;
+}
+
+/* ── Jede Zelle (Blase) ──────────────────────────────── */
+element {
+    background-color:   @bg-transparent;
+    background-image:   @bubble-normal;
+    orientation:        vertical;
+    padding:            35px 35px 35px 35px;
+    border:             0px;
+    cursor:             pointer;
+
+    /* Erzwingt quadratische Zellen mit der definierten Größe */
+    width:              @cell-size;
+    height:             @cell-size;
+}
+
+element selected.normal,
+element selected.urgent,
+element selected.active {
+    background-color:   @bg-transparent;
+    background-image:   @bubble-selected;
+}
+
+/* ── Icon (App/Ordner-Icon innerhalb der Blase) ──────── */
+element-icon {
+    background-color:   @bg-transparent;
+    size:               65px;
+    horizontal-align:   0.5;
+    vertical-align:     0.5;
+    /* Oben etwas Platz lassen damit Icon mittig-oben in der Blase sitzt */
+    margin:             5px 5px 5px 5px;
+}
+
+/* ── Label ───────────────────────────────────────────── */
+element-text {
+    background-color:   @bg-transparent;
+    text-color:         @text-normal;
+    font:               @font;
+    horizontal-align:   0.5;
+    vertical-align:     0.1;
+    /* Leichter Text-Schatten über expand: rofi kann keinen echten Schatten,
+     *       aber ein etwas dunklerer Hint color verhindert Leseproblem */
+    margin:             5px 5px 5px 5px;
+}
+
+element selected.normal element-text,
+element selected.urgent element-text,
+element selected.active element-text {
+    text-color:         @text-selected;
+}
+
+/* ── Scrollbar (versteckt) ───────────────────────────── */
+scrollbar {
+    enabled:            false;
+    width:              0px;
+}

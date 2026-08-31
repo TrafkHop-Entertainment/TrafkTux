@@ -1,0 +1,31 @@
+[hopx@trafktux Schatzjäger]$ ls -la "/home/hopx/.wine/drive_c/Program Files (x86)/Moorhuhn Complete/Schatzjäger/"
+insgesamt 2676
+drwxr-xr-x 1 hopx hopx      88 30. Aug 23:54 .
+drwxr-xr-x 1 hopx hopx     820 21. Aug 14:42 ..
+-rwxr-xr-x 1 hopx hopx 1701765 17. Okt 2006  Anleitung.exe
+drwxr-xr-x 1 hopx hopx     178 30. Aug 23:56 data
+-rw-r--r-- 1 hopx hopx       0 30. Aug 23:54 .dgvoodoo2-checked
+-rwxr-xr-x 1 hopx hopx 1036288 16. Aug 2006  start.exe
+[hopx@trafktux Schatzjäger]$ 
+
+
+
+[hopx@trafktux Schatzjäger]$ ls -la "/home/hopx/.wine/drive_c/Program Files (x86)/Moorhuhn Complete/Schatzjäger/data/"
+insgesamt 178556
+drwxr-xr-x 1 hopx hopx       178 30. Aug 23:56 .
+drwxr-xr-x 1 hopx hopx        88 30. Aug 23:54 ..
+-rw-r--r-- 1 hopx hopx 182803209 15. Sep 2005  datafile.dat
+-rw-r--r-- 1 hopx hopx     12892 30. Aug 23:59 log.txt
+-rw-r--r-- 1 hopx hopx      1698 30. Aug 23:59 profile_00.txt
+-rw-r--r-- 1 hopx hopx      1688 30. Aug 23:59 profile_01.txt
+-rw-r--r-- 1 hopx hopx      1688 30. Aug 23:59 profile_02.txt
+-rw-r--r-- 1 hopx hopx      1688 30. Aug 23:59 profile_03.txt
+-rw-r--r-- 1 hopx hopx      1688 30. Aug 23:59 profile_04.txt
+[hopx@trafktux Schatzjäger]$ 
+
+
+
+
+
+
+frage: falls ich darüber nachdenke, wine mit proton ge zu ersetzen..... wie viel umschreibe arbeit und neudebuging wäre das für unser ding? (nur hypothetisch)

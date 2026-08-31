@@ -1,0 +1,27 @@
+REGEDIT4
+
+; Shipped by the distro, imported automatically once per Wine prefix by
+; GameScopeWineWrapper.sh (see the "one-time prefix setup" section).
+;
+; Disables Wine's mouse-warp compensation, which is what causes bad
+; cursor tracking / detection in old DirectDraw titles (Moorhuhn and
+; friends being the textbook example). Note: virtual-desktop settings
+; are deliberately NOT set here anymore - gamescope now handles that
+; role at the compositor level, so a Wine-internal virtual desktop
+; would just be pointless double nesting.
+
+[HKEY_CURRENT_USER\Software\Wine\DirectInput]
+"MouseWarpOverride"="disable"
+
+; Forces Wine to use its X11 driver instead of the newer native Wayland
+; driver (winewayland.drv). Confirmed necessary for gamescope to work at
+; all: with the native Wayland driver, Wine talks directly to the outer
+; Hyprland session, completely bypassing gamescope's nested Xwayland -
+; the game window never gets scaled/contained, and closing gamescope has
+; no effect on it because it was never inside gamescope to begin with.
+; This is a known open Wine/gamescope compatibility issue, not something
+; fixable on gamescope's side. See:
+; https://github.com/ValveSoftware/gamescope/issues/1107
+; https://github.com/ValveSoftware/gamescope/issues/1632
+[HKEY_CURRENT_USER\Software\Wine\Drivers]
+"Graphics"="x11"

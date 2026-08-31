@@ -1,0 +1,24 @@
+so ich hab ne custom bar die waybar ersetzen soll.
+
+sie ist nicht nutzbar.
+
+
+also es gibt 1 png was da hintergrundbild ist. die ecken sollen nicht gestreckt werden un die mitte soll aber schon gestreckt werden, damit die bar skalliert werden kann, ohne, dass die ecken falsch ausschauen.
+die sachen auf der bar stimmen ansich, aber naja.
+
+hier die letzte nachricht aus einem anderen chat:
+
+tooooll die ecken sind jetzt richtig... JETZT FIX DEN REST, ALLE ANDEREN FEHLER SIND NOCH IMMER NICHT BEHOBEN. JUNGE SCHAU DIR DIE GRÖẞE AN, MAN KANN NOCH IMMER NICHT MIT DER BAR INTERAGIEREN, SIE VERSTECKT SICH NICHT, DIE ICONS WERDEN IM WORKSPACE NICHT ALLE RICHTIG GESUCHT DA SIND FALSCHE DABEI, ETC
+
+joa das war die nachricht und das die antword:
+
+Warte — im rechten Terminal läuft eindeutig Waybar noch, parallel dazu. Und im linken Log fehlt komplett der Autohide-Heartbeat, den ich eingebaut hatte. Lass mich beides klären.
+
+klarstellung: die waybar ist NICHT gerannt, was man mit minimalem nachdenken checken sollte, rest war sein fehler....
+
+
+
+
+SO also du fixt mir jetzt meine TrafkTuxBar!!!
+(hab dir alle relevanten assets mitgegeben + die alten waybar skripts, damit du siehst was sache war.... und noch ist da die neue unnutzbar ist)
+(tray machen wir am schluss)

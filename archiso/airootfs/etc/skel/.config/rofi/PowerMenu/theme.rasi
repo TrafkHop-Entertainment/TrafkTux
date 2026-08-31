@@ -9,6 +9,19 @@
  *   ~/.config/rofi/assets/bubble-selected.png
  *
  * Kann auch eigene Assets bekommen (einfach Pfade ändern).
+ *
+ * ── SCALING-FIX ─────────────────────────────────────────
+ * Rofi kennt "px" (rohe, physische Bildschirm-Pixel - reagiert NICHT auf
+ * -dpi) und "mm" (physische Größe, wird aus dem aktuellen -dpi-Wert
+ * berechnet: px = mm * dpi / 25.4 - reagiert also 1:1 wie der Text).
+ * Alle Layout-Werte hier sind deshalb von px auf mm umgerechnet, damit
+ * sie exakt so mitskalieren wie die Schrift, wenn hyprland.lua per
+ * "-dpi $(hyprctl ...)" den DPI-Wert dynamisch setzt.
+ *
+ * Umrechnung (Basis: 96 DPI = Faktor 1.0, also identisch zu vorher):
+ *   mm = px_original * 25.4 / 96
+ * Alle Werte unten sind 1:1 aus der Original-Datei übernommen,
+ * NUR die Einheit wurde geändert - keine Zahl wurde "korrigiert".
  */
 
 configuration {
@@ -26,8 +39,9 @@ configuration {
     bubble-normal:      url("/tmp/bubble-normal.png",   both);
     bubble-selected:    url("/tmp/bubble-selected.png", both);
 
-    cell-size:          1080px;
-    cell-gap:           35px;
+    /* 1080px @96dpi -> 285.75mm */
+    cell-size:          285.75mm;
+    cell-gap:           9.26mm;   /* 35px @96dpi */
 
     font:               "Sans Bold 8";
 }
@@ -39,8 +53,9 @@ window {
     padding:            0px;
     /* 6 Spalten + 5 Gaps à cell-gap (35px) + 2x mainbox-Padding (35px
        links/rechts) — gleiche effektive Spaltenbreite wie zuvor (170px
-       pro Spalte), nur um zwei Spalten erweitert. */
-    width: 1265px;
+       pro Spalte), nur um zwei Spalten erweitert.
+       Original: 1265px @96dpi -> 334.70mm */
+    width: 334.70mm;
     max-width:          100%;
     location:           center;
     anchor:             center;
@@ -49,7 +64,7 @@ window {
 mainbox {
     background-color:   @bg-transparent;
     children:           [ listview ];
-    padding:            35px;
+    padding:            9.26mm;   /* 35px @96dpi */
     spacing:            0px;
 }
 
@@ -73,7 +88,7 @@ element {
     background-color:   @bg-transparent;
     background-image:   @bubble-normal;
     orientation:        vertical;
-    padding:            35px 35px 35px 35px;
+    padding:            9.26mm 9.26mm 9.26mm 9.26mm;   /* 35px @96dpi */
     border:             0px;
     cursor:             pointer;
     width:              @cell-size;
@@ -89,10 +104,10 @@ element selected.active {
 
 element-icon {
     background-color:   @bg-transparent;
-    size:               65px;
+    size:               17.2mm;   /* 65px @96dpi */
     horizontal-align:   0.5;
     vertical-align:     0.5;
-    margin:             5px 5px 5px 5px;
+    margin:             1.32mm 1.32mm 1.32mm 1.32mm;   /* 5px @96dpi */
 }
 
 element-text {
@@ -101,7 +116,7 @@ element-text {
     font:               @font;
     horizontal-align:   0.5;
     vertical-align:     0.1;
-    margin:             5px 5px 5px 5px;
+    margin:             1.32mm 1.32mm 1.32mm 1.32mm;   /* 5px @96dpi */
 }
 
 element selected.normal element-text,

@@ -1,0 +1,202 @@
+// ═══════════════════════════════════════════════════════════
+//  TrafkTuxBar.jsonc
+//  Ersetzt waybar/config.jsonc + style.css komplett.
+//
+//  Pfad: ~/.config/TrafkTuxBar/TrafkTuxBar.jsonc
+//  Alle Bild-Assets (Bar.png, Blasen-Bilder) liegen in /tmp/ - werden
+//  beim Hyprland-Start dorthin kopiert (aus dem bisherigen waybar-
+//  Assets-Ordner), genau wie es die zwei bestehenden cp-Zeilen fuer
+//  die Blasen-Bilder schon tun. Siehe README.md.
+//
+//  WICHTIG - "icon": die Werte unten sind freedesktop-Standardnamen
+//  als Platzhalter. Ersetze sie durch die tatsaechlichen Namen aus
+//  deinem Clay-Icon-Pack (z.B. mit `gtk3-icon-browser` durchsuchen,
+//  oder in den .svg/.png-Dateinamen des Packs nachsehen - Icon-Packs
+//  benennen z.B. "app-launcher" statt "view-app-grid" o.ae.).
+// ═══════════════════════════════════════════════════════════
+{
+    "position": "bottom",
+    // War 180 (siehe alter Kommentar unten zu top_slice/bottom_slice) -
+    // das war eine falsche Abwaegung: klassisches 9-Slice zwang die Bar
+    // auf mind. 172px, damit die Rundung nicht verzerrt. Der Nine-Slice-
+    // Code skaliert die Ecken jetzt UNIFORM (Breite+Hoehe im selben
+    // Faktor) statt sie 1:1 zu erzwingen - die Rundung wird bei einer
+    // kuerzeren Bar einfach proportional kleiner, NICHT verzerrt. Damit
+    // ist jede Hoehe hier sicher moeglich; 68 ist eine normale
+    // Taskbar-Groessenordnung.
+    "height": 68,
+    "exclusive_zone": false,
+
+    "bar_background": {
+        "image": "/tmp/Bar.png",
+        // Breite der linken/rechten Ecke IM QUELLBILD (Pixel) - wird
+        // beim Zeichnen uniform mitskaliert, siehe Kommentar oben zu
+        // "height". Per Pixel-Analyse bestaetigt: die Rundung endet bei
+        // x=220 bzw. beginnt bei x=1700 (von 1920px Gesamtbreite).
+        "left_slice": 220,
+        "right_slice": 220
+    },
+
+    "bubble": {
+        // Blasen-Bilder liegen in /tmp (wie bisher bei dir ueblich -
+        // von hyprland.lua beim Login dorthin kopiert).
+        "bg_normal": "/tmp/bubble-normal.png",
+        "bg_hover": "/tmp/bubble-selected.png",
+        // Vordergrund-Layer (Glanzlicht/Kante) kommt spaeter - bis dahin
+        // leer lassen, dann zeichnet TrafkTuxBar nur Hintergrund+Icon/Text
+        // ohne Vordergrund-Ebene (genau wie der bisherige Blasen-Look).
+        "fg_normal": "",
+        "fg_hover": "",
+        "transition_ms": 140,
+        "min_size": 26,
+        "padding": 7,
+        "margin": 5
+    },
+
+    "icon_theme": "Clay",
+    "icon_size": 20,
+
+
+    "text_color": "#fff495",
+    "text_color_hover": "#c8b800",
+
+    "autohide": {
+        "enabled": true,
+        // War vorher 5px - zusammen mit dem jetzt gefixten reserved-
+        // Zonen-Bug (siehe README "Debugging") reicht das eigentlich,
+        // aber ein paar Pixel Puffer schaden nicht fuer echte Maus-
+        // bewegung.
+        "trigger_px": 15,
+        "hide_px": 65,
+        "touch_timeout_sec": 5,
+        "slide_ms": 220
+    },
+
+    "modules_left": [
+        {
+            "id": "appmenu",
+            "icon": "view-app-grid-symbolic",
+            "tooltip": "App Launcher",
+            "on_click": "rofi -show bubble -modi \"bubble:$HOME/.config/rofi/RofiTrafkBubbleMenus --menu AppLauncher --x11\" -theme $HOME/.config/rofi/AppLauncher/theme.rasi -show-icons -no-custom -x11 -monitor \"$(hyprctl monitors -j | jq -r '.[] | select(.focused) | .name')\" -kb-row-up 'Up,Control+p,w' -kb-row-down 'Down,Control+n,s' -kb-row-left 'Control+Page_Up,a' -kb-row-right 'Control+Page_Down,d' -kb-accept-entry 'Control+j,Control+m,Return,KP_Enter,space,less' -kb-custom-1 'q' -kb-custom-2 'e' -kb-custom-3 'x' && bash ~/.config/hypr/soundctl.sh click &"
+        },
+        {
+            "id": "powermenu",
+            "icon": "system-shutdown-symbolic",
+            "tooltip": "Power Menu",
+            "on_click": "rofi -show bubble -modi \"bubble:$HOME/.config/rofi/RofiTrafkBubbleMenus --menu PowerMenu --x11\" -theme $HOME/.config/rofi/PowerMenu/theme.rasi -show-icons -no-custom -x11 -monitor \"$(hyprctl monitors -j | jq -r '.[] | select(.focused) | .name')\" -kb-row-up 'Up,Control+p,w' -kb-row-down 'Down,Control+n,s' -kb-row-left 'Control+Page_Up,a' -kb-row-right 'Control+Page_Down,d' -kb-accept-entry 'Control+j,Control+m,Return,KP_Enter,space,less' -kb-custom-1 'q' -kb-custom-2 'e' -kb-custom-3 'x' && bash ~/.config/hypr/soundctl.sh click &"
+        },
+        {
+            "id": "workspaces-view",
+            "icon": "view-grid-symbolic",
+            "tooltip": "Workspace Overview",
+            "on_click": "hyprctl eval 'hl.plugin.hyprexpo.expo(\"toggle\")' ; hyprctl eval 'hl.dispatch(hl.dsp.submap(\"hyprexpo\"))' ; bash ~/.config/hypr/soundctl.sh click &"
+        },
+        {
+            "id": "hide-windows",
+            "icon": "view-restore-symbolic",
+            "icon_active": "view-restore-symbolic",
+            "tooltip": "Alle Fenster verstecken/wiederherstellen",
+            // Nutzt dein bestehendes, echtes hideall.sh (bleibt an seinem
+            // bisherigen Ort liegen, wird nicht in den TrafkTuxBar-Ordner
+            // verschoben) - das Skript spielt seinen "Minimize"-Sound beim
+            // Verstecken schon selbst am Ende von do_hide, daher hier
+            // KEIN zusaetzlicher soundctl.sh-Aufruf.
+            "exec_cmd": "~/.config/waybar/Scripts/HideAll.sh status",
+            "exec_interval_sec": 1,
+            "exec_return_json": true,
+            "on_click": "~/.config/waybar/Scripts/HideAll.sh toggle &"
+        },
+        {
+            // Entspricht dem alten "margin-left: 35px" auf
+            // #custom-shortcut-kitty in style.css - trennt den festen
+            // Cluster (appmenu..hide-windows) optisch von den
+            // App-Shortcuts.
+            "type": "spacer",
+            "width": 35
+        },
+        {
+            "id": "shortcut-kitty",
+            "icon": "utilities-terminal-symbolic",
+            "tooltip": "Xfce4 Terminal",
+            "on_click": "setsid xfce4-terminal && bash ~/.config/hypr/soundctl.sh click &"
+        },
+        {
+            "id": "shortcut-thunar",
+            "icon": "system-file-manager-symbolic",
+            "tooltip": "Thunar",
+            "on_click": "setsid thunar && bash ~/.config/hypr/soundctl.sh click &"
+        },
+        {
+            "id": "shortcut-firefox",
+            "icon": "firefox",
+            "tooltip": "Firefox",
+            "on_click": "setsid firefox && bash ~/.config/hypr/soundctl.sh click &"
+        }
+    ],
+
+    "modules_center": [
+        {
+            "id": "workspaces",
+            "type": "hyprland_workspaces"
+        }
+    ],
+
+    "modules_right": [
+        {
+            "id": "volume",
+            "icon": "audio-volume-high-symbolic",
+            "tooltip": "Volume & Audio",
+            "on_click": "socat - UNIX-CONNECT:/tmp/wb-daemon.sock <<< volume"
+        },
+        {
+            "id": "network",
+            "icon": "network-wireless-symbolic",
+            "tooltip": "Netzwerk / Wi-Fi",
+            "on_click": "socat - UNIX-CONNECT:/tmp/wb-daemon.sock <<< network"
+        },
+        {
+            "id": "bluetooth",
+            "icon": "bluetooth-symbolic",
+            "tooltip": "Bluetooth",
+            "on_click": "socat - UNIX-CONNECT:/tmp/wb-daemon.sock <<< bluetooth"
+        },
+        {
+            "id": "brightness",
+            "icon": "display-brightness-symbolic",
+            "tooltip": "Helligkeit & Nachtlicht",
+            "on_click": "socat - UNIX-CONNECT:/tmp/wb-daemon.sock <<< brightness"
+        },
+        {
+            "id": "akku",
+            "icon": "battery-good-symbolic",
+            "tooltip": "Akku-Info",
+            "on_click": "socat - UNIX-CONNECT:/tmp/wb-daemon.sock <<< akku"
+        },
+        {
+            "id": "osk",
+            "icon": "input-keyboard-symbolic",
+            "tooltip": "Bildschirmtastatur",
+            "exec_cmd": "pgrep -x wvkbd-mobintl >/dev/null && echo '{\"class\":\"active\"}' || echo '{\"class\":\"inactive\"}'",
+            "exec_interval_sec": 2,
+            "exec_return_json": true,
+            "on_click": "(pgrep -x wvkbd-mobintl >/dev/null && pkill -x wvkbd-mobintl || setsid wvkbd-mobintl -L 300); bash ~/.config/hypr/soundctl.sh toggle &"
+        },
+        {
+            "id": "tray",
+            "type": "tray"
+        },
+        {
+            "id": "clock",
+            "type": "clock",
+            "format": "%H:%M",
+            "format_alt": "%d.%m.%Y",
+            "on_click": "socat - UNIX-CONNECT:/tmp/wb-daemon.sock <<< clock"
+        },
+        {
+            "id": "settings",
+            "icon": "preferences-system-symbolic",
+            "tooltip": "Einstellungen",
+            "on_click": "socat - UNIX-CONNECT:/tmp/wb-daemon.sock <<< settings"
+        }
+    ]
+}

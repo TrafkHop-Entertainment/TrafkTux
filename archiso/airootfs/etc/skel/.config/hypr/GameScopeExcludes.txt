@@ -1,0 +1,11 @@
+# GameScopeExcludes.txt
+#
+# Lives at ~/.config/hypr/GameScopeExcludes.txt
+# One .exe basename per line, case-insensitive. Lines starting with "#"
+# are ignored. Any game listed here always launches through raw Wine,
+# skipping gamescope entirely - useful for titles that fight with nested
+# compositors (weird raw-input handling, multi-monitor setups, games
+# that already scale correctly on their own, etc).
+#
+# Example:
+# SomeBrokenGame.exe

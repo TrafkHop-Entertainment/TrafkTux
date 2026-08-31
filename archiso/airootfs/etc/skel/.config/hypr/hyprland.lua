@@ -44,8 +44,11 @@ if not f then return default end
         -- Statt Rofis eigener (racy) Output-Erkennung zu vertrauen, wird der
         -- fokussierte Monitor per hyprctl+jq VOR dem Start ermittelt und Rofi
         -- explizit mitgegeben - direkt inline, kein separates Skript nötig.
-        local launcher_cmd   = "rofi -show bubble -modi \"bubble:$HOME/.config/rofi/RofiTrafkBubbleMenus --menu AppLauncher --x11\" -theme $HOME/.config/rofi/AppLauncher/theme.rasi -show-icons -no-custom -x11 -monitor \"$(hyprctl monitors -j | jq -r '.[] | select(.focused) | .name')\" -kb-row-up 'Up,Control+p,w' -kb-row-down 'Down,Control+n,s' -kb-row-left 'Control+Page_Up,a' -kb-row-right 'Control+Page_Down,d' -kb-accept-entry 'Control+j,Control+m,Return,KP_Enter,space,less' -kb-custom-1 'q' -kb-custom-2 'e' -kb-custom-3 'x'"
-        local powermenu_cmd  = "rofi -show bubble -modi \"bubble:$HOME/.config/rofi/RofiTrafkBubbleMenus --menu PowerMenu --x11\" -theme $HOME/.config/rofi/PowerMenu/theme.rasi -show-icons -no-custom -x11 -monitor \"$(hyprctl monitors -j | jq -r '.[] | select(.focused) | .name')\" -kb-row-up 'Up,Control+p,w' -kb-row-down 'Down,Control+n,s' -kb-row-left 'Control+Page_Up,a' -kb-row-right 'Control+Page_Down,d' -kb-accept-entry 'Control+j,Control+m,Return,KP_Enter,space,less' -kb-custom-1 'q' -kb-custom-2 'e' -kb-custom-3 'x'"
+        --local launcher_cmd   = "rofi -show bubble -modi \"bubble:$HOME/.config/rofi/RofiTrafkBubbleMenus --menu AppLauncher --x11\" -theme $HOME/.config/rofi/AppLauncher/theme.rasi -show-icons -no-custom -x11 -monitor \"$(hyprctl monitors -j | jq -r '.[] | select(.focused) | .name')\" -kb-row-up 'Up,Control+p,w' -kb-row-down 'Down,Control+n,s' -kb-row-left 'Control+Page_Up,a' -kb-row-right 'Control+Page_Down,d' -kb-accept-entry 'Control+j,Control+m,Return,KP_Enter,space,less' -kb-custom-1 'q' -kb-custom-2 'e' -kb-custom-3 'x'"
+        --local powermenu_cmd  = "rofi -show bubble -modi \"bubble:$HOME/.config/rofi/RofiTrafkBubbleMenus --menu PowerMenu --x11\" -theme $HOME/.config/rofi/PowerMenu/theme.rasi -show-icons -no-custom -x11 -monitor \"$(hyprctl monitors -j | jq -r '.[] | select(.focused) | .name')\" -kb-row-up 'Up,Control+p,w' -kb-row-down 'Down,Control+n,s' -kb-row-left 'Control+Page_Up,a' -kb-row-right 'Control+Page_Down,d' -kb-accept-entry 'Control+j,Control+m,Return,KP_Enter,space,less' -kb-custom-1 'q' -kb-custom-2 'e' -kb-custom-3 'x'"
+        local launcher_cmd   = "rofi -show bubble -modi \"bubble:$HOME/.config/rofi/RofiTrafkBubbleMenus --menu AppLauncher --x11\" -theme $HOME/.config/rofi/AppLauncher/theme.rasi -show-icons -no-custom -x11 -dpi \"$(hyprctl monitors -j | jq -r '.[] | select(.focused) | (.scale*96|round)')\" -monitor \"$(hyprctl monitors -j | jq -r '.[] | select(.focused) | .name')\" -kb-row-up 'Up,Control+p,w' -kb-row-down 'Down,Control+n,s' -kb-row-left 'Control+Page_Up,a' -kb-row-right 'Control+Page_Down,d' -kb-accept-entry 'Control+j,Control+m,Return,KP_Enter,space,less' -kb-custom-1 'q' -kb-custom-2 'e' -kb-custom-3 'x'"
+        local powermenu_cmd  = "rofi -show bubble -modi \"bubble:$HOME/.config/rofi/RofiTrafkBubbleMenus --menu PowerMenu --x11\" -theme $HOME/.config/rofi/PowerMenu/theme.rasi -show-icons -no-custom -x11 -dpi \"$(hyprctl monitors -j | jq -r '.[] | select(.focused) | (.scale*96|round)')\" -monitor \"$(hyprctl monitors -j | jq -r '.[] | select(.focused) | .name')\" -kb-row-up 'Up,Control+p,w' -kb-row-down 'Down,Control+n,s' -kb-row-left 'Control+Page_Up,a' -kb-row-right 'Control+Page_Down,d' -kb-accept-entry 'Control+j,Control+m,Return,KP_Enter,space,less' -kb-custom-1 'q' -kb-custom-2 'e' -kb-custom-3 'x'"
+
 
         -- Cursor-Umgebungsvariablen
         hl.env("XCURSOR_THEME", "TrafkTuxCursorLegacy")
@@ -64,8 +67,27 @@ if not f then return default end
         hl.exec_cmd("bash -c 'hyprctl plugin list | grep -q hyprbars || (hyprpm reload -n && sleep 1 && hyprctl reload)'")
         hl.exec_cmd("xfdesktop")
         hl.exec_cmd("bash ~/.config/hypr/Wallpapers.sh")
-        hl.exec_cmd("killall waybar; waybar")
-        hl.exec_cmd("dunst")
+        -- TrafkTuxBar ersetzt waybar (siehe TrafkTuxBar.c/.jsonc) - alte
+        -- waybar-Zeile vorerst nur auskommentiert, nicht geloescht.
+        -- hl.exec_cmd("killall waybar; waybar")
+        --
+        -- WICHTIG - Reihenfolge: erst die Assets nach /tmp kopieren, DANACH
+        -- erst TrafkTuxBar starten. Vorher stand der Start-Befehl vor den
+        -- cp-Zeilen - TrafkTuxBar laedt /tmp/Bar.png und die Blasen-Bilder
+        -- aber SYNCHRON beim Start (bubble_assets_load()/nine_slice_load()
+        -- in main()) und beendet sich sofort mit EXIT_FAILURE, wenn eine der
+        -- Dateien noch fehlt. Da alle hl.exec_cmd()-Aufrufe hier nebenlaeufig
+        -- feuern, war das ein reiner Zufalls-Wettlauf: mal war der (winzige)
+        -- cp schneller fertig als GTK hochgefahren ist, mal nicht. Jetzt erst
+        -- kopieren, dann erst starten - kein Rennen mehr moeglich.
+        hl.exec_cmd("cp ~/.config/rofi/assets/bubble-normal.png /tmp/bubble-normal.png")
+        hl.exec_cmd("cp ~/.config/rofi/assets/bubble-selected.png /tmp/bubble-selected.png")
+        hl.exec_cmd("cp ~/.config/rofi/assets/TrafkBubble1.png /tmp/TrafkBubble1.png")
+        hl.exec_cmd("cp ~/.config/rofi/assets/TrafkBubble2.png /tmp/TrafkBubble2.png")
+        -- Bar.png liegt direkt in deinem TrafkTuxBar-Ordner.
+        hl.exec_cmd("cp ~/.config/TrafkTuxBar/Bar.png /tmp/Bar.png")
+        hl.exec_cmd("killall TrafkTuxBar; ~/.config/TrafkTuxBar/TrafkTuxBar &")
+        hl.exec_cmd("swaync --replace --skip-system-css &")
         hl.exec_cmd("hypridle")
         hl.exec_cmd("/usr/lib/polkit-kde-authentication-agent-1")
         hl.exec_cmd("nm-applet --indicator")
@@ -73,9 +95,10 @@ if not f then return default end
         hl.exec_cmd("wl-paste --watch cliphist store")
         hl.exec_cmd("wl-clip-persist --clipboard regular")
         hl.exec_cmd("swayosd-server")
-        hl.exec_cmd("systemctl --user start WidgetsDaemon.service WaybarAutohideDaemon.service FocusFixDaemon.service ScreenRotationDaemon.service SoundCenter.service")
-        hl.exec_cmd("cp ~/.config/rofi/assets/bubble-normal.png /tmp/bubble-normal.png")
-        hl.exec_cmd("cp ~/.config/rofi/assets/bubble-selected.png /tmp/bubble-selected.png")
+        -- WaybarAutohideDaemon.service entfernt: TrafkTuxBar bringt sein
+        -- eigenes Autohide mit, kein separater Daemon mehr noetig.
+        -- hl.exec_cmd("systemctl --user start WidgetsDaemon.service WaybarAutohideDaemon.service FocusFixDaemon.service ScreenRotationDaemon.service SoundCenter.service")
+        hl.exec_cmd("systemctl --user start WidgetsDaemon.service FocusFixDaemon.service ScreenRotationDaemon.service SoundCenter.service")
         -- Kein Daemon-Autostart mehr nötig: launcher_cmd/powermenu_cmd starten
         -- Rofi im Script-Mode jetzt bei jedem Aufruf direkt selbst.
         end)
@@ -182,7 +205,8 @@ if not f then return default end
         })
 
         hl.layer_rule({
-            match        = { namespace = "waybar" },
+            -- match        = { namespace = "waybar" },  -- alt, TrafkTuxBar nutzt "trafktuxbar"
+            match        = { namespace = "trafktuxbar" },
             ignore_alpha = 0.5,
             no_anim      = false,
         })
@@ -195,7 +219,7 @@ if not f then return default end
 
         hl.permission("/usr/(bin|local/bin)/hyprpm", "plugin", "allow")
 
-        -- Touch-Geste: Wisch von unten nach oben pingt den waybar-autohide-Daemon an
+        -- Touch-Geste: Wisch von unten nach oben zeigt TrafkTuxBar kurz an
         if hl.plugin and hl.plugin.hyprgrass then
             hl.config({
                 plugin = {
@@ -209,7 +233,8 @@ if not f then return default end
             hl.plugin.hyprgrass.bind({
                 pattern = { kind = "edge", origin = "d", direction = "u" },
                 action = hl.dsp.exec_cmd(
-                    "bash -c 'p=/tmp/waybar-autohide.pid; [ -f \"$p\" ] && kill -RTMIN $(cat \"$p\")'"
+                    -- alt: "bash -c 'p=/tmp/waybar-autohide.pid; [ -f \"$p\" ] && kill -RTMIN $(cat \"$p\")'"
+                    "bash -c 'p=/tmp/TrafkTuxBar.pid; [ -f \"$p\" ] && kill -RTMIN $(cat \"$p\")'"
                 ),
             })
             else
@@ -303,10 +328,11 @@ if not f then return default end
                 hl.bind(mainMod .. " + ALT + code:49",   hl.dsp.exec_cmd("hyprland-minimizer"))
                 hl.bind(mainMod .. " + CTRL + code:49",  hl.dsp.exec_cmd("hyprctl dispatch 'hl.dsp.exec_cmd(\"~/.config/hypr/PictureInPicture.sh\")'"))
 
-                -- Waybar-Autohide dauerhaft sperren/entsperren
+                -- TrafkTuxBar-Autohide dauerhaft sperren/entsperren
                 hl.bind(mainMod .. " + ALT + tab", hl.dsp.exec_cmd(
-                    "bash -c 'p=/tmp/waybar-autohide.pid; [ -f \"$p\" ] && kill -RTMIN+1 $(cat \"$p\")'"
-                ), { description = "Waybar-Autohide sperren/entsperren" })
+                    -- alt: "bash -c 'p=/tmp/waybar-autohide.pid; [ -f \"$p\" ] && kill -RTMIN+1 $(cat \"$p\")'"
+                    "bash -c 'p=/tmp/TrafkTuxBar.pid; [ -f \"$p\" ] && kill -RTMIN+1 $(cat \"$p\")'"
+                ), { description = "TrafkTuxBar-Autohide sperren/entsperren" })
 
                 hl.bind(mainMod .. " + R", function()
                     hl.exec_cmd("xfce4-terminal -e 'bash /run/media/hopx/HopxSSD/TrafkSite/Projects/TrafkTux/TrafkTux/SyncEverything.sh --fast'")
@@ -598,12 +624,14 @@ local function floating_focus_direction(active, direction)
     local acx, acy = get_center(active)
 
     -- Klassen, die zwar floating sind, aber nie ein sinnvolles Navigationsziel
-    -- sind (Notification-Popups etc.) - dieselbe Ausnahme wie in
-    -- LayoutSwitcher.sh:unfloat_current_workspace (siehe Kommentar dort: dunst
-    -- ist floating/nicht gepinnt, poppt aber unvorhersehbar auf und wuerde
-    -- sonst mainMod+wasd/q/e/x/< kapern, sobald gerade eine Notification zu
-    -- sehen ist).
-    local NAV_EXCLUDED_CLASSES = { dunst = true }
+    -- sind. Frueher stand hier "dunst = true" (poppte unvorhersehbar auf und
+    -- wuerde sonst mainMod+wasd/q/e/x/< kapern) - swaync zeichnet seine
+    -- Notification-Popups & das Control-Center aber als Layer-Shell-Surfaces
+    -- (Namespaces "swaync-notification-window"/"swaync-control-center"),
+    -- die ueberhaupt nicht in hl.get_windows()/hyprctl clients auftauchen.
+    -- Tabelle bleibt als Sicherheitsnetz fuer zukuenftige floatende
+    -- Popup-Apps stehen, aktuell aber leer.
+    local NAV_EXCLUDED_CLASSES = {}
 
     local function is_navigable_float(w)
         local class = w.class and w.class:lower() or ""
@@ -900,6 +928,14 @@ end
                                         -- NICHT bekommen - der sichtbare "Rahmen" darauf war genau dieser
                                         -- Effekt, nicht ein GTK-Fokus-/Hover-Rahmen.
                                         hg.layer("wb-daemon", { exclude = true })
+                                        hg.layer("trafktuxbar", { exclude = true })
+
+                                        -- swaync: gleicher Grund wie bei wb-daemon oben - der Glow um die
+                                        -- Notification-Blase kam von hyprglass, nicht von style.css. swaync
+                                        -- läuft als zwei getrennte Layer-Shell-Surfaces (Popups + Control-
+                                        -- Center), beide müssen ausgeschlossen werden.
+                                        hg.layer("swaync-notification-window", { exclude = true })
+                                        hg.layer("swaync-control-center", { exclude = true })
                                         end
 
                                         -- hypr-dynamic-cursors: physikalisch simulierter Cursor + Shake-to-Find
@@ -1093,12 +1129,14 @@ end
                                                     -- weiter oben), das LayoutSwitcher.sh setzt/löscht.
                                                     --
                                                     -- Klassen, die NIE von der automatischen Größen-Klemmung betroffen
-                                                    -- sein sollen: Rofi und Dunst sind beide floatend, aber ihre Größe
-                                                    -- wird von ihnen selbst (Theme/Notification-Inhalt) bestimmt - ein
-                                                    -- erzwungenes Runterklemmen auf 35% der Monitorbreite macht sie
-                                                    -- sichtbar kaputt/verzerrt ("scuffed"). Gleiche Prüfmethode wie
-                                                    -- NAV_EXCLUDED_CLASSES weiter oben.
-                                                    local SIZE_CLAMP_EXCLUDED_CLASSES = { dunst = true, rofi = true }
+                                                    -- sein sollen: Rofi ist floatend, aber seine Größe wird von ihm
+                                                    -- selbst (Theme-Inhalt) bestimmt - ein erzwungenes Runterklemmen
+                                                    -- auf 35% der Monitorbreite macht es sichtbar kaputt/verzerrt
+                                                    -- ("scuffed"). Frueher stand hier zusaetzlich "dunst = true" -
+                                                    -- swaync braucht das nicht, seine Popups/Control-Center sind
+                                                    -- Layer-Shell-Surfaces und laufen nie durch diese Klemmung (siehe
+                                                    -- NAV_EXCLUDED_CLASSES weiter oben für die gleiche Begründung).
+                                                    local SIZE_CLAMP_EXCLUDED_CLASSES = { rofi = true }
 
                                                     local function is_size_clamp_excluded(win)
                                                         local class = win.class and win.class:lower() or ""
@@ -1299,12 +1337,14 @@ if layout == "scrolling" and (direction == "left" or direction == "right") then
         hl.bind(mainMod .. " + CTRL + x",    cornerSnap(0.5, 0.5, 0.5, 0.5)) -- unten rechts
 
 
-        hl.window_rule({
-            name     = "dunst-no-focus",
-            match    = { class = "^(Dunst|dunst)$" },
-                       float    = true,
-                       no_focus = true,
-        })
+        -- Keine windowrule mehr für Notifications nötig: swaync zeichnet
+        -- Popups und das Control-Center als Layer-Shell-Surfaces (nicht als
+        -- normale Toplevel-Fenster wie zuvor Dunst), die tauchen also gar
+        -- nicht erst in "hyprctl clients"/hl.window_rule-Matches auf und
+        -- können damit auch nie ungewollt Fokus stehlen. Falls swaync auf
+        -- diesem System doch mal fokussierbar wirkt, ist das über
+        -- keyboard-interactivity im Compositor/Layer-Protokoll geregelt,
+        -- nicht über eine Hyprland-windowrule.
 
         -- xfdesktop taucht nie als regulärer Client in "hyprctl clients" auf
         -- (Desktop-Fenstertyp) - eine class-basierte Windowrule kann es also

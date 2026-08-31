@@ -1,0 +1,60 @@
+# TrafkTux GRUB Theme - Aspect-Ratio-Variante: 1610 (automatisch erzeugt aus 169-Referenz)
+# Zentriertes Crop/Pad, kein Content-Scaling. Bucket-Assets: assets/1610/
+
+title-text: ""
+desktop-color: "#23163b"
+desktop-image: "assets/GrubLayer5.png"
+
++image {
+    top = 0%
+    left = 0%
+    width = 100%
+    height = 100%
+    file = "assets/1610/GrubLayer4.png"
+}
+
++boot_menu {
+    left = 41%
+    top = 49%
+    width = 19%
+    height = 33%
+    item_height = 360
+    item_width = 360
+    item_spacing = 0
+    item_padding = 0
+    icon_width = 0
+    icon_height = 0
+    item_icon_space = 0
+
+    item_font = "Noto Sans Bold 22"
+    selected_item_font = "Noto Sans Bold 22"
+
+    item_color = "#f6f3d5"
+    selected_item_color = "#fff495"
+
+    scrollbar = false
+}
+
++image {
+    top = 0%
+    left = 0%
+    width = 100%
+    height = 100%
+    file = "assets/1610/GrubLayer2.png"
+}
+
++image {
+    top = 0%
+    left = 0%
+    width = 100%
+    height = 100%
+    file = "assets/1610/GrubLayer0.png"
+}
+
++image {
+    top = 0%
+    left = 0%
+    width = 100%
+    height = 100%
+    file = "assets/GrubLayer1.png"
+}

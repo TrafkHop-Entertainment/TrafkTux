@@ -1,0 +1,144 @@
+/* ════════════════════════════════════════════════════════════
+   TrafkTux swaync style
+   Nur noch Bild + Text: keine eigene Rahmen-/Hintergrundfarbe
+   mehr, die Blase besteht ausschließlich aus dem Bild und dem
+   Text drüber. Kein neues Bild/kein neuer cp-Befehl nötig - das
+   Hintergrundbild ist /tmp/bubble-selected.png, das hyprland.lua
+   beim Autostart sowieso schon aus ~/.config/rofi/assets/ dorthin
+   kopiert (für Rofi). Textfarben/Font wie im Rest vom Desktop
+   (GOLD/TEXT_NORMAL, JetBrainsMono Nerd Font).
+   ════════════════════════════════════════════════════════════ */
+
+@define-color gold        #fff495;
+@define-color text-normal #f6f3d5;
+@define-color crimson     #dc143c; /* nur als Critical-Marker, keine Deko */
+
+* {
+  font-family: "JetBrainsMono Nerd Font", "Noto Sans";
+  font-size: 15px;
+}
+
+/* ── Floating-Popups ── */
+.floating-notifications {
+  background: transparent;
+}
+
+.notification-row {
+  margin: 15px;
+  outline: none;
+  min-height: 0;
+  min-width: 0;
+}
+
+.notification-background {
+  background-image: url("file:///tmp/bubble-selected.png");
+  background-size: 100% 100%;
+  background-position: center;
+  background-repeat: no-repeat;
+  padding: 18px;
+  min-height: 0;
+  min-width: 0;
+}
+
+.notification-content {
+  padding: 12px;
+  min-height: 0;
+  margin-left: 28px;
+}
+
+.summary {
+  color: @gold;
+  font-weight: bold;
+  font-size: 18px;
+  text-align: center;
+}
+
+.body {
+  color: @text-normal;
+  text-align: center;
+}
+
+.time {
+  color: @text-normal;
+  opacity: 0.6;
+  font-size: 12px;
+  text-align: center;
+}
+
+.close-button {
+  background: transparent;
+  color: @text-normal;
+  border: none;
+}
+.close-button:hover {
+  color: @gold;
+}
+
+.notification-default-action,
+.notification-action {
+  background: transparent;
+  border: none;
+  color: @text-normal;
+}
+.notification-default-action:hover,
+.notification-action:hover {
+  color: @gold;
+}
+
+/* ── Control-Center: gleiches Bild, gleiches Prinzip ── */
+.control-center {
+  background-image: url("file:///tmp/bubble-selected.png");
+  background-size: cover;
+  background-position: center;
+}
+
+.control-center-list {
+  background: transparent;
+}
+.control-center-list-placeholder {
+  color: @text-normal;
+}
+
+.widget-title {
+  color: @gold;
+  font-weight: bold;
+  font-size: 18px;
+  padding: 15px;
+}
+.widget-title > button {
+  background: transparent;
+  color: @text-normal;
+  border: none;
+}
+.widget-title > button:hover {
+  color: @gold;
+}
+
+.widget-dnd {
+  color: @text-normal;
+  padding: 15px;
+}
+.widget-dnd > switch {
+  background: transparent;
+}
+.widget-dnd > switch:checked {
+  background: @gold;
+}
+.widget-dnd > switch slider {
+  background: @text-normal;
+}
+
+.widget-mpris-title {
+  color: @gold;
+  font-weight: bold;
+}
+.widget-mpris-subtitle {
+  color: @text-normal;
+}
+
+scrollbar {
+  background: transparent;
+}
+scrollbar slider {
+  background: @text-normal;
+}

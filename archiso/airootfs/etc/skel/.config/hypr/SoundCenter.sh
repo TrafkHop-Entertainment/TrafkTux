@@ -4,13 +4,20 @@
 #
 # Die komplette Logik steckt im kompilierten Binary "SoundControl" (siehe
 # src/SoundControl.c). Diese Datei existiert nur noch als Aufruf-Punkt für
-# bestehende Stellen, die bisher "bash .../soundctl.sh <event>" gerufen
-# haben (hyprland.lua, widgets_daemon.py, RofiTrafkBubbleMenus.c, pip.sh) -
-# siehe README.md, Abschnitt "Anpassungen an den Aufrufern", für die
-# jeweils eine Zeile, die dort auf den neuen Dateinamen zeigen muss.
+# bestehende Stellen, die "bash .../SoundCenter.sh <event>" rufen
+# (hyprland.lua, WidgetsDaemon.py, RofiTrafkBubbleMenus.c,
+# PictureInPicture.sh, LayoutSwitcher.sh, HideAll.sh).
 #
-# "exec" statt normalem Aufruf: ersetzt diesen bash-Prozess durch das
-# Binary (kein Extra-fork, gleiche PID). "SoundControl" wird über die
-# reguläre Shell-$PATH-Suche gefunden - liegt also egal wo, Hauptsache im
-# $PATH (siehe README.md, Abschnitt "Platzierung").
-exec SoundControl "$@"
+# WICHTIG: löst "SoundControl" relativ zu SEINEM EIGENEN Speicherort auf,
+# NICHT über $PATH. Grund: ein "exec SoundControl" auf $PATH-Basis ist
+# genau dann gescheitert, wenn der Ordner (bei dir ~/.config/hypr) nicht
+# in $PATH steht - lautlos, weil der Aufruf per "&" im Hintergrund lief.
+# Diese Version funktioniert unabhängig von $PATH, solange SoundControl
+# im selben Verzeichnis wie diese Datei liegt (bei dir der Fall).
+#
+# Reine Parameter-Expansion, KEIN dirname/cd/pwd-Subshell - keine
+# zusätzlichen forks. Gerade jetzt, wo's um Mikrosekunden geht, soll hier
+# nichts Vermeidbares mehr rumliegen.
+SCRIPT_DIR="${BASH_SOURCE[0]%/*}"
+[ "$SCRIPT_DIR" = "${BASH_SOURCE[0]}" ] && SCRIPT_DIR="."
+exec "$SCRIPT_DIR/SoundControl" "$@"

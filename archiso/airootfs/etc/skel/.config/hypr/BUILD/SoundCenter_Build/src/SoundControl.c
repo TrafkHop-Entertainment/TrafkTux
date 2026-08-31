@@ -19,12 +19,16 @@
  * unter ~/.cache/hypr/ (genau wie die alte soundctl.sh) - braucht den
  * Daemon dafür gar nicht.
  *
- * KEIN fest einkompilierter Installationspfad: der Daemon wird beim
- * Selbstheilen (siehe unten) per execlp("SoundDaemon", ...) über $PATH
- * gesucht, nicht über einen hartkodierten ~/.config/hypr/bin/-Pfad. Damit
- * ist es egal, ob SoundDaemon/SoundControl in ~/.local/bin, /usr/bin,
- * /usr/local/bin oder sonst wo landen - Hauptsache beide sind über $PATH
- * auffindbar.
+ * Installationsort: kein fest einkompilierter Pfad, aber auch NICHT mehr
+ * $PATH-abhängig (das war die ursprüngliche Idee, ist in der Praxis aber
+ * gescheitert: ~/.config/hypr steht bei einer normalen Installation
+ * schlicht nicht in $PATH, und "exec SoundControl"/"execlp(SoundDaemon)"
+ * schlagen dann lautlos fehl - genau das war die tatsächliche Ursache
+ * eines "die Sounds spielen einfach nicht"-Falls). Stattdessen: der
+ * Daemon wird beim Selbstheilen (siehe unten) relativ zum eigenen
+ * Binary-Pfad gesucht (via /proc/self/exe) - SoundDaemon muss also im
+ * SELBEN Verzeichnis wie SoundControl liegen, aber dieses Verzeichnis
+ * selbst kann weiterhin überall sein.
  *
  * Selbstheilung: falls der Daemon beim Abspielen nicht erreichbar ist
  * (Socket fehlt / ECONNREFUSED, z.B. nach einem Absturz oder vor dem
@@ -38,6 +42,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <libgen.h>
 #include <unistd.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -99,11 +104,32 @@ static void write_flag(const char *path, int val) {
     fclose(f);
 }
 
-/* Startet SoundDaemon lautlos & losgelöst im Hintergrund, gefunden über
- * $PATH (siehe Datei-Kommentar oben) - Fire-and-forget, gleiches
- * setsid+dup2(/dev/null)-Muster wie überall sonst in der Config (siehe
- * RofiTrafkBubbleMenus.c exec_detached). */
+/* Findet den absoluten Pfad des eigenen Binaries über /proc/self/exe
+ * (Linux-spezifisch - für dieses Projekt ok, Hyprland selbst ist auch
+ * Linux-only) und baut daraus den Pfad zu "SoundDaemon" im selben
+ * Verzeichnis. Gibt 1 bei Erfolg zurück (out gefüllt), 0 bei Fehler. */
+static int sibling_daemon_path(char *out, size_t out_len) {
+    char exe[PATH_MAX];
+    ssize_t n = readlink("/proc/self/exe", exe, sizeof(exe) - 1);
+    if (n <= 0) return 0;
+    exe[n] = '\0';
+
+    /* dirname() darf/kann seinen Input verändern - auf einer Kopie arbeiten. */
+    char exe_copy[PATH_MAX];
+    snprintf(exe_copy, sizeof(exe_copy), "%s", exe);
+    char *dir = dirname(exe_copy);
+
+    snprintf(out, out_len, "%s/SoundDaemon", dir);
+    return 1;
+}
+
+/* Startet SoundDaemon lautlos & losgelöst im Hintergrund - Fire-and-
+ * forget, gleiches setsid+dup2(/dev/null)-Muster wie überall sonst in der
+ * Config (siehe RofiTrafkBubbleMenus.c exec_detached). */
 static void spawn_daemon(void) {
+    char daemon_path[PATH_MAX];
+    if (!sibling_daemon_path(daemon_path, sizeof(daemon_path))) return;
+
     pid_t pid = fork();
     if (pid < 0) return;
     if (pid == 0) {
@@ -115,8 +141,8 @@ static void spawn_daemon(void) {
             dup2(devnull, STDERR_FILENO);
             if (devnull > 2) close(devnull);
         }
-        execlp("SoundDaemon", "SoundDaemon", (char *)NULL);
-        _exit(127); /* nur erreicht, wenn SoundDaemon nicht im $PATH liegt */
+        execl(daemon_path, daemon_path, (char *)NULL);
+        _exit(127); /* nur erreicht, wenn SoundDaemon nicht neben SoundControl liegt */
     }
     /* Elternprozess (wir) wartet NICHT - wir wollen sofort zurück. */
 }

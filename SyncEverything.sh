@@ -84,6 +84,10 @@ BLACKLIST=(
     "etc/sudoers.d/*"
     "etc/ssh/ssh_host_*"
     "etc/calamares/*"
+    "usr/local/bin/create-liveuser.sh"
+    "usr/local/bin/install-aur-packages.sh"
+    "usr/local/bin/install-hyprpm-plugins.sh"
+    "usr/local/bin/Installation_guide"
 )
 
 # ---------------------------------------------------------------------
@@ -296,6 +300,7 @@ SCAN_ROOTS=(
     "$AIROOTFS_DIR/etc/skel"
     "$AIROOTFS_DIR/etc/xdg"
     "$AIROOTFS_DIR/usr/share"
+    "$AIROOTFS_DIR/usr/local"
 )
 for prefix in "${SYSTEM_CONFIG_ROOTS[@]}"; do
     SRC_PATH="$AIROOTFS_DIR/$prefix"

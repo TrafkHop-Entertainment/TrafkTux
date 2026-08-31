@@ -31,7 +31,7 @@ hyprpolkitagent
 polkit
 waybar
 rofi
-dunst
+swaync
 xdg-desktop-portal-hyprland
 xdg-desktop-portal-gtk
 xorg-xwayland
@@ -96,13 +96,6 @@ gnome-disk-utility
 gvfs
 gvfs-mtp
 gvfs-smb
-# tuned + tuned-ppd ersetzt power-profiles-daemon (bessere APU/Tuning-
-# Ergebnisse, siehe tuned-profiles(7) "battery" Profil). tuned-ppd
-# stellt dieselbe net.hadess.PowerProfiles DBus-API bereit, ACHTUNG:
-# tuned-ppd conflicted mit power-profiles-daemon, pacman entfernt es
-# beim Bauen automatisch - powerprofilesctl (CLI) verschwindet damit
-# ebenfalls, siehe widgets_daemon.py: _ppd_* nutzt deshalb direkt DBus
-# statt powerprofilesctl.
 tuned
 tuned-ppd
 upower
@@ -116,13 +109,12 @@ xdg-user-dirs-gtk
 
 # --- Drucken ---
 cups-pdf
-hplip
 
 # --- Anwendungen ---
 firefox
 vlc
 vlc-plugins-all
-pinta
+viewnior
 ark
 fastfetch
 imagemagick
@@ -178,6 +170,7 @@ wine-staging
 wine-gecko
 wine-mono
 gamemode
+xdotool
 
 # ====================================================================
 # Werden NICHT hier gelistet und NICHT vorgebaut - Calamares baut und

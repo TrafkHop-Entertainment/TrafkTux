@@ -1,0 +1,12 @@
+{
+    // 1. Git komplett deaktivieren
+    "git.enabled": false,
+    // 2. "Safe Mode" (Workspace Trust / Eingeschränkter Modus) deaktivieren
+    "security.workspace.trust.enabled": false,
+    // Falls du mit "Save Mode" das automatische Speichern meintest:
+    "files.autoSave": "off",
+    // 3. Backups (Hot Exit) deaktivieren - VS Code merkt sich keine ungespeicherten Dateien mehr
+    "files.hotExit": "off",
+    "editor.fontSize": 15,
+    "editor.mouseWheelZoom": true
+}

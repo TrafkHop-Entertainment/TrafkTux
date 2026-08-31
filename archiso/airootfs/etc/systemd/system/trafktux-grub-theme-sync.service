@@ -1,0 +1,13 @@
+[Unit]
+Description=TrafkTux: GRUB-Theme an aktuell angeschlossenen Monitor anpassen
+# Braucht verlaessliche sysfs/DRM-Infos und ein beschreibbares /boot.
+After=local-fs.target systemd-udev-settle.service
+Wants=systemd-udev-settle.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/trafktux-grub-theme-sync.sh
+RemainAfterExit=no
+
+[Install]
+WantedBy=multi-user.target

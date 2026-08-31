@@ -33,12 +33,6 @@
       "icon": "applications-graphics",
       "children": [
         {
-          "name": "Pinta",
-          "type": "app",
-          "icon": "pinta",
-          "exec": "pinta"
-        },
-        {
           "name": "VScodium",
           "type": "app",
           "icon": "vscodium",
@@ -75,6 +69,12 @@
           "type": "app",
           "icon": "vlc",
           "exec": "vlc"
+        },
+        {
+          "name": "Viewnior",
+          "type": "app",
+          "icon": "viewnior",
+          "exec": "viewnior"
         }
       ]
     },

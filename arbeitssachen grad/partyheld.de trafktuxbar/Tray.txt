@@ -1,0 +1,61 @@
+Wenn wir das Tray angehen, dann hab ich hier noch was sehr wichtiges, was sonst nicht funktionieren wird:
+
+(made by claude ai)
+Was da kaputt ist
+org.kde.StatusNotifierItem.minimizer.p40644   ← das ist der ITEM (hyprland-minimizer selbst)
+org.x.StatusNotifierWatcher (activatable)     ← irrelevant, andere Sache
+
+Das Tray-System auf Wayland läuft über D-Bus, KDE-StatusNotifierItem-Protokoll (SNI), mit drei Rollen:
+
+Item – die App, die ein Icon zeigen will (hier: hyprland-minimizer). Meldet sich selbst als eigenen Bus-Namen an (org.kde.StatusNotifierItem.minimizer.pPID) — das klappt immer, dafür braucht's niemand anderen.
+Watcher – die zentrale Registry unter dem Namen org.kde.StatusNotifierWatcher, Objektpfad /StatusNotifierWatcher. Bei diesem muss sich jedes Item per RegisterStatusNotifierItem(...) anmelden.
+Host – die sichtbare Tray-Leiste, die beim Watcher lauscht und für jedes registrierte Item ein Icon zeichnet.
+
+Normalerweise sind Watcher + Host im selben Prozess — bei dir ist das Waybars tray-Modul. Stirbt Waybar, stirbt der Prozess, der org.kde.StatusNotifierWatcher besitzt. Der Name verschwindet komplett vom Bus. hyprland-minimizer versucht sich anzumelden, findet niemanden unter diesem Namen → RegisterStatusNotifierItem schlägt fehl → "Failed to register tray icon" → exit 1, noch bevor der eigentliche movetoworkspace-Call passiert.
+
+(org.x.StatusNotifierWatcher in deiner Liste ist ein komplett anderer, ungenutzter Name von irgendeinem anderen installierten Paket — spielt hier keine Rolle, ignorier das.)
+
+Wie man's in der neuen C-Bar implementiert
+
+Wichtigster Punkt zuerst: Bau den Watcher/Host nicht als Teil des Bar-Binaries, sondern als eigenständigen, dauerhaften Prozess (eigener systemd---user-Service, genau wie dein WaybarAutohideDaemon). Sonst hast du exakt dasselbe Problem nur unter neuem Namen — sobald du deine Bar mal neu startest/reloadest/crashen lässt, sterben wieder alle Tray-Items. Der Watcher/Host muss den ganzen Login über leben, unabhängig vom Bar-Lifecycle. Deine Bar kann sich dann als reiner Renderer mit dem Host-Prozess verbinden (z.B. über einen eigenen kleinen IPC-Socket, den der Host-Daemon bereitstellt) oder der Host-Daemon zeichnet direkt selbst eine minimale Layer-Shell-Leiste für die Icons.
+
+Technisch, mit sd-bus (libsystemd, am wenigsten Overhead für reines C):
+
+c
+#include <systemd/sd-bus.h>
+
+// 1. Session-Bus verbinden
+sd_bus *bus;
+sd_bus_open_user(&bus);
+
+// 2. Wohlbekannten Namen beanspruchen
+sd_bus_request_name(bus, "org.kde.StatusNotifierWatcher", 0);
+// optional zusätzlich: "org.freedesktop.StatusNotifierWatcher" (manche Clients prüfen das als Fallback)
+
+// 3. Interface am Objektpfad /StatusNotifierWatcher registrieren
+static const sd_bus_vtable watcher_vtable[] = {
+    SD_BUS_VTABLE_START(0),
+    SD_BUS_PROPERTY("ProtocolVersion", "i", NULL, offsetof(...), 0),
+    SD_BUS_PROPERTY("IsStatusNotifierHostRegistered", "b", NULL, offsetof(...), 0),
+    SD_BUS_PROPERTY("RegisteredStatusNotifierItems", "as", prop_get_items, 0, 0),
+    SD_BUS_METHOD("RegisterStatusNotifierItem", "s", "", method_register_item, 0),
+    SD_BUS_METHOD("RegisterStatusNotifierHost", "s", "", method_register_host, 0),
+    SD_BUS_SIGNAL("StatusNotifierItemRegistered", "s", 0),
+    SD_BUS_SIGNAL("StatusNotifierItemUnregistered", "s", 0),
+    SD_BUS_SIGNAL("StatusNotifierHostRegistered", "", 0),
+    SD_BUS_VTABLE_END
+};
+sd_bus_add_object_vtable(bus, NULL, "/StatusNotifierWatcher",
+                          "org.kde.StatusNotifierWatcher", watcher_vtable, NULL);
+
+method_register_item – wenn ein Item (z.B. hyprland-minimizer) anruft: Sender-Bus-Namen speichern (sd_bus_message_get_sender(m)), zur internen Liste hinzufügen, Signal StatusNotifierItemRegistered emittieren, leer antworten. Fertig — genau das fehlt bei dir gerade komplett, deshalb der Fehler.
+
+Für die Anzeige (Host-Seite), pro registriertem Item:
+
+Properties abfragen: IconName/IconPixmap, ToolTip, Status über org.kde.StatusNotifierItem-Interface auf dessen eigenem Bus-Namen.
+Auf NewIcon/NewStatus-Signale des Items abonnieren, um live zu aktualisieren.
+Klick → Methode Activate(i x, i y) auf dem Item aufrufen (Linksklick reicht für euren Use-Case: hyprland-minimizer holt das Fenster dann zurück). Rechtsklick/Menü (com.canonical.dbusmenu) ist deutlich mehr Aufwand — für den Minimizer-Fall erstmal nicht nötig.
+
+Aufräumen nicht vergessen: auf NameOwnerChanged von org.freedesktop.DBus lauschen — wenn ein Item-Prozess stirbt (Fenster wiederhergestellt, hyprland-minimizer beendet sich), musst du es aus der Liste werfen und StatusNotifierItemUnregistered emittieren, sonst sammelst du Leichen.
+
+Startreihenfolge: Der Watcher-Daemon muss vor nm-applet, blueman-applet und jedem hyprland-minimizer-Aufruf laufen — sonst scheitert deren allererste Registrierung genauso wie jetzt. Also ganz an den Anfang deiner Autostart-Kette in hyprland.lua, noch vor den Applets.

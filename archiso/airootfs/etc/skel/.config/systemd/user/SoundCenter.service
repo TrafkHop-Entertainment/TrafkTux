@@ -8,29 +8,22 @@ StartLimitBurst=5
 [Service]
 Type=simple
 #
-# WICHTIG (recherchiert, nicht geraten): "ExecStart=SoundDaemon" (bloßer
-# Name, kein Pfad) funktioniert NUR, wenn SoundDaemon in einem der von
-# systemd fest einkompilierten Standardverzeichnisse liegt
-# (/usr/local/bin, /usr/bin, /bin bzw. deren sbin-Pendants). Das ist NICHT
-# dasselbe wie deine Login-Shell-$PATH - systemd nutzt dafür eine eigene,
-# feste Liste, nicht $PATH aus der Umgebung (siehe `man systemd.exec`,
-# ExecSearchPath=).
-#
-# Liegt SoundDaemon bei dir woanders (z.B. Teil eines ArchISO-Overlays an
-# einem eigenen Pfad), dann entweder:
-#   a) hier den vollen Pfad eintragen, z.B.:
-#        ExecStart=/usr/local/bin/SoundDaemon
-#   b) oder ExecSearchPath= mit deinem Verzeichnis ergänzen:
-#        ExecSearchPath=/dein/eigener/pfad
-#        ExecStart=SoundDaemon
-#
-# (SoundControl.c's Selbstheilungs-exec läuft davon UNBERÜHRT - das ist
-# ein normaler execlp() aus einem normalen Prozess heraus und nutzt somit
-# ganz regulär die echte $PATH-Umgebungsvariable, egal was hier steht.)
+# %h = systemd-Specifier für das Home-Verzeichnis des jeweiligen Users
+# (siehe man systemd.unit, Abschnitt "Specifiers") - wird zur Laufzeit für
+# JEDEN User korrekt aufgelöst, nicht fest auf einen Namen einkompiliert.
+# Bloße Namen ("ExecStart=SoundDaemon") würden NUR gehen, wenn die Datei
+# in einem von systemds fest einkompilierten Standardverzeichnissen liegt
+# (/usr/bin, /usr/local/bin, ...) - ~/.config/hypr gehört nicht dazu.
 ExecStart=%h/.config/hypr/SoundDaemon
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure
 RestartSec=1
+# journald hat bei dir nachweislich nichts für diesen Dienst aufgezeichnet
+# (mehrfach "No entries", auch direkt nach Neustart) - Ursache unklar,
+# aber für uns gerade unwichtig: schreibt jetzt stattdessen direkt in eine
+# normale Datei, komplett an journald vorbei.
+StandardOutput=append:/tmp/SoundCenter.log
+StandardError=append:/tmp/SoundCenter.log
 
 [Install]
 WantedBy=default.target
