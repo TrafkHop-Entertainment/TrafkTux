@@ -179,14 +179,34 @@ static ssize_t hypr_request(const char *request, char *out, size_t out_cap) {
     return (ssize_t)total;
 }
 
+/* Schickt einen "dispatch"-artigen keyword-Befehl fire-and-forget.
+ * Beispiel: hypr_keyword("monitor", "eDP-1,transform,1")
+ *
+ * WICHTIG (nur noch fuer Nicht-Monitor-Keywords wie device[...]:transform
+ * relevant): das "monitor"-Keyword selbst wird NICHT MEHR ueber diese
+ * Funktion gesetzt, siehe hypr_eval_monitor() unten - Grund steht dort. */
+static void hypr_keyword(const char *key, const char *value) {
+    char req[512];
+    char resp[256];
+    /* WICHTIG: KEIN führendes "/" hier - das ist nur Teil des "j/"-
+     * JSON-Flags (siehe hypr_request("j/monitors", ...) weiter oben),
+     * nicht ein generelles Präfix für Kommandos. "/keyword ..." wird
+     * von Hyprland als unbekanntes Kommando ignoriert (kein Fehler,
+     * aber auch kein Effekt) - genau das hat Auto-Rotation und
+     * manuelles "set" bisher wirkungslos gemacht. */
+    snprintf(req, sizeof(req), "keyword %s %s", key, value);
+    ssize_t n = hypr_request(req, resp, sizeof(resp));
+    /* Antwort mitloggen statt wegzuwerfen - reine Diagnose, kein
+     * Verhaltenswechsel. Falls Touch-/Tablet-Rotation je nicht sichtbar
+     * greift, steht die Ursache dann wenigstens im Journal statt im
+     * Dunkeln (das war beim monitor-Keyword-Bug genau das Problem). */
+    if (n > 0) LOG("keyword %s -> Antwort: %s", key, resp);
+}
+
 /* Schickt einen "eval"-Befehl (Lua-Runtime-API dieses Hyprland-Forks) und
- * gibt die ECHTE Antwort zurueck, statt sie stillschweigend wegzuwerfen
- * wie ein einfacher "keyword"-Fire-and-Forget-Call es tun wuerde. Wird
- * fuer alles benutzt, wo wir wissen wollen/muessen, ob Hyprland das
- * Kommando tatsaechlich angenommen hat - genau das hat frueher gefehlt
- * und sowohl den Monitor- als auch den Touch-Rotation-Bug (falsche
- * Keyword-Syntax, siehe hypr_eval_monitor()/hypr_eval_device() unten)
- * unbemerkt im Journal verschwinden lassen. */
+ * gibt die ECHTE Antwort zurueck, statt sie wie hypr_keyword() wegzuwerfen.
+ * Wird fuer alles benutzt, wo wir wissen wollen/muessen, ob Hyprland das
+ * Kommando tatsaechlich angenommen hat. */
 static ssize_t hypr_eval(const char *lua_expr, char *out, size_t out_cap) {
     char req[640];
     snprintf(req, sizeof(req), "eval %s", lua_expr);
@@ -195,8 +215,8 @@ static ssize_t hypr_eval(const char *lua_expr, char *out, size_t out_cap) {
 
 /* Setzt den Transform eines Monitors ueber hl.monitor().
  *
- * Der naheliegende Weg waere ein simpler "keyword monitor NAME,transform,N"
- * Fire-and-Forget-Call gewesen - genau der wurde zuerst als kaputt
+ * Der naheliegende Weg waere "keyword monitor NAME,transform,N" gewesen
+ * (siehe hypr_keyword() oben) - genau der wurde zuerst als kaputt
  * identifiziert (fuehrendes "/", laengst gefixt), ist aber TROTZDEM falsch:
  * Hyprlands "monitor"-Keyword erwartet die Felder als VOLLSTAENDIGE,
  * positionelle Liste (Aufloesung, Position, Scale, ..., dann transform).
@@ -218,33 +238,6 @@ static ssize_t hypr_eval_monitor(const char *name, const char *mode,
         "hl.monitor({ output = \"%s\", mode = \"%s\", position = \"%s\", "
         "scale = %.3f, transform = %d })",
         name, mode, position, scale, transform);
-    return hypr_eval(expr, out, out_cap);
-}
-
-/* Setzt den Transform eines Touch-/Tablet-Devices ueber hl.device().
- *
- * War vorher ein fire-and-forget "keyword device[NAME]:transform N"
- * (siehe frueherer hypr_keyword()). Zwei Probleme damit, live gegen
- * Hardware nachvollzogen:
- *
- *   1. FALSCHE SYNTAX: "device[NAME]:..." ist kein gueltiger Feld-Pfad.
- *      Hyprlands per-device-Felder werden mit Doppelpunkt adressiert -
- *      "device:NAME:transform" - nicht mit eckigen Klammern. Mit der
- *      Klammer-Schreibweise verwirft Hyprland das Kommando als
- *      unbekanntes Feld (kein Crash, kein sichtbarer Fehler beim
- *      Daemon, da hypr_keyword() Antworten nur geloggt statt geprueft
- *      hat) - exakt dieselbe Bug-Klasse wie beim fruehen "monitor"-
- *      Keyword-Bug oben, nur unbemerkt geblieben, weil bisher niemand
- *      das Journal danach durchsucht hat.
- *   2. Genau wie beim Monitor ist die robuste, fuer diesen Fork
- *      vorgesehene Route ohnehin die Lua-Runtime-API (hl.device({...})
- *      statt raw "keyword") - also hier dieselbe eval()-Route wie
- *      hypr_eval_monitor(), mit echter Antwort statt blindem "ok". */
-static ssize_t hypr_eval_device(const char *name, int transform, char *out, size_t out_cap) {
-    char expr[512];
-    snprintf(expr, sizeof(expr),
-        "hl.device({ name = \"%s\", transform = %d })",
-        name, transform);
     return hypr_eval(expr, out, out_cap);
 }
 
@@ -435,10 +428,11 @@ static void apply_transform_locked(int transform) {
     }
 
     for (int i = 0; i < g_state.touch_count; i++) {
-        char resp[256];
-        ssize_t n = hypr_eval_device(g_state.touch_names[i], transform, resp, sizeof(resp));
-        LOG("hl.device(%s, transform=%d) -> %s", g_state.touch_names[i], transform,
-            n > 0 ? resp : "(keine Antwort)");
+        char key[NAME_LEN + 32];
+        char value[16];
+        snprintf(key, sizeof(key), "device[%s]:transform", g_state.touch_names[i]);
+        snprintf(value, sizeof(value), "%d", transform);
+        hypr_keyword(key, value);
     }
 
     g_state.last_transform = transform;

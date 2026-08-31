@@ -1,6 +1,2 @@
-1. es nimmt noch immer das 16:9 obwohl ich 16:10 hab (und es das anscheinend ja erkennt)
-2. die ordnungsreihenfolge ist komplett am arsch bemerke ich jetzt:
-
-also layer 4 ist vor layer 2 und 1
-der text ist hinter layer 4
-joa da muss herumgespielt werden.
+achja du hast ja was von nem systemd service geredet.
+muss man den starten? wenn ja dann ist das wohl der fehler.....
