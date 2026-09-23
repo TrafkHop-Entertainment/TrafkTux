@@ -1,0 +1,124 @@
+weiter
+
+
+
+
+jo ich hab noch ne sache für security: fingerabdruckscanner!!!
+
+hab mir da die commands zusammenschreiben lassen, sollten stimmen.
+bau mir das bitte ein (im neuen stil, formatierung und so darauf achten, dass es zu den anderen passt)
+
+
+
+
+🖐️ Fingerabdrücke registrieren (fprintd-enroll)
+
+Mit diesem Befehl fügst du einen neuen Fingerabdruck hinzu.
+
+Standard (rechter Zeigefinger):
+bash
+
+fprintd-enroll
+
+Laut Manpage wird standardmäßig der rechte Zeigefinger registriert.
+
+Spezifischen Finger registrieren:
+bash
+
+fprintd-enroll -f right-thumb
+
+Verwende die Option -f (oder --finger), um einen bestimmten Finger auszuwählen. Die möglichen Werte sind:
+
+    left-thumb
+
+    left-index-finger
+
+    left-middle-finger
+
+    left-ring-finger
+
+    left-little-finger
+
+    right-thumb
+
+    right-index-finger
+
+    right-middle-finger
+
+    right-ring-finger
+
+    right-little-finger
+
+Für einen anderen Benutzer (nur als root):
+bash
+
+sudo fprintd-enroll -f left-index-finger anderer_benutzer
+
+Der Benutzername wird als letztes Argument angegeben.
+📋 Registrierte Fingerabdrücke auflisten (fprintd-list)
+
+Dieser Befehl zeigt an, welche Fingerabdrücke für einen Benutzer bereits registriert sind.
+bash
+
+fprintd-list $USER
+
+Der Benutzername ist hier erforderlich. Du kannst auch mehrere Benutzernamen angeben, um deren Einträge gleichzeitig aufzulisten.
+✅ Fingerabdruck testen (fprintd-verify)
+
+Hiermit überprüfst du, ob ein registrierter Fingerabdruck erfolgreich erkannt wird.
+bash
+
+fprintd-verify
+
+Auch hier wird standardmäßig der aktuelle Benutzer verwendet. Du kannst mit -f einen bestimmten Finger testen:
+bash
+
+fprintd-verify -f right-thumb
+
+🗑️ Fingerabdrücke entfernen (fprintd-delete)
+
+Mit diesem Befehl löschst du registrierte Fingerabdrücke.
+
+Alle Fingerabdrücke eines Benutzers löschen:
+bash
+
+fprintd-delete $USER
+
+Ohne die Option -f werden alle Fingerabdrücke des angegebenen Benutzers entfernt. Der Benutzername ist zwingend erforderlich.
+
+Nur einen bestimmten Finger löschen:
+bash
+
+fprintd-delete $USER -f right-thumb
+
+Verwende -f (oder --finger), um nur einen spezifischen Finger zu entfernen. Die möglichen Werte sind dieselben wie bei fprintd-enroll.
+💡 Wichtige Hinweise für deine Skripte
+
+    Benutzername: fprintd-list und fprintd-delete benötigen immer einen Benutzernamen. fprintd-enroll und fprintd-verify verwenden den aktuellen Benutzer, wenn keiner angegeben wird.
+
+    Root-Rechte: Das Löschen von Fingerabdrücken anderer Benutzer erfordert in der Regel Root-Rechte.
+
+    Speicherort: Die Fingerabdruckdaten werden im Verzeichnis /var/lib/fprint/ gespeichert.
+
+
+
+
+
+
+
+
+
+    Und ich hab noch ein paar sachen zu sagen:
+
+    Am anfang war ja geplant das skript non daemon zu machen. das werf ich über board.
+    manches sollte man schon im hintergrund leicht rennen lassen.
+    z.b. die wetter anzeige. hald hin und wieder updaten und nicht erst, wenn
+    das widget geöffnet wird und das alles erst gelasen werden muss.
+
+    da kannst eja Mal schauen was da noch viel bringen würde was nicht viel recourcen braucht.
+    und mir ist aufgefallen, dass wenn widgets länger nicht geöffnet werden
+    und dann eins geöffnet wird, dass das dann lange braucht bis es sich öffnet.
+    und die animationen laggen voll. anyncrones machen und vsyncen. besonders für barrery saver mode, da laggts voll.
+
+
+    noch was:in display gibts ja bisher nur custom herz. jetzt solls wie bei der res ein auswahlfeld mit den vom monitor supported herz geben – falls das nicht so bei der res ist das auch so machen. wir haben ja schon für was die monitor sachen was wo es das ausm kernel oder so ausliest, da die herz und so du weißt schon

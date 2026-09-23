@@ -1,5 +1,0 @@
-eins noch: die 5 tabs in security, mach die ersten 2 tabs über den anderen 3, damit platz gespart wird. dann sind wir fürs erste fertig (fast fertig)
-
-
-und ich hab nen gub bemerkt:
-Wenn man in scale das ändert, dann wird manchmal der bildschirm bissl dünkler und die farben sind etwas anders. wenn ich mit scale, autoscale und hdr rumspiele ists manchmal wieder gut, manchmal nur die farben und manchmal gar nicht.... was könnte da sein, das ist wirklich ein blöder bug..... der monitor ist zu dunkel obwohl er laut brightness uas 100% ist und die farben sind bissl blöd....

@@ -1,0 +1,13 @@
+# GameScopeDgvoodooExcludes.txt
+#
+# Lives at ~/.config/hypr/GameScopeDgvoodooExcludes.txt
+# One .exe basename per line, case-insensitive. Lines starting with "#"
+# are ignored. Any game listed here NEVER gets dgVoodoo2 auto-injected,
+# even if it imports DDRAW.DLL - for titles that already do a real
+# fullscreen mode-switch and work fine on their own (gamescope scales them
+# natively), where forcing dgVoodoo2 in can actively break them.
+#
+# Confirmed needed for:
+# Moorhuhn.exe
+
+Moorhuhn.exe

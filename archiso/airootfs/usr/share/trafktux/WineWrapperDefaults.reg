@@ -10,8 +10,11 @@ REGEDIT4
 ; role at the compositor level, so a Wine-internal virtual desktop
 ; would just be pointless double nesting.
 
-[HKEY_CURRENT_USER\Software\Wine\DirectInput]
-"MouseWarpOverride"="disable"
+; MouseWarpOverride is deliberately NOT set here anymore - confirmed to
+; break normal mouse-cursor games (Paradise Beach) when applied prefix-
+; wide. It's now applied automatically, per-app, only to the specific
+; games that get dgVoodoo2 auto-injected (see GameScopeWineWrapper.sh) -
+; exactly the DirectDraw titles that actually need it.
 
 ; Forces Wine to use its X11 driver instead of the newer native Wayland
 ; driver (winewayland.drv). Confirmed necessary for gamescope to work at

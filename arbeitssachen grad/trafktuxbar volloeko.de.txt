@@ -1,0 +1,1 @@
+nenene die sind schon horizontal, aber ne maximale breite. so mein ich das. nur wenn hald zu viele sind, bekommt es ne neue zeile.

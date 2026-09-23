@@ -25,12 +25,11 @@ calamares
 
 # --- Desktop: Hyprland & Zubehör ---
 hyprland
+hyprpm
 hypridle
 hyprlock
 hyprpolkitagent
 polkit
-waybar
-rofi
 swaync
 xdg-desktop-portal-hyprland
 xdg-desktop-portal-gtk
@@ -115,6 +114,7 @@ firefox
 vlc
 vlc-plugins-all
 viewnior
+gimp
 ark
 fastfetch
 imagemagick
@@ -158,6 +158,9 @@ totem
 speedtest-cli
 tailscale
 iio-sensor-proxy
+fprintd
+libfprint
+ydotool
 
 # --- Anzeigemanager ---
 sddm

@@ -100,6 +100,18 @@ window {{
     border: none;
 }}
 
+/* GTK-Themes setzen auf "button" oft eine eigene Mindesthöhe für
+   Touch-Bedienbarkeit (z.B. 34px) - die hat bisher JEDEN button.bubble
+   im Programm unsichtbar aufgebläht, unabhängig vom eigenen
+   padding/margin. War der eigentliche Grund für den riesigen Abstand
+   zwischen Sektions-Buttons (z.B. "SCREEN: 100%") und dem Slider
+   direkt darunter - kein Layout-/Spacing-Problem, sondern schlicht ein
+   viel zu hoher, unsichtbarer Button selbst. Global zurückgesetzt,
+   damit jeder Button im Programm wirklich auf seinen Text schrumpft.*/
+button {{
+    min-height: 0;
+}}
+
 /* Basis für JEDEN reinen, NICHT klickbaren Text/Icon (Titel,
    Section-Header, normale Listenzeilen, Slider-Icon-Label, Captions):
    KEIN eigener Hintergrund, KEIN Rand - der Text sitzt direkt auf der
@@ -159,6 +171,7 @@ window {{
     font-size: 11px;
     font-weight: bold;
     letter-spacing: 2px;
+    min-height: 0;
 }}
 
 .bubble.item {{
@@ -181,6 +194,7 @@ window {{
 .icon-lg  {{ font-size: 22px; }}
 .icon-xl  {{ font-size: 34px; }}
 .value-md {{ font-size: 15px; font-weight: bold; }}
+.value-lg {{ font-size: 26px; font-weight: bold; }}
 .temp-xl  {{ font-size: 26px; font-weight: bold; }}
 .caption  {{ font-size: 11px; }}
 
@@ -202,7 +216,7 @@ window {{
    halbtransparenten Rechteck-Container. */
 .bubble.slider {{
     background: none;
-    padding: 6px 14px;
+    padding: 0px 14px;
     margin: 1px 0px;
 }}
 
@@ -218,10 +232,12 @@ button.bubble, .bubble.dropdown {{
     box-shadow: none;
     padding: 5px 16px;
     margin: 1px 0px;
+    min-height: 0;
 }}
 button.bubble:hover, button.bubble:active, button.bubble:checked,
 .bubble.dropdown:hover, .bubble.dropdown:focus {{
     color: {GOLD};
+    text-shadow: 0 0 3px {GOLD};
 }}
 button.bubble:focus, .bubble.dropdown:focus {{
     box-shadow: none;
@@ -238,6 +254,9 @@ button.bubble.title {{
     font-weight: bold;
 }}
 
+scale {{
+    min-height: 15px;
+}}
 scale trough {{
     background-color: rgba(255,244,149,0.15);
     border-radius: 4px;
@@ -1099,6 +1118,20 @@ def bsec(text: str) -> Gtk.Box:
     box.pack_start(l, False, False, 0)
     return box
 
+def bsec_btn(text: str, active: bool = False) -> Gtk.Button:
+    """Wie bsec(), aber als klickbarer Button statt reinem Label - für
+    Sektionsüberschriften, die selbst ein Schalter sind (z.B. "Volume:
+    45%" = Mute-Schalter, kein separates Icon/Symbol mehr daneben
+    nötig). Groß schreiben passiert hier genau wie bei bsec()."""
+    b = Gtk.Button(label=text.upper())
+    b.set_relief(Gtk.ReliefStyle.NONE)
+    b.get_style_context().add_class("bubble")
+    b.get_style_context().add_class("section")
+    b.set_halign(Gtk.Align.CENTER)
+    if active:
+        b.get_style_context().add_class("active")
+    return b
+
 def bitem(text: str, dim: bool = False) -> Gtk.Box:
     box = hbox(0)
     box.get_style_context().add_class("bubble")
@@ -1258,6 +1291,14 @@ def bslider(icon: str, lo: float, hi: float, step: float, val: float,
     s.set_hexpand(True)
     s.set_draw_value(show_val)
     s.set_can_focus(False)
+    # ALLGEMEIN (Formatierungs-Feedback): Slider sollen NICHT per
+    # Mausrad verstellbar sein - GtkRange (Basisklasse von GtkScale)
+    # reagiert sonst standardmäßig auf "scroll-event" und ändert dabei
+    # den Wert, oft ungewollt beim einfachen Durchscrollen des Fensters.
+    # Da bslider() die EINZIGE Stelle im ganzen Programm ist, die
+    # Gtk.Scale erzeugt, reicht dieser eine Handler für jeden Slider
+    # überall (Lautstärke, Helligkeit, Scale, Rotation, Night Light, ...).
+    s.connect("scroll-event", lambda *_: True)
     if show_val:
         s.set_value_pos(Gtk.PositionType.RIGHT)
     if cb: s.connect("value-changed", cb)
@@ -1356,58 +1397,50 @@ def _get_inputs() -> list:
 
 def _build_device_row(dev: dict, kind: str, is_default: bool, refresh_fn) -> Gtk.Box:
     """Eine Zeile pro Audio-Gerät im Devices-Tab: Name-Button (setzt
-    dieses Gerät als Default) + eigener Lautstärkeregler + Mute-Button.
-    Vorher gab's hier NUR den Auswahl-Button - die Lautstärke einzelner
-    Ein-/Ausgabegeräte liess sich nicht separat einstellen, anders als
-    schon länger im Apps-Tab (siehe _get_inputs()). kind ist "sink"
-    (Output) oder "source" (Input), steuert nur, welche pactl-
-    Unterbefehle (set-default-sink/-source, set-sink-/-source-volume,
-    set-sink-/-source-mute) benutzt werden."""
+    dieses Gerät als Default, zeigt jetzt auch gleich die Lautstärke im
+    Label mit an: "Name: 45%") + eigener Lautstärkeregler. KEIN Mute
+    mehr hier - das geht schon über den Regler selbst (auf 0% ziehen),
+    ein separater Mute-Schalter wäre nur Redundanz. Der Name-Button
+    leuchtet jetzt stattdessen, wenn dieses Gerät das aktuelle Default
+    ist. kind ist "sink" (Output) oder "source" (Input), steuert nur,
+    welche pactl-Unterbefehle (set-default-sink/-source, set-sink-/
+    -source-volume) benutzt werden."""
     set_default_cmd = "set-default-sink" if kind == "sink" else "set-default-source"
     set_volume_cmd  = "set-sink-volume"   if kind == "sink" else "set-source-volume"
-    set_mute_cmd    = "set-sink-mute"     if kind == "sink" else "set-source-mute"
-    base_icon       = "󰕾" if kind == "sink" else "󰍬"
 
-    row = vbox(2)
+    row = vbox(1)
     row.get_style_context().add_class("bubble")
     pad(row, h=8, v=4)
 
-    # 󰄲 markiert das gerade aktive Default-Gerät - vorher war (auch
-    # abgesehen von der fehlenden Lautstärke) optisch gar nicht
-    # erkennbar, welches der gelisteten Geräte überhaupt aktiv ist.
-    name_btn = btn(("󰄲  " if is_default else "  ") + dev["desc"],
-                   active=is_default)
-    name_btn.set_halign(Gtk.Align.START)
+    vol_state = [dev["vol"]]
+
+    # Name + Lautstärke in EINEM zentrierten Label - leuchtet, wenn
+    # dieses Gerät das aktuelle Default ist.
+    def _label_text():
+        return f'{dev["desc"]}: {vol_state[0]}%'
+
+    name_btn = btn(_label_text(), active=is_default)
+    name_btn.set_halign(Gtk.Align.CENTER)
+
     def _on_select(_w, n=dev["name"]):
         in_thread(run, ["pactl", set_default_cmd, n])
         GLib.timeout_add(300, refresh_fn)
     name_btn.connect("clicked", _on_select)
     row.pack_start(name_btn, False, False, 0)
 
-    muted_state = [dev["muted"]]
-    mute_btn = Gtk.Button(label="󰖁" if muted_state[0] else base_icon)
-    mute_btn.set_relief(Gtk.ReliefStyle.NONE)
-    mute_btn.get_style_context().add_class("flat")
-    mute_btn.set_opacity(0.7)
-    def _on_mute(_w, n=dev["name"]):
-        muted_state[0] = not muted_state[0]
-        mute_btn.set_label("󰖁" if muted_state[0] else base_icon)
-        in_thread(run, ["pactl", set_mute_cmd, n, "toggle"])
-    mute_btn.connect("clicked", _on_mute)
-
     def _on_vol(s, n=dev["name"]):
-        in_thread(run, ["pactl", set_volume_cmd, n, f"{int(s.get_value())}%"])
-    # Gleiches 0-150%-Fenster wie beim Master-Regler in Tab 1 (Pipewire
-    # erlaubt Verstärkung über 100% hinaus) - eigenes Icon-Label wird
-    # entfernt und durch den Mute-Button ersetzt, exakt das Muster, das
-    # Tab 1 für den Master-Regler schon nutzt.
-    vol_box, _ = bslider(base_icon, 0, 150, 1, dev["vol"], cb=_on_vol)
+        vol_state[0] = int(s.get_value())
+        name_btn.set_label(_label_text())
+        in_thread(run, ["pactl", set_volume_cmd, n, f"{vol_state[0]}%"])
+    # Kein Icon-Label mehr am Slider - Hitbox kommt global aus der CSS,
+    # bewusst NICHT visuell größer (siehe bslider()/CSS-Kommentar).
+    vol_box, _ = bslider("", 0, 150, 1, dev["vol"], cb=_on_vol, show_val=False)
     for ch in vol_box.get_children():
         if isinstance(ch, Gtk.Label):
             vol_box.remove(ch)
             break
-    vol_box.pack_start(mute_btn, False, False, 0)
-    vol_box.reorder_child(mute_btn, 0)
+    vol_box.set_halign(Gtk.Align.CENTER)
+    vol_box.set_size_request(220, -1)
     row.pack_start(vol_box, False, False, 0)
 
     return row
@@ -1420,16 +1453,20 @@ def _volume_content(win: Gtk.Window) -> Gtk.Box:
     stack.set_vhomogeneous(False)
 
     # ── TAB 1: Media ────────────────────────────────────────
-    t1 = vbox(4); pad(t1, h=4, v=6)
+    t1 = vbox(3); pad(t1, h=4, v=10)
+    t1.set_margin_top(t1.get_margin_top() + 6)   # insgesamt etwas nach unten gerückt
 
+    # Titel+Artist enger zusammen als der Rest (eigene, engere vbox
+    # statt sich auf den generellen t1-Zeilenabstand zu verlassen).
+    ta_box = vbox(1)
     title_box, title_lbl   = bitem_ref("  No Media")
     for c in title_box.get_children():
         if isinstance(c, Gtk.Label):
             c.get_style_context().add_class("value-md")
     artist_box, artist_lbl = bitem_ref("", dim=True)
-
-    t1.pack_start(title_box,  False, False, 0)
-    t1.pack_start(artist_box, False, False, 0)
+    ta_box.pack_start(title_box,  False, False, 0)
+    ta_box.pack_start(artist_box, False, False, 0)
+    t1.pack_start(ta_box, False, False, 0)
 
     prev_b = btn("󰒮", tip="Previous")
     play_b = btn("󰐊", tip="Play/Pause")
@@ -1437,37 +1474,41 @@ def _volume_content(win: Gtk.Window) -> Gtk.Box:
     prev_b.connect("clicked", lambda _: run_bg(["playerctl", "previous"]))
     play_b.connect("clicked", lambda _: run_bg(["playerctl", "play-pause"]))
     next_b.connect("clicked", lambda _: run_bg(["playerctl", "next"]))
-    t1.pack_start(hrow(prev_b, play_b, next_b), False, False, 4)
+    # Kein extra Padding mehr - der t1-Basisabstand (3) reicht jetzt
+    # als Lücke zum Artist darüber.
+    t1.pack_start(hrow(prev_b, play_b, next_b), False, False, 0)
 
-    t1.pack_start(sep(), False, False, 2)
+    # KEIN Trennstrich mehr vor VOLUME.
 
-    t1.pack_start(bsec("VOLUME"), False, False, 0)
+    # "Volume: 45%" ist jetzt EIN klickbarer Button = Mute-Schalter,
+    # kein separates Lautstärke-Icon/Mute-Knopf mehr am Slider selbst.
+    vol_sec_btn = bsec_btn(f"Volume: {_vol_pct()}%", active=_is_muted())
+    t1.pack_start(vol_sec_btn, False, False, 0)
 
-    muted = [_is_muted()]
-    mute_icon_lbl = Gtk.Label(label="󰖁" if muted[0] else "󰕾")
-    mute_icon_lbl.set_opacity(0.7)
+    def _on_mute(_w):
+        run(["wpctl", "set-mute", "@DEFAULT_AUDIO_SINK@", "toggle"])
+        ctx = vol_sec_btn.get_style_context()
+        if _is_muted(): ctx.add_class("active")
+        else:           ctx.remove_class("active")
+    vol_sec_btn.connect("clicked", _on_mute)
 
     def _on_vol(s):
+        val = int(s.get_value())
+        vol_sec_btn.set_label(f"VOLUME: {val}%")
         in_thread(run, ["wpctl", "set-volume",
-                        "@DEFAULT_AUDIO_SINK@", f"{int(s.get_value())}%"])
+                        "@DEFAULT_AUDIO_SINK@", f"{val}%"])
 
-    vol_box, vol_s = bslider("󰕾", 0, 150, 1, _vol_pct(), cb=_on_vol)
+    # Kein Icon-Label mehr am Slider (bslider() baut eins mit rein,
+    # wird hier gleich wieder rausgenommen) - größere Hitbox kommt
+    # global aus der CSS (siehe bslider()), hier zusätzlich zentriert
+    # und auf eine feste, nicht mehr volle Fensterbreite begrenzt.
+    vol_box, vol_s = bslider("", 0, 150, 1, _vol_pct(), cb=_on_vol, show_val=False)
     for ch in vol_box.get_children():
         if isinstance(ch, Gtk.Label):
             vol_box.remove(ch)
             break
-    mute_btn = Gtk.Button(label="󰖁" if muted[0] else "󰕾")
-    mute_btn.set_relief(Gtk.ReliefStyle.NONE)
-    mute_btn.get_style_context().add_class("flat")
-    mute_btn.set_opacity(0.7)
-
-    def _on_mute(_):
-        run(["wpctl", "set-mute", "@DEFAULT_AUDIO_SINK@", "toggle"])
-        muted[0] = _is_muted()
-        mute_btn.set_label("󰖁" if muted[0] else "󰕾")
-    mute_btn.connect("clicked", _on_mute)
-    vol_box.pack_start(mute_btn, False, False, 0)
-    vol_box.reorder_child(mute_btn, 0)
+    vol_box.set_halign(Gtk.Align.CENTER)
+    vol_box.set_size_request(230, -1)
     t1.pack_start(vol_box, False, False, 0)
 
     def _update_media():
@@ -1518,12 +1559,27 @@ def _volume_content(win: Gtk.Window) -> Gtk.Box:
             t3.pack_start(bitem("No active audio apps", dim=True),
                           False, False, 0)
         for inp in inputs:
-            t3.pack_start(bsec(inp["name"].upper()), False, False, 0)
-            def _mk(idx):
-                return lambda sc: in_thread(
-                    run, ["pactl","set-sink-input-volume",
-                          str(idx), f"{int(sc.get_value())}%"])
-            app_box, _ = bslider("󰎤", 0, 150, 1, inp["vol"], cb=_mk(inp["index"]))
+            app_sec = bsec(f'{inp["name"]}: {inp["vol"]}%')
+            sec_lbl = app_sec.get_children()[0]
+            t3.pack_start(app_sec, False, False, 0)
+            def _mk(idx, lbl=sec_lbl, name=inp["name"]):
+                def _cb(sc):
+                    val = int(sc.get_value())
+                    lbl.set_label(f"{name.upper()}: {val}%")
+                    in_thread(run, ["pactl", "set-sink-input-volume",
+                                    str(idx), f"{val}%"])
+                return _cb
+            # Kein Icon-Label mehr am Slider - Abstand zum Label darüber
+            # ist jetzt nur noch der normale, bereits enge t3-Zeilenabstand
+            # (2), da Label+Slider nichts mehr extra auseinanderhält.
+            app_box, _ = bslider("", 0, 150, 1, inp["vol"], cb=_mk(inp["index"]),
+                                  show_val=False)
+            for ch in app_box.get_children():
+                if isinstance(ch, Gtk.Label):
+                    app_box.remove(ch)
+                    break
+            app_box.set_halign(Gtk.Align.CENTER)
+            app_box.set_size_request(220, -1)
             t3.pack_start(app_box, False, False, 0)
         t3.pack_start(sep(), False, False, 4)
         t3.pack_start(btn("󰑐  Refresh",
@@ -1778,13 +1834,10 @@ def _dns_content(win: Gtk.Window) -> Gtk.Box:
     # gebaut, wenn feststeht, ob `conn` überhaupt existiert.
     root.pack_start(bsec("ENCRYPTION"), False, False, 0)
     dot_row = hbox(10)
-    dot_lbl = Gtk.Label(label="Enforce DoT:")
-    dot_lbl.get_style_context().add_class("caption")
-    dot_toggle = btn("")
+    dot_toggle = btn("Enforce DoT")
 
     def _refresh_dot(value: str):
         enforced = value == "yes"
-        dot_toggle.set_label("Enforced" if enforced else "")
         ctx = dot_toggle.get_style_context()
         if enforced: ctx.add_class("active")
         else:        ctx.remove_class("active")
@@ -1806,21 +1859,16 @@ def _dns_content(win: Gtk.Window) -> Gtk.Box:
             _apply, on_status=_flash, reset_fn=_reset)
 
     dot_toggle.connect("clicked", _on_dot_toggle)
-    dot_toggle.set_size_request(70, -1)
     dot_toggle.set_tooltip_text(
         "Enforced: every DNS query must use TLS, no fallback. "
         "Opportunistic: tries TLS, silently falls back to plaintext "
         "if the server doesn't support it.")
-    dot_row.pack_start(dot_lbl, False, False, 0)
     dot_row.pack_start(dot_toggle, False, False, 0)
 
     if conn:
-        guest_lbl = Gtk.Label(label="Guest WiFi:")
-        guest_lbl.get_style_context().add_class("caption")
-        guest_toggle = btn("", active=_guest_wifi_active(conn))
+        guest_toggle = btn("Guest WiFi", active=_guest_wifi_active(conn))
 
         def _refresh_guest(enabled: bool):
-            guest_toggle.set_label("On" if enabled else "")
             ctx = guest_toggle.get_style_context()
             if enabled: ctx.add_class("active")
             else:       ctx.remove_class("active")
@@ -1840,13 +1888,11 @@ def _dns_content(win: Gtk.Window) -> Gtk.Box:
                          _apply, on_status=_flash, reset_fn=_reset)
 
         guest_toggle.connect("clicked", _on_guest_toggle)
-        guest_toggle.set_size_request(70, -1)
         guest_toggle.set_tooltip_text(
             "Temporarily allows this network's own DNS (needed for hotel/"
             "airport/office captive portal login pages). Only affects this "
             "connection - other networks keep enforced encrypted DNS, and "
             "this one reverts as soon as you turn it back off.")
-        dot_row.pack_start(guest_lbl, False, False, 0)
         dot_row.pack_start(guest_toggle, False, False, 0)
 
     dot_row.set_halign(Gtk.Align.CENTER)
@@ -1908,23 +1954,26 @@ def _network_content(win: Gtk.Window) -> Gtk.Box:
     stack.set_vhomogeneous(False)
 
     # ── TAB 1: Networks ──────────────────────────────────────
-    t1 = vbox(4); pad(t1, h=4, v=6)
+    t1 = vbox(2); pad(t1, h=4, v=6)
 
-    scan_b = btn("󰑐  Scan")
-    hdr = hbox(6)
-    hdr.pack_start(scan_b, False, False, 0)
-    hdr.set_halign(Gtk.Align.CENTER)
-    t1.pack_start(hdr, False, False, 0)
+    scan_b = Gtk.Button(label="󰑐")
+    scan_b.set_relief(Gtk.ReliefStyle.NONE)
+    scan_b.get_style_context().add_class("flat")
+    scan_b.set_halign(Gtk.Align.CENTER)
+    scan_b.set_tooltip_text("Scan for networks")
 
     note_lbl = Gtk.Label(label="")
     note_lbl.get_style_context().add_class("caption")
     note_lbl.set_opacity(0.7)
     t1.pack_start(note_lbl, False, False, 0)
 
-    t1.pack_start(sep(), False, False, 2)
-
     sw, net_box = scroll_box(240)
     t1.pack_start(sw, True, True, 0)
+
+    # Reines Symbol statt Text-Button, unten mittig unter der
+    # Netzwerkliste statt oben (README-Feedback: "Scanning entfernen -
+    # nur das Symbol unten in der Mitte unter den Netzwerken").
+    t1.pack_start(scan_b, False, False, 0)
 
     def _flash_note(text: str, ms: int = 3500):
         note_lbl.set_label(text)
@@ -2019,7 +2068,7 @@ def _network_content(win: Gtk.Window) -> Gtk.Box:
         in_thread(_fetch)
 
     def _do_scan(_):
-        scan_b.set_label("󰑎  Scanning…"); scan_b.set_sensitive(False)
+        scan_b.set_label("󰑎"); scan_b.set_sensitive(False)
         def _scan():
             dev = _wifi_dev_name()
             cmd = ["nmcli", "dev", "wifi", "rescan"]
@@ -2030,7 +2079,7 @@ def _network_content(win: Gtk.Window) -> Gtk.Box:
                 GLib.idle_add(_flash_note, "Scan cooldown active — showing current list")
             time.sleep(3)
             GLib.idle_add(_populate, _wifi_list(), _ethernet_devices())
-            GLib.idle_add(lambda: (scan_b.set_label("󰑐  Scan"),
+            GLib.idle_add(lambda: (scan_b.set_label("󰑐"),
                                    scan_b.set_sensitive(True), False)[2])
         in_thread(_scan)
 
@@ -2075,42 +2124,50 @@ def _network_content(win: Gtk.Window) -> Gtk.Box:
     # Alle drei nebeneinander statt untereinander.
     st_row = hbox(28)
     st_row.set_halign(Gtk.Align.CENTER)
+    st_row.set_valign(Gtk.Align.CENTER)
     st_row.pack_start(ping_row, False, False, 0)
     st_row.pack_start(down_row, False, False, 0)
     st_row.pack_start(up_row, False, False, 0)
+    # Oben/unten je ein dehnbarer Platzhalter statt fixer Ränder -
+    # zentriert die 3 Werte im FREIEN Bereich des Tabs (also unterhalb
+    # des Tab-Umschalters, der außerhalb von t2 liegt), egal wie viel
+    # Höhe der Stack diesem Tab gerade zugesteht.
+    t2.pack_start(Gtk.Box(), True, True, 0)
     t2.pack_start(st_row, False, False, 0)
+    t2.pack_start(Gtk.Box(), True, True, 0)
 
-    # Kleine "..." Animation statt jedem Text - einziges sichtbares
-    # Lebenszeichen dafür, dass gerade ein Lauf im Hintergrund läuft.
-    st_loading_lbl = Gtk.Label(label="")
-    st_loading_lbl.get_style_context().add_class("caption")
-    st_loading_lbl.set_halign(Gtk.Align.CENTER)
-    st_loading_lbl.set_no_show_all(True)
-    st_loading_lbl.hide()
-    t2.pack_start(st_loading_lbl, False, False, 0)
+    # KEINE "..." Punkte-Animation mehr - stattdessen bekommen die 3
+    # Messwerte selbst eine langsame, sanfte Wellenbewegung (leicht
+    # phasenversetzt rauf/runter) als Lebenszeichen, solange die
+    # Dauerschleife läuft (README-Feedback: "die 2 Messungen übernehmen
+    # das", "wie eine Welle leicht nach oben und unten animiert -
+    # langsam").
+    _st_wave_tid = [None]
+    _st_wave_t = [0.0]
+    _ST_WAVE_ROWS = (ping_row, down_row, up_row)
 
-    _st_dot_tid   = [None]
-    _st_dot_phase = [0]
-
-    def _st_dot_tick():
-        _st_dot_phase[0] = (_st_dot_phase[0] % 3) + 1
-        st_loading_lbl.set_label("." * _st_dot_phase[0])
+    def _st_wave_tick():
+        _st_wave_t[0] += 0.12   # bewusst langsam
+        for i, row in enumerate(_ST_WAVE_ROWS):
+            phase = i * (2 * math.pi / 3)
+            offset = math.sin(_st_wave_t[0] + phase) * 3.0   # ±3px, dezent
+            row.set_margin_top(max(0, int(round(4 + offset))))
+            row.set_margin_bottom(max(0, int(round(4 - offset))))
         return True
 
     def _st_dot_start():
-        if _st_dot_tid[0] is not None:
+        if _st_wave_tid[0] is not None:
             return
-        _st_dot_phase[0] = 0
-        st_loading_lbl.show()
-        _st_dot_tid[0] = GLib.timeout_add(450, _st_dot_tick)
-        _st_dot_tick()
+        _st_wave_tid[0] = GLib.timeout_add(60, _st_wave_tick)
 
     def _st_dot_stop():
-        if _st_dot_tid[0] is not None:
-            try: GLib.source_remove(_st_dot_tid[0])
+        if _st_wave_tid[0] is not None:
+            try: GLib.source_remove(_st_wave_tid[0])
             except Exception: pass
-            _st_dot_tid[0] = None
-        st_loading_lbl.hide()
+            _st_wave_tid[0] = None
+        for row in _ST_WAVE_ROWS:
+            row.set_margin_top(4)
+            row.set_margin_bottom(4)
 
     # Fehler/Hinweise (z.B. "speedtest-cli fehlt") landen NUR noch als
     # Tooltip auf der Zeile - kein sichtbarer Text mehr im Tab.
@@ -2138,6 +2195,35 @@ def _network_content(win: Gtk.Window) -> Gtk.Box:
     _st_active   = [False]
     _st_running  = [False]
     _st_gen      = [0]   # verhindert, dass ein überholter Lauf (z.B. nach schnellem Tab-Wechsel raus/rein) noch die UI eines neuen Laufs überschreibt
+    # Server-ID nach dem ERSTEN Lauf cachen (README-Feedback: "dauert
+    # immer noch sau lang bis er Zahlen zeigt") - der mit Abstand
+    # größte Zeitfresser, BEVOR überhaupt die erste Zahl (Ping)
+    # erscheint, ist NICHT die eigentliche Messung, sondern dass
+    # speedtest-cli bei JEDEM Aufruf erst die komplette Serverliste holt
+    # und mehrere Kandidaten anpingt, um den "besten" auszuwählen - das
+    # allein kann schon 5-15s dauern, ohne dass währenddessen IRGENDWAS
+    # angezeigt wird. Ab dem zweiten Lauf denselben Server per
+    # '--server <id>' direkt wiederverwenden statt die Auswahl jedes
+    # Mal neu zu wiederholen - in einer Dauerschleife (siehe unten,
+    # "kein festgelegtes Ende") macht das ab dem zweiten Durchlauf einen
+    # spürbaren Unterschied. Die Server-ID steht NUR im --json-Format
+    # drin (die normale Textausgabe zeigt sie nirgends an) - deshalb
+    # einmalig ein schneller --json-Probe-Aufruf MIT --no-download
+    # --no-upload (überspringt die eigentliche Bandbreitenmessung, tut
+    # nur Config+Serverauswahl+Ping), NICHT bei jeder Runde.
+    _st_server_id = [None]
+
+    def _st_discover_server_id():
+        if _st_server_id[0]:
+            return
+        out, _err, ec = run_ec(
+            ["speedtest-cli", "--secure", "--no-download", "--no-upload", "--json"],
+            timeout=20)
+        if ec == 0:
+            try:
+                _st_server_id[0] = str(json.loads(out)["server"]["id"])
+            except Exception:
+                pass
 
     def _st_run_once():
         if not _st_active[0] or _st_running[0]:
@@ -2151,9 +2237,13 @@ def _network_content(win: Gtk.Window) -> Gtk.Box:
         my_gen = _st_gen[0]
 
         def _worker():
+            _st_discover_server_id()
+            cmd = ["speedtest-cli", "--secure"]
+            if _st_server_id[0]:
+                cmd += ["--server", _st_server_id[0]]
             try:
                 proc = subprocess.Popen(
-                    ["speedtest-cli", "--secure"], stdout=subprocess.PIPE,
+                    cmd, stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT, text=True, bufsize=1)
             except Exception as e:
                 GLib.idle_add(lambda msg=str(e): (_st_on_done(my_gen, msg), False)[1])
@@ -2282,18 +2372,21 @@ def _bluetooth_content() -> Gtk.Box:
     root = vbox(4); safe_pad(root, 380)
     powered = [_bt_powered()]
 
-    pwr_b  = btn("󰂯  On" if powered[0] else "󰂲  Off",
-                 active=powered[0])
-    scan_b = btn("󰑐  Scan")
+    root.pack_start(btitle("󰂯  Bluetooth"), False, False, 0)
+    root.pack_start(tab_sep(), False, False, 0)
+
+    # Icon-only, oben links (Ein/Aus) / oben rechts (Scan) direkt unter
+    # dem fetten Trennstrich - kein Text mehr, nur noch das Symbol.
+    pwr_b  = btn("󰂯" if powered[0] else "󰂲", active=powered[0])
+    pwr_b.set_tooltip_text("Bluetooth on/off")
+    scan_b = btn("󰑐")
     scan_b.set_sensitive(powered[0])
+    scan_b.set_tooltip_text("Scan for devices")
 
     hdr = hbox(6)
-    hdr.set_halign(Gtk.Align.CENTER)
-    hdr.pack_start(btitle("󰂯  Bluetooth"), False, False, 0)
-    hdr.pack_start(pwr_b,  False, False, 0)
-    hdr.pack_start(scan_b, False, False, 0)
+    hdr.pack_start(pwr_b, False, False, 0)
+    hdr.pack_end(scan_b, False, False, 0)
     root.pack_start(hdr, False, False, 0)
-    root.pack_start(sep(), False, False, 2)
 
     sw, dev_box = scroll_box(280)
     root.pack_start(sw, True, True, 0)
@@ -2310,16 +2403,16 @@ def _bluetooth_content() -> Gtk.Box:
         paired      = [d for d in all_devs if d["mac"] in paired_macs]
         found       = [d for d in all_devs if d["mac"] not in paired_macs]
 
-        dev_box.pack_start(sep(), False, False, 2)
-        dev_box.pack_start(bsec("KNOWN DEVICES"), False, False, 0)
-        dev_box.pack_start(sep(), False, False, 2)
-
+        # KEIN "KNOWN DEVICES"-Header mehr - bekannte/gekoppelte Geräte
+        # stehen direkt oben in der Liste, ohne eigene Überschrift.
         for d in paired:
-            conn   = _bt_connected(d["mac"])
-            icon   = "󰂱" if conn else "󰂰"
-            name_b = bitem(f"{icon}  {d['name'][:26]}")
-            con_b  = btn("Disconnect" if conn else "Connect",
-                         active=conn)
+            conn = _bt_connected(d["mac"])
+            row = hrow(sp=6)
+            row.set_halign(Gtk.Align.CENTER)
+            # Voller Name, KEIN Bluetooth-Icon mehr links - der Name
+            # SELBST ist jetzt der Connect/Disconnect-Schalter (leuchtet
+            # bei aktiver Verbindung), kein separater Button mehr dafür.
+            name_b = btn(d["name"], active=conn)
             rm_b   = btn("󰆴", tip="Remove")
 
             def _mk_con(mac, c):
@@ -2331,24 +2424,29 @@ def _bluetooth_content() -> Gtk.Box:
             def _mk_rm(mac):
                 return lambda _: in_thread(lambda: (
                     _bt(f"remove {mac}"), GLib.idle_add(_refresh)))
-            con_b.connect("clicked", _mk_con(d["mac"], conn))
+            name_b.connect("clicked", _mk_con(d["mac"], conn))
             rm_b.connect("clicked",  _mk_rm(d["mac"]))
-            dev_box.pack_start(hrow(name_b, con_b, rm_b), False, False, 0)
+            row.pack_start(name_b, False, False, 0)
+            row.pack_start(rm_b, False, False, 0)
+            dev_box.pack_start(row, False, False, 0)
 
         if found:
-            dev_box.pack_start(sep(), False, False, 4)
-            dev_box.pack_start(bsec("DISCOVERED DEVICES"), False, False, 0)
-            dev_box.pack_start(sep(), False, False, 2)
+            # Unbekannte/nicht gekoppelte Geräte UNTER den bekannten,
+            # MIT eigener Überschrift (im selben Stil, den vorher
+            # "KNOWN DEVICES" hatte).
+            dev_box.pack_start(bsec("UNKNOWN DEVICES"), False, False, 0)
             for d in found:
+                pair_row = hrow(sp=6)
+                pair_row.set_halign(Gtk.Align.CENTER)
                 pair_b = btn("Pair")
                 def _mk_pair(mac):
                     return lambda _: in_thread(lambda: (
                         _bt(f"pair {mac}"), _bt(f"connect {mac}"),
                         GLib.idle_add(_refresh)))
                 pair_b.connect("clicked", _mk_pair(d["mac"]))
-                dev_box.pack_start(
-                    hrow(bitem(f"󰂰  {d['name'][:26]}"), pair_b),
-                    False, False, 0)
+                pair_row.pack_start(bitem(d["name"]), False, False, 0)
+                pair_row.pack_start(pair_b, False, False, 0)
+                dev_box.pack_start(pair_row, False, False, 0)
         dev_box.show_all()
 
     def _on_power(_):
@@ -2367,7 +2465,7 @@ def _bluetooth_content() -> Gtk.Box:
             # Aufrufen) erneut angestoßen hätte. Explizit False
             # zurückgeben, damit die Idle-Source sich selbst entfernt.
             def _apply_ui():
-                pwr_b.set_label("󰂯  On" if powered[0] else "󰂲  Off")
+                pwr_b.set_label("󰂯" if powered[0] else "󰂲")
                 if powered[0]:
                     pwr_b.get_style_context().add_class("active")
                 else:
@@ -2379,7 +2477,7 @@ def _bluetooth_content() -> Gtk.Box:
         in_thread(_do)
 
     def _on_scan(_):
-        scan_b.set_label("󰑎  Scanning…"); scan_b.set_sensitive(False)
+        scan_b.set_label("󰑎"); scan_b.set_sensitive(False)
         def _do():
             proc = subprocess.Popen(
                 ["bluetoothctl", "scan", "on"],
@@ -2391,7 +2489,7 @@ def _bluetooth_content() -> Gtk.Box:
             subprocess.Popen(["bluetoothctl", "scan", "off"],
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             GLib.idle_add(_refresh)
-            GLib.idle_add(lambda: (scan_b.set_label("󰑐  Scan"),
+            GLib.idle_add(lambda: (scan_b.set_label("󰑐"),
                                    scan_b.set_sensitive(True), False)[2])
         in_thread(_do)
 
@@ -2628,73 +2726,56 @@ def _brightness_content(win: Gtk.Window) -> Gtk.Box:
 
     # ── TAB 1: Monitor (Bildschirmhelligkeit + Night Light) ──────────
     t1 = vbox(3); pad(t1, h=4, v=6)
-    t1.pack_start(btitle("󰃟  Monitor"), False, False, 0)
-    t1.pack_start(sep(), False, False, 2)
+    # KEIN Titel/Icon mehr - der Tab-Button "Monitor" sagt schon alles,
+    # eine zusätzliche Überschrift wäre redundant.
 
-    # SCREEN-Header + Reroll-Button in EINER Zeile statt einer eigenen
-    # Titel-Zeile - spart eine ganze Zeile Höhe und folgt exakt dem
-    # Muster, das der Tab weiter unten für NIGHT LIGHT (bsec + Toggle
-    # im selben hbox) schon nutzt. Der Button selbst ist ein echter
-    # kleiner Icon-Button (Klasse "flat", kein "bubble" mit 16px
-    # Seiten-Padding) - genau wie mute_btn/loc_btn in den anderen
-    # Widgets.
     wallpaper_script = _resolve_wallpaper_script()
 
-    def _on_wallpaper(_):
+    def _on_wallpaper(_w):
         run_bg(["bash", wallpaper_script])
 
-    wallpaper_b = Gtk.Button(label="󰑐")
-    wallpaper_b.set_relief(Gtk.ReliefStyle.NONE)
-    wallpaper_b.get_style_context().add_class("flat")
-    wallpaper_b.set_can_focus(False)
-    wallpaper_b.set_opacity(0.7)
-    wallpaper_b.set_tooltip_text("Reroll wallpaper")
+    # "Screen: 80%" ist jetzt EIN klickbares Label - Klick löst aus,
+    # was vorher der separate Reroll-Icon-Button daneben gemacht hat
+    # (Wallpaper neu würfeln). Kein Icon mehr am Slider darunter.
+    screen_btn = bsec_btn(f"Screen: {_bright_pct()}%")
+    screen_btn.set_tooltip_text("Click to reroll wallpaper")
     if not os.path.isfile(wallpaper_script):
-        wallpaper_b.set_sensitive(False)
-        wallpaper_b.set_opacity(0.35)
-        wallpaper_b.set_tooltip_text(
+        screen_btn.set_sensitive(False)
+        screen_btn.set_tooltip_text(
             f"Wallpaper script not found in ~/.config/hypr "
             f"(looked for: {', '.join(_WALLPAPER_SCRIPT_CANDIDATES)})")
-    wallpaper_b.connect("clicked", _on_wallpaper)
-
-    screen_hdr = hbox(4)
-    screen_hdr.set_halign(Gtk.Align.CENTER)
-    screen_hdr.pack_start(bsec("SCREEN"), False, False, 0)
-    screen_hdr.pack_start(wallpaper_b, False, False, 0)
-    t1.pack_start(screen_hdr, False, False, 0)
+    screen_btn.connect("clicked", _on_wallpaper)
+    t1.pack_start(screen_btn, False, False, 0)
 
     def _on_bright(s):
-        in_thread(run, ["brightnessctl", "set", f"{int(s.get_value())}%"])
-    bright_box, _ = bslider("󰃟", 5, 100, 1, _bright_pct(), cb=_on_bright)
+        val = int(s.get_value())
+        screen_btn.set_label(f"SCREEN: {val}%")
+        in_thread(run, ["brightnessctl", "set", f"{val}%"])
+    bright_box, _ = bslider("", 5, 100, 1, _bright_pct(), cb=_on_bright, show_val=False)
+    for ch in bright_box.get_children():
+        if isinstance(ch, Gtk.Label):
+            bright_box.remove(ch)
+            break
+    bright_box.set_halign(Gtk.Align.CENTER)
+    bright_box.set_size_request(230, -1)
     t1.pack_start(bright_box, False, False, 0)
 
-    t1.pack_start(sep(), False, False, 2)
-
+    # NIGHT LIGHT: das Label SELBST ist jetzt der An/Aus-Schalter -
+    # kein "On"/"Off"-Text mehr daneben, leuchtet stattdessen einfach,
+    # wenn aktiv. Zeigt die aktuelle Farbtemperatur gleich mit an.
     nl_tool = _nl_available()
-    nl_b = btn("  On" if _nl_active[0] else "  Off",
-               active=_nl_active[0])
+    nl_btn = bsec_btn(f"Night Light: {_nl_temp[0]}K", active=_nl_active[0])
     if not nl_tool:
-        nl_b.set_sensitive(False)
-        nl_b.set_tooltip_text(
+        nl_btn.set_sensitive(False)
+        nl_btn.set_tooltip_text(
             "No night light tool found (gammastep/hyprsunset/wlsunset)")
-
-    nl_hdr = hbox(6)
-    nl_hdr.set_halign(Gtk.Align.CENTER)
-    nl_hdr.pack_start(bsec("NIGHT LIGHT"), False, False, 0)
-    nl_hdr.pack_start(nl_b, False, False, 0)
-    t1.pack_start(nl_hdr, False, False, 0)
-
-    temp_lbl = Gtk.Label(label=f"{_nl_temp[0]} K")
-    temp_lbl.get_style_context().add_class("caption")
-    temp_lbl.set_opacity(0.65)
-    temp_lbl.set_size_request(52, -1)
-    temp_lbl.set_halign(Gtk.Align.END)
+    t1.pack_start(nl_btn, False, False, 0)
 
     _nl_debounce_id = [0]
 
     def _on_temp(s):
         _nl_temp[0] = int(s.get_value())
-        temp_lbl.set_label(f"{_nl_temp[0]} K")
+        nl_btn.set_label(f"NIGHT LIGHT: {_nl_temp[0]}K")
         if not _nl_active[0]:
             return
         _nl_generation[0] += 1
@@ -2708,16 +2789,20 @@ def _brightness_content(win: Gtk.Window) -> Gtk.Box:
         _nl_debounce_id[0] = GLib.timeout_add(150, _fire)
 
     temp_box, temp_s = bslider(
-        "󱠃", 1000, 6500, 100, _nl_temp[0],
-        cb=_on_temp, show_val=False, suffix_lbl=temp_lbl)
+        "", 1000, 6500, 100, _nl_temp[0], cb=_on_temp, show_val=False)
+    for ch in temp_box.get_children():
+        if isinstance(ch, Gtk.Label):
+            temp_box.remove(ch)
+            break
     temp_s.set_inverted(True)
+    temp_box.set_halign(Gtk.Align.CENTER)
+    temp_box.set_size_request(230, -1)
     t1.pack_start(temp_box, False, False, 0)
 
-    def _on_nl(_):
+    def _on_nl(_w):
         if not nl_tool: return
         _nl_active[0] = not _nl_active[0]
-        nl_b.set_label("  On" if _nl_active[0] else "  Off")
-        ctx = nl_b.get_style_context()
+        ctx = nl_btn.get_style_context()
         _nl_generation[0] += 1
         gen = _nl_generation[0]
         if _nl_active[0]:
@@ -2725,22 +2810,30 @@ def _brightness_content(win: Gtk.Window) -> Gtk.Box:
         else:
             ctx.remove_class("active"); in_thread(_nl_stop)
 
-    nl_b.connect("clicked", _on_nl)
+    nl_btn.connect("clicked", _on_nl)
 
     # ── TAB 2: Devices (Keyboard-Backlight + alle RGB-Geräte) ────────
     t2 = vbox(3); pad(t2, h=4, v=6)
-    t2.pack_start(btitle("⌨  Devices"), False, False, 0)
-    t2.pack_start(sep(), False, False, 2)
+    # KEIN Titel mehr - gleiche Begründung wie im Monitor-Tab.
 
     kbd_dev = _kbd_backlight_device()
     kbd_section_shown = [False]
     if kbd_dev:
-        t2.pack_start(bsec("KEYBOARD BACKLIGHT"), False, False, 0)
+        kbd_hdr = bsec(f"Keyboard Backlight: {_kbd_bright_pct(kbd_dev)}%")
+        kbd_lbl = kbd_hdr.get_children()[0]
+        t2.pack_start(kbd_hdr, False, False, 0)
         def _on_kbd(s):
-            in_thread(run, ["brightnessctl", "-d", kbd_dev,
-                             "set", f"{int(s.get_value())}%"])
-        kbd_box, _ = bslider("⌨", 0, 100, 1,
-                              _kbd_bright_pct(kbd_dev), cb=_on_kbd)
+            val = int(s.get_value())
+            kbd_lbl.set_label(f"KEYBOARD BACKLIGHT: {val}%")
+            in_thread(run, ["brightnessctl", "-d", kbd_dev, "set", f"{val}%"])
+        kbd_box, _ = bslider("", 0, 100, 1, _kbd_bright_pct(kbd_dev),
+                              cb=_on_kbd, show_val=False)
+        for ch in kbd_box.get_children():
+            if isinstance(ch, Gtk.Label):
+                kbd_box.remove(ch)
+                break
+        kbd_box.set_halign(Gtk.Align.CENTER)
+        kbd_box.set_size_request(220, -1)
         t2.pack_start(kbd_box, False, False, 0)
         kbd_section_shown[0] = True
 
@@ -2763,11 +2856,14 @@ def _brightness_content(win: Gtk.Window) -> Gtk.Box:
 
     def _build_rgb_device_row(info: dict) -> Gtk.Box:
         dev_name = info["name"]
-        box = vbox(3)
+        box = vbox(2)
         box.get_style_context().add_class("bubble")
         pad(box, h=8, v=6)
-        name_lbl = Gtk.Label(label=f'{info["name"]} ({info["type"].title()})')
-        name_lbl.set_halign(Gtk.Align.START)
+        name_text = f'{info["name"]} ({info["type"].title()})'
+        if info["has_brightness"]:
+            name_text += f': {info["brightness"] or 0}%'
+        name_lbl = Gtk.Label(label=name_text)
+        name_lbl.set_halign(Gtk.Align.CENTER)
         name_lbl.get_style_context().add_class("caption")
         box.pack_start(name_lbl, False, False, 0)
 
@@ -2784,10 +2880,19 @@ def _brightness_content(win: Gtk.Window) -> Gtk.Box:
 
         if info["has_brightness"]:
             def _on_bri(s, n=dev_name):
-                _debounced(_openrgb_set_brightness, n, int(s.get_value()))
+                val = int(s.get_value())
+                name_lbl.set_label(
+                    f'{info["name"]} ({info["type"].title()}): {val}%')
+                _debounced(_openrgb_set_brightness, n, val)
             bri_box, _ = bslider(
-                "󰃟", info["brightness_min"], info["brightness_max"], 1,
-                info["brightness"] or 0, cb=_on_bri)
+                "", info["brightness_min"], info["brightness_max"], 1,
+                info["brightness"] or 0, cb=_on_bri, show_val=False)
+            for ch in bri_box.get_children():
+                if isinstance(ch, Gtk.Label):
+                    bri_box.remove(ch)
+                    break
+            bri_box.set_halign(Gtk.Align.CENTER)
+            bri_box.set_size_request(200, -1)
             box.pack_start(bri_box, False, False, 0)
 
         swatch_css = Gtk.CssProvider()
@@ -2811,6 +2916,7 @@ def _brightness_content(win: Gtk.Window) -> Gtk.Box:
             dlg.destroy()
 
         color_row = hbox(6)
+        color_row.set_halign(Gtk.Align.CENTER)
         color_lbl = Gtk.Label(label="Color:")
         color_lbl.get_style_context().add_class("caption")
         color_btn = Gtk.Button()
@@ -3440,47 +3546,46 @@ def _sysmon_snapshot() -> dict:
         "gpu":      _gpu_stats(),
     }
 
-def _akku_content() -> Gtk.Box:
-    root = vbox(4); pad(root, h=4, v=6)
+def _akku_content(win: Gtk.Window) -> Gtk.Box:
+    root = vbox(3); pad(root, h=4, v=6)
+    # KEIN Titel mehr - die 2 Sub-Tabs "Battery"/"Profile" sagen schon,
+    # was hier ist.
 
-    root.pack_start(btitle("󰁹  Battery"), False, False, 0)
-    root.pack_start(sep(), False, False, 2)
+    stack = Gtk.Stack()
+    stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
+    stack.set_transition_duration(200)
+    stack.set_hhomogeneous(False)
+    stack.set_vhomogeneous(False)
 
-    # Drei-Spalten-Zeile: Leistungsaufnahme (W) links, Icon+Prozent
-    # mittig, Lade-/Entladestatus rechts - per Gtk.Grid mit
-    # gleich breiten, expandierenden Spalten, damit die Mitte
-    # unabhängig von der Textlänge links/rechts wirklich mittig bleibt.
-    bat_box = Gtk.Grid()
-    bat_box.set_column_homogeneous(True)
-    bat_box.get_style_context().add_class("bubble")
-    bat_box.get_style_context().add_class("item")
+    t_bat  = vbox(1); pad(t_bat, h=4, v=4)
+    t_prof = vbox(4); pad(t_prof, h=4, v=4)
+
+    # ── Sub-Tab: Battery ─────────────────────────────────────────
+    # Icon+Prozent übereinander statt in einer 3-Spalten-Zeile, beides
+    # vergrößert - kein separater "Charging/Discharging"-Text mehr,
+    # das übernimmt jetzt das Icon selbst (_bat_icon() wählt je nach
+    # Status ohnehin schon ein anderes Symbol). Watt-Verbrauch steht
+    # direkt darunter statt seitlich daneben.
+    center_box = vbox(0)
+    center_box.set_halign(Gtk.Align.CENTER)
+
+    icon_pct_row = hbox(6)
+    icon_pct_row.set_halign(Gtk.Align.CENTER)
+    bat_icon_lbl = Gtk.Label(label="")
+    bat_icon_lbl.get_style_context().add_class("icon-xl")
+    bat_pct_lbl  = Gtk.Label(label="–")
+    bat_pct_lbl.get_style_context().add_class("value-lg")
+    icon_pct_row.pack_start(bat_icon_lbl, False, False, 0)
+    icon_pct_row.pack_start(bat_pct_lbl,  False, False, 0)
+    center_box.pack_start(icon_pct_row, False, False, 0)
 
     power_lbl = Gtk.Label(label="")
     power_lbl.get_style_context().add_class("caption")
-    power_lbl.set_halign(Gtk.Align.START)
-    power_lbl.set_hexpand(True)
+    power_lbl.set_halign(Gtk.Align.CENTER)
     power_lbl.set_no_show_all(True)
+    center_box.pack_start(power_lbl, False, False, 0)
 
-    center_box = hbox(6)
-    center_box.set_halign(Gtk.Align.CENTER)
-    center_box.set_hexpand(True)
-
-    bat_icon_lbl = Gtk.Label(label="")
-    bat_icon_lbl.get_style_context().add_class("icon-lg")
-    bat_pct_lbl  = Gtk.Label(label="–")
-    bat_pct_lbl.get_style_context().add_class("value-md")
-    center_box.pack_start(bat_icon_lbl, False, False, 0)
-    center_box.pack_start(bat_pct_lbl,  False, False, 0)
-
-    bat_status_lbl = Gtk.Label(label="")
-    bat_status_lbl.get_style_context().add_class("caption")
-    bat_status_lbl.set_halign(Gtk.Align.END)
-    bat_status_lbl.set_hexpand(True)
-
-    bat_box.attach(power_lbl,      0, 0, 1, 1)
-    bat_box.attach(center_box,     1, 0, 1, 1)
-    bat_box.attach(bat_status_lbl, 2, 0, 1, 1)
-    root.pack_start(bat_box, False, False, 0)
+    t_bat.pack_start(center_box, False, False, 0)
 
     _power_fetch_in_flight = [False]
 
@@ -3489,7 +3594,7 @@ def _akku_content() -> Gtk.Box:
         if info:
             bat_icon_lbl.set_label(_bat_icon(info["cap"], info["status"]))
             bat_pct_lbl.set_label(f'{info["cap"]} %')
-            bat_status_lbl.set_label(f'{info["status"]}')
+            bat_icon_lbl.set_tooltip_text(info["status"])
             if not _power_fetch_in_flight[0]:
                 _power_fetch_in_flight[0] = True
                 def _fetch_power():
@@ -3512,19 +3617,18 @@ def _akku_content() -> Gtk.Box:
         else:
             bat_icon_lbl.set_label("󰂑")
             bat_pct_lbl.set_label("No Battery")
-            bat_status_lbl.set_label("")
+            bat_icon_lbl.set_tooltip_text(None)
             power_lbl.hide()
         return True
 
     add_timer(10000, _refresh_bat)
     _refresh_bat()
 
-
-    root.pack_start(sep(), False, False, 4)
-
+    # ── Sub-Tab: Profile ──────────────────────────────────────────
+    # Einfach die 5 Profil-Buttons rein, ohne eigene Überschrift - der
+    # Sub-Tab-Reiter "Profile" sagt schon, was das ist.
     pp_section = vbox(4)
-    root.pack_start(bsec("ENERGY PROFILE"), False, False, 0)
-    root.pack_start(pp_section, False, False, 0)
+    t_prof.pack_start(pp_section, False, False, 0)
     pp_section.pack_start(bitem("Loading…", dim=True), False, False, 0)
     pp_section.show_all()
 
@@ -3566,7 +3670,7 @@ def _akku_content() -> Gtk.Box:
                  tip="Save power: turn off animations, blur, shadow, hyprglass & cursor effects")
     gm_fx_row.pack_start(gm_btn, False, False, 0)
     gm_fx_row.pack_start(fx_btn, False, False, 0)
-    root.pack_start(gm_fx_row, False, False, 0)
+    t_prof.pack_start(gm_fx_row, False, False, 0)
 
     if not _cpu_boost_supported():
         gm_btn.set_sensitive(False)
@@ -3625,17 +3729,58 @@ def _akku_content() -> Gtk.Box:
         GLib.idle_add(_build_pp_row, profiles, current)
 
     in_thread(_load_pp)
+
+    # ── 2 Sub-Tabs zusammensetzen: "Battery" (das Grad) / "Profile" ──
+    stack.add_named(t_bat, "battery")
+    stack.add_named(t_prof, "profile")
+
+    tab_row = hbox(6)
+    tab_row.set_halign(Gtk.Align.CENTER)
+    tab_btns: dict = {}
+    def _switch_akku_tab(name):
+        _switch_stack(stack, win, name)
+        for n, b in tab_btns.items():
+            ctx = b.get_style_context()
+            if n == name: ctx.add_class("active")
+            else:         ctx.remove_class("active")
+    for tname, tlabel in (("battery", "Battery"), ("profile", "Profile")):
+        tb = btn(tlabel, active=(tname == "battery"))
+        tb.connect("clicked", lambda _b, n=tname: _switch_akku_tab(n))
+        tab_btns[tname] = tb
+        tab_row.pack_start(tb, False, False, 0)
+    stack.set_visible_child_name("battery")
+
+    root.pack_start(tab_row, True, False, 2)
+    root.pack_start(tab_sep(), False, False, 0)
+    root.pack_start(stack, False, False, 0)
     return root
 
-def _sysmon_content() -> Gtk.Box:
+def _sysmon_content(win: Gtk.Window) -> Gtk.Box:
     """System-Monitor-Tab für Geräte OHNE Akku (Desktop-PCs) - zeigt
     CPU (Auslastung, Temperatur, Watt via SUID-Helper), RAM, Swap,
-    Disk, und AMD-GPU-Stats (falls erkannt). Ist aber KEIN exklusiver
-    Ersatz für den Akku-Tab - läuft als zweiter, immer vorhandener Tab
-    neben Battery, siehe _akku_and_sysmon_content()."""
-    root = vbox(4); pad(root, h=4, v=6)
-    root.pack_start(btitle("󰍹  System Monitor"), False, False, 0)
-    root.pack_start(sep(), False, False, 2)
+    Disk, und AMD-GPU-Stats (falls erkannt), als 4 Sub-Tabs (CPU/
+    Memory/Storage/GPU) statt einer langen, mit Trennstrichen
+    unterteilten Liste. Ist aber KEIN exklusiver Ersatz für den
+    Akku-Tab - läuft als zweiter, immer vorhandener Tab neben Battery,
+    siehe _akku_and_sysmon_content()."""
+    root = vbox(3); pad(root, h=4, v=6)
+    # KEIN Titel mehr - der Tab-Button "System" sagt schon, was das ist.
+
+    stack = Gtk.Stack()
+    stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
+    stack.set_transition_duration(200)
+    stack.set_hhomogeneous(False)
+    stack.set_vhomogeneous(False)
+
+    # KEINE Sub-Tab-Überschriften mehr (kein "CPU"/"MEMORY"/"STORAGE"/
+    # "GPU" bsec()) - der Sub-Tab-Reiter selbst sagt schon, was drin
+    # ist. KEINE Trennstriche mehr außer dem einen unter der Sub-Tab-
+    # Reihe selbst (tab_sep(), ganz normaler Bestandteil jeder
+    # Tab-Leiste im Programm).
+    t_cpu = vbox(3); pad(t_cpu, h=4, v=4)
+    t_mem = vbox(3); pad(t_mem, h=4, v=4)
+    t_sto = vbox(3); pad(t_sto, h=4, v=4)
+    t_gpu = vbox(3); pad(t_gpu, h=4, v=4)
 
     _stat_prefixes: dict = {}  # Label -> "icon  Name:  " Präfix, siehe _set_stat()
 
@@ -3653,25 +3798,20 @@ def _sysmon_content() -> Gtk.Box:
     def _set_stat(lbl: Gtk.Label, value: str):
         lbl.set_label(f"{_stat_prefixes[lbl]}{value}")
 
-    root.pack_start(bsec("CPU"), False, False, 0)
     cpu_row, cpu_val = _stat_row("󰻠", "Usage")
-    root.pack_start(cpu_row, False, False, 0)
+    t_cpu.pack_start(cpu_row, False, False, 0)
     temp_row, temp_val = _stat_row("󰔏", "Temperature")
-    root.pack_start(temp_row, False, False, 0)
+    t_cpu.pack_start(temp_row, False, False, 0)
     watt_row, watt_val = _stat_row("󱐋", "Power")
-    root.pack_start(watt_row, False, False, 0)
+    t_cpu.pack_start(watt_row, False, False, 0)
 
-    root.pack_start(sep(), False, False, 4)
-    root.pack_start(bsec("MEMORY"), False, False, 0)
     ram_row, ram_val = _stat_row("󰘚", "RAM")
-    root.pack_start(ram_row, False, False, 0)
+    t_mem.pack_start(ram_row, False, False, 0)
     swap_row, swap_val = _stat_row("󰋊", "Swap")
-    root.pack_start(swap_row, False, False, 0)
+    t_mem.pack_start(swap_row, False, False, 0)
 
-    root.pack_start(sep(), False, False, 4)
-    root.pack_start(bsec("STORAGE"), False, False, 0)
     disk_row, disk_val = _stat_row("󰆼", "Disk (/)")
-    root.pack_start(disk_row, False, False, 0)
+    t_sto.pack_start(disk_row, False, False, 0)
 
     # Zusätzliche/dynamische Laufwerke (externe SSDs, eingehängte ISOs,
     # Disketten, ...) - siehe _extra_disks(). Wird bei JEDEM Poll-Tick
@@ -3679,11 +3819,12 @@ def _sysmon_content() -> Gtk.Box:
     # sich diese Liste im Gegensatz zur GPU jederzeit ändern kann
     # (USB-Stick rein-/rausgezogen usw.).
     extra_storage_section = vbox(3)
-    root.pack_start(extra_storage_section, False, False, 0)
+    t_sto.pack_start(extra_storage_section, False, False, 0)
 
-    gpu_section = vbox(4)
-    root.pack_start(gpu_section, False, False, 0)
+    gpu_section = t_gpu
     gpu_widgets = {}  # wird bei erster erfolgreicher GPU-Erkennung befüllt
+    gpu_placeholder = bitem("No GPU stats available", dim=True)
+    gpu_section.pack_start(gpu_placeholder, False, False, 0)
 
     def _fmt_bytes(n: int) -> str:
         for unit in ("B", "KB", "MB", "GB", "TB"):
@@ -3728,8 +3869,8 @@ def _sysmon_content() -> Gtk.Box:
 
         gpu = snap["gpu"]
         if gpu and not gpu_widgets:
-            gpu_section.pack_start(sep(), False, False, 2)
-            gpu_section.pack_start(bsec("GPU"), False, False, 0)
+            if gpu_placeholder.get_parent() is not None:
+                gpu_section.remove(gpu_placeholder)
             if "busy_pct" in gpu:
                 r, v = _stat_row("󰢮", "Usage")
                 gpu_section.pack_start(r, False, False, 0)
@@ -3774,6 +3915,32 @@ def _sysmon_content() -> Gtk.Box:
 
     add_timer(2000, _refresh)
     _refresh()
+
+    stack.add_named(t_cpu, "cpu")
+    stack.add_named(t_mem, "memory")
+    stack.add_named(t_sto, "storage")
+    stack.add_named(t_gpu, "gpu")
+
+    tab_row = hbox(6)
+    tab_row.set_halign(Gtk.Align.CENTER)
+    tab_btns: dict = {}
+    def _switch_sysmon_tab(name):
+        _switch_stack(stack, win, name)
+        for n, b in tab_btns.items():
+            ctx = b.get_style_context()
+            if n == name: ctx.add_class("active")
+            else:         ctx.remove_class("active")
+    for tname, tlabel in (("cpu", "CPU"), ("memory", "Memory"),
+                          ("storage", "Storage"), ("gpu", "GPU")):
+        tb = btn(tlabel, active=(tname == "cpu"))
+        tb.connect("clicked", lambda _b, n=tname: _switch_sysmon_tab(n))
+        tab_btns[tname] = tb
+        tab_row.pack_start(tb, False, False, 0)
+    stack.set_visible_child_name("cpu")
+
+    root.pack_start(tab_row, True, False, 2)
+    root.pack_start(tab_sep(), False, False, 0)
+    root.pack_start(stack, False, False, 0)
     return root
 
 def _confirm_kill_dialog(parent: Gtk.Window, proc_name: str, pid: int) -> bool:
@@ -3796,10 +3963,18 @@ def _confirm_kill_dialog(parent: Gtk.Window, proc_name: str, pid: int) -> bool:
 def _processes_content(win: Gtk.Window) -> Gtk.Box:
     """3. Tab neben Battery/System: htop-artige Prozessliste mit Kill-
     Möglichkeit (Roadmap: "add a 3rd tab wich shows all programs and
-    to kill them"). Sortiert nach CPU-Last, zeigt die Top 30 - eine
-    vollständige, ungefilterte Prozessliste (auf einem normalen System
-    schnell 200+ Einträge) wäre in einer 340px breiten Blase weder
-    lesbar noch beim Poll alle 2s performant zu rendern.
+    to kill them").
+
+    WICHTIG zur Sortierung/Stabilität (README-Feedback): Prozesse
+    dürfen ihre Listenposition NICHT bei jedem 2s-Poll-Tick ändern, nur
+    weil sich ihr CPU-Wert minimal verschoben hat - das machte die
+    Liste vorher ständig hin- und herspringend und schwer lesbar. Jetzt:
+    bestehende Zeilen werden nur noch in-place aktualisiert (Text
+    ändern, NICHT neu bauen/neu einsortieren), neue Prozesse werden
+    unten ANGEHÄNGT statt nach ihrem Rang eingefügt, und eine
+    tatsächliche Neusortierung passiert NUR noch, wenn man aktiv auf
+    einen der Spalten-Header (Name/CPU/Mem) klickt. Default-Sortierung
+    ist nach Name.
 
     WICHTIG zur CPU%-Spalte: psutil braucht für sinnvolle Werte zwei
     Messpunkte pro Prozess (Process.cpu_percent(interval=None) misst
@@ -3808,16 +3983,34 @@ def _processes_content(win: Gtk.Window) -> Gtk.Box:
     alle Poll-Ticks hinweg gepflegt, statt bei jedem Tick neue
     psutil.Process()-Instanzen zu bauen (die würden immer 0.0% liefern,
     weil sie beim ersten Aufruf noch keinen Referenzpunkt haben)."""
-    root = vbox(4); pad(root, h=4, v=6)
-    root.pack_start(btitle("󰆧  Processes"), False, False, 0)
-    root.pack_start(sep(), False, False, 2)
+    root = vbox(3); pad(root, h=4, v=6)
+    # KEIN Titel mehr - Konsistenz mit den anderen Sub-Tabs (CPU/Memory/
+    # Storage/GPU haben auch keinen mehr).
+
+    # Klickbare Spalten-Köpfe bestimmen NUR den Sortier-SCHLÜSSEL für
+    # die NÄCHSTE Neusortierung - sie lösen die Liste NICHT bei jedem
+    # Poll-Tick automatisch neu aus (siehe Docstring oben).
+    MAX_ROWS = 40
+    hdr_row = hbox(10)
+    hdr_row.set_halign(Gtk.Align.CENTER)
+    name_hdr = btn("Name", active=True)
+    cpu_hdr  = btn("CPU")
+    mem_hdr  = btn("Mem")
+    hdr_row.pack_start(name_hdr, False, False, 0)
+    hdr_row.pack_start(cpu_hdr, False, False, 0)
+    hdr_row.pack_start(mem_hdr, False, False, 0)
+    root.pack_start(hdr_row, False, False, 0)
 
     sw, box = scroll_box(300)
     root.pack_start(sw, True, True, 0)
 
-    _proc_cache: dict = {}  # pid -> psutil.Process, siehe Docstring oben
+    _proc_cache: dict = {}    # pid -> psutil.Process, siehe Docstring oben
+    _row_widgets: dict = {}   # pid -> (row_box, name_lbl, stat_lbl)
+    _order: list = []         # aktuelle, STABILE Anzeige-Reihenfolge (PIDs)
+    _last_data: dict = {}     # pid -> (name, cpu, mem), letzter bekannter Stand
+    _sort_state = {"key": "name"}
 
-    def _build_row(pid: int, name: str, cpu: float, mem: float) -> Gtk.Box:
+    def _build_row(pid: int, name: str, cpu: float, mem: float):
         row = hbox(6)
         row.get_style_context().add_class("bubble")
         row.get_style_context().add_class("item")
@@ -3838,7 +4031,8 @@ def _processes_content(win: Gtk.Window) -> Gtk.Box:
         lbl.set_hexpand(True)
         row.pack_start(lbl, True, True, 0)
 
-        stat_lbl = Gtk.Label(label=f"{cpu:4.1f}% CPU  ·  {mem:4.1f}% MEM")
+        # Kein "·" mehr zwischen CPU und MEM - nur noch ein Leerraum.
+        stat_lbl = Gtk.Label(label=f"{cpu:4.1f}% CPU   {mem:4.1f}% MEM")
         stat_lbl.get_style_context().add_class("caption")
         stat_lbl.set_opacity(0.7)
         row.pack_start(stat_lbl, False, False, 0)
@@ -3868,12 +4062,12 @@ def _processes_content(win: Gtk.Window) -> Gtk.Box:
             in_thread(_worker)
         kill_b.connect("clicked", _on_kill)
         row.pack_start(kill_b, False, False, 0)
-        return row
+        return row, lbl, stat_lbl
 
-    def _fetch() -> list:
+    def _fetch() -> dict:
         import psutil
         seen_pids = set()
-        rows = []
+        data = {}
         for p in psutil.process_iter(["pid", "name"]):
             pid = p.info["pid"]
             if pid == 0:
@@ -3889,29 +4083,96 @@ def _processes_content(win: Gtk.Window) -> Gtk.Box:
                 name = proc.name()
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
-            rows.append((pid, name, cpu, mem))
+            data[pid] = (name, cpu, mem)
         # Verwaiste Cache-Einträge (Prozess seitdem beendet) raus, sonst
         # wächst _proc_cache über die Laufzeit des offenen Fensters
         # unbegrenzt weiter.
         for pid in list(_proc_cache):
             if pid not in seen_pids:
                 _proc_cache.pop(pid, None)
-        rows.sort(key=lambda r: r[2], reverse=True)
-        return rows[:30]
+        return data
+
+    def _apply_order():
+        """Sortiert NUR die Reihenfolge der PIDs (per box.reorder_child)
+        neu - baut dabei KEINE einzige Zeile neu, nur ihre Position
+        ändert sich. Wird ausschließlich beim Klick auf einen der 3
+        Spalten-Header (und einmalig beim allerersten Befüllen)
+        aufgerufen, NIE automatisch bei jedem Poll-Tick."""
+        key = _sort_state["key"]
+        if key == "name":
+            _order.sort(key=lambda p: (_last_data.get(p, ("", 0, 0))[0] or "").lower())
+        elif key == "cpu":
+            _order.sort(key=lambda p: _last_data.get(p, ("", 0, 0))[1], reverse=True)
+        else:
+            _order.sort(key=lambda p: _last_data.get(p, ("", 0, 0))[2], reverse=True)
+        for idx, pid in enumerate(_order):
+            box.reorder_child(_row_widgets[pid][0], idx)
+
+    def _resort(key: str):
+        _sort_state["key"] = key
+        for hdr, k in ((name_hdr, "name"), (cpu_hdr, "cpu"), (mem_hdr, "mem")):
+            ctx = hdr.get_style_context()
+            if k == key: ctx.add_class("active")
+            else:        ctx.remove_class("active")
+        _apply_order()
+
+    name_hdr.connect("clicked", lambda _w: _resort("name"))
+    cpu_hdr.connect("clicked",  lambda _w: _resort("cpu"))
+    mem_hdr.connect("clicked",  lambda _w: _resort("mem"))
 
     _fetch_in_flight = [False]
+    _sorted_once = [False]
 
-    def _apply(rows: list):
-        for c in box.get_children():
-            box.remove(c)
-        for pid, name, cpu, mem in rows:
-            box.pack_start(_build_row(pid, name, cpu, mem), False, False, 0)
+    def _apply(data: dict):
+        _last_data.clear()
+        _last_data.update(data)
+
+        # Verschwundene Prozesse raus - einzige Fälle, in denen sich
+        # die Liste "von selbst" verkürzt.
+        for pid in [p for p in _order if p not in data]:
+            widgets = _row_widgets.pop(pid, None)
+            if widgets:
+                box.remove(widgets[0])
+            _order.remove(pid)
+
+        # Neue Prozesse werden UNTEN angehängt (README-Feedback), NICHT
+        # nach ihrem Sortier-Rang einsortiert - erst der nächste Klick
+        # auf einen Spalten-Header bringt sie an ihre "richtige"
+        # Position. Ein Cap verhindert, dass die Liste bei sehr vielen
+        # laufenden Prozessen unbegrenzt wächst; bereits verfolgte
+        # Prozesse bleiben davon unberührt (Positions-Stabilität geht
+        # vor striktem Cap).
+        new_pids = [p for p in data if p not in _row_widgets]
+        for pid in new_pids:
+            if len(_order) >= MAX_ROWS:
+                break
+            name, cpu, mem = data[pid]
+            row, lbl, stat_lbl = _build_row(pid, name, cpu, mem)
+            _row_widgets[pid] = (row, lbl, stat_lbl)
+            _order.append(pid)
+            box.pack_start(row, False, False, 0)
+
+        # Bestehende Zeilen NUR in-place aktualisieren (Text ändern),
+        # NIE neu bauen oder neu einfügen - das ist der Kern der
+        # geforderten Positions-Stabilität.
+        for pid in _order:
+            if pid in new_pids:
+                continue
+            name, cpu, mem = data[pid]
+            _, lbl, stat_lbl = _row_widgets[pid]
+            lbl.set_label(f"{name}  ·  PID {pid}")
+            stat_lbl.set_label(f"{cpu:4.1f}% CPU   {mem:4.1f}% MEM")
+
+        if not _sorted_once[0] and _order:
+            _sorted_once[0] = True
+            _apply_order()
+
         box.show_all()
         # Neu seit Entfernen des harten Zeichen-Limits oben: Namen
-        # können sich JEDEN Poll-Tick ändern (neue Prozesse, andere
-        # Sortierung) - ohne diesen Aufruf hätte das Fenster nur beim
-        # ERSTEN Öffnen die passende Breite bekommen und wäre danach
-        # nie wieder mitgewachsen/-geschrumpft.
+        # können sich JEDEN Poll-Tick ändern (neue Prozesse) - ohne
+        # diesen Aufruf hätte das Fenster nur beim ERSTEN Öffnen die
+        # passende Breite bekommen und wäre danach nie wieder
+        # mitgewachsen/-geschrumpft.
         GLib.idle_add(_shrink_to_fit, win)
 
     def _refresh():
@@ -3920,8 +4181,8 @@ def _processes_content(win: Gtk.Window) -> Gtk.Box:
         _fetch_in_flight[0] = True
         def _work():
             try:
-                rows = _fetch()
-                GLib.idle_add(_apply, rows)
+                data = _fetch()
+                GLib.idle_add(_apply, data)
             finally:
                 _fetch_in_flight[0] = False
         in_thread(_work)
@@ -3946,7 +4207,7 @@ def _akku_and_sysmon_content(win: Gtk.Window) -> Gtk.Box:
     has_bat = _battery_present()
     default_tab = "battery" if has_bat else "system"
     if has_bat:
-        stack.add_named(_akku_content(), "battery")
+        stack.add_named(_akku_content(win), "battery")
 
     # System-Tab wird LAZY gebaut - erst wenn tatsächlich draufgeklickt
     # wird, nicht sofort beim Öffnen des Fensters. Der System-Monitor
@@ -3957,7 +4218,7 @@ def _akku_and_sysmon_content(win: Gtk.Window) -> Gtk.Box:
     # er wird ja sofort angezeigt).
     system_built = [False]
     if not has_bat:
-        stack.add_named(_sysmon_content(), "system")
+        stack.add_named(_sysmon_content(win), "system")
         system_built[0] = True
 
     def _ensure_system_tab():
@@ -3972,7 +4233,7 @@ def _akku_and_sysmon_content(win: Gtk.Window) -> Gtk.Box:
         # wie zuvor bei den lazy geladenen Settings-Unterseiten.
         _current_win[0] = win
         try:
-            stack.add_named(_sysmon_content(), "system")
+            stack.add_named(_sysmon_content(win), "system")
         finally:
             _current_win[0] = None
         stack.show_all()
@@ -4375,18 +4636,21 @@ def _khal_default_calendar_name() -> str | None:
                 return m.group(1).strip()
     return None
 
-def _khal_change_storage_path(calendar_name: str, new_dir: Path) -> tuple[bool, str]:
+def _khal_change_storage_path(calendar_name: str, new_dir: Path, copy_old: bool) -> tuple[bool, str]:
     """Ändert den vdir-Speicherort eines Kalenders.
 
-    Verschiebt die bestehenden .ics-Dateien NUR dann in den neuen
-    Ordner, wenn dieser komplett leer ist (keine .ics drin). Liegen
-    dort bereits .ics-Dateien - z.B. weil es schon ein über Syncthing/
-    Nextcloud synchronisierter Ordner von einem anderen Gerät ist -
-    wird GAR NICHTS verschoben/kopiert/überschrieben, auch nicht
-    teilweise: dann bleiben die alten Dateien exakt da, wo sie sind,
-    und nur der Config-Pfad wird auf den neuen Ordner umgebogen (siehe
-    Chat - jedes Anfassen des Zielordners in dem Fall wäre ein
-    unnötiges Risiko, z.B. Konflikte mit dem Sync-Tool)."""
+    copy_old steuert, ob die bestehenden .ics-Dateien in den neuen
+    Ordner KOPIERT werden (Original bleibt unangetastet an der alten
+    Stelle liegen, kein Verschieben mehr) - wird jetzt VORHER explizit
+    per Dialog abgefragt (siehe _on_storage_btn()), statt automatisch
+    anhand von "ist der Zielordner gerade leer?" zu entscheiden.
+
+    Sicherheitsnetz bleibt unabhängig von copy_old bestehen: ist der
+    Zielordner NICHT leer (z.B. schon ein über Syncthing/Nextcloud
+    synchronisierter Ordner von einem anderen Gerät), wird dort NICHTS
+    kopiert/überschrieben - dann wird nur der Config-Pfad umgebogen,
+    jedes Anfassen des Zielordners in dem Fall wäre ein unnötiges
+    Risiko (z.B. Konflikte mit dem Sync-Tool)."""
     conf_path = Path(HOME) / ".config" / "khal" / "config"
     try:
         txt = conf_path.read_text()
@@ -4402,15 +4666,15 @@ def _khal_change_storage_path(calendar_name: str, new_dir: Path) -> tuple[bool, 
         return False, f"Could not create new folder: {e}"
 
     target_already_has_data = any(new_dir.glob("*.ics"))
-    moved = False
-    if (not target_already_has_data and old_dir and old_dir.is_dir()
+    copied = False
+    if (copy_old and not target_already_has_data and old_dir and old_dir.is_dir()
             and old_dir.resolve() != new_dir.resolve()):
         for f in old_dir.glob("*.ics"):
             try:
-                shutil.move(str(f), str(new_dir / f.name))
+                shutil.copy2(str(f), str(new_dir / f.name))
             except Exception as e:
-                return False, f"Failed to move {f.name}: {e}"
-        moved = True
+                return False, f"Failed to copy {f.name}: {e}"
+        copied = True
 
     # Pfad-Zeile NUR innerhalb der passenden [[calendar_name]]-Sektion
     # ersetzen (Handparsing analog zu _khal_calendar_paths(), diesmal
@@ -4458,11 +4722,11 @@ def _khal_change_storage_path(calendar_name: str, new_dir: Path) -> tuple[bool, 
             pass
 
     if target_already_has_data:
-        return True, (f"Target folder already had events - nothing moved, "
+        return True, (f"Target folder already had events - nothing copied, "
                        f"just switched over. Old data is still at {old_dir}.")
-    if moved:
-        return True, "Storage location changed, events moved."
-    return True, ""
+    if copied:
+        return True, f"Storage location changed, events copied (originals still at {old_dir})."
+    return True, "Storage location changed."
 
 def _clock_content(win: Gtk.Window) -> Gtk.Box:
     # Layout-Redesign: Wetter und Kalender waren vorher EIN langer,
@@ -4684,8 +4948,33 @@ def _clock_content(win: Gtk.Window) -> Gtk.Box:
         if resp != Gtk.ResponseType.OK or not new_dir:
             return
 
+        # Explizit fragen statt (wie bisher) stillschweigend anhand von
+        # "ist der Zielordner gerade leer?" zu entscheiden, ob die
+        # bestehenden .ics-Dateien mitkopiert werden sollen.
+        has_old_files = bool(current and current.is_dir()
+                              and current.resolve() != new_dir.resolve()
+                              and any(current.glob("*.ics")))
+        copy_old = False
+        if has_old_files:
+            qdlg = Gtk.MessageDialog(
+                transient_for=win, modal=True,
+                message_type=Gtk.MessageType.QUESTION,
+                buttons=Gtk.ButtonsType.NONE,
+                text="Copy existing calendar files to the new folder?")
+            qdlg.set_name("wb-daemon-popup")
+            qdlg.set_keep_above(True)
+            qdlg.format_secondary_text(
+                f"Found existing events in {current}. The originals will "
+                f"stay there either way - this only controls whether copies "
+                f"go into the new folder too.")
+            qdlg.add_buttons("Don't copy", Gtk.ResponseType.NO,
+                             "Copy", Gtk.ResponseType.YES)
+            qresp = qdlg.run()
+            qdlg.destroy()
+            copy_old = (qresp == Gtk.ResponseType.YES)
+
         def _worker():
-            ok, msg = _khal_change_storage_path(cal_name, new_dir)
+            ok, msg = _khal_change_storage_path(cal_name, new_dir, copy_old)
             def _after():
                 storage_btn.set_tooltip_text(
                     msg if msg else "Storage location changed."
@@ -6682,9 +6971,30 @@ def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.W
             # dieselbe kommagetrennte Syntax wie die statische Config-Zeile
             # akzeptiert auch optionale zusätzliche Schlüssel-Wert-Paare
             # nach den ersten 4 (name,mode,position,scale).
-            monitor_arg = f"{name},{mode},{pos_x}x{pos_y},{scale}"
+            #
+            # BUGFIX ("Bildschirm wird beim Scale-Ändern manchmal dunkler,
+            # Farben leicht anders"): bitdepth/cm wurden bisher NUR gesetzt,
+            # wenn HDR an war - war HDR aus, wurden sie einfach GAR NICHT
+            # mit übergeben, in der Annahme, Hyprland würde sie dann schon
+            # von selbst auf Standard zurücksetzen. Tut es aber nicht
+            # zuverlässig: ein "hyprctl keyword monitor"-Aufruf ist ein
+            # TEIL-Reconfigure, nicht angegebene Eigenschaften bleiben auf
+            # ihrem vorherigen Wert stehen. Wurde HDR also IRGENDWANN mal an
+            # war (bitdepth=10, cm=hdr gesetzt) und man ändert danach nur
+            # noch Scale/Auflösung mit ausgeschaltetem HDR-Haken, blieb der
+            # Monitor intern im 10-Bit-HDR-Farbmodus hängen, während SDR-
+            # Inhalte weiter normal (SDR-Kurve) gerendert werden - exakt das
+            # beobachtete "dunkler, Farben leicht komisch", und warum es sich
+            # so unberechenbar anfühlte (kam drauf an, ob und wann zuletzt
+            # überhaupt einmal explizit ETWAS an bitdepth/cm gesetzt wurde).
+            # Fix: bitdepth/cm werden jetzt bei JEDEM Apply explizit gesetzt,
+            # nie mehr weggelassen - "aus" heißt jetzt aktiv "bitdepth,8,
+            # cm,auto" statt einer Auslassung, auf deren Nebenwirkungen man
+            # sich nicht verlassen kann.
             if hdr_on:
-                monitor_arg += ",bitdepth,10,cm,hdr"
+                monitor_arg = f"{name},{mode},{pos_x}x{pos_y},{scale},bitdepth,10,cm,hdr"
+            else:
+                monitor_arg = f"{name},{mode},{pos_x}x{pos_y},{scale},bitdepth,8,cm,srgb"
             out, err, rc = run_ec(["hyprctl", "keyword", "monitor", monitor_arg])
             if rc != 0 or "err" in (out or "").lower() or err:
                 raise RuntimeError(
@@ -7202,6 +7512,71 @@ def _mic_set_muted(muted: bool) -> tuple[bool, str]:
                             "1" if muted else "0"])
     return ec == 0, err
 
+# ── Touchpad & Touchscreen: über Hyprlands eigene Geräteverwaltung ──
+# 'hyprctl keyword device:<name>:enabled 0/1' schaltet ein einzelnes
+# Input-Gerät zur Laufzeit komplett ab/an - funktioniert für Touchpads
+# UND Touchscreens gleichermaßen, beide tauchen in 'hyprctl devices -j'
+# als eigene Geräte auf. Das genaue Geräte-Objekt muss aber jedes Mal
+# frisch gesucht werden (Name kann sich zwischen Boots leicht ändern,
+# z.B. USB-Touchscreens), nicht einmalig gecacht werden.
+def _hypr_devices() -> list:
+    data = jrun(["hyprctl", "devices", "-j"]) or {}
+    devices = []
+    for items in data.values():
+        if isinstance(items, list):
+            devices.extend(items)
+    return devices
+
+def _find_hypr_device(keywords: tuple) -> dict | None:
+    for d in _hypr_devices():
+        name = (d.get("name") or "").lower()
+        if any(k in name for k in keywords):
+            return d
+    return None
+
+# Fallback-Merker: nicht jede Hyprland-Version liefert ein "enabled"-
+# Feld im devices-JSON zuverlässig mit zurück - fehlt es, auf den
+# zuletzt SELBST gesetzten Zustand zurückfallen statt fälschlich immer
+# "an" anzuzeigen, nachdem man's gerade erst blockiert hat.
+_touchpad_last_set = {"enabled": True}
+_touchscreen_last_set = {"enabled": True}
+
+def _touchpad_blocked() -> bool | None:
+    dev = _find_hypr_device(("touchpad",))
+    if dev is None:
+        return None
+    return not dev.get("enabled", _touchpad_last_set["enabled"])
+
+def _touchpad_set_blocked(blocked: bool) -> tuple[bool, str]:
+    dev = _find_hypr_device(("touchpad",))
+    if dev is None:
+        return False, "No touchpad found"
+    out, err, ec = run_ec(
+        ["hyprctl", "keyword", f"device:{dev.get('name','')}:enabled",
+         "0" if blocked else "1"], timeout=10)
+    if ec != 0:
+        return False, err or out
+    _touchpad_last_set["enabled"] = not blocked
+    return True, ""
+
+def _touchscreen_blocked() -> bool | None:
+    dev = _find_hypr_device(("touchscreen", "touch screen", "finger"))
+    if dev is None:
+        return None
+    return not dev.get("enabled", _touchscreen_last_set["enabled"])
+
+def _touchscreen_set_blocked(blocked: bool) -> tuple[bool, str]:
+    dev = _find_hypr_device(("touchscreen", "touch screen", "finger"))
+    if dev is None:
+        return False, "No touchscreen found"
+    out, err, ec = run_ec(
+        ["hyprctl", "keyword", f"device:{dev.get('name','')}:enabled",
+         "0" if blocked else "1"], timeout=10)
+    if ec != 0:
+        return False, err or out
+    _touchscreen_last_set["enabled"] = not blocked
+    return True, ""
+
 def _privacy_content(win: Gtk.Window) -> Gtk.Box:
     """Privacy/Hardware-Kill-Switches-Tab: Wifi, Bluetooth, Kamera,
     Mikrofon jeweils mit einem Tap komplett sperren. Kleinster/
@@ -7244,58 +7619,44 @@ def _privacy_content(win: Gtk.Window) -> Gtk.Box:
     root.pack_start(panic_btn, False, False, 0)
     root.pack_start(sep(), False, False, 4)
 
-    def _row_shell(icon: str, label_text: str) -> tuple[Gtk.Box, Gtk.Button]:
-        row = hbox(8)
-        row.get_style_context().add_class("bubble")
-        row.get_style_context().add_class("item")
-        pad(row, h=8, v=4)
-        lbl = Gtk.Label(label=f"{icon}  {label_text}")
-        lbl.set_halign(Gtk.Align.START)
-        lbl.set_hexpand(True)
-        toggle = btn("")
-        # Der Toggle zeigt jetzt nur noch bei "Blocked" Text (leuchtet
-        # sonst einfach nur per "active"-Klasse, ohne extra "Allowed"-
-        # Beschriftung, siehe _make_rfkill_row()/_make_bool_row()) -
-        # feste Mindestgröße, damit er im leeren Zustand nicht zu einer
-        # kaum noch antippbaren Winzig-Box zusammenschrumpft.
-        toggle.set_size_request(70, -1)
-        row.pack_start(lbl, True, True, 0)
-        row.pack_start(toggle, False, False, 0)
-        return row, toggle
-
-    # ── Wifi & Bluetooth: rfkill, mit Hard-Block-Erkennung ───────────
-    def _make_rfkill_row(rf_type: str, icon: str, label_text: str) -> Gtk.Box:
-        row, toggle = _row_shell(icon, label_text)
+    # Jede Zeile ist jetzt EIN EINZIGER Button (Text = Schalter, kein
+    # separates Toggle-Element daneben mehr) - klick auf den Text selbst
+    # schaltet um, "leuchtet" (aktive Klasse) wenn blockiert, sonst
+    # nicht. Zwei pro Zeile nebeneinander über ein normales hbox-Paar
+    # (bewusst KEIN Gtk.Grid mehr - das war zuvor im Verdacht, an der
+    # Nicht-Reaktion der Buttons beteiligt gewesen zu sein).
+    def _make_rfkill_row(rf_type: str, icon: str, label_text: str) -> Gtk.Button:
+        b = btn(f"{icon}  {label_text}")
+        b.set_hexpand(True)
 
         def _refresh():
             state = _rfkill_state(rf_type)
-            ctx = toggle.get_style_context()
+            ctx = b.get_style_context()
             if state == "missing":
-                row.set_sensitive(False)
-                toggle.set_label("N/A")
-                toggle.set_tooltip_text("No adapter found")
+                b.set_sensitive(False)
+                ctx.remove_class("active")
+                b.set_tooltip_text("No adapter found")
             elif state == "hard-blocked":
-                row.set_sensitive(True)
-                toggle.set_sensitive(False)
-                toggle.set_label("🔒 Hardware switch")
+                b.set_sensitive(False)
                 ctx.add_class("active")
-                toggle.set_tooltip_text(
+                b.set_tooltip_text(
                     "Blocked by a physical switch/airplane-mode key - "
                     "can't be re-enabled from software.")
             else:
-                toggle.set_sensitive(True)
+                b.set_sensitive(True)
                 blocked = state == "soft-blocked"
-                toggle.set_label("Blocked" if blocked else "")
                 if blocked: ctx.add_class("active")
                 else:       ctx.remove_class("active")
-                toggle.set_tooltip_text("Tap to " + ("allow" if blocked else "block"))
+                b.set_tooltip_text("Tap to " + ("allow" if blocked else "block"))
 
-        def _on_toggle(_w):
+        def _on_click(_w):
             state = _rfkill_state(rf_type)
             if state in ("missing", "hard-blocked"):
                 return
             new_blocked = state != "soft-blocked"
-            toggle.set_label("Blocked" if new_blocked else "")
+            ctx = b.get_style_context()
+            if new_blocked: ctx.add_class("active")
+            else:           ctx.remove_class("active")
             def _apply():
                 ok, err = _rfkill_set(rf_type, new_blocked)
                 if not ok:
@@ -7303,48 +7664,50 @@ def _privacy_content(win: Gtk.Window) -> Gtk.Box:
             apply_change(f"{label_text}: {'Blocked' if new_blocked else 'Allowed'}",
                          _apply, on_status=_flash, reset_fn=_refresh)
 
-        toggle.connect("clicked", _on_toggle)
+        b.connect("clicked", _on_click)
         _refresh()
         _force_block_fns.append(lambda t=rf_type: _rfkill_set(t, True))
         _refresh_fns.append(_refresh)
-        return row
+        return b
 
     _privacy_rows = [
         _make_rfkill_row("wlan", "󰤨", "Wi-Fi"),
         _make_rfkill_row("bluetooth", "󰂯", "Bluetooth"),
         # WWAN/GPS: nur auf Laptops mit eingebautem Mobilfunk-Modem
         # vorhanden - _rfkill_state() gibt für alle anderen Systeme
-        # "missing" zurück, die Zeile zeigt sich dann selbst als "N/A"
-        # (siehe _make_rfkill_row()), kein Sonderfall hier nötig.
+        # "missing" zurück, der Button zeigt sich dann selbst als
+        # deaktiviert (siehe _make_rfkill_row()), kein Sonderfall hier nötig.
         _make_rfkill_row("wwan", "󰤩", "WWAN / GPS"),
     ]
 
     # ── Kamera & Mikrofon: einfaches Bool-Muster (kein Hard/Soft-
     #    Unterschied wie bei rfkill) ──────────────────────────────────
     def _make_bool_row(icon: str, label_text: str, get_blocked, set_blocked,
-                        missing_tip: str = "Not found") -> Gtk.Box:
-        row, toggle = _row_shell(icon, label_text)
+                        missing_tip: str = "Not found") -> Gtk.Button:
+        b = btn(f"{icon}  {label_text}")
+        b.set_hexpand(True)
 
         def _refresh():
             blocked = get_blocked()
-            ctx = toggle.get_style_context()
+            ctx = b.get_style_context()
             if blocked is None:
-                row.set_sensitive(False)
-                toggle.set_label("N/A")
-                toggle.set_tooltip_text(missing_tip)
+                b.set_sensitive(False)
+                ctx.remove_class("active")
+                b.set_tooltip_text(missing_tip)
                 return
-            row.set_sensitive(True)
-            toggle.set_label("Blocked" if blocked else "")
+            b.set_sensitive(True)
             if blocked: ctx.add_class("active")
             else:       ctx.remove_class("active")
-            toggle.set_tooltip_text("Tap to " + ("allow" if blocked else "block"))
+            b.set_tooltip_text("Tap to " + ("allow" if blocked else "block"))
 
-        def _on_toggle(_w):
+        def _on_click(_w):
             cur = get_blocked()
             if cur is None:
                 return
             new_val = not cur
-            toggle.set_label("Blocked" if new_val else "")
+            ctx = b.get_style_context()
+            if new_val: ctx.add_class("active")
+            else:       ctx.remove_class("active")
             def _apply():
                 ok, err = set_blocked(new_val)
                 if not ok:
@@ -7352,11 +7715,11 @@ def _privacy_content(win: Gtk.Window) -> Gtk.Box:
             apply_change(f"{label_text}: {'Blocked' if new_val else 'Allowed'}",
                          _apply, on_status=_flash, reset_fn=_refresh)
 
-        toggle.connect("clicked", _on_toggle)
+        b.connect("clicked", _on_click)
         _refresh()
         _force_block_fns.append(lambda sb=set_blocked: sb(True))
         _refresh_fns.append(_refresh)
-        return row
+        return b
 
     _privacy_rows.append(_make_bool_row(
         "󰄀", "Camera", _camera_blocked, _camera_set_blocked,
@@ -7364,16 +7727,20 @@ def _privacy_content(win: Gtk.Window) -> Gtk.Box:
     _privacy_rows.append(_make_bool_row(
         "󰍬", "Microphone", _mic_muted, _mic_set_muted,
         missing_tip="No default input device"))
+    _privacy_rows.append(_make_bool_row(
+        "🖱️", "Touchpad", _touchpad_blocked, _touchpad_set_blocked,
+        missing_tip="No touchpad found"))
+    _privacy_rows.append(_make_bool_row(
+        "👆", "Touchscreen", _touchscreen_blocked, _touchscreen_set_blocked,
+        missing_tip="No touchscreen found"))
 
-    # 2 Spalten statt 1 - 5 Zeilen werden so zu 3 (README-Feedback:
-    # "auch im Security Tab kann man viel Platz sparen").
-    _privacy_grid = Gtk.Grid()
-    _privacy_grid.set_column_homogeneous(True)
-    _privacy_grid.set_column_spacing(8)
-    _privacy_grid.set_row_spacing(4)
-    for idx, prow in enumerate(_privacy_rows):
-        _privacy_grid.attach(prow, idx % 2, idx // 2, 1, 1)
-    root.pack_start(_privacy_grid, False, False, 0)
+    # 2 pro Zeile via normalem hbox-Paar (kein Gtk.Grid).
+    for i in range(0, len(_privacy_rows), 2):
+        prow = hbox(6)
+        prow.pack_start(_privacy_rows[i], True, True, 0)
+        if i + 1 < len(_privacy_rows):
+            prow.pack_start(_privacy_rows[i + 1], True, True, 0)
+        root.pack_start(prow, False, False, 0)
 
     def _on_panic(_w):
         def _apply():
@@ -8096,15 +8463,11 @@ def _tailscale_content(win: Gtk.Window) -> Gtk.Box:
     # der einzige, der bleibt, ist der direkt über DEVICES weiter unten
     # (README-Feedback: "die Trennstriche zwischen der Überschrift und
     # Start on boot alle weg, nur den einen über Devices kann da
-    # bleiben"). Zeile selbst zentriert, Toggle ohne extra Text -
-    # leuchtet einfach nur, gleiches Muster wie Privacy/DNS.
+    # bleiben"). Ein einziger Button (Text = Schalter), zentriert -
+    # gleiches Muster wie Privacy/DNS, kein separates Label mehr daneben.
     autostart_row = hbox(8)
     autostart_row.set_halign(Gtk.Align.CENTER)
-    autostart_lbl = Gtk.Label(label="Start on boot:")
-    autostart_lbl.get_style_context().add_class("caption")
-    autostart_toggle = btn("")
-    autostart_toggle.set_size_request(70, -1)
-    autostart_row.pack_start(autostart_lbl, False, False, 0)
+    autostart_toggle = btn("Start on boot")
     autostart_row.pack_start(autostart_toggle, False, False, 0)
     root.pack_start(autostart_row, False, False, 0)
 
@@ -8162,7 +8525,6 @@ def _tailscale_content(win: Gtk.Window) -> Gtk.Box:
         def _work():
             enabled = _tailscaled_autostart_enabled()
             def _apply():
-                autostart_toggle.set_label("On" if enabled else "")
                 ctx = autostart_toggle.get_style_context()
                 if enabled: ctx.add_class("active")
                 else:       ctx.remove_class("active")
@@ -9308,8 +9670,14 @@ def _security_content(win: Gtk.Window) -> Gtk.Box:
             _current_win[0] = None
         stack.show_all()
 
-    tab_row = hbox(6)
-    tab_row.set_halign(Gtk.Align.CENTER)
+    # 2 Zeilen statt 1 lange (README-Feedback: "die ersten 2 Tabs über
+    # den anderen 3, damit Platz gespart wird") - eine durchgehend lange
+    # Tab-Reihe mit 5 Einträgen hätte entweder das Fenster unnötig
+    # breit gemacht oder wäre auf schmaleren Bildschirmen umgebrochen.
+    tab_row_top = hbox(6)
+    tab_row_top.set_halign(Gtk.Align.CENTER)
+    tab_row_bottom = hbox(6)
+    tab_row_bottom.set_halign(Gtk.Align.CENTER)
     tab_btns: dict = {}
     def _switch(name):
         if name == "ufw":
@@ -9319,17 +9687,21 @@ def _security_content(win: Gtk.Window) -> Gtk.Box:
             ctx = b.get_style_context()
             if n == name: ctx.add_class("active")
             else:         ctx.remove_class("active")
-    for name, tlabel in (("privacy", "󰦝  Privacy"), ("dns", "󰙲  DNS"),
-                         ("tailscale", "󰖂  Tailscale"), ("ufw", "󰈸  Firewall"),
-                         ("clamav", "🛡️  ClamAV")):
+    for name, tlabel, target_row in (
+            ("privacy", "󰦝  Privacy", tab_row_top),
+            ("dns", "󰙲  DNS", tab_row_top),
+            ("tailscale", "󰖂  Tailscale", tab_row_bottom),
+            ("ufw", "󰈸  Firewall", tab_row_bottom),
+            ("clamav", "🛡️  ClamAV", tab_row_bottom)):
         b = btn(tlabel, active=(name == "privacy"))
         b.connect("clicked", lambda _b, n=name: _switch(n))
         tab_btns[name] = b
-        tab_row.pack_start(b, False, False, 0)
+        target_row.pack_start(b, False, False, 0)
     stack.set_visible_child_name("privacy")
 
     outer = vbox(4); safe_pad(outer, 380)
-    outer.pack_start(tab_row, True, False, 2)
+    outer.pack_start(tab_row_top, True, False, 2)
+    outer.pack_start(tab_row_bottom, True, False, 0)
     outer.pack_start(tab_sep(), False, False, 0)
     outer.pack_start(stack, False, False, 0)
     return outer

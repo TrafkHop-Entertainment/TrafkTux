@@ -18,7 +18,6 @@
 set -euo pipefail
 
 THEME_DIR="/boot/grub/themes/trafktux"
-STATE_DIR="/var/lib/trafktux-grub-theme"
 DEFAULT_GRUB="/etc/default/grub"
 
 log() { echo "[trafktux-grub-theme-sync] $*" >&2; }
@@ -96,31 +95,33 @@ main() {
     bucket="$(pick_bucket "$width" "$height")"
     log "Erkannt: ${width}x${height} -> Bucket $bucket"
 
-    mkdir -p "$STATE_DIR"
-    local last_bucket="" last_res=""
-    [ -f "$STATE_DIR/last-bucket" ] && last_bucket="$(cat "$STATE_DIR/last-bucket")"
-    [ -f "$STATE_DIR/last-res" ] && last_res="$(cat "$STATE_DIR/last-res")"
-
-    if [ "$bucket" = "$last_bucket" ] && [ "$res" = "$last_res" ]; then
-        log "Unveraendert (Bucket $bucket, ${res}) - nichts zu tun."
-        exit 0
-    fi
-
     # theme_<bucket>.txt liegt im Theme-Root (neben theme.txt) und referenziert
     # seine Bucket-Assets bereits vollstaendig als "assets/<bucket>/...", die
     # gemeinsamen Layer1/Layer5 als "assets/...". Es muss also nur noch diese
     # eine Datei nach theme.txt kopiert werden - keine PNGs mehr anfassen.
-    local bucket_theme="$THEME_DIR/theme_${bucket}.txt"
+    local bucket_theme="$THEME_DIR/assets/${bucket}/theme_${bucket}.txt"
     if [ ! -f "$bucket_theme" ]; then
         log "FEHLER: $bucket_theme existiert nicht - breche ab, ohne etwas zu veraendern."
         exit 1
     fi
 
+    # Direkt gegen die tatsaechlich aktive theme.txt UND GRUB_GFXMODE
+    # vergleichen statt gegen eine separate State-Datei (kann veralten).
+    # WICHTIG: beide muessen stimmen - vorher wurde nur theme.txt geprueft,
+    # wodurch GRUB_GFXMODE/grub.cfg stumm veraltet blieb, wenn theme.txt aus
+    # einem anderen Grund (z.B. manuelles Kopieren) schon richtig war.
+    local gfxmode_line="GRUB_GFXMODE=${width}x${height},1920x1080,auto"
+    local theme_ok=0 gfxmode_ok=0
+    cmp -s "$bucket_theme" "$THEME_DIR/theme.txt" && theme_ok=1
+    grep -qF "$gfxmode_line" "$DEFAULT_GRUB" 2>/dev/null && gfxmode_ok=1
+
+    if [ "$theme_ok" = 1 ] && [ "$gfxmode_ok" = 1 ]; then
+        log "theme.txt und GRUB_GFXMODE entsprechen bereits Bucket $bucket (${res}) - nichts zu tun."
+        exit 0
+    fi
+
     cp -f "$bucket_theme" "$THEME_DIR/theme.txt"
 
-    # Bevorzugt die erkannte Aufloesung, faellt sonst auf die
-    # 16:9-Referenz und zuletzt auf "auto" zurueck.
-    local gfxmode_line="GRUB_GFXMODE=${width}x${height},1920x1080,auto"
     if grep -q '^GRUB_GFXMODE=' "$DEFAULT_GRUB"; then
         sed -i "s/^GRUB_GFXMODE=.*/${gfxmode_line}/" "$DEFAULT_GRUB"
     else
@@ -129,8 +130,6 @@ main() {
 
     grub-mkconfig -o /boot/grub/grub.cfg
 
-    echo "$bucket" > "$STATE_DIR/last-bucket"
-    echo "$res" > "$STATE_DIR/last-res"
     log "Fertig: Bucket $bucket, ${res} ist ab dem naechsten Boot aktiv."
 }
 

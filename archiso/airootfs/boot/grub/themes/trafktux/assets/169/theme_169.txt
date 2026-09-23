@@ -1,35 +1,37 @@
-# TrafkTux GRUB Theme - Aspect-Ratio-Variante: 169 (Referenz 1920x1080)
-#
-# Jedes Layer (0/2/3/4) ist eine volle Screen-Canvas fuer sein Aspect Ratio -
-# Blase/Logo sitzen schon an der richtigen Stelle IM Bild selbst. Deswegen
-# hier fuer JEDES Image top=0 left=0 width=100% height=100%, kein
-# Sub-Positioning per Bounding Box (frueherer Ansatz war falsch - das Bild
-# IST schon die ganze Szene, kein Sprite auf einer groesseren Flaeche).
-#
-# Liegt bewusst im Theme-Root (neben theme.txt), NICHT in assets/169/ -
-# so zeigen alle Pfade nur nach unten, nie zur Seite oder hoch. Bucket-
-# Assets (Layer0/2/3/4) fuer diese Variante: assets/169/
-#
-# GRUBs Theme-Parser (grub_strtoull) versteht nur ganze Zahlen bei Prozent-
-# werten - deswegen ueberall ganzzahlig, keine Nachkommastellen.
+# TrafkTux GRUB Theme - Aspect-Ratio-Variante: 169 (automatisch erzeugt aus 169-Referenz)
+# Zentriertes Crop/Pad, kein Content-Scaling. Bucket-Assets: assets/169/
 
 title-text: ""
 desktop-color: "#23163b"
 desktop-image: "assets/GrubLayer5.png"
 
-# ── Layer4: Blase (Glow-Kern + violette Hülle, jetzt gemerged) ───
 +image {
     top = 0%
     left = 0%
     width = 100%
     height = 100%
-    file = "assets/169/GrubLayer4.png"
+    file = "assets/169/GrubLayer1.png"
 }
 
-# ── Boot-Menü: ein einzelner Eintrag, mittig in der Blase ─────────
++image {
+    top = 0%
+    left = 0%
+    width = 100%
+    height = 100%
+    file = "assets/GrubLayer2.png"
+}
+
++image {
+    top = 0%
+    left = 0%
+    width = 100%
+    height = 100%
+    file = "assets/169/GrubLayer3.png"
+}
+
 +boot_menu {
     left = 41%
-    top = 49%
+    top = 50%
     width = 19%
     height = 33%
     item_height = 360
@@ -40,8 +42,8 @@ desktop-image: "assets/GrubLayer5.png"
     icon_height = 0
     item_icon_space = 0
 
-    item_font = "Noto Sans Bold 22"
-    selected_item_font = "Noto Sans Bold 22"
+    item_font = "Noto Sans Bold 28"
+    selected_item_font = "Noto Sans Bold 28"
 
     item_color = "#f6f3d5"
     selected_item_color = "#fff495"
@@ -49,29 +51,11 @@ desktop-image: "assets/GrubLayer5.png"
     scrollbar = false
 }
 
-# ── Layer2: Blase, helles Glas-Highlight (vor dem Text) ───────────
 +image {
     top = 0%
     left = 0%
     width = 100%
     height = 100%
-    file = "assets/169/GrubLayer2.png"
+    file = "assets/169/GrubLayer4.png"
 }
 
-# ── Layer0: Logo (vor der Vignette) ───────────────────────────────
-+image {
-    top = 0%
-    left = 0%
-    width = 100%
-    height = 100%
-    file = "assets/169/GrubLayer0.png"
-}
-
-# ── Layer1: Vignette ───────────────────────────────────────────────
-+image {
-    top = 0%
-    left = 0%
-    width = 100%
-    height = 100%
-    file = "assets/GrubLayer1.png"
-}

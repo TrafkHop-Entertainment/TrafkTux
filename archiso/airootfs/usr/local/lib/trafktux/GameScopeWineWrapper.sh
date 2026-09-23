@@ -54,6 +54,7 @@ RealWine64Bin="/usr/bin/wine64"
 ConfigDir="${XDG_CONFIG_HOME:-$HOME/.config}/hypr"
 ConfigFile="$ConfigDir/GameScopeWrapper.conf"
 ExcludeFile="$ConfigDir/GameScopeExcludes.txt"
+DgvoodooExcludeFile="$ConfigDir/GameScopeDgvoodooExcludes.txt"
 DefaultsRegFile="/usr/share/trafktux/WineWrapperDefaults.reg"
 
 # --- Which real binary is this shim standing in for? --------------------
@@ -83,6 +84,7 @@ Filter="nearest"
 Scaler="fit"
 Sharpness="2"
 ForceWindowsFullscreen="false"
+DgvoodooVersion="old"
 
 if [ -f "$ConfigFile" ]; then
     # shellcheck disable=SC1090
@@ -110,7 +112,10 @@ fi
 TargetExe=""
 for Arg in "$@"; do
     case "$Arg" in
-        *.exe|*.EXE) TargetExe="$(basename "$Arg")" ;;
+        *.exe|*.EXE)
+            CleanedArg="$(printf '%s' "$Arg" | sed 's/\\/\//g')"
+            TargetExe="$(basename "$CleanedArg")"
+            ;;
         *.lnk|*.LNK)
             EffectivePrefixForLnk="${WINEPREFIX:-$HOME/.wine}"
             # $Arg is the Windows-style path to the .lnk itself (e.g.
@@ -234,14 +239,50 @@ fi
 # that statically link/import DDRAW.DLL are detected once per game folder
 # and dgVoodoo2's own ddraw.dll/D3DImm.dll get dropped in next to the exe,
 # which intercepts DirectDraw calls before the game ever decides what mode
-# to render in. No per-game setup, no exclude list.
-DgvoodooSrcDir="/usr/share/trafktux/dgvoodoo2"
-FullExePath="$(pwd)/$TargetExe"
-GameDir="$(dirname "$FullExePath")"
+# to render in. No per-game setup, but IS opt-out-able per game: some
+# titles (e.g. Moorhuhnjagd) already do a real mode-switch and work fine
+# without any of this - forcing dgVoodoo2 onto them can actively break
+# them, so $DgvoodooExcludeFile lets specific games skip injection.
+GameDir="$(pwd)"
+FullExePath="$GameDir/$TargetExe"
+DgvoodooBaseDir="/usr/share/trafktux/dgvoodoo2"
+case "$DgvoodooVersion" in
+    new) DgvoodooSrcDir="$DgvoodooBaseDir/New" ;;
+    *)   DgvoodooSrcDir="$DgvoodooBaseDir/Old" ;;
+esac
 DgvoodooCheckedMarker="$GameDir/.dgvoodoo2-checked"
 DgvoodooInjectedMarker="$GameDir/.dgvoodoo2-injected"
 
-if [ -f "$FullExePath" ] && [ -d "$DgvoodooSrcDir" ] && [ ! -f "$DgvoodooCheckedMarker" ]; then
+DgvoodooExcluded="false"
+if [ -f "$DgvoodooExcludeFile" ]; then
+    while IFS= read -r Line; do
+        [ -z "$Line" ] && continue
+        case "$Line" in \#*) continue ;; esac
+        LineLower="$(printf '%s' "$Line" | tr '[:upper:]' '[:lower:]')"
+        if [ "$LineLower" = "$TargetExeLower" ]; then
+            DgvoodooExcluded="true"
+        fi
+    done < "$DgvoodooExcludeFile"
+fi
+
+# Self-healing: a game excluded here might already have dgVoodoo2 files we
+# ourselves injected earlier (e.g. before it was added to the exclude
+# list, or before this list existed at all). WINEDLLOVERRIDES alone can't
+# undo that - Wine's DLL search checks the game's own folder regardless,
+# so leftover files stay in the way even with the override unset. Remove
+# anything we know we put there (tracked via the injected marker) so the
+# exclude actually takes effect.
+if [ "$DgvoodooExcluded" = "true" ] && [ -f "$DgvoodooInjectedMarker" ]; then
+    rm -f "$GameDir/ddraw.dll" "$GameDir/d3dim.dll" "$GameDir/dgVoodoo.conf" 2>/dev/null
+    rm -f "$DgvoodooInjectedMarker" "$DgvoodooCheckedMarker" 2>/dev/null
+    if [ -f "$GameDir/.dgvoodoo2-mousefix-applied" ]; then
+        timeout 10 "$RealBin" reg delete "HKEY_CURRENT_USER\Software\Wine\AppDefaults\\$TargetExe\DirectInput" /v MouseWarpOverride /f </dev/null >/dev/null 2>&1
+        rm -f "$GameDir/.dgvoodoo2-mousefix-applied" 2>/dev/null
+    fi
+fi
+
+if [ "$DgvoodooExcluded" != "true" ] && [ -f "$FullExePath" ] \
+    && [ -d "$DgvoodooSrcDir" ] && [ ! -f "$DgvoodooCheckedMarker" ]; then
     if command -v strings >/dev/null 2>&1 \
         && strings -a "$FullExePath" 2>/dev/null | grep -qi "ddraw\.dll"; then
         if [ ! -f "$GameDir/ddraw.dll" ] \
@@ -249,16 +290,31 @@ if [ -f "$FullExePath" ] && [ -d "$DgvoodooSrcDir" ] && [ ! -f "$DgvoodooChecked
             && [ -f "$DgvoodooSrcDir/d3dim.dll" ]; then
             cp "$DgvoodooSrcDir/ddraw.dll" "$GameDir/ddraw.dll" 2>/dev/null
             cp "$DgvoodooSrcDir/d3dim.dll" "$GameDir/d3dim.dll" 2>/dev/null
+            if [ -f "$DgvoodooSrcDir/dgVoodoo.conf" ] && [ ! -f "$GameDir/dgVoodoo.conf" ]; then
+                cp "$DgvoodooSrcDir/dgVoodoo.conf" "$GameDir/dgVoodoo.conf" 2>/dev/null
+            fi
             [ -f "$GameDir/ddraw.dll" ] && touch "$DgvoodooInjectedMarker" 2>/dev/null
         fi
     fi
     touch "$DgvoodooCheckedMarker" 2>/dev/null
 fi
 
-if [ -f "$DgvoodooInjectedMarker" ]; then
+if [ "$DgvoodooExcluded" != "true" ] && [ -f "$DgvoodooInjectedMarker" ]; then
     # Tell Wine to prefer the game-folder ("native") DLLs we just placed
     # over its own builtin ddraw/d3dim implementation for this launch.
     export WINEDLLOVERRIDES="ddraw,d3dim=n,b${WINEDLLOVERRIDES:+;$WINEDLLOVERRIDES}"
+
+    # Old DirectDraw titles routinely have broken cursor tracking under
+    # Wine unless mouse-warp compensation is disabled - but doing this
+    # prefix-wide breaks normal-cursor games (confirmed: Paradise Beach).
+    # Scope it to just this specific exe via Wine's AppDefaults registry
+    # mechanism instead - same detection as the dgVoodoo2 injection above,
+    # no separate config needed.
+    MouseFixMarker="$GameDir/.dgvoodoo2-mousefix-applied"
+    if [ ! -f "$MouseFixMarker" ]; then
+        timeout 10 "$RealBin" reg add "HKEY_CURRENT_USER\Software\Wine\AppDefaults\\$TargetExe\DirectInput" /v MouseWarpOverride /d disable /f </dev/null >/dev/null 2>&1
+        touch "$MouseFixMarker" 2>/dev/null
+    fi
 fi
 
 # --- Determine the real output resolution to hand to gamescope -----------

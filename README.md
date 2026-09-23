@@ -198,6 +198,8 @@ TrafkTux comes secure out of the box! We take security somewhat seriously – ev
 - **Tailscale:** built in and ready to go, just log in whenever you want to use it.
 - **Malware scanning:** ClamAV + clamtk are preinstalled and kept up to date automatically via freshclam, extended with community signatures (clamav-unofficial-sigs) for even better detection.
 
+* We also support some laptop finger print scanners!...
+
 ## Software Stack
 
 TrafkTux comes preinstalled with a bunch of software while still not overdoing it:
@@ -205,16 +207,17 @@ TrafkTux comes preinstalled with a bunch of software while still not overdoing i
 ### Preinstalled Apps
 
 **Desktop & Shell**
-- Hyprland, Waybar, Rofi, Swaync
+- Hyprland, Swaync
 - Hypridle, Hyprlock, xfdesktop
 - wvkbd (on-screen keyboard)
+- TrafkTuxBar, TrafkTuxLauncher, Widgets
 
 **Everyday Apps**
 - Firefox
 - VLC Media Player
 - Thunar (file manager) + xfce4-terminal
 - Ark (archive manager) + 7-Zip, unrar, zip/unzip
-- VSCodium
+- VSCodium, Gimp
 - Viewnior
 - Fastfetch, khal
 
@@ -250,6 +253,7 @@ TrafkTux comes preinstalled with a bunch of software while still not overdoing i
 - mangohud
 - winetricks & wine-staging & wine-gecko
 - gamemode
+- Custom Wine Gamemode wrapper + 2 dgvoodoo2 versions preinstalled for game compatability
 
 ...plus a bunch of other system-related packages and sensible defaults, tuned out of the box.
 
@@ -332,6 +336,10 @@ sudo systemctl enable --now libvirtd
 sudo usermod -aG libvirt $USER
 ```
 
+**Android Mirroing to PC**
+```
+sudo pacman -S scrcpy android-tools
+```
 **Learning**
 ```bash
 sudo docker run -p 3000:3000 bkimminich/juice-shop
@@ -551,45 +559,37 @@ Change the scale (to a certain degree). Toggle HDR. Change where your other moni
 4. **Tab:** Firewall (UFW) – status, one-tap presets (Steam LAN, KDE Connect, Samba), full rule list, custom port/protocol rules, delete existing rules, log viewer sub-tab
 5. **Tab:** ClamAV – signature database status + manual update, on-demand scans (any single file or folder, including a one-tap full system scan) with a threat list you can quarantine/ignore from, a quarantine view to restore or permanently delete isolated files, and an automatic re-scan toggle for ~/Downloads
 
-### Summary of Custom Apps
 
-- App Launcher
-- Power Menu
-- App Settings
-- Widgets
-- WidgetsHelper
-- WaybarAutohide
-- SystemSounds
-- RandomWallpaper
+# To Be Done
 
+> ***These are developer notes.***
 ## Roadmap
 
 Still to be themed / done:
 - Calamares
 - Optional package installer
-- Mouse cursor redesign
-- Waybar redesign aka TrafkTuxBar
-- GRUB, Plymouth, SDDM redesign
+- Waybar redesign aka TrafkTuxBar **– partyheld**
 - Editor for: Rofi folders/apps, Waybar widgets/shortcuts, autostart apps, default apps
-- Finish System Sounds
-- On-screen keyboard button on waybar should be automatically hidden if the screen does not support touch
+- TrafkTuxLauncher **– mailueberfall**
+- TrafkTux App Editor
+- Widgets **– wolke7**
 
 ## Known Bugs
 
-- The ISO doesn't currently boot – since the distro is still in development, this is a minor issue that will be fixed soon.
-- When Firefox is in fullscreen, keyboard inputs are most of the time transferred to another window (Thunar in our case, always), but Firefox is still the active window and the mouse can be used. If fullscreen is left, the Firefox window goes (in Scroller) to the left side, not the right – meaning the right side does not have a window, which should not be possible. To get keyboard input back to Firefox, you have to switch the active window to another window and back. This is a Firefox issue and we cannot fix it!
-- xfce4desktop sometimes crashes... this does not happen as quickly/often as swaync's issue, but it can happen. Normally it crashes after a few hours but is very inconsistent and does not happen often.
+- The ISO doesn't currently boot – since the distro is still in development, this is a minor issue that will be fixed soon. Some grub permission problem or something
+- All authentification with "Authentifizierung erforderlich", the floating password windows, they do currently do not support any finger print authentification
+- finger print authentification has to be failed before allowing the normal password – should be both at the same time
+- On-screen keyboard button on waybar should be automatically hidden if the screen does not support touch – and the trafktuxbar needs a fix where the bar is under the on screen keyboard, not ontop of the keyboard (it should sit on top of it)
 
-## To Be Done
-
-> ***These are developer notes.***
-
-### Widgets to Implement
-- Later, if released, implement snowfoxOSv3's Mesh Connect feature.
-- Rewrite Widgets.py in C or Rust at the end.
+### Other Stuff
+- Finish System Sounds
+- make sddm idle animations  – turboprinz
+- rerender plymouth bubble animation – turboprinz
+- Mouse cursor redesign
 
 ### The App Editor
-1. Rofi App Launcher – it has 9 folders where you can put apps in. In this menu you will be able to drag any app + custom commands into the folders, plus as many subfolders in subfolders as you want. You can sort by all packages, all apps, unordered apps, custom apps, ordered apps. This will be the main menu to sort all of your apps!
-2. You can add/remove the shortcuts of apps on the waybar on the "left".
-3. You can add/remove autostart applications (but hide the standard ones, as they are essential).
+1. TrafkTux App Launcher – it has 9 folders where you can put apps in. In this menu you will be able to drag any app + custom commands into the folders, plus as many subfolders in subfolders as you want. You can sort by all packages, all apps, unordered apps, custom apps, ordered apps. This will be the main menu to sort all of your apps!
+2. You can add/remove the shortcuts of apps on the TrafkTuxBar on the "left".
+3. You can add/remove autostart applications in the hyprland.lua (but hide the standard ones, as they are essential).
 4. You can set the default applications for files.
+5. add/remove apps that should/not be effected by the wine wrapper (1 for general 1 for dgvoodo2) and also set if the New or Old version of dgvoodoo2 should be used and also exclude apps from only dgvoodoo2 injection fix or compleately

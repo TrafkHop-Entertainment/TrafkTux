@@ -10,24 +10,40 @@ desktop-image: "assets/GrubLayer5.png"
     left = 0%
     width = 100%
     height = 100%
-    file = "assets/219/GrubLayer4.png"
+    file = "assets/219/GrubLayer1.png"
+}
+
++image {
+    top = 0%
+    left = 0%
+    width = 100%
+    height = 100%
+    file = "assets/GrubLayer2.png"
+}
+
++image {
+    top = 0%
+    left = 0%
+    width = 100%
+    height = 100%
+    file = "assets/219/GrubLayer3.png"
 }
 
 +boot_menu {
     left = 41%
-    top = 49%
+    top = 50%
     width = 19%
     height = 33%
     item_height = 360
-    item_width = 360
+    item_width = 472
     item_spacing = 0
     item_padding = 0
     icon_width = 0
     icon_height = 0
     item_icon_space = 0
 
-    item_font = "Noto Sans Bold 22"
-    selected_item_font = "Noto Sans Bold 22"
+    item_font = "Noto Sans Bold 28"
+    selected_item_font = "Noto Sans Bold 28"
 
     item_color = "#f6f3d5"
     selected_item_color = "#fff495"
@@ -40,21 +56,6 @@ desktop-image: "assets/GrubLayer5.png"
     left = 0%
     width = 100%
     height = 100%
-    file = "assets/219/GrubLayer2.png"
+    file = "assets/219/GrubLayer4.png"
 }
 
-+image {
-    top = 0%
-    left = 0%
-    width = 100%
-    height = 100%
-    file = "assets/219/GrubLayer0.png"
-}
-
-+image {
-    top = 0%
-    left = 0%
-    width = 100%
-    height = 100%
-    file = "assets/GrubLayer1.png"
-}

@@ -1,50 +1,77 @@
 #!/usr/bin/env bash
 #
-# random_wallpaper.sh
-# Wählt beim Start ein zufälliges Bild aus WALLPAPER_DIR und setzt es
-# als xfdesktop-Hintergrund für ALLE aktuell von Hyprland gemeldeten
-# Monitore - über die monitor<OUTPUTNAME>-Keys (z.B. monitoreDP-1)
-# statt der kaputten monitor0xHASH-Keys.
+# Wallpapers.sh
+# Setzt beim Start ein zufälliges Wallpaper pro Hyprland-Monitor.
 #
-# Hintergrund: xfdesktop bildet unter Wayland normalerweise einen
-# Hash aus dem Output (monitor0x20A7 etc.), kann diesen Hash beim
-# Rendern aber nicht zuverlässig auf ein gültiges Workspace-Objekt
-# abbilden, wenn der Compositor ext_workspace_manager_v1 nicht so
-# unterstützt, wie libxfce4windowing es erwartet (siehe xfdesktop
-# GitLab-Issue #350, unter Hyprland reproduzierbar via
-# xfw_workspace_get_number-Assertion). Das Setzen des Bildes über
-# den echten Output-Namen als Key umgeht das zuverlässig.
+# Neue Ordnerstruktur:
+#   ~/.config/hypr/Wallpapers/<ratio>/
+#   Ratio-Keys: 11, 1610, 169, 219, 329, 43
+#   Default/Fallback: 169
 #
-# Kein Wechsel während der Laufzeit - nur einmal beim Aufruf
-# (z.B. Systemstart / Hyprland-Autostart).
+# Verifikation ohne Anwenden:
+#   DRY_RUN=1 ~/.config/hypr/Wallpapers.sh
 
 WALLPAPER_DIR="$HOME/.config/hypr/Wallpapers"
 CHANNEL="xfce4-desktop"
+DEFAULT_RATIO="169"
+DRY_RUN="${DRY_RUN:-0}"
 
-# Zufälliges Bild auswählen (jpg, jpeg, png, webp)
-mapfile -t IMAGES < <(find "$WALLPAPER_DIR" -maxdepth 1 -type f \( \
-    -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.png" -o -iname "*.webp" \
-\) 2>/dev/null)
+random_index() {
+    local n="$1"
+    local r
+    r=$(od -An -N2 -tu2 < /dev/urandom | tr -d ' ')
+    echo $(( r % n ))
+}
 
-if [ "${#IMAGES[@]}" -eq 0 ]; then
-    notify-send "Wallpaper" "Kein Bild in $WALLPAPER_DIR gefunden." 2>/dev/null
-    exit 1
-fi
+pick_image() {
+    local dir="$1"
+    local -a imgs
 
-RANDOM=$(od -An -N2 -tu2 < /dev/urandom | tr -d ' ')
-IMAGE="${IMAGES[$RANDOM % ${#IMAGES[@]}]}"
+    mapfile -t imgs < <(find "$dir" -maxdepth 1 -type f \( \
+        -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.png" -o -iname "*.webp" \
+    \) 2>/dev/null)
 
-# Alle aktuell verbundenen Outputs von Hyprland abfragen
-mapfile -t MONITORS < <(hyprctl monitors -j | jq -r '.[].name')
+    [ "${#imgs[@]}" -eq 0 ] && return 1
 
-if [ "${#MONITORS[@]}" -eq 0 ]; then
-    notify-send "Wallpaper" "Keine Monitore von hyprctl erhalten." 2>/dev/null
-    exit 1
-fi
+    local idx
+    idx=$(random_index "${#imgs[@]}")
+    printf '%s\n' "${imgs[$idx]}"
+}
 
-# Setzt eine xfconf-Property; legt sie an falls sie noch nicht existiert.
+ratio_key() {
+    local w="$1" h="$2"
+
+    awk -v w="$w" -v h="$h" '
+    BEGIN {
+        r = w / h
+
+        # Key:Ratio
+        n = split("11:1 1610:1.6 169:1.7777777778 219:2.3333333333 329:3.5555555556 43:1.3333333333", a, " ")
+
+        best = "169"
+        bestdiff = 999
+
+        for (i = 1; i <= n; i++) {
+            split(a[i], kv, ":")
+            d = r - kv[2]
+            if (d < 0) d = -d
+
+            if (d < bestdiff) {
+                bestdiff = d
+                best = kv[1]
+            }
+        }
+
+        # Wenn keine Ratio gut genug passt, Default verwenden
+        if (bestdiff > 0.08) best = "169"
+
+        print best
+    }'
+}
+
 set_prop() {
     local path="$1" type="$2" value="$3"
+
     if xfconf-query -c "$CHANNEL" -p "$path" >/dev/null 2>&1; then
         xfconf-query -c "$CHANNEL" -p "$path" -s "$value"
     else
@@ -52,16 +79,48 @@ set_prop() {
     fi
 }
 
-for MON in "${MONITORS[@]}"; do
+# Monitore einlesen: name, width, height
+mapfile -t MONITORS < <(
+    hyprctl monitors -j | jq -r '.[] | [.name, (.width|tostring), (.height|tostring)] | @tsv'
+)
+
+if [ "${#MONITORS[@]}" -eq 0 ]; then
+    notify-send "Wallpaper" "Keine Monitore von hyprctl erhalten." 2>/dev/null
+    exit 1
+fi
+
+for line in "${MONITORS[@]}"; do
+    IFS=$'\t' read -r MON W H <<< "$line"
+
+    KEY=$(ratio_key "$W" "$H")
+    SRC="$KEY"
+    IMAGE=""
+
+    if IMAGE="$(pick_image "$WALLPAPER_DIR/$KEY")"; then
+        SRC="$KEY"
+    elif [ "$KEY" != "$DEFAULT_RATIO" ] && IMAGE="$(pick_image "$WALLPAPER_DIR/$DEFAULT_RATIO")"; then
+        SRC="$DEFAULT_RATIO"
+    else
+        notify-send "Wallpaper" "Kein Bild für $MON ($W x $H, Ratio $KEY) und Fallback $DEFAULT_RATIO leer." 2>/dev/null
+        continue
+    fi
+
+    if [ "$DRY_RUN" = "1" ]; then
+        echo "$MON: ${W}x${H} -> ratio $KEY -> source $SRC -> $IMAGE"
+        continue
+    fi
+
     BASE="/backdrop/screen0/monitor${MON}/workspace0"
     set_prop "$BASE/last-image"  string "$IMAGE"
-    set_prop "$BASE/image-style" int    5   # 5 = Vergrößert (siehe Screenshot-Stil)
+    set_prop "$BASE/image-style" int    5   # 5 = Vergrößert
     set_prop "$BASE/color-style" int    0   # 0 = Durchsichtig
 done
 
-# xfdesktop neu starten, damit der/die neuen Keys sauber (neu)
-# aufgelöst werden - ein reines xfconf-Update genügt bei den
-# kaputten Workspace-Objekten unter Hyprland nicht zuverlässig.
-killall xfdesktop 2>/dev/null
+if [ "$DRY_RUN" = "1" ]; then
+    exit 0
+fi
+
+# xfdesktop neu starten, damit die neuen Keys sauber aufgelöst werden.
+killall xfdesktop 2>/dev/null || true
 sleep 1
 xfdesktop &

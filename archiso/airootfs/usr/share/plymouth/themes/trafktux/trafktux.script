@@ -1,30 +1,78 @@
 # TrafkTux Plymouth Theme
-# v2 - umgestellt auf dieselben fertig kompositierten Ebenen wie das
-# GRUB-Theme: ein Foreground (Vignette+Logo) und ein Background
-# (Sternenhimmel), beide 1920x1080 und einfach als Vollbild-Sprites
-# uebereinander gelegt. Anders als bei GRUB gibt's hier kein
-# Stapel-Bug-Theater: Plymouth stapelt zuverlaessig ueber SetZ().
+# v4 - Logo braucht "cover"-Skalierung (MAX), nicht "contain" (MIN), um
+# GRUBs tatsaechliches Bucket-Verhalten nachzubilden (Canvas zuschneiden
+# + strecken = rechnerisch "cover"). Vignette/Hintergrund bleiben voller
+# Stretch wie bei GRUBs geteilten Layern. Blase so weit hochgesetzt, dass
+# ihr unterer Rand nicht mehr ueber den Bildschirmrand hinausragt.
 #
-#   Z=0   Background (PlymouthLayer3.png, Sternenhimmel)
-#   Z=5   animierte Blase (Fortschrittsanzeige)
-#   Z=10  Foreground (PlymouthLayer1.png, Vignette + Logo, ganz oben)
+# Verwendet direkt die GRUB-Assets (GrubLayer1/2/5.png), keine separate
+# Plymouth-Kopie mehr - ein Satz Dateien, keine Drift-Gefahr zwischen
+# GRUB- und Plymouth-Optik.
 #
-# Kein separater Divider mehr - der ist im neuen Foreground-Layer
-# schon mit drin (genau wie beim GRUB-Theme).
+#   Z=0   Hintergrund (GrubLayer5.png, Sternenhimmel) - voller Stretch
+#   Z=3   animierte Blase (Fortschrittsanzeige)
+#   Z=4   Vignette (GrubLayer2.png) - voller Stretch
+#   Z=10  Logo (GrubLayer1.png) - "cover", ganz oben
+#
+# Reihenfolge/Z hier zaehlt zuverlaessig (SetZ()), anders als bei GRUBs
+# +image-Deklarationsreihenfolge - kein Rate-Theater noetig.
 
 # ── Hintergrundfarbe als Fallback (falls Bild mal nicht laedt) ──
 Window.SetBackgroundTopColor(0.1373, 0.0863, 0.2314);
 Window.SetBackgroundBottomColor(0.1020, 0.0510, 0.2039);
 
-# ── Background: Sternenhimmel, volle Screen-Groesse ──────────────
-bg_raw = Image("PlymouthLayer3.png");
-bg_image = bg_raw.Scale(Window.GetWidth(), Window.GetHeight());
-bg_sprite = Sprite(bg_image);
-bg_sprite.SetX(0);
-bg_sprite.SetY(0);
-bg_sprite.SetZ(0);
+win_w = Window.GetWidth();
+win_h = Window.GetHeight();
 
-# ── Animierte Blase (Fortschrittsanzeige) ─────────────────────────
+# ── Hilfsfunktion: voller Stretch auf Fensterbreite UND -hoehe, genau
+# wie GRUBs width=100%/height=100% fuer die geteilten Layer (Vignette,
+# Hintergrund) - dort faellt eine minimale Verzerrung bei abweichendem
+# Seitenverhaeltnis kaum auf, deswegen kein Aufwand mit Scale-Berechnung.
+fun make_stretched_sprite(filename, z) {
+    raw = Image(filename);
+    scaled = raw.Scale(win_w, win_h);
+    sprite = Sprite(scaled);
+    sprite.SetX(0);
+    sprite.SetY(0);
+    sprite.SetZ(z);
+    return sprite;
+}
+
+# ── Hilfsfunktion: "cover" - Bild uniform so gross skalieren, dass es
+# den ganzen Screen abdeckt (ueberstehender Rand faellt ausserhalb des
+# sichtbaren Fensters weg, Plymouth zeichnet dort nichts - kein
+# expliziter Crop noetig). Das entspricht rechnerisch exakt dem, was
+# GRUBs Bucket-System fuer den Logo-Layer tatsaechlich tut: Canvas vorher
+# auf Ziel-Aspect-Ratio zuschneiden, dann komplett auf den Bildschirm
+# strecken = mathematisch identisch zu "cover". Deswegen hier MAX statt
+# MIN der beiden Verhaeltnisse (contain/MIN war der Denkfehler, der die
+# ~11% Groessenabweichung zu GRUB verursacht hat).
+fun make_cover_sprite(filename, z) {
+    raw = Image(filename);
+    ratio_w = win_w / raw.GetWidth();
+    ratio_h = win_h / raw.GetHeight();
+    if (ratio_w > ratio_h) {
+        scale = ratio_w;
+    } else {
+        scale = ratio_h;
+    }
+    new_w = Math.Int(raw.GetWidth() * scale);
+    new_h = Math.Int(raw.GetHeight() * scale);
+    scaled = raw.Scale(new_w, new_h);
+    sprite = Sprite(scaled);
+    sprite.SetX((win_w - new_w) / 2);
+    sprite.SetY((win_h - new_h) / 2);
+    sprite.SetZ(z);
+    return sprite;
+}
+
+# ── Hintergrund: Sternenhimmel, volle Breite+Hoehe (wie GRUB) ─────────
+bg_sprite = make_stretched_sprite("GrubLayer5.png", 0);
+
+# ── Vignette: volle Breite+Hoehe (wie GRUB) ───────────────────────────
+vignette_sprite = make_stretched_sprite("GrubLayer2.png", 4);
+
+# ── Animierte Blase (Fortschrittsanzeige) ─────────────────────────────
 # 30 Frames (jeder 16. von urspruenglich 479 bei 60fps), damit die
 # tatsaechliche Umlaufzeit (~8s) gleich bleibt.
 frame_files = [
@@ -37,14 +85,18 @@ frame_files = [
 ];
 frame_count = 60;
 
-# Die Rohbilder sind 2160x2160 und ziemlich gross (nur ca. 54% davon
-# ist die sichtbare Blase, Rest ist Rand fuer die Animation) - darum
-# hier im Skript auf die gewuenschte Bildschirmgroesse runterskaliert.
-# bubble_canvas_size ist die Zielgroesse des GESAMTEN (noch mit Rand
-# behafteten) Bildes - die sichtbare Blase selbst wird dadurch ca.
-# 54% davon, hier also ca. 297px. Falls doch noch groesser/kleiner
-# gewuenscht, einfach diese eine Zahl aendern.
-bubble_canvas_size = 550;
+# Referenz war 1920x1080, bubble_canvas_size=550px (≈50.9% der Hoehe),
+# bubble_center_y=950px (≈88.0% der Hoehe) - das ergab damals schon
+# rechnerisch 950+550/2=1225px, ueber der 1080px-Referenzhoehe hinaus
+# (13% Ueberstand unten), unabhaengig von der tatsaechlichen Aufloesung.
+# Center_y hier etwas raufgesetzt, damit der untere Rand der Blase genau
+# auf 98% der Fensterhoehe landet statt drueber hinaus - Zahlen anpassen
+# = einfach die beiden Faktoren aendern, keine Neuberechnung noetig.
+bubble_size_fraction = 0.509;
+bubble_bottom_edge_fraction = 0.98;
+bubble_center_y_fraction = bubble_bottom_edge_fraction - (bubble_size_fraction / 2);
+
+bubble_canvas_size = Math.Int(win_h * bubble_size_fraction);
 
 bubble_frame = [];
 for (i = 0; i < frame_count; i++) {
@@ -53,20 +105,16 @@ for (i = 0; i < frame_count; i++) {
 }
 
 bubble_sprite = Sprite(bubble_frame[0]);
-bubble_sprite.SetZ(5);
+bubble_sprite.SetZ(3);
 
 bubble_w = bubble_frame[0].GetWidth();
 bubble_h = bubble_frame[0].GetHeight();
 
-# Nicht mehr am Bildschirmrand verankert, sondern vertikal mittig im
-# Raum UNTER dem Logo (Logo inkl. Glow reicht bis y~299 bei 1080px
-# Hoehe -> Mitte des Rests = ca. y=690). Bei Bedarf einfach
-# bubble_center_y anpassen.
-bubble_center_y = 950;
+bubble_center_y = win_h * bubble_center_y_fraction;
 bubble_y = bubble_center_y - bubble_h / 2;
 
 start_x  = -bubble_w;
-end_x    = Window.GetWidth();
+end_x    = win_w;
 
 bubble_sprite.SetY(bubble_y);
 bubble_sprite.SetX(start_x);
@@ -94,10 +142,7 @@ fun progress_callback(duration, progress) {
 }
 Plymouth.SetBootProgressFunction(progress_callback);
 
-# ── Foreground: Vignette + Logo, oberste Ebene ────────────────────
-fg_raw = Image("PlymouthLayer1.png");
-fg_image = fg_raw.Scale(Window.GetWidth(), Window.GetHeight());
-fg_sprite = Sprite(fg_image);
-fg_sprite.SetX(0);
-fg_sprite.SetY(0);
-fg_sprite.SetZ(10);
+# ── Logo: "cover"-Skalierung, mittig, ganz oben - reproduziert GRUBs
+# effektives Bucket-Verhalten (Canvas zuschneiden + strecken = "cover"),
+# ohne selbst Buckets/vorgeformte Canvases zu brauchen. ───────────────
+logo_sprite = make_cover_sprite("GrubLayer1.png", 10);

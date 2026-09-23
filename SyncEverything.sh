@@ -64,6 +64,21 @@ for arg in "$@"; do
 done
 
 # ---------------------------------------------------------------------
+# Sudo-Passwort gleich am Anfang abfragen statt erst mitten im Lauf,
+# wenn zufaellig die erste root-Datei drankommt. sudo -v validiert nur
+# die Credentials (fuehrt nichts aus) und cached sie fuer die Sudo-
+# Timeout-Dauer. Background-Loop haelt den Cache waehrend des ganzen
+# (evtl. laenger dauernden Icon-Dump-)Laufs am Leben, damit nicht
+# mittendrin nochmal nachgefragt wird. Sauber beendet ueber trap.
+if [[ $DRY_RUN -eq 0 ]]; then
+    echo "Sudo-Passwort wird jetzt einmal abgefragt (fuer den gesamten Lauf)..."
+    sudo -v
+    ( while true; do sudo -n true; sleep 60; kill -0 "$$" 2>/dev/null || exit; done ) &
+    SUDO_KEEPALIVE_PID=$!
+    trap 'kill "$SUDO_KEEPALIVE_PID" 2>/dev/null' EXIT
+fi
+
+# ---------------------------------------------------------------------
 # Pfade, die NIEMALS synct werden, egal welcher Modus. Bash-Glob-
 # Pattern relativ zu airootfs (also z.B. "etc/passwd"). Reines
 # Sicherheitsnetz, betrifft beim aktuellen Scope normalerweise nichts.
@@ -369,7 +384,14 @@ process_file() {
         $USE_SUDO mkdir -p "$TARGET_DIR"
     fi
 
-    $USE_SUDO cp -P "$FILE" "$TARGET_PATH"
+    # Atomarer Replace statt direktem Ueberschreiben: cp aufs Ziel selbst
+    # schlaegt mit "Text file busy" fehl, wenn TARGET_PATH gerade ausgefuehrt
+    # wird (z.B. der Sync-Service-Script laeuft grad). Stattdessen in eine
+    # Temp-Datei im selben Verzeichnis kopieren und atomar drueberschieben -
+    # der laufende Prozess haelt dann einfach weiter die alte Inode offen,
+    # neue Aufrufe sehen sofort die neue Datei.
+    $USE_SUDO cp -P "$FILE" "${TARGET_PATH}.new.$$"
+    $USE_SUDO mv -f "${TARGET_PATH}.new.$$" "$TARGET_PATH"
 
     echo "Kopiert: $FILE -> $TARGET_PATH"
     COPIED=$((COPIED + 1))
@@ -412,6 +434,17 @@ if [[ $DRY_RUN -eq 0 && $WITH_FULL -eq 1 && $SENSITIVE_COPIED -gt 0 ]]; then
     # Passe das an falls ihr statt Grub systemd-boot o.ae. nutzt.
     sudo grub-mkconfig -o /boot/grub/grub.cfg
     sudo mkinitcpio -P
+
+    # trafktux-grub-theme-sync.service ist ein SYSTEM-Service (root), kein
+    # User-Service - der taucht im "systemctl --user restart" weiter unten
+    # nicht auf und wurde deswegen nie automatisch angestossen. Der obige
+    # grub-mkconfig baut nur mit dem, was GERADE in /etc/default/grub steht -
+    # falls der Sync gerade eine andere (aeltere) theme.txt reingelegt hat,
+    # muss der Service danach nochmal ran, um Bucket + GRUB_GFXMODE auf den
+    # tatsaechlich angeschlossenen Monitor zu korrigieren und grub.cfg
+    # entsprechend neu zu bauen.
+    echo "Starte trafktux-grub-theme-sync.service, um Bucket/GRUB_GFXMODE zu pruefen..."
+    sudo systemctl restart trafktux-grub-theme-sync.service
 fi
 
 if [[ $DRY_RUN -eq 0 ]]; then

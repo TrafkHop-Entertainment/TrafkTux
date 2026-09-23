@@ -42,6 +42,7 @@
 #include <sys/signalfd.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <sys/prctl.h>
 
 /* ───────────────────────── config : Typen/Deklarationen ───────────────────────── */
 /* ── Modul-Typen ─────────────────────────────────────────────── */
@@ -367,6 +368,12 @@ struct NineSlice {
     GdkPixbuf *src;
     int left, right; /* Breite der Ecken-Bereiche IM QUELLBILD (Pixel) */
     int sw, sh;       /* Quellgroesse */
+    /* Fertig gerenderte Bar (Groesse+Skalierung des Ziels). Vorher wurde
+     * bei JEDEM Redraw das komplette Full-HD-Bild neu konvertiert und
+     * skaliert (gdk_cairo_set_source_pixbuf erzeugt jedes Mal eine neue
+     * Cairo-Surface) - das waren die 100-300ms in process_updates. */
+    cairo_surface_t *cache;
+    int cache_w, cache_h;
 };
 
 NineSlice *nine_slice_load(const char *path, int left, int right, GError **error) {
@@ -399,7 +406,7 @@ static void blit(cairo_t *cr, GdkPixbuf *src,
 
     GdkPixbuf *region = gdk_pixbuf_new_subpixbuf(src, sx, sy, sw, sh);
     gdk_cairo_set_source_pixbuf(cr, region, 0, 0);
-    cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_BILINEAR);
+    cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_BEST);
     cairo_pattern_set_extend(cairo_get_source(cr), CAIRO_EXTEND_PAD);
     cairo_paint(cr);
     g_object_unref(region);
@@ -407,7 +414,7 @@ static void blit(cairo_t *cr, GdkPixbuf *src,
     cairo_restore(cr);
 }
 
-void nine_slice_draw(NineSlice *ns, cairo_t *cr, double w, double h) {
+static void nine_slice_render(NineSlice *ns, cairo_t *cr, double w, double h) {
     if (!ns || !ns->src || ns->sh <= 0) return;
 
     /* Uniformer Skalierungsfaktor: die Ecke wird in Breite UND Hoehe
@@ -442,8 +449,30 @@ void nine_slice_draw(NineSlice *ns, cairo_t *cr, double w, double h) {
     }
 }
 
+/* Zeichnet die Bar aus dem Cache; gerendert wird nur bei Groessenaenderung. */
+void nine_slice_draw(NineSlice *ns, cairo_t *cr, double w, double h) {
+    if (!ns || !ns->src || ns->sh <= 0 || w <= 0 || h <= 0) return;
+    double sx = 1.0, sy = 1.0;
+    cairo_surface_get_device_scale(cairo_get_target(cr), &sx, &sy);
+    if (sx < 1.0) sx = 1.0;
+    int pw = (int)ceil(w * sx), ph = (int)ceil(h * sx);
+    if (!ns->cache || ns->cache_w != pw || ns->cache_h != ph) {
+        if (ns->cache) cairo_surface_destroy(ns->cache);
+        ns->cache = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, pw, ph);
+        cairo_surface_set_device_scale(ns->cache, sx, sx);
+        cairo_t *cc = cairo_create(ns->cache);
+        nine_slice_render(ns, cc, w, h);
+        cairo_destroy(cc);
+        ns->cache_w = pw;
+        ns->cache_h = ph;
+    }
+    cairo_set_source_surface(cr, ns->cache, 0, 0);
+    cairo_paint(cr);
+}
+
 void nine_slice_free(NineSlice *ns) {
     if (!ns) return;
+    if (ns->cache) cairo_surface_destroy(ns->cache);
     if (ns->src) g_object_unref(ns->src);
     g_free(ns);
 }
@@ -459,6 +488,7 @@ typedef struct {
     GdkPixbuf *bg_hover;
     GdkPixbuf *fg_normal;  /* darf NULL sein */
     GdkPixbuf *fg_hover;   /* darf NULL sein (faellt dann auf fg_normal zurueck) */
+    GHashTable *scaled;    /* Cache: Groesse -> BubbleScaled (fertig skalierte Surfaces) */
 } BubbleAssets;
 
 BubbleAssets *bubble_assets_load(BarConfig *cfg, GError **error);
@@ -483,16 +513,56 @@ void tb_bubble_set_tooltip(TbBubble *b, const char *tooltip);
 void tb_bubble_set_icon(TbBubble *b, const char *icon_name);
 void tb_bubble_set_icon_pixbuf(TbBubble *b, GdkPixbuf *pixbuf); /* nimmt eine eigene Referenz */
 void tb_bubble_set_text(TbBubble *b, const char *text);
+void tb_bubble_set_extra_padding(TbBubble *b, int px); /* Text-Blasen: extra Padding links/rechts */
 
 /* Pinnt die Blase dauerhaft auf die Hover-Optik (z.B. fuer .active
  * Zustaende wie OSK-an oder Hide-Windows-aktiv). Overrides Hover-Handling
  * nicht - beides zusammen ergibt einfach "Ziel=Hover" so oder so. */
 void tb_bubble_set_forced_active(TbBubble *b, gboolean active);
 
+/* ── Multi-Icon-Modus (fuer den Tray: EINE gestreckte Blase mit mehreren
+ * Icons drin statt einer eigenen Blase pro Icon) ───────────────────────
+ * tb_bubble_new_multi() erzeugt eine anfangs LEERE Blase (0 Icons, nicht
+ * sichtbar). tb_bubble_add_sub_icon() haengt ein Icon an (Blase wird
+ * dabei automatisch breiter + sichtbar), gibt ein opakes Handle zurueck,
+ * mit dem man das Icon spaeter aktualisieren oder wieder entfernen kann.
+ * Jedes Sub-Icon hat seine EIGENEN Klick-Handler (fuer den Tray: pro
+ * Icon ein eigener D-Bus-Client dahinter). Normale tb_bubble_set_icon()/
+ * _set_text()/_set_click_handlers()-Aufrufe sind mit einer Multi-Icon-
+ * Blase nicht gemeint und werden ignoriert, solange sub_icons nicht leer
+ * ist - beide Modi gleichzeitig zu nutzen ist nicht vorgesehen. */
+typedef struct TbSubIcon TbSubIcon; /* opakes Handle */
+TbBubble *tb_bubble_new_multi(BubbleAssets *assets, BarConfig *cfg);
+TbSubIcon *tb_bubble_add_sub_icon(TbBubble *b, GdkPixbuf *icon,
+                                   TbBubbleClickFn left, TbBubbleClickFn right,
+                                   TbBubbleClickFn middle, gpointer user_data);
+void tb_bubble_update_sub_icon(TbBubble *b, TbSubIcon *handle, GdkPixbuf *new_icon);
+void tb_bubble_set_sub_icon_tooltip(TbBubble *b, TbSubIcon *handle, const char *tooltip);
+void tb_bubble_remove_sub_icon(TbBubble *b, TbSubIcon *handle);
+
+/* Ueberschreibt Schriftgroesse (in px, absolute Groesse, DPI-unabhaengig)
+ * und/oder Textfarbe fuer GENAU diese Blase - andere Text-Blasen (z.B.
+ * die Workspace-Nummer) bleiben unberuehrt. font_px<=0 = Standardgroesse
+ * (vom GTK-Theme geerbt) beibehalten. has_color=FALSE = normale
+ * Hover-Blendfarbe (text_color/text_color_hover) beibehalten. */
+void tb_bubble_set_text_style(TbBubble *b, double font_px, gboolean has_color, GdkRGBA color);
+
 void tb_bubble_free(TbBubble *b); /* Widget wird NICHT zerstoert (macht GTK selbst) */
 
 
 /* ═══════════════════════════ bubble : Implementierung ═══════════════════════════ */
+struct TbSubIcon {
+    GdkPixbuf *icon; /* besessen, darf NULL sein (Fallback: nichts zeichnen) */
+    char *tooltip;   /* besessen, darf NULL sein */
+    TbBubbleClickFn on_left, on_right, on_middle;
+    gpointer user_data;
+};
+
+/* Hover-"Pop": Icon/Text wachsen beim Hover federnd (mit Ueberschwingen)
+ * auf 1+POP_SCALE. Groesser = staerkerer Effekt. */
+#define TB_HOVER_POP_SCALE 0.14
+#define TB_HOVER_BOUNCE_C1 3.0
+
 struct TbBubble {
     GtkWidget *event_box;
     GtkWidget *area;
@@ -502,14 +572,26 @@ struct TbBubble {
 
     GdkPixbuf *icon;           /* besessen, darf NULL sein */
     char      *text;           /* besessen, darf NULL sein */
+    double     font_px_override;    /* <=0 = Standardgroesse vom Theme */
+    gboolean   has_color_override;
+    GdkRGBA    color_override;
+
+    /* Multi-Icon-Modus (Tray) - siehe tb_bubble_new_multi(). Ist dieses
+     * Array nicht leer, werden icon/text oben ignoriert und stattdessen
+     * jedes TbSubIcon nebeneinander in EINER gestreckten Blase gezeichnet. */
+    GPtrArray *sub_icons; /* TbSubIcon*, besessen */
 
     /* Hover-/Active-Animation */
     gboolean hover_now;        /* Maus gerade drueber? */
     gboolean forced_active;    /* von aussen gepinnt (z.B. .active) */
     double   t;                /* aktueller Blend 0..1 (0=normal, 1=hover) */
     double   t_from;
+    double   pop, pop_from;    /* Hover-Pop (darf kurz ueber 1.0 schwingen) */
     gint64   anim_start_us;
-    guint    tick_id;
+    guint    tick_id;          /* Frame-Clock-Tick-Callback (vsync) */
+
+    int      extra_pad_x;      /* zusaetzliches Padding links/rechts (Text) */
+    int      text_w_max;       /* breiteste bisher gemessene Textbreite */
 
     TbBubbleClickFn on_left, on_right, on_middle;
     gpointer cb_user_data;
@@ -551,6 +633,7 @@ void bubble_assets_free(BubbleAssets *a) {
     g_clear_object(&a->bg_hover);
     g_clear_object(&a->fg_normal);
     g_clear_object(&a->fg_hover);
+    if (a->scaled) g_hash_table_destroy(a->scaled);
     g_free(a);
 }
 
@@ -562,18 +645,54 @@ static double ease_in_out_cubic(double x) {
     return x < 0.5 ? 4 * x * x * x : 1 - pow(-2 * x + 2, 3) / 2;
 }
 
-static void paint_stretched(cairo_t *cr, GdkPixbuf *pb, double w, double h, double alpha) {
-    if (!pb || alpha <= 0.001) return;
-    int sw = gdk_pixbuf_get_width(pb);
-    int sh = gdk_pixbuf_get_height(pb);
-    if (sw <= 0 || sh <= 0) return;
+/* Fertig auf Bubble-Groesse skalierte Surfaces (bg/fg, normal/hover).
+ * Wird pro Groesse EINMAL erzeugt; on_draw blittet dann nur noch. */
+typedef struct { cairo_surface_t *s[4]; } BubbleScaled;
 
-    cairo_save(cr);
-    cairo_scale(cr, w / (double)sw, h / (double)sh);
-    gdk_cairo_set_source_pixbuf(cr, pb, 0, 0);
-    cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_GOOD);
-    cairo_paint_with_alpha(cr, alpha);
-    cairo_restore(cr);
+static void bubble_scaled_free(gpointer p) {
+    BubbleScaled *bs = p;
+    for (int i = 0; i < 4; i++)
+        if (bs->s[i]) cairo_surface_destroy(bs->s[i]);
+    g_free(bs);
+}
+
+static cairo_surface_t *scaled_surface_from_pixbuf(GdkPixbuf *pb, int w, int h, int sf) {
+    if (!pb || w <= 0 || h <= 0) return NULL;
+    int sw = gdk_pixbuf_get_width(pb), sh = gdk_pixbuf_get_height(pb);
+    if (sw <= 0 || sh <= 0) return NULL;
+    cairo_surface_t *surf = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, w * sf, h * sf);
+    cairo_surface_set_device_scale(surf, sf, sf);
+    cairo_t *c = cairo_create(surf);
+    cairo_scale(c, w / (double)sw, h / (double)sh);
+    gdk_cairo_set_source_pixbuf(c, pb, 0, 0);
+    cairo_pattern_set_filter(cairo_get_source(c), CAIRO_FILTER_GOOD);
+    cairo_pattern_set_extend(cairo_get_source(c), CAIRO_EXTEND_PAD);
+    cairo_paint(c);
+    cairo_destroy(c);
+    return surf;
+}
+
+static BubbleScaled *bubble_scaled_get(BubbleAssets *a, int w, int h, int sf) {
+    if (sf < 1) sf = 1;
+    if (!a->scaled)
+        a->scaled = g_hash_table_new_full(g_direct_hash, g_direct_equal, NULL, bubble_scaled_free);
+    gpointer key = GSIZE_TO_POINTER(((gsize)sf << 48) | ((gsize)(w & 0xFFFFFF) << 24) | (gsize)(h & 0xFFFFFF));
+    BubbleScaled *bs = g_hash_table_lookup(a->scaled, key);
+    if (bs) return bs;
+    bs = g_new0(BubbleScaled, 1);
+    bs->s[0] = scaled_surface_from_pixbuf(a->bg_normal, w, h, sf);
+    bs->s[1] = scaled_surface_from_pixbuf(a->bg_hover, w, h, sf);
+    bs->s[2] = scaled_surface_from_pixbuf(a->fg_normal, w, h, sf);
+    bs->s[3] = scaled_surface_from_pixbuf(a->fg_hover, w, h, sf);
+    g_hash_table_insert(a->scaled, key, bs);
+    return bs;
+}
+
+static void paint_surface(cairo_t *cr, cairo_surface_t *surf, double alpha) {
+    if (!surf || alpha <= 0.001) return;
+    cairo_set_source_surface(cr, surf, 0, 0);
+    if (alpha >= 0.999) cairo_paint(cr);
+    else cairo_paint_with_alpha(cr, alpha);
 }
 
 static gboolean on_draw(GtkWidget *widget, cairo_t *cr, gpointer user_data) {
@@ -584,11 +703,13 @@ static gboolean on_draw(GtkWidget *widget, cairo_t *cr, gpointer user_data) {
     if (w <= 0 || h <= 0) return FALSE;
 
     double t = ease_in_out_cubic(CLAMP(b->t, 0.0, 1.0));
+    BubbleScaled *bs = bubble_scaled_get(b->assets, alloc.width, alloc.height,
+                                         gtk_widget_get_scale_factor(widget));
 
     /* 1) Hintergrund - Normal- und Hover-Bild werden ueberblendet
      *    (nicht hart geswitcht), das ergibt die "smoothe Blende". */
-    paint_stretched(cr, b->assets->bg_normal, w, h, 1.0 - t);
-    paint_stretched(cr, b->assets->bg_hover, w, h, t);
+    paint_surface(cr, bs->s[0], 1.0 - t);
+    paint_surface(cr, bs->s[1], t);
 
     /* 2) Icon/Text - liegt ZWISCHEN Hintergrund und Vordergrund, damit
      *    er wirklich "in" der Blase sitzt statt nur obendrauf. */
@@ -598,7 +719,38 @@ static gboolean on_draw(GtkWidget *widget, cairo_t *cr, gpointer user_data) {
     col.blue  = b->cfg->text_color.blue  + (b->cfg->text_color_hover.blue  - b->cfg->text_color.blue)  * t;
     col.alpha = 1.0;
 
-    if (b->icon) {
+    double pop_s = 1.0 + TB_HOVER_POP_SCALE * b->pop;
+    gboolean is_multi = (b->sub_icons && b->sub_icons->len > 0);
+    if (!is_multi) {
+        cairo_save(cr);
+        cairo_translate(cr, w / 2.0, h / 2.0);
+        cairo_scale(cr, pop_s, pop_s);
+        cairo_translate(cr, -w / 2.0, -h / 2.0);
+    }
+
+    if (b->sub_icons && b->sub_icons->len > 0) {
+        /* Multi-Icon-Modus: alle Icons nebeneinander in gleich breiten
+         * Slots innerhalb DERSELBEN (bereits oben gestreckt gezeichneten)
+         * Blase - genau das "eine schoen gestreckte Blase statt einer pro
+         * Icon"-Layout, das der Tray benutzt. */
+        guint n = b->sub_icons->len;
+        double slot_w = w / (double)n;
+        for (guint i = 0; i < n; i++) {
+            TbSubIcon *si = g_ptr_array_index(b->sub_icons, i);
+            if (!si->icon) continue;
+            int iw = gdk_pixbuf_get_width(si->icon);
+            int ih = gdk_pixbuf_get_height(si->icon);
+            double slot_cx = slot_w * i + slot_w / 2.0;
+            double x = slot_cx - iw / 2.0, y = (h - ih) / 2.0;
+            cairo_save(cr);
+            cairo_translate(cr, slot_cx, h / 2.0);
+            cairo_scale(cr, pop_s, pop_s);
+            cairo_translate(cr, -slot_cx, -h / 2.0);
+            gdk_cairo_set_source_pixbuf(cr, si->icon, x, y);
+            cairo_paint(cr);
+            cairo_restore(cr);
+        }
+    } else if (b->icon) {
         int iw = gdk_pixbuf_get_width(b->icon);
         int ih = gdk_pixbuf_get_height(b->icon);
         double x = (w - iw) / 2.0, y = (h - ih) / 2.0;
@@ -611,57 +763,97 @@ static gboolean on_draw(GtkWidget *widget, cairo_t *cr, gpointer user_data) {
         (void)col;
     } else if (b->text && *b->text) {
         PangoLayout *layout = gtk_widget_create_pango_layout(widget, b->text);
+        if (b->font_px_override > 0) {
+            /* Kopie der vom Theme geerbten Schrift, NUR die Groesse
+             * geaendert - Familie/Gewicht etc. bleiben wie vom Theme
+             * vorgegeben, nur eben in einer anderen, absoluten (Px-,
+             * nicht Pt-, also DPI-unabhaengigen) Groesse. */
+            PangoContext *pctx = gtk_widget_get_pango_context(widget);
+            PangoFontDescription *fd =
+                pango_font_description_copy(pango_context_get_font_description(pctx));
+            pango_font_description_set_absolute_size(fd, b->font_px_override * PANGO_SCALE);
+            pango_layout_set_font_description(layout, fd);
+            pango_font_description_free(fd);
+        }
+        GdkRGBA text_col = b->has_color_override ? b->color_override : col;
         int tw, th;
         pango_layout_get_pixel_size(layout, &tw, &th);
         cairo_save(cr);
-        cairo_set_source_rgba(cr, col.red, col.green, col.blue, col.alpha);
+        cairo_set_source_rgba(cr, text_col.red, text_col.green, text_col.blue, text_col.alpha);
         cairo_move_to(cr, (w - tw) / 2.0, (h - th) / 2.0);
         pango_cairo_show_layout(cr, layout);
         cairo_restore(cr);
         g_object_unref(layout);
     }
 
+    if (!is_multi) cairo_restore(cr);
+
     /* 3) Vordergrund (Glanzlicht/Kante) - liegt ueber allem und macht
      *    aus Hintergrund+Icon eine "echte" Blase mit Tiefe. */
-    paint_stretched(cr, b->assets->fg_normal, w, h, 1.0 - t);
-    paint_stretched(cr, b->assets->fg_hover, w, h, t);
+    paint_surface(cr, bs->s[2], 1.0 - t);
+    paint_surface(cr, bs->s[3], t);
 
     return FALSE;
 }
 
 /* ── Animation ───────────────────────────────────────────────────── */
 
-static gboolean anim_tick(GtkWidget *widget, GdkFrameClock *clock, gpointer user_data) {
+/* Hover-Animation laeuft ueber den GDK-Frame-Clock (vsync-synchron, also
+ * auch bei 120 Hz und mehr glatt). Der frueher vermutete "Frame-Clock
+ * haengt die Event-Loop auf"-Effekt war in Wahrheit der blockierende
+ * read() im Hyprland-Event-Kanal (laengst per NONBLOCK behoben); ein
+ * Frame-Clock-Stillstand kann nur das Zeichnen, nie die Loop blockieren.
+ * Gezeichnet wird pro Frame nur ueber gecachte Surfaces - praktisch gratis. */
+static double ease_out_cubic(double x) {
+    double inv = 1.0 - x;
+    return 1.0 - inv * inv * inv;
+}
+
+/* ease-out-back mit einstellbarer Staerke c1 (1.7 = ~10% Ueberschwingen,
+ * 3.0 = ~25%). */
+static double ease_out_back_c(double x, double c1) {
+    double c3 = c1 + 1.0;
+    double u = x - 1.0;
+    return 1.0 + c3 * u * u * u + c1 * u * u;
+}
+
+static gboolean bubble_tick_cb(GtkWidget *widget, GdkFrameClock *clock, gpointer user_data) {
+    (void)widget;
     TbBubble *b = user_data;
     gint64 now = gdk_frame_clock_get_frame_time(clock);
     double duration_us = MAX(1, b->cfg->bubble.transition_ms) * 1000.0;
     double target = (b->hover_now || b->forced_active) ? 1.0 : 0.0;
-    double progress = (now - b->anim_start_us) / duration_us;
-    progress = CLAMP(progress, 0.0, 1.0);
-    b->t = b->t_from + (target - b->t_from) * progress;
+    double raw = CLAMP((now - b->anim_start_us) / duration_us, 0.0, 1.0);
+    double e = ease_out_cubic(raw);
+    b->t = b->t_from + (target - b->t_from) * e;
+    /* Beim Hovern federt der Pop ueber sein Ziel hinaus und faengt sich,
+     * beim Verlassen faehrt er glatt zurueck. */
+    double pe = target > 0.5 ? ease_out_back_c(raw, TB_HOVER_BOUNCE_C1) : e;
+    b->pop = b->pop_from + (target - b->pop_from) * pe;
 
-    gtk_widget_queue_draw(widget);
-
-    if (progress >= 1.0) {
+    if (raw >= 1.0) {
+        b->t = target;
+        b->pop = target;
+        gtk_widget_queue_draw(b->area);
         b->tick_id = 0;
         return G_SOURCE_REMOVE;
     }
+    gtk_widget_queue_draw(b->area);
     return G_SOURCE_CONTINUE;
 }
 
 static void restart_animation_toward_target(TbBubble *b) {
     double target = (b->hover_now || b->forced_active) ? 1.0 : 0.0;
-    if (fabs(b->t - target) < 0.001) return; /* schon da, nichts zu tun */
+    if (fabs(b->t - target) < 0.001 && fabs(b->pop - target) < 0.001) return; /* schon da */
 
     b->t_from = b->t;
-    GdkFrameClock *clock = gtk_widget_get_frame_clock(b->area);
-    b->anim_start_us = clock ? gdk_frame_clock_get_frame_time(clock) : g_get_monotonic_time();
-    if (b->tick_id == 0) {
-        b->tick_id = gtk_widget_add_tick_callback(b->area, anim_tick, b, NULL);
-    }
+    b->pop_from = b->pop;
+    b->anim_start_us = g_get_monotonic_time();
+    if (b->tick_id == 0)
+        b->tick_id = gtk_widget_add_tick_callback(b->area, bubble_tick_cb, b, NULL);
 }
 
-/* ── Events ──────────────────────────────────────────────────────── */
+/*  Events  */
 
 static gboolean on_enter(GtkWidget *w, GdkEventCrossing *ev, gpointer user_data) {
     (void)w; (void)ev;
@@ -680,8 +872,30 @@ static gboolean on_leave(GtkWidget *w, GdkEventCrossing *ev, gpointer user_data)
 }
 
 static gboolean on_button_press(GtkWidget *w, GdkEventButton *ev, gpointer user_data) {
-    (void)w;
     TbBubble *b = user_data;
+
+    if (b->sub_icons && b->sub_icons->len > 0) {
+        /* Multi-Icon-Modus: erst rausfinden, welcher Slot geklickt wurde
+         * (x-Position innerhalb der Blase geteilt durch Slot-Breite),
+         * dann an DESSEN eigene Handler weiterreichen statt an b->on_*. */
+        guint n = b->sub_icons->len;
+        GtkAllocation alloc;
+        gtk_widget_get_allocation(w, &alloc);
+        double slot_w = alloc.width / (double)n;
+        int idx = slot_w > 0 ? (int)(ev->x / slot_w) : 0;
+        idx = CLAMP(idx, 0, (int)n - 1);
+        TbSubIcon *si = g_ptr_array_index(b->sub_icons, idx);
+        g_message("[click] Multi-Icon-Blase: Slot %d/%u getroffen (button=%u)", idx, n, ev->button);
+        if (ev->type != GDK_BUTTON_PRESS) return FALSE;
+        switch (ev->button) {
+            case GDK_BUTTON_PRIMARY:   if (si->on_left)   si->on_left(si->user_data);   break;
+            case GDK_BUTTON_SECONDARY: if (si->on_right)  si->on_right(si->user_data);  break;
+            case GDK_BUTTON_MIDDLE:    if (si->on_middle) si->on_middle(si->user_data); break;
+            default: break;
+        }
+        return TRUE;
+    }
+
     g_message("[click] button-press-event empfangen: button=%u type=%d has_left=%d has_right=%d has_middle=%d",
               ev->button, ev->type, b->on_left != NULL, b->on_right != NULL, b->on_middle != NULL);
     if (ev->type != GDK_BUTTON_PRESS) return FALSE;
@@ -739,7 +953,7 @@ TbBubble *tb_bubble_new(BubbleAssets *assets, BarConfig *cfg,
     if (icon_name) b->icon = lookup_icon(cfg, icon_name);
     if (text) b->text = g_strdup(text);
 
-    b->area = gtk_drawing_area_new();
+    b->area = g_object_ref_sink(gtk_drawing_area_new());
     gtk_widget_set_name(b->area, "tb-bubble-area");
 
     int min_w = cfg->bubble.min_size + 2 * cfg->bubble.padding;
@@ -811,9 +1025,50 @@ void tb_bubble_set_icon_pixbuf(TbBubble *b, GdkPixbuf *pixbuf) {
     gtk_widget_queue_draw(b->area);
 }
 
+/* Berechnet die Mindestgroesse fuer Text-Blasen mit der TATSAECHLICH
+ * verwendeten Schrift (inkl. font_px_override) plus extra_pad_x. Die
+ * Breite waechst nur (text_w_max), damit die Blase nicht bei jeder
+ * Ziffernaenderung der Uhr um ein paar Pixel hin- und herspringt. */
+static void bubble_update_text_size(TbBubble *b) {
+    if (!b->text || !*b->text || b->icon) return;
+    if (b->sub_icons && b->sub_icons->len > 0) return;
+    PangoLayout *layout = gtk_widget_create_pango_layout(b->area, b->text);
+    if (b->font_px_override > 0) {
+        PangoContext *pctx = gtk_widget_get_pango_context(b->area);
+        PangoFontDescription *fd =
+            pango_font_description_copy(pango_context_get_font_description(pctx));
+        pango_font_description_set_absolute_size(fd, b->font_px_override * PANGO_SCALE);
+        pango_layout_set_font_description(layout, fd);
+        pango_font_description_free(fd);
+    }
+    int tw = 0, th = 0;
+    pango_layout_get_pixel_size(layout, &tw, &th);
+    g_object_unref(layout);
+    b->text_w_max = MAX(b->text_w_max, tw);
+    int pad = b->cfg->bubble.padding;
+    int min_w = MAX(b->cfg->bubble.min_size + 2 * pad, b->text_w_max + 2 * (pad + b->extra_pad_x));
+    int min_h = MAX(b->cfg->bubble.min_size + 2 * pad, th + 2 * pad);
+    gtk_widget_set_size_request(b->area, min_w, min_h);
+}
+
+void tb_bubble_set_extra_padding(TbBubble *b, int px) {
+    b->extra_pad_x = MAX(0, px);
+    bubble_update_text_size(b);
+    gtk_widget_queue_draw(b->area);
+}
+
 void tb_bubble_set_text(TbBubble *b, const char *text) {
     g_free(b->text);
     b->text = g_strdup(text);
+    bubble_update_text_size(b);
+    gtk_widget_queue_draw(b->area);
+}
+
+void tb_bubble_set_text_style(TbBubble *b, double font_px, gboolean has_color, GdkRGBA color) {
+    b->font_px_override = font_px;
+    bubble_update_text_size(b);
+    b->has_color_override = has_color;
+    if (has_color) b->color_override = color;
     gtk_widget_queue_draw(b->area);
 }
 
@@ -825,20 +1080,144 @@ void tb_bubble_set_forced_active(TbBubble *b, gboolean active) {
 
 void tb_bubble_free(TbBubble *b) {
     if (!b) return;
-    /* Defensive Absicherung: falls der Aufrufer (versehentlich) das
-     * Widget schon per gtk_widget_destroy() zerstoert hat, BEVOR er
-     * tb_bubble_free() aufruft, ist b->area kein gueltiges GtkWidget
-     * mehr - gtk_widget_remove_tick_callback() darauf wuerde einen
-     * GTK-CRITICAL-Assert ausloesen. Aufrufer sollten IMMER erst
-     * tb_bubble_free() und danach gtk_widget_destroy() aufrufen (die
-     * Reihenfolge ist an allen Aufrufstellen entsprechend gefixt),
-     * aber dieser Check faengt es zusaetzlich ab, falls doch mal
-     * jemand die Reihenfolge vertauscht. */
-    if (b->tick_id && GTK_IS_WIDGET(b->area))
+    /* tick_id ist ein Frame-Clock-Tick-Callback auf b->area. Wir halten
+     * selbst eine Referenz auf b->area (siehe tb_bubble_new), damit das
+     * Objekt auch nach gtk_widget_destroy() gueltig bleibt und das
+     * Entfernen hier immer sicher ist (Reihenfolge egal). */
+    if (b->tick_id && b->area)
         gtk_widget_remove_tick_callback(b->area, b->tick_id);
+    b->tick_id = 0;
     g_clear_object(&b->icon);
     g_free(b->text);
+    if (b->sub_icons) {
+        for (guint i = 0; i < b->sub_icons->len; i++) {
+            TbSubIcon *si = g_ptr_array_index(b->sub_icons, i);
+            g_clear_object(&si->icon);
+            g_free(si->tooltip);
+            g_free(si);
+        }
+        g_ptr_array_free(b->sub_icons, TRUE);
+    }
+    g_clear_object(&b->area);
     g_free(b);
+}
+
+/* ── Multi-Icon-Modus (Tray) ─────────────────────────────────────── */
+
+/* Breite = N Icon-Slots (je min_size breit, wie die Icon-Flaeche einer
+ * normalen Blase) + Rand-Padding, Hoehe wie eine normale Blase. Bei 0
+ * Icons wird die Blase komplett versteckt statt auf 0 Breite geschrumpft
+ * - eine 0px breite, aber trotzdem "sichtbare" leere Blase wuerde als
+ * hauchduenner Strich aufblitzen, sobald das allererste Icon dazukommt. */
+static void bubble_resize_for_sub_icons(TbBubble *b) {
+    guint n = b->sub_icons ? b->sub_icons->len : 0;
+    if (n == 0) {
+        gtk_widget_hide(b->event_box);
+        return;
+    }
+    int slot = b->cfg->bubble.min_size;
+    int w = (int)n * slot + 2 * b->cfg->bubble.padding;
+    int h = b->cfg->bubble.min_size + 2 * b->cfg->bubble.padding;
+    gtk_widget_set_size_request(b->area, w, h);
+    gtk_widget_show_all(b->event_box);
+}
+
+/* Ermittelt aus x/y (Widget-Koordinaten des event_box) den getroffenen
+ * Sub-Icon-Slot - dieselbe Rechnung wie in on_button_press(), nur fuer
+ * Tooltips statt Klicks. GTK ruft das auf, sobald die Maus kurz ueber
+ * einem Widget mit has-tooltip=TRUE ruht. */
+static gboolean on_query_tooltip(GtkWidget *w, gint x, gint y, gboolean keyboard_mode,
+                                  GtkTooltip *tooltip, gpointer user_data) {
+    (void)keyboard_mode;
+    TbBubble *b = user_data;
+    if (!b->sub_icons || b->sub_icons->len == 0) return FALSE;
+    guint n = b->sub_icons->len;
+    GtkAllocation alloc;
+    gtk_widget_get_allocation(w, &alloc);
+    (void)y;
+    double slot_w = alloc.width / (double)n;
+    int idx = slot_w > 0 ? (int)(x / slot_w) : 0;
+    idx = CLAMP(idx, 0, (int)n - 1);
+    TbSubIcon *si = g_ptr_array_index(b->sub_icons, idx);
+    if (!si->tooltip || !*si->tooltip) return FALSE;
+    gtk_tooltip_set_text(tooltip, si->tooltip);
+    return TRUE;
+}
+
+TbBubble *tb_bubble_new_multi(BubbleAssets *assets, BarConfig *cfg) {
+    TbBubble *b = g_new0(TbBubble, 1);
+    b->assets = assets;
+    b->cfg = cfg;
+    b->t = 0.0;
+    b->t_from = 0.0;
+    b->sub_icons = g_ptr_array_new();
+
+    b->area = g_object_ref_sink(gtk_drawing_area_new());
+    gtk_widget_set_name(b->area, "tb-bubble-area");
+    g_signal_connect(b->area, "draw", G_CALLBACK(on_draw), b);
+
+    b->event_box = gtk_event_box_new();
+    gtk_widget_set_can_focus(b->event_box, FALSE);
+    gtk_widget_set_halign(b->event_box, GTK_ALIGN_CENTER);
+    gtk_widget_set_valign(b->event_box, GTK_ALIGN_CENTER);
+    gtk_widget_set_margin_start(b->event_box, cfg->bubble.margin);
+    gtk_widget_set_margin_end(b->event_box, cfg->bubble.margin);
+    gtk_widget_set_margin_top(b->event_box, cfg->bubble.margin);
+    gtk_widget_set_margin_bottom(b->event_box, cfg->bubble.margin);
+    gtk_container_add(GTK_CONTAINER(b->event_box), b->area);
+
+    gtk_widget_add_events(b->event_box, GDK_ENTER_NOTIFY_MASK | GDK_LEAVE_NOTIFY_MASK |
+                                         GDK_BUTTON_PRESS_MASK);
+    g_signal_connect(b->event_box, "enter-notify-event", G_CALLBACK(on_enter), b);
+    g_signal_connect(b->event_box, "leave-notify-event", G_CALLBACK(on_leave), b);
+    g_signal_connect(b->event_box, "button-press-event", G_CALLBACK(on_button_press), b);
+
+    /* Pro-Icon-Tooltips statt einem einzigen fuer die ganze Blase - siehe
+     * on_query_tooltip(). */
+    gtk_widget_set_has_tooltip(b->event_box, TRUE);
+    g_signal_connect(b->event_box, "query-tooltip", G_CALLBACK(on_query_tooltip), b);
+
+    bubble_resize_for_sub_icons(b); /* startet mit 0 Icons -> versteckt */
+    return b;
+}
+
+TbSubIcon *tb_bubble_add_sub_icon(TbBubble *b, GdkPixbuf *icon,
+                                   TbBubbleClickFn left, TbBubbleClickFn right,
+                                   TbBubbleClickFn middle, gpointer user_data) {
+    TbSubIcon *si = g_new0(TbSubIcon, 1);
+    si->icon = icon ? g_object_ref(icon) : NULL;
+    si->on_left = left;
+    si->on_right = right;
+    si->on_middle = middle;
+    si->user_data = user_data;
+    g_ptr_array_add(b->sub_icons, si);
+    bubble_resize_for_sub_icons(b);
+    gtk_widget_queue_draw(b->area);
+    return si;
+}
+
+void tb_bubble_update_sub_icon(TbBubble *b, TbSubIcon *handle, GdkPixbuf *new_icon) {
+    if (!handle) return;
+    g_clear_object(&handle->icon);
+    handle->icon = new_icon ? g_object_ref(new_icon) : NULL;
+    gtk_widget_queue_draw(b->area);
+}
+
+void tb_bubble_set_sub_icon_tooltip(TbBubble *b, TbSubIcon *handle, const char *tooltip) {
+    (void)b;
+    if (!handle) return;
+    g_free(handle->tooltip);
+    handle->tooltip = g_strdup(tooltip);
+}
+
+void tb_bubble_remove_sub_icon(TbBubble *b, TbSubIcon *handle) {
+    if (!handle || !b->sub_icons) return;
+    if (g_ptr_array_remove(b->sub_icons, handle)) {
+        g_clear_object(&handle->icon);
+        g_free(handle);
+        bubble_resize_for_sub_icons(b);
+        gtk_widget_queue_draw(b->area);
+    }
 }
 
 
@@ -886,6 +1265,15 @@ void hypr_ipc_free_clients(GPtrArray *clients);
 int hypr_ipc_get_active_workspace_id(void);
 
 void hypr_ipc_dispatch(const char *dispatcher_and_args); /* "hyprctl dispatch ..." Kurzform */
+
+/* Vorwaerts-Deklarationen fuer die Autohide-Anbindung des OSK-Moduls
+ * (btn_exec_poll() weiter unten braucht das, TbAutohide selbst wird aber
+ * erst viel spaeter im "Autohide: Implementierung"-Abschnitt vollstaendig
+ * definiert - siehe dort fuer die eigentliche Struct/Funktions-Definition). */
+typedef struct TbAutohide TbAutohide;
+static TbAutohide *g_autohide_singleton;
+static void tb_autohide_set_force_visible(TbAutohide *ah, gboolean active);
+static void tb_autohide_menu_hold(TbAutohide *ah, gboolean hold); /* Bar sichtbar halten solange ein Menue offen ist */
 
 /* Event-Abo: callback wird bei JEDER Zeile vom .socket2.sock aufgerufen,
  * z.B. "workspace>>2", "activewindow>>class,title", "openwindow>>...".
@@ -1188,6 +1576,22 @@ static gboolean on_evt_readable(GIOChannel *chan, GIOCondition cond, gpointer us
             line = NULL;
         }
     }
+    /* G_IO_STATUS_AGAIN ist der NORMALE, erwartete Weg aus dieser
+     * Schleife: "gerade keine weitere komplette Zeile im Puffer" - kein
+     * Fehler. Der Kanal MUSS dafuer non-blocking sein (siehe
+     * hypr_ipc_subscribe_events()) - sonst blockiert
+     * g_io_channel_read_line() hier synchron im read()-Syscall, bis
+     * Hyprland die naechste Zeile schickt. Das passiert im HAUPTTHREAD
+     * (gtk_main()) - waehrenddessen steht die GESAMTE Event-Loop still:
+     * keine Timer, keine Klicks, nichts. Genau DAS war der Grund fuer
+     * das komplette Einfrieren der Bar (per gdb-Backtrace bestaetigt:
+     * Thread 1 hing exakt hier in read()). */
+    if (st == G_IO_STATUS_ERROR || st == G_IO_STATUS_EOF) {
+        g_warning("[hypr_ipc] Event-Socket-Lesefehler oder EOF (status=%d)%s%s.",
+                  st, err ? ": " : "", err ? err->message : "");
+        if (err) g_error_free(err);
+        return G_SOURCE_REMOVE;
+    }
     if (err) g_error_free(err);
     return G_SOURCE_CONTINUE;
 }
@@ -1209,6 +1613,18 @@ void hypr_ipc_subscribe_events(HyprEventFn fn, gpointer user_data) {
     GIOChannel *chan = g_io_channel_unix_new(fd);
     g_io_channel_set_close_on_unref(chan, TRUE);
     g_io_channel_set_encoding(chan, NULL, NULL); /* Rohdaten, kein UTF-8-Zwang */
+
+    /* KRITISCH: ohne das hier blockiert on_evt_readable() irgendwann im
+     * Hauptthread und reisst die komplette Event-Loop mit (Klicks,
+     * Timer, alles - siehe ausfuehrlicher Kommentar dort). Non-blocking
+     * heisst: g_io_channel_read_line() gibt sofort G_IO_STATUS_AGAIN
+     * zurueck statt zu warten, sobald der Puffer leer ist. */
+    GError *flags_err = NULL;
+    if (g_io_channel_set_flags(chan, G_IO_FLAG_NONBLOCK, &flags_err) != G_IO_STATUS_NORMAL) {
+        g_warning("[hypr_ipc] Konnte Event-Socket nicht auf non-blocking setzen: %s",
+                  flags_err ? flags_err->message : "?");
+        g_clear_error(&flags_err);
+    }
 
     EventSub *sub = g_new0(EventSub, 1);
     sub->fn = fn;
@@ -1243,9 +1659,18 @@ void    tb_tray_free(TbTray *tray);
 
 
 /* ═══════════════════════════ tray : Implementierung ═══════════════════════════ */
-#define SNW_BUS_NAME "org.freedesktop.StatusNotifierWatcher"
+#define SNW_BUS_NAME "org.kde.StatusNotifierWatcher"
+/* Tray.txt: "org.kde.StatusNotifierWatcher" ist die kanonische, von echten
+ * Clients (u.a. hyprland-minimizer) tatsaechlich abgefragte Adresse - der
+ * freedesktop.org-Name ist historisch nur ein optionaler Alias, den manche
+ * (nicht alle!) Clients zusaetzlich pruefen. Vorher stand hier NUR der
+ * freedesktop-Name - dadurch war "org.kde.StatusNotifierWatcher" komplett
+ * unbesetzt, RegisterStatusNotifierItem-Aufrufe dorthin liefen ins Leere.
+ * Wir beanspruchen jetzt BEIDE (siehe tb_tray_new()), damit auch Clients
+ * erreicht werden, die (unueblicherweise) nur den freedesktop-Namen pruefen. */
+#define SNW_BUS_NAME_FALLBACK "org.freedesktop.StatusNotifierWatcher"
 #define SNW_OBJ_PATH "/StatusNotifierWatcher"
-#define SNW_IFACE    "org.freedesktop.StatusNotifierWatcher"
+#define SNW_IFACE    "org.kde.StatusNotifierWatcher"
 #define SNI_IFACE    "org.kde.StatusNotifierItem"
 
 typedef struct {
@@ -1253,12 +1678,15 @@ typedef struct {
     char    *service;       /* Bus-Name des Tray-Clients */
     char    *object_path;   /* meist "/StatusNotifierItem" */
     GDBusProxy *proxy;      /* org.kde.StatusNotifierItem am Client */
-    TbBubble *bubble;
+    TbSubIcon *sub_icon;    /* Slot in tray->shared_bubble - siehe tb_bubble_new_multi() */
     guint    signal_id;
 } TbTrayItem;
 
 struct TbTray {
     GtkWidget    *container;
+    TbBubble     *shared_bubble; /* EINE gestreckte Blase fuer ALLE Tray-Icons
+                                   * (statt einer Blase pro Icon) - siehe
+                                   * tb_bubble_new_multi(). */
     BubbleAssets *assets;
     BarConfig    *cfg;
 
@@ -1267,11 +1695,13 @@ struct TbTray {
 
     gboolean we_are_watcher;
     guint    own_name_id;
+    guint    own_name_id_fallback; /* org.freedesktop.StatusNotifierWatcher, siehe SNW_BUS_NAME_FALLBACK */
     guint    watcher_reg_id;   /* Object-Registrierung, falls wir Watcher sind */
     GDBusNodeInfo *watcher_introspection;
 
     GDBusProxy *watcher_proxy; /* falls jemand anders Watcher ist */
     guint watcher_signal_sub;
+    guint name_owner_sub; /* NameOwnerChanged-Abo, siehe Tray.txt "Aufraeumen nicht vergessen" */
 
     GPtrArray *items; /* TbTrayItem* */
 };
@@ -1281,7 +1711,7 @@ struct TbTray {
  * (nm-applet, blueman-applet, xwaylandvideobridge, ...). */
 static const char *watcher_xml =
 "<node>"
-"  <interface name='org.freedesktop.StatusNotifierWatcher'>"
+"  <interface name='org.kde.StatusNotifierWatcher'>"
 "    <method name='RegisterStatusNotifierItem'>"
 "      <arg type='s' name='service' direction='in'/>"
 "    </method>"
@@ -1365,6 +1795,7 @@ static void tray_item_refresh_icon(TbTrayItem *it) {
     if (!it->proxy) return;
 
     GdkPixbuf *pb = NULL;
+    const char *source = "keins";
 
     GVariant *icon_name_v = proxy_get_prop(it->proxy, "IconName");
     const char *icon_name = icon_name_v ? g_variant_get_string(icon_name_v, NULL) : NULL;
@@ -1374,27 +1805,33 @@ static void tray_item_refresh_icon(TbTrayItem *it) {
         pb = gtk_icon_theme_load_icon(gtk_icon_theme_get_default(), icon_name,
                                        it->owner->cfg->icon_size,
                                        GTK_ICON_LOOKUP_FORCE_SIZE, &err);
-        if (err) g_error_free(err);
+        if (err) {
+            g_message("[tray] '%s': IconName='%s' im Theme nicht gefunden (%s), versuche IconPixmap.",
+                      it->service, icon_name, err->message);
+            g_error_free(err);
+        } else {
+            source = "IconName";
+        }
     }
     if (!pb) {
         GVariant *pixmap_v = proxy_get_prop(it->proxy, "IconPixmap");
         pb = pixbuf_from_iconpixmap_variant(pixmap_v);
         if (pb) {
+            source = "IconPixmap";
             /* auf konfigurierte Icon-Groesse bringen */
             int size = it->owner->cfg->icon_size;
             GdkPixbuf *scaled = gdk_pixbuf_scale_simple(pb, size, size, GDK_INTERP_BILINEAR);
             g_object_unref(pb);
             pb = scaled;
         }
+        if (pixmap_v) g_variant_unref(pixmap_v);
     }
     if (icon_name_v) g_variant_unref(icon_name_v);
 
+    g_message("[tray] '%s': Icon-Quelle=%s (%s)", it->service, source, pb ? "geladen" : "FEHLGESCHLAGEN - Fallback-Icon bleibt");
+
     if (pb) {
-        /* tb_bubble_set_icon erwartet einen Icon-Theme-Namen, kein
-         * direktes Pixbuf - also setzen wir es hier direkt am Widget
-         * vorbei ueber das Draw-Icon-Feld. Kleiner Kompromiss: wir
-         * kapseln das ueber eine dedizierte Bubble-API. */
-        tb_bubble_set_icon_pixbuf(it->bubble, pb); /* siehe bubble.c-Ergaenzung */
+        tb_bubble_update_sub_icon(it->owner->shared_bubble, it->sub_icon, pb);
         g_object_unref(pb);
     }
 
@@ -1411,27 +1848,247 @@ static void tray_item_refresh_icon(TbTrayItem *it) {
         else if (tip_title && *tip_title) tip = tip_title;
     }
     if (!tip && title_v) tip_owned = g_variant_dup_string(title_v, NULL);
-    tb_bubble_set_tooltip(it->bubble, tip ? tip : (tip_owned ? tip_owned : it->service));
+    tb_bubble_set_sub_icon_tooltip(it->owner->shared_bubble, it->sub_icon,
+                                    tip ? tip : (tip_owned ? tip_owned : it->service));
     g_free(tip_owned);
     if (tooltip_v) g_variant_unref(tooltip_v);
     if (title_v) g_variant_unref(title_v);
 }
 
+/*  dbusmenu-Client (com.canonical.dbusmenu)
+ * Steam, Discord & Co. (libappindicator/Ayatana) implementieren
+ * ContextMenu() NICHT - der Host muss das Menue selbst aus dem
+ * dbusmenu-Objekt (SNI-Property "Menu") aufbauen, genau wie Waybar. */
+#define DBUSMENU_IFACE "com.canonical.dbusmenu"
+
+typedef struct {
+    GDBusConnection *conn; /* nicht besessen */
+    char *service;
+    char *path;
+} TbDbusMenuCtx;
+
+static void dbusmenu_ctx_free(gpointer p) {
+    TbDbusMenuCtx *c = p;
+    if (!c) return;
+    g_free(c->service);
+    g_free(c->path);
+    g_free(c);
+}
+
+static void dbusmenu_send_event(TbDbusMenuCtx *ctx, gint32 id, const char *event) {
+    g_dbus_connection_call(ctx->conn, ctx->service, ctx->path, DBUSMENU_IFACE, "Event",
+                           g_variant_new("(isvu)", id, event, g_variant_new_int32(0),
+                                         (guint32)(g_get_monotonic_time() / 1000)),
+                           NULL, G_DBUS_CALL_FLAGS_NONE, -1, NULL, NULL, NULL);
+}
+
+static void dbusmenu_item_activated(GtkMenuItem *item, gpointer user_data) {
+    TbDbusMenuCtx *ctx = user_data;
+    gint32 id = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(item), "tb-dbusmenu-id"));
+    dbusmenu_send_event(ctx, id, "clicked");
+}
+
+/* children: GVariant vom Typ av (Liste von (ia{sv}av)) */
+static GtkWidget *dbusmenu_build(TbDbusMenuCtx *ctx, GVariant *children) {
+    GtkWidget *menu = gtk_menu_new();
+    GVariantIter iter;
+    GVariant *cv;
+    g_variant_iter_init(&iter, children);
+    while ((cv = g_variant_iter_next_value(&iter))) {
+        GVariant *node = g_variant_get_variant(cv);
+        gint32 id = 0;
+        GVariant *props = NULL, *kids = NULL;
+        g_variant_get(node, "(i@a{sv}@av)", &id, &props, &kids);
+
+        gchar *type = NULL, *label = NULL, *toggle = NULL;
+        gboolean enabled = TRUE, visible = TRUE;
+        gint32 tstate = -1;
+        g_variant_lookup(props, "type", "s", &type);
+        g_variant_lookup(props, "label", "s", &label);
+        g_variant_lookup(props, "enabled", "b", &enabled);
+        g_variant_lookup(props, "visible", "b", &visible);
+        g_variant_lookup(props, "toggle-type", "s", &toggle);
+        g_variant_lookup(props, "toggle-state", "i", &tstate);
+
+        if (visible) {
+            GtkWidget *mi;
+            if (g_strcmp0(type, "separator") == 0) {
+                mi = gtk_separator_menu_item_new();
+            } else {
+                const char *lab = label ? label : "";
+                if (g_strcmp0(toggle, "checkmark") == 0 || g_strcmp0(toggle, "radio") == 0) {
+                    mi = gtk_check_menu_item_new_with_mnemonic(lab);
+                    if (g_strcmp0(toggle, "radio") == 0)
+                        gtk_check_menu_item_set_draw_as_radio(GTK_CHECK_MENU_ITEM(mi), TRUE);
+                    gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(mi), tstate == 1);
+                } else {
+                    mi = gtk_menu_item_new_with_mnemonic(lab);
+                }
+                gtk_widget_set_sensitive(mi, enabled);
+                if (kids && g_variant_n_children(kids) > 0) {
+                    gtk_menu_item_set_submenu(GTK_MENU_ITEM(mi), dbusmenu_build(ctx, kids));
+                } else {
+                    g_object_set_data(G_OBJECT(mi), "tb-dbusmenu-id", GINT_TO_POINTER(id));
+                    g_signal_connect(mi, "activate", G_CALLBACK(dbusmenu_item_activated), ctx);
+                }
+            }
+            gtk_menu_shell_append(GTK_MENU_SHELL(menu), mi);
+            gtk_widget_show(mi);
+        }
+
+        g_free(type); g_free(label); g_free(toggle);
+        if (props) g_variant_unref(props);
+        if (kids) g_variant_unref(kids);
+        g_variant_unref(node);
+        g_variant_unref(cv);
+    }
+    return menu;
+}
+
+typedef struct {
+    TbDbusMenuCtx *ctx;   /* geht beim Anzeigen an das Menue ueber */
+    GtkWidget *anchor;    /* referenziert */
+    gboolean   top;
+    double     x;
+    GdkEvent  *ev;        /* Kopie des Klick-Events (fuer den Popup-Grab) */
+} TbMenuReq;
+
+static void menu_req_free(TbMenuReq *rq) {
+    dbusmenu_ctx_free(rq->ctx);
+    if (rq->anchor) g_object_unref(rq->anchor);
+    if (rq->ev) gdk_event_free(rq->ev);
+    g_free(rq);
+}
+
+static gboolean dbusmenu_destroy_idle(gpointer m) {
+    gtk_widget_destroy(GTK_WIDGET(m));
+    g_object_unref(m);
+    return G_SOURCE_REMOVE;
+}
+
+static void dbusmenu_deactivated(GtkMenuShell *shell, gpointer user_data) {
+    (void)user_data;
+    tb_autohide_menu_hold(g_autohide_singleton, FALSE);
+    g_idle_add(dbusmenu_destroy_idle, shell); /* unsere Referenz geht an den Idle */
+}
+
+static void dbusmenu_layout_cb(GObject *src, GAsyncResult *res, gpointer user_data) {
+    TbMenuReq *rq = user_data;
+    GError *err = NULL;
+    GVariant *ret = g_dbus_connection_call_finish(G_DBUS_CONNECTION(src), res, &err);
+    if (!ret) {
+        g_warning("[tray] dbusmenu GetLayout fehlgeschlagen: %s", err ? err->message : "?");
+        if (err) g_error_free(err);
+        menu_req_free(rq);
+        return;
+    }
+    guint32 rev = 0;
+    GVariant *layout = NULL;
+    g_variant_get(ret, "(u@(ia{sv}av))", &rev, &layout);
+    gint32 rid = 0;
+    GVariant *rprops = NULL, *rkids = NULL;
+    g_variant_get(layout, "(i@a{sv}@av)", &rid, &rprops, &rkids);
+
+    if (!rkids || g_variant_n_children(rkids) == 0) {
+        g_message("[tray] dbusmenu: leeres Menue.");
+    } else {
+        GtkWidget *menu = dbusmenu_build(rq->ctx, rkids);
+        g_object_set_data_full(G_OBJECT(menu), "tb-ctx", rq->ctx, dbusmenu_ctx_free);
+        rq->ctx = NULL; /* gehoert jetzt dem Menue */
+        g_object_ref_sink(menu);
+        g_signal_connect(menu, "deactivate", G_CALLBACK(dbusmenu_deactivated), NULL);
+        tb_autohide_menu_hold(g_autohide_singleton, TRUE);
+
+        GtkAllocation alloc;
+        gtk_widget_get_allocation(rq->anchor, &alloc);
+        GdkRectangle rect = { (int)rq->x, 0, 1, MAX(1, alloc.height) };
+        gtk_menu_popup_at_rect(GTK_MENU(menu), gtk_widget_get_window(rq->anchor), &rect,
+                               rq->top ? GDK_GRAVITY_SOUTH_WEST : GDK_GRAVITY_NORTH_WEST,
+                               rq->top ? GDK_GRAVITY_NORTH_WEST : GDK_GRAVITY_SOUTH_WEST,
+                               rq->ev);
+        if (!gtk_widget_get_visible(menu)) { /* Popup fehlgeschlagen -> nichts festhalten */
+            tb_autohide_menu_hold(g_autohide_singleton, FALSE);
+            g_idle_add(dbusmenu_destroy_idle, menu);
+        }
+    }
+    if (rprops) g_variant_unref(rprops);
+    if (rkids) g_variant_unref(rkids);
+    g_variant_unref(layout);
+    g_variant_unref(ret);
+    menu_req_free(rq);
+}
+
+/* Liefert den dbusmenu-Objektpfad des Items (NULL wenn keins). */
+static char *tray_item_menu_path(TbTrayItem *it) {
+    if (!it->proxy) return NULL;
+    GVariant *v = g_dbus_proxy_get_cached_property(it->proxy, "Menu");
+    char *p = NULL;
+    if (v) {
+        const char *sp = g_variant_get_string(v, NULL);
+        if (sp && *sp && g_strcmp0(sp, "/") != 0) p = g_strdup(sp);
+        g_variant_unref(v);
+    }
+    return p;
+}
+
+static void tray_item_show_menu(TbTrayItem *it, const char *menu_path) {
+    TbTray *tray = it->owner;
+    GtkWidget *anchor = tb_bubble_widget(tray->shared_bubble);
+    TbMenuReq *rq = g_new0(TbMenuReq, 1);
+    rq->ctx = g_new0(TbDbusMenuCtx, 1);
+    rq->ctx->conn = tray->conn;
+    rq->ctx->service = g_strdup(it->service);
+    rq->ctx->path = g_strdup(menu_path);
+    rq->anchor = g_object_ref(anchor);
+    rq->top = g_strcmp0(tray->cfg->position, "top") == 0;
+    rq->ev = gtk_get_current_event(); /* Kopie, im Klick-Handler gueltig */
+    double ex = 0;
+    if (rq->ev) gdk_event_get_coords(rq->ev, &ex, NULL);
+    rq->x = ex;
+
+    /* AboutToShow + GetLayout gehen in Reihenfolge auf dieselbe Verbindung. */
+    g_dbus_connection_call(tray->conn, it->service, menu_path, DBUSMENU_IFACE, "AboutToShow",
+                           g_variant_new("(i)", 0), NULL, G_DBUS_CALL_FLAGS_NONE, -1, NULL, NULL, NULL);
+    const char *no_props[] = { NULL };
+    g_dbus_connection_call(tray->conn, it->service, menu_path, DBUSMENU_IFACE, "GetLayout",
+                           g_variant_new("(ii^as)", 0, -1, no_props), G_VARIANT_TYPE("(u(ia{sv}av))"),
+                           G_DBUS_CALL_FLAGS_NONE, 2000, NULL, dbusmenu_layout_cb, rq);
+}
+
 static void on_item_click_left(gpointer user_data) {
     TbTrayItem *it = user_data;
-    if (!it->proxy) return;
+    g_message("[tray] Klick (links/Activate) auf '%s'.", it->service);
+    if (!it->proxy) { g_warning("[tray] '%s': kein Proxy, Klick ignoriert.", it->service); return; }
+    /* ItemIsMenu: der Client hat keine Activate()-Aktion, Linksklick = Menue. */
+    GVariant *iim = g_dbus_proxy_get_cached_property(it->proxy, "ItemIsMenu");
+    gboolean is_menu = iim && g_variant_is_of_type(iim, G_VARIANT_TYPE_BOOLEAN) && g_variant_get_boolean(iim);
+    if (iim) g_variant_unref(iim);
+    char *mp = is_menu ? tray_item_menu_path(it) : NULL;
+    if (mp) {
+        tray_item_show_menu(it, mp);
+        g_free(mp);
+        return;
+    }
     g_dbus_proxy_call(it->proxy, "Activate", g_variant_new("(ii)", 0, 0),
                        G_DBUS_CALL_FLAGS_NONE, -1, NULL, NULL, NULL);
 }
 static void on_item_click_right(gpointer user_data) {
     TbTrayItem *it = user_data;
-    if (!it->proxy) return;
+    g_message("[tray] Klick (rechts/Menue) auf '%s'.", it->service);
+    if (!it->proxy) { g_warning("[tray] '%s': kein Proxy, Klick ignoriert.", it->service); return; }
+    char *mp = tray_item_menu_path(it);
+    if (mp) { /* dbusmenu vorhanden -> selbst rendern (Steam u.a.) */
+        tray_item_show_menu(it, mp);
+        g_free(mp);
+        return;
+    }
     g_dbus_proxy_call(it->proxy, "ContextMenu", g_variant_new("(ii)", 0, 0),
                        G_DBUS_CALL_FLAGS_NONE, -1, NULL, NULL, NULL);
 }
 static void on_item_click_middle(gpointer user_data) {
     TbTrayItem *it = user_data;
-    if (!it->proxy) return;
+    g_message("[tray] Klick (mitte/SecondaryActivate) auf '%s'.", it->service);
+    if (!it->proxy) { g_warning("[tray] '%s': kein Proxy, Klick ignoriert.", it->service); return; }
     g_dbus_proxy_call(it->proxy, "SecondaryActivate", g_variant_new("(ii)", 0, 0),
                        G_DBUS_CALL_FLAGS_NONE, -1, NULL, NULL, NULL);
 }
@@ -1454,6 +2111,7 @@ static void on_item_proxy_ready(GObject *src, GAsyncResult *res, gpointer user_d
         if (err) g_error_free(err);
         return;
     }
+    g_message("[tray] Proxy fuer '%s' (%s) bereit - lade Icon/Tooltip.", it->service, it->object_path);
     it->signal_id = g_signal_connect(it->proxy, "g-signal", G_CALLBACK(on_item_signal), it);
     tray_item_refresh_icon(it);
 }
@@ -1488,11 +2146,17 @@ static void tray_add_item(TbTray *tray, const char *service_arg, const char *sen
     it->owner = tray;
     it->service = service;
     it->object_path = object_path;
-    it->bubble = tb_bubble_new(tray->assets, tray->cfg, "application-x-executable", NULL);
-    tb_bubble_set_click_handlers(it->bubble, on_item_click_left, on_item_click_right,
-                                  on_item_click_middle, it);
-    gtk_box_pack_start(GTK_BOX(tray->container), tb_bubble_widget(it->bubble), FALSE, FALSE, 0);
-    gtk_widget_show_all(tb_bubble_widget(it->bubble));
+    g_message("[tray] neues Item: service='%s' object_path='%s'", service, object_path);
+
+    /* Fallback-Icon, bis der Proxy-Callback das echte IconName/IconPixmap
+     * nachlaedt (tray_item_refresh_icon()) - direkt als eigener Slot in
+     * DERSELBEN gestreckten Tray-Blase statt einer eigenen Blase pro
+     * Item. */
+    GdkPixbuf *fallback = lookup_icon(tray->cfg, "application-x-executable");
+    it->sub_icon = tb_bubble_add_sub_icon(tray->shared_bubble, fallback,
+                                           on_item_click_left, on_item_click_right,
+                                           on_item_click_middle, it);
+    g_clear_object(&fallback); /* tb_bubble_add_sub_icon() nimmt seine eigene Referenz */
 
     g_ptr_array_add(tray->items, it);
 
@@ -1506,14 +2170,8 @@ static void tray_item_free(TbTrayItem *it) {
         if (it->signal_id) g_signal_handler_disconnect(it->proxy, it->signal_id);
         g_object_unref(it->proxy);
     }
-    if (it->bubble) {
-        /* WICHTIG: erst Widget-Zeiger sichern (tb_bubble_free() gibt
-         * den TbBubble selbst frei, danach ist it->bubble ungueltig -
-         * tb_bubble_widget() darf also nur VORHER aufgerufen werden). */
-        GtkWidget *w = tb_bubble_widget(it->bubble);
-        tb_bubble_free(it->bubble);
-        gtk_widget_destroy(w);
-    }
+    if (it->sub_icon)
+        tb_bubble_remove_sub_icon(it->owner->shared_bubble, it->sub_icon);
     g_free(it->service);
     g_free(it->object_path);
     g_free(it);
@@ -1560,6 +2218,7 @@ static void watcher_method_call(GDBusConnection *conn, const char *sender,
     if (g_strcmp0(method_name, "RegisterStatusNotifierItem") == 0) {
         const char *service_arg = NULL;
         g_variant_get(params, "(&s)", &service_arg);
+        g_message("[tray] RegisterStatusNotifierItem: sender='%s' arg='%s'", sender, service_arg);
         tray_add_item(tray, service_arg, sender);
         g_dbus_connection_emit_signal(tray->conn, NULL, SNW_OBJ_PATH, SNW_IFACE,
                                        "StatusNotifierItemRegistered",
@@ -1597,6 +2256,49 @@ static const GDBusInterfaceVTable watcher_vtable = {
     .set_property = NULL,
 };
 
+/* Tray.txt, "Aufraeumen nicht vergessen": wird aufgerufen, sobald
+ * IRGENDEIN Bus-Name auf dem Session-Bus seinen Besitzer verliert.
+ * Interessiert uns nur, wenn der verschwundene Name zu einem UNSERER
+ * registrierten Items gehoert (Prozess beendet/gecrasht) - dann raus
+ * aus der Liste + StatusNotifierItemUnregistered emittieren, damit sich
+ * keine Leichen ansammeln. */
+static void on_name_owner_changed(GDBusConnection *conn, const char *sender,
+                                   const char *object_path, const char *interface_name,
+                                   const char *signal_name, GVariant *params, gpointer user_data) {
+    (void)conn; (void)sender; (void)object_path; (void)interface_name; (void)signal_name;
+    TbTray *tray = user_data;
+    const char *name = NULL, *old_owner = NULL, *new_owner = NULL;
+    g_variant_get(params, "(&s&s&s)", &name, &old_owner, &new_owner);
+    if (new_owner && *new_owner) return; /* Name hat einfach nur den Besitzer gewechselt */
+
+    gboolean was_ours = FALSE;
+    for (guint i = 0; i < tray->items->len; i++) {
+        TbTrayItem *it = g_ptr_array_index(tray->items, i);
+        if (g_strcmp0(it->service, name) == 0) { was_ours = TRUE; break; }
+    }
+    if (!was_ours) return;
+
+    g_message("[tray] Item-Prozess '%s' ist vom Bus verschwunden (NameOwnerChanged) - raeume auf.", name);
+    tray_remove_item_by_service(tray, name);
+    g_dbus_connection_emit_signal(tray->conn, NULL, SNW_OBJ_PATH, SNW_IFACE,
+                                   "StatusNotifierItemUnregistered",
+                                   g_variant_new("(s)", name), NULL);
+}
+
+/* Reiner Zusatz-Namensbeanspruch fuer org.freedesktop.StatusNotifierWatcher
+ * (siehe SNW_BUS_NAME_FALLBACK) - das eigentliche Objekt wird bereits ueber
+ * den primaeren org.kde.*-Namen exportiert, hier gibt's nichts weiter zu
+ * tun ausser zu loggen. */
+static void on_fallback_name_acquired(GDBusConnection *conn, const char *name, gpointer user_data) {
+    (void)conn; (void)user_data;
+    g_message("[tray] Fallback-Name '%s' zusaetzlich uebernommen.", name);
+}
+static void on_fallback_name_lost(GDBusConnection *conn, const char *name, gpointer user_data) {
+    (void)conn; (void)user_data;
+    g_message("[tray] Fallback-Name '%s' nicht bekommen (evtl. von jemand anderem besetzt) - "
+              "kein Problem, org.kde.StatusNotifierWatcher ist der wichtige.", name);
+}
+
 static void on_watcher_name_acquired(GDBusConnection *conn, const char *name, gpointer user_data) {
     (void)name;
     TbTray *tray = user_data;
@@ -1613,6 +2315,20 @@ static void on_watcher_name_acquired(GDBusConnection *conn, const char *name, gp
     } else {
         g_message("[tray] Kein StatusNotifierWatcher gefunden - TrafkTuxBar uebernimmt die Rolle.");
     }
+
+    /* Tray.txt, "Aufraeumen nicht vergessen": auf NameOwnerChanged fuer
+     * org.freedesktop.DBus lauschen - stirbt ein registriertes Item
+     * (Prozess beendet sich, z.B. hyprland-minimizer nachdem er fertig
+     * ist), verschwindet dessen Bus-Name komplett vom Bus (new_owner
+     * wird leer). Ohne diesen Handler sammeln sich dafuer "Leichen" in
+     * tray->items an - nur relevant, wenn WIR der Watcher sind (ist ein
+     * externer Watcher aktiv, ist DAS dessen Job, nicht unserer - unsere
+     * Host-Seite bekommt dessen StatusNotifierItemUnregistered-Signal
+     * bereits ueber on_ext_watcher_signal()). */
+    tray->name_owner_sub = g_dbus_connection_signal_subscribe(
+        conn, "org.freedesktop.DBus", "org.freedesktop.DBus", "NameOwnerChanged",
+        "/org/freedesktop/DBus", NULL, G_DBUS_SIGNAL_FLAGS_NONE,
+        on_name_owner_changed, tray, NULL);
 }
 
 static void on_watcher_name_lost(GDBusConnection *conn, const char *name, gpointer user_data) {
@@ -1699,20 +2415,39 @@ TbTray *tb_tray_new(GtkWidget *container, BubbleAssets *assets, BarConfig *cfg) 
     tray->items = g_ptr_array_new();
     tray->watcher_introspection = g_dbus_node_info_new_for_xml(watcher_xml, NULL);
 
+    /* EINE gestreckte Blase fuer den ganzen Tray statt einer pro Icon -
+     * startet leer/versteckt, waechst automatisch mit jedem
+     * tb_bubble_add_sub_icon()-Aufruf aus tray_add_item(). */
+    tray->shared_bubble = tb_bubble_new_multi(assets, cfg);
+    gtk_box_pack_start(GTK_BOX(container), tb_bubble_widget(tray->shared_bubble), FALSE, FALSE, 0);
+
     tray->conn = g_bus_get_sync(G_BUS_TYPE_SESSION, NULL, NULL);
     if (!tray->conn) {
         g_warning("[tray] Keine Session-D-Bus-Verbindung - Tray bleibt leer.");
         return tray;
     }
     tray->unique_name = g_strdup(g_dbus_connection_get_unique_name(tray->conn));
+    g_message("[tray] D-Bus verbunden als '%s'.", tray->unique_name);
 
-    if (external_watcher_exists()) {
+    gboolean ext_exists = external_watcher_exists();
+    g_message("[tray] externer StatusNotifierWatcher gefunden: %s", ext_exists ? "ja" : "nein");
+    if (ext_exists) {
         connect_to_external_watcher(tray);
     } else {
         tray->own_name_id = g_bus_own_name(G_BUS_TYPE_SESSION, SNW_BUS_NAME,
                                             G_BUS_NAME_OWNER_FLAGS_NONE,
                                             NULL, on_watcher_name_acquired, on_watcher_name_lost,
                                             tray, NULL);
+        /* Zusaetzlich den freedesktop-Alias beanspruchen (siehe Kommentar
+         * bei SNW_BUS_NAME_FALLBACK) - das Objekt selbst ist schon exportiert
+         * (passiert in on_watcher_name_acquired() fuer den primaeren Namen),
+         * D-Bus-Objektexporte gelten pro VERBINDUNG, nicht pro Bus-Name -
+         * hier muss also nichts nochmal registriert werden, nur der
+         * zusaetzliche Name beansprucht werden. */
+        tray->own_name_id_fallback = g_bus_own_name(G_BUS_TYPE_SESSION, SNW_BUS_NAME_FALLBACK,
+                                                      G_BUS_NAME_OWNER_FLAGS_NONE,
+                                                      NULL, on_fallback_name_acquired, on_fallback_name_lost,
+                                                      NULL, NULL);
     }
 
     return tray;
@@ -1724,9 +2459,21 @@ void tb_tray_free(TbTray *tray) {
         tray_item_free(g_ptr_array_index(tray->items, i));
     g_ptr_array_free(tray->items, TRUE);
 
+    if (tray->shared_bubble) {
+        /* wie beim alten Pro-Item-Bubble-Cleanup: erst Widget-Zeiger
+         * sichern, dann tb_bubble_free() (gibt den TbBubble selbst frei),
+         * dann erst das GTK-Widget zerstoeren. */
+        GtkWidget *w = tb_bubble_widget(tray->shared_bubble);
+        tb_bubble_free(tray->shared_bubble);
+        gtk_widget_destroy(w);
+    }
+
     if (tray->watcher_reg_id && tray->conn)
         g_dbus_connection_unregister_object(tray->conn, tray->watcher_reg_id);
+    if (tray->name_owner_sub && tray->conn)
+        g_dbus_connection_signal_unsubscribe(tray->conn, tray->name_owner_sub);
     if (tray->own_name_id) g_bus_unown_name(tray->own_name_id);
+    if (tray->own_name_id_fallback) g_bus_unown_name(tray->own_name_id_fallback);
     if (tray->watcher_proxy) g_object_unref(tray->watcher_proxy);
     if (tray->watcher_introspection) g_dbus_node_info_unref(tray->watcher_introspection);
     g_free(tray->unique_name);
@@ -1752,6 +2499,7 @@ typedef struct {
     TbBubble *bubble;
     guint exec_timeout_id;
     guint clock_timeout_id;
+    gboolean exec_busy;      /* async Exec laeuft gerade */
     gboolean clock_alt_shown;
     BarConfig *cfg;
 } ButtonRuntime;
@@ -1806,47 +2554,87 @@ static void run_shell(const char *cmd) {
 
 /* ── MOD_BUTTON ─────────────────────────────────────────────────── */
 
-static void btn_click_left(gpointer ud) { ButtonRuntime *r = ud; run_shell(r->mc->on_click); }
+static gboolean btn_exec_poll(gpointer user_data);
+
+static gboolean btn_recheck_cb(gpointer ud) {
+    btn_exec_poll(ud);
+    return G_SOURCE_REMOVE;
+}
+
+/* Nach einem Klick den Zustand des Moduls schnell neu abfragen (statt bis zu
+ * exec_interval_sec zu warten) - z.B. damit die Bar sofort ueber die gerade
+ * gestartete Bildschirmtastatur springt. */
+static void btn_schedule_recheck(ButtonRuntime *r) {
+    if (r->mc->exec_cmd && r->mc->exec_interval_sec > 0) {
+        g_timeout_add(350, btn_recheck_cb, r);
+        g_timeout_add(1200, btn_recheck_cb, r);
+    }
+}
+
+static void btn_click_left(gpointer ud) { ButtonRuntime *r = ud; run_shell(r->mc->on_click); btn_schedule_recheck(r); }
 static void btn_click_right(gpointer ud) { ButtonRuntime *r = ud; run_shell(r->mc->on_click_right); }
 static void btn_click_middle(gpointer ud) { ButtonRuntime *r = ud; run_shell(r->mc->on_click_middle); }
 
-static gboolean btn_exec_poll(gpointer user_data) {
-    ButtonRuntime *r = user_data;
-    gchar *out = NULL;
-    gint status = 0;
-    GError *err = NULL;
-    /* WICHTIG: g_spawn_command_line_sync() geht NICHT ueber eine Shell -
-     * es zerlegt die Zeile nur in Woerter und execve()'t argv[0] direkt.
-     * exec_cmd darf in der Config aber &&/||/> etc. enthalten (siehe
-     * z.B. das osk-Modul) - dafuer brauchen wir wirklich /bin/sh -c. */
-    char *argv[] = { "/bin/sh", "-c", r->mc->exec_cmd, NULL };
-    if (g_spawn_sync(NULL, argv, NULL, G_SPAWN_SEARCH_PATH, NULL, NULL,
-                      &out, NULL, &status, &err) && out) {
-        g_strchomp(out);
-        if (r->mc->exec_return_json && *out) {
-            JsonParser *parser = json_parser_new();
-            if (json_parser_load_from_data(parser, out, -1, NULL)) {
-                JsonObject *o = json_node_get_object(json_parser_get_root(parser));
-                if (o) {
-                    if (json_object_has_member(o, "class")) {
-                        const char *cls = json_object_get_string_member(o, "class");
-                        tb_bubble_set_forced_active(r->bubble, g_strcmp0(cls, "active") == 0);
-                    }
-                    if (json_object_has_member(o, "tooltip"))
-                        tb_bubble_set_tooltip(r->bubble, json_object_get_string_member(o, "tooltip"));
-                    else if (r->mc->tooltip)
-                        tb_bubble_set_tooltip(r->bubble, r->mc->tooltip);
-                    if (json_object_has_member(o, "text"))
-                        tb_bubble_set_text(r->bubble, json_object_get_string_member(o, "text"));
+static void btn_exec_apply(ButtonRuntime *r, const char *out) {
+    if (r->mc->exec_return_json && *out) {
+        JsonParser *parser = json_parser_new();
+        if (json_parser_load_from_data(parser, out, -1, NULL)) {
+            JsonObject *o = json_node_get_object(json_parser_get_root(parser));
+            if (o) {
+                if (json_object_has_member(o, "class")) {
+                    const char *cls = json_object_get_string_member(o, "class");
+                    gboolean is_active = g_strcmp0(cls, "active") == 0;
+                    tb_bubble_set_forced_active(r->bubble, is_active);
+                    /* Sonderfall Bildschirmtastatur - siehe
+                     * tb_autohide_set_force_visible(). */
+                    if (g_strcmp0(r->mc->id, "osk") == 0)
+                        tb_autohide_set_force_visible(g_autohide_singleton, is_active);
                 }
+                if (json_object_has_member(o, "tooltip"))
+                    tb_bubble_set_tooltip(r->bubble, json_object_get_string_member(o, "tooltip"));
+                else if (r->mc->tooltip)
+                    tb_bubble_set_tooltip(r->bubble, r->mc->tooltip);
+                if (json_object_has_member(o, "text"))
+                    tb_bubble_set_text(r->bubble, json_object_get_string_member(o, "text"));
             }
-            g_object_unref(parser);
-        } else if (*out) {
-            tb_bubble_set_tooltip(r->bubble, out);
         }
+        g_object_unref(parser);
+    } else if (*out) {
+        tb_bubble_set_tooltip(r->bubble, out);
+    }
+}
+
+static void btn_exec_done(GObject *src, GAsyncResult *res, gpointer user_data) {
+    ButtonRuntime *r = user_data;
+    GSubprocess *proc = G_SUBPROCESS(src);
+    char *out = NULL;
+    GError *err = NULL;
+    r->exec_busy = FALSE;
+    if (g_subprocess_communicate_utf8_finish(proc, res, &out, NULL, &err) && out) {
+        g_strchomp(out);
+        btn_exec_apply(r, out);
     }
     if (err) g_error_free(err);
     g_free(out);
+    g_object_unref(proc);
+}
+
+/* ASYNCHRON (GSubprocess): der Main-Loop wartet nie auf ein Shell-Skript.
+ * Vorher blockierte g_spawn_sync() z.B. bei HideAll.sh status jede Sekunde
+ * die komplette Bar (Animationen, Klicks, Zeichnen). */
+static gboolean btn_exec_poll(gpointer user_data) {
+    ButtonRuntime *r = user_data;
+    if (r->exec_busy) return G_SOURCE_CONTINUE;
+    GError *err = NULL;
+    GSubprocess *proc = g_subprocess_new(G_SUBPROCESS_FLAGS_STDOUT_PIPE | G_SUBPROCESS_FLAGS_STDERR_SILENCE,
+                                         &err, "/bin/sh", "-c", r->mc->exec_cmd, NULL);
+    if (!proc) {
+        g_warning("[modules] exec fehlgeschlagen: %s", err ? err->message : "?");
+        if (err) g_error_free(err);
+        return G_SOURCE_CONTINUE;
+    }
+    r->exec_busy = TRUE;
+    g_subprocess_communicate_utf8_async(proc, NULL, NULL, btn_exec_done, r);
     return G_SOURCE_CONTINUE;
 }
 
@@ -1894,6 +2682,21 @@ static ModuleRuntime *build_clock(ModuleConfig *mc, GtkWidget *box, BubbleAssets
     r->cfg = cfg;
 
     r->bubble = tb_bubble_new(assets, cfg, NULL, "--:--");
+    /* Etwas kleiner und weisser als der Rest - NUR fuer die Uhr, andere
+     * Text-Blasen (z.B. die Workspace-Nummer) bleiben unveraendert.
+     * "Weisser" = Richtung Weiss gemischt, nicht 100% Weiss (Wunsch war
+     * explizit "nicht komplett aber weisser"). */
+    {
+        GdkRGBA clock_col;
+        const double white_mix = 0.55;
+        clock_col.red   = cfg->text_color.red   + (1.0 - cfg->text_color.red)   * white_mix;
+        clock_col.green = cfg->text_color.green + (1.0 - cfg->text_color.green) * white_mix;
+        clock_col.blue  = cfg->text_color.blue  + (1.0 - cfg->text_color.blue)  * white_mix;
+        clock_col.alpha = cfg->text_color.alpha;
+        /* Wieder groesser (war 10px) + extra Padding links/rechts. */
+        tb_bubble_set_text_style(r->bubble, 14.0, TRUE, clock_col);
+        tb_bubble_set_extra_padding(r->bubble, 9);
+    }
     tb_bubble_set_click_handlers(r->bubble, btn_click_left, clock_click_right, btn_click_middle, r);
     gtk_box_pack_start(GTK_BOX(box), tb_bubble_widget(r->bubble), FALSE, FALSE, 0);
 
@@ -1906,16 +2709,47 @@ static ModuleRuntime *build_clock(ModuleConfig *mc, GtkWidget *box, BubbleAssets
 
 static void ws_click(gpointer ud) {
     int id = GPOINTER_TO_INT(ud);
+    /* WICHTIG: NICHT der Standard-Hyprland-Dispatcher "workspace" -
+     * dieses System laeuft auf dem hl.dsp.*-Wrapper (siehe hyprland.lua),
+     * der eigene Dispatcher-Namen mit Lua-Tabellen-Syntax als Argument
+     * erwartet. "workspace %d" wuerde hier vermutlich schlicht nichts
+     * tun (falscher/unbekannter Dispatcher-Name fuer diesen Hyprland-
+     * Fork). */
     char cmd[64];
-    g_snprintf(cmd, sizeof(cmd), "workspace %d", id);
+    g_snprintf(cmd, sizeof(cmd), "hl.dsp.focus({workspace=%d})", id);
     hypr_ipc_dispatch(cmd);
 }
 
-static void win_click(gpointer ud) {
+/* Linksklick auf ein Taskbar-Fenster-Icon: fokussieren (wechselt bei
+ * Bedarf automatisch den Workspace). 1:1 dieselbe Dispatcher-Syntax wie
+ * im alten, nachweislich funktionierenden WaybarClicks.sh. */
+static void win_click_left(gpointer ud) {
     char *addr = ud; /* "0x..." - static Anzeigezeit, siehe rebuild() */
     char cmd[160];
-    g_snprintf(cmd, sizeof(cmd), "focuswindow address:%s", addr);
+    g_snprintf(cmd, sizeof(cmd), "hl.dsp.focus({window='address:%s'})", addr);
     hypr_ipc_dispatch(cmd);
+}
+
+/* Mittelklick / 3-Finger-Tipp: Fenster schliessen. */
+static void win_click_middle(gpointer ud) {
+    char *addr = ud;
+    char cmd[160];
+    g_snprintf(cmd, sizeof(cmd), "hl.dsp.window.close({window='address:%s'})", addr);
+    hypr_ipc_dispatch(cmd);
+}
+
+/* Rechtsklick: minimieren. hyprland-minimizer wirkt auf das gerade
+ * FOKUSSIERTE Fenster, deshalb - genau wie im alten Skript - erst
+ * fokussieren, dann den Minimizer feuern. Klappt nur zuverlaessig, wenn
+ * ein StatusNotifierWatcher laeuft (siehe Tray.txt) - das uebernimmt
+ * TrafkTuxBar inzwischen selbst (siehe "[tray] ... uebernimmt die Rolle"
+ * im Log), auch ohne dass die eigentliche Tray-Anzeige schon fertig ist. */
+static void win_click_right(gpointer ud) {
+    char *addr = ud;
+    char cmd[160];
+    g_snprintf(cmd, sizeof(cmd), "hl.dsp.focus({window='address:%s'})", addr);
+    hypr_ipc_dispatch(cmd);
+    hypr_ipc_dispatch("hl.dsp.exec_cmd(\"hyprland-minimizer\")");
 }
 
 /* Manuelle Alias-Tabelle fuer Faelle, in denen WM_CLASS und der
@@ -2052,11 +2886,17 @@ static char *guess_icon_for_class(const char *class_name) {
 
 static void workspaces_rebuild(WorkspacesRuntime *wr) {
     /* alte Bubbles entfernen - WICHTIG: erst tb_bubble_free() (entfernt
-     * u.a. einen ggf. noch laufenden Hover-Tick-Callback vom Widget,
-     * das dafuer noch gueltig sein muss), DANACH erst das Widget
-     * zerstoeren. Umgekehrte Reihenfolge loeste bei jedem Rebuild ein
+     * u.a. einen ggf. noch laufenden Hover-Timer, der frueher noch ein
+     * gueltiges Widget brauchte), DANACH erst das Widget zerstoeren.
+     * Umgekehrte Reihenfolge loeste bei jedem Rebuild ein
      * "gtk_widget_remove_tick_callback: assertion GTK_IS_WIDGET failed"
-     * aus, sobald eine Bubble gerade eine Hover-Animation liefen hatte. */
+     * aus, sobald eine Bubble gerade eine Hover-Animation laufen hatte.
+     * Die Reihenfolge schadet weiterhin nichts, auch nachdem der
+     * Hover-Tick von gtk_widget_add_tick_callback() auf ein normales
+     * g_timeout_add() umgestellt wurde (siehe anim_tick()) - schoener
+     * Nebeneffekt: g_source_remove() in tb_bubble_free() haengt jetzt
+     * gar nicht mehr vom Widget-Zustand ab, der urspruengliche Bug ist
+     * also strukturell gar nicht mehr moeglich. */
     for (guint i = 0; i < wr->bubbles->len; i++) {
         TbBubble *b = g_ptr_array_index(wr->bubbles, i);
         GtkWidget *w = tb_bubble_widget(b);
@@ -2102,7 +2942,7 @@ static void workspaces_rebuild(WorkspacesRuntime *wr) {
             char *addr_copy = g_strdup(cl->address);
             g_object_set_data_full(G_OBJECT(tb_bubble_widget(wb)), "tb-win-addr",
                                     addr_copy, g_free);
-            tb_bubble_set_click_handlers(wb, win_click, NULL, NULL, addr_copy);
+            tb_bubble_set_click_handlers(wb, win_click_left, win_click_right, win_click_middle, addr_copy);
             gtk_box_pack_start(GTK_BOX(wr->container), tb_bubble_widget(wb), FALSE, FALSE, 0);
             gtk_widget_show_all(tb_bubble_widget(wb));
             g_ptr_array_add(wr->bubbles, wb);
@@ -2303,9 +3143,25 @@ void tb_autohide_force_hide(TbAutohide *ah);
 #define TOUCH_TIMEOUT_SEC 5
 #define LOCK_TOGGLE_SIGNAL (SIGRTMIN + 1)
 
-#define FAST_POLL_MS 20
-#define MID_POLL_MS  50
-#define SLOW_POLL_MS 120
+#define FAST_POLL_MS 15
+#define MID_POLL_MS  35
+#define SLOW_POLL_MS 65
+
+/* Slide-Animation */
+#define AH_BOUNCE_C1        2.6     /* Ueberschwingen beim Zeigen (2.6 = ~20%, 1.7 = ~10%) */
+#define AH_HIDE_FACTOR      0.6     /* Verstecken dauert slide_ms * Faktor */
+#define AH_WATCHDOG_MS      10      /* Sicherheitsnetz, falls der Frame-Clock stillsteht */
+#define AH_WATCHDOG_GAP_US  24000
+#define AH_EDGE_SENSOR_PX   2       /* Hoehe des unsichtbaren Rand-Sensors */
+#define AH_FILLER_FRAC      0.30    /* Reserve unter der Bar (Anteil der Bar-Hoehe) fuers Strecken */
+
+/* Beim Overshoot faehrt die Bar ueber ihre Ruheposition hinaus. Damit dabei
+ * unten keine Luecke entsteht, ist das Fenster um g_bar_filler_px hoeher als
+ * die Bar (Reserve liegt in Ruhe unter dem Bildschirmrand) und der
+ * Hintergrund wird um g_bar_stretch vertikal gestreckt, so dass er immer
+ * bis zum Rand reicht. Nur fuer Bars am unteren Rand (Top-Bar: 0 = kein Overshoot). */
+static int    g_bar_filler_px = 0;
+static double g_bar_stretch = 1.0;
 
 struct TbAutohide {
     GtkWindow *window;
@@ -2315,12 +3171,24 @@ struct TbAutohide {
     gboolean locked;
     gboolean touch_override_active;
     gint64   touch_override_until_us;
+    gboolean force_visible;    /* z.B. waehrend die Bildschirmtastatur an ist */
 
     /* Slide-Animation */
     double   progress;      /* 0 = versteckt, 1 = sichtbar */
     double   progress_from;
     gint64   anim_start_us;
-    guint    tick_id;
+    guint    tick_id;           /* Frame-Clock-Tick-Callback am Fenster (vsync) */
+    guint    watchdog_id;       /* Timer-Sicherheitsnetz */
+    gint64   last_step_us;      /* Zeit des letzten Animationsschritts */
+    int      wd_steps;          /* Schritte, die der Watchdog statt des Frame-Clocks machen musste */
+    int      slide_margin;      /* aktueller Slide-Anteil des Margins */
+    int      base_offset;       /* zusaetzlicher Margin (z.B. ueber der Bildschirmtastatur) */
+    int      applied_margin;    /* zuletzt an die Layer-Shell gesendet */
+    gint64   menu_hold_until_us; /* >jetzt: Tray-Menue offen, Bar sichtbar halten */
+    GtkWidget *sensor;          /* unsichtbarer Rand-Sensor (Enter -> sofort zeigen) */
+    gboolean first_tick_pending; /* fuer [timing]-Log: wie lange bis der allererste Animations-Frame */
+    int      tick_seq;          /* fuer [timing]-Log: laufende Tick-Nummer waehrend EINER Animation */
+    gint64   prev_tick_us;      /* fuer [timing]-Log: Abstand zum letzten Tick */
 
     guint    poll_source_id;
 
@@ -2332,6 +3200,7 @@ struct TbAutohide {
     guint signal_watch_id;  /* GIOChannel-Watch auf signal_fd */
 
     gint64 last_debug_log_us; /* Drosselung fuer die Diagnose-Ausgabe unten */
+    gint64 last_poll_start_us; /* fuer [timing]-Log: tatsaechlicher Abstand zw. Polls */
 };
 
 static void write_pid_file(void) {
@@ -2341,36 +3210,133 @@ static void write_pid_file(void) {
     fclose(f);
 }
 
-static double ah_ease_in_out_cubic(double x) {
-    return x < 0.5 ? 4 * x * x * x : 1 - pow(-2 * x + 2, 3) / 2;
+/* Bouncy "Pop"-Einfahren fuer's ZEIGEN - ueberschiesst kurz leicht ueber
+ * das Ziel hinaus und faengt sich dann wieder (klassische "ease-out-back"
+ * Kurve). Fuehlt sich lebendig/elastisch an, UND wirkt schneller als eine
+ * symmetrische ease-in-out-Kurve, weil die Bewegung vorne rausballert
+ * statt erst langsam anzufahren. */
+static double ah_ease_out_back(double x) {
+    const double c1 = AH_BOUNCE_C1;
+    const double c3 = c1 + 1.0;
+    double xm1 = x - 1.0;
+    return 1.0 + c3 * xm1 * xm1 * xm1 + c1 * xm1 * xm1;
+}
+
+/* Zuegiges, GLATTES Verschwinden fuer's VERSTECKEN - bewusst OHNE
+ * Overshoot (sonst wuerde die Bar beim Wegfahren kurz nochmal "reinpoppen",
+ * was wie ein Grafikfehler aussieht statt wie ein Bounce). */
+static double ah_ease_in_quad(double x) {
+    return x * x;
 }
 
 /* ── Slide-Animation ─────────────────────────────────────────────── */
 
-static gboolean ah_anim_tick(GtkWidget *widget, GdkFrameClock *clock, gpointer user_data) {
-    TbAutohide *ah = user_data;
-    int height = gtk_widget_get_allocated_height(widget);
-    if (height <= 1) height = ah->cfg->height;
+/* Sendet den Margin (Slide-Anteil + Offset) an die Layer-Shell - nur bei Aenderung. */
+static void ah_apply_margin(TbAutohide *ah) {
+    int m = ah->base_offset + ah->slide_margin;
+    if (m == ah->applied_margin) return;
+    ah->applied_margin = m;
+    gtk_layer_set_margin(ah->window,
+        g_strcmp0(ah->cfg->position, "top") == 0 ? GTK_LAYER_SHELL_EDGE_TOP : GTK_LAYER_SHELL_EDGE_BOTTOM, m);
+}
 
-    gint64 now = gdk_frame_clock_get_frame_time(clock);
-    double duration_us = MAX(1, ah->cfg->slide_ms) * 1000.0;
+/* Bildschirmtastatur: solange sie aktiv ist, sitzt die Bar ueber ihr (wie
+ * bei Waybar) statt dahinter. Hoehe = von Hyprland gemeldete reservierte Zone. */
+static void ah_update_base_offset(TbAutohide *ah) {
+    int off = 0;
+    if (ah->force_visible && ah->monitors_count > 0) {
+        HyprMonitor *m = &ah->monitors[0];
+        gboolean top = g_strcmp0(ah->cfg->position, "top") == 0;
+        off = (int)(top ? m->reserved_top : m->reserved_bottom);
+        if (off < 0) off = 0;
+    }
+    if (off != ah->base_offset) {
+        g_message("[autohide] Tastatur-Offset: %d px -> %d px", ah->base_offset, off);
+        ah->base_offset = off;
+        ah_apply_margin(ah);
+    }
+}
+
+/* Ein Animationsschritt, rein zeitbasiert (Wanduhr) - egal ob vom Frame-Clock
+ * oder vom Watchdog aufgerufen. KEIN Flush, KEIN process_updates: gtk_layer_set_margin()
+ * ist nur ein kleiner Protokoll-Request, das Fenster selbst wird nicht neu gerendert.
+ * Gibt TRUE zurueck, wenn die Animation fertig ist. */
+static gboolean ah_step(TbAutohide *ah, gint64 now) {
+    ah->last_step_us = now;
+    ah->tick_seq++;
+    if (ah->first_tick_pending) {
+        ah->first_tick_pending = FALSE;
+        g_message("[timing] erster Animations-Schritt %.1fms nach ah_start_slide().",
+                  (now - ah->anim_start_us) / 1000.0);
+    }
+
+    GtkWidget *widget = GTK_WIDGET(ah->window);
+    int win_h = gtk_widget_get_allocated_height(widget);
+    int height = win_h - g_bar_filler_px;         /* Hoehe der Bar selbst */
+    if (height <= 1) { height = ah->cfg->height; win_h = height + g_bar_filler_px; }
+
+    double show_us = MAX(1, ah->cfg->slide_ms) * 1000.0;
+    double duration_us = ah->visible ? show_us : MAX(40000.0, show_us * AH_HIDE_FACTOR);
     double target = ah->visible ? 1.0 : 0.0;
-    double raw_progress = (now - ah->anim_start_us) / duration_us;
-    raw_progress = CLAMP(raw_progress, 0.0, 1.0);
-    ah->progress = ah->progress_from + (target - ah->progress_from) * raw_progress;
+    double raw = CLAMP((now - ah->anim_start_us) / duration_us, 0.0, 1.0);
+    ah->progress = ah->progress_from + (target - ah->progress_from) * raw;
 
-    double eased = ah_ease_in_out_cubic(ah->progress);
-    int margin = (int)round(-height + eased * height); /* -height (weg) .. 0 (sichtbar) */
+    /* Zeigen: ease-out-back (federt ueber das Ziel und faengt sich = Bounce).
+     * Verstecken: glatt, ohne Overshoot. */
+    double eased = ah->visible ? ah_ease_out_back(ah->progress) : ah_ease_in_quad(ah->progress);
+    /* v = sichtbare Hoehe ueber dem Rand (kann beim Overshoot > height sein). */
+    double v = eased * height;
+    if (v > win_h) v = win_h;
+    ah->slide_margin = (int)lround(-win_h + v);
+    ah_apply_margin(ah);
 
-    if (g_strcmp0(ah->cfg->position, "top") == 0)
-        gtk_layer_set_margin(GTK_WINDOW(widget), GTK_LAYER_SHELL_EDGE_TOP, margin);
-    else
-        gtk_layer_set_margin(GTK_WINDOW(widget), GTK_LAYER_SHELL_EDGE_BOTTOM, margin);
+    /* Overshoot: Bar-Hintergrund auf die sichtbare Hoehe strecken. Bei
+     * Aenderung die ganze Bar neu zeichnen (gecachte Surfaces, billig),
+     * sonst nur minimaler Damage: haelt den GDK-Frame-Clock ueber die
+     * Frame-Callbacks des Compositors auf dessen echter Bildwiederholrate
+     * (60/120/144 Hz). */
+    double stretch = v > height ? v / height : 1.0;
+    if (fabs(stretch - g_bar_stretch) > 0.001) {
+        g_bar_stretch = stretch;
+        gtk_widget_queue_draw(widget);
+    } else {
+        gtk_widget_queue_draw_area(widget, 0, 0, 1, 1);
+    }
 
-    if (raw_progress >= 1.0) {
-        ah->tick_id = 0;
-        if (ah->visible)
-            g_message("[autohide] SHOW-Animation fertig (margin=0, sichtbar).");
+    if (raw >= 1.0) {
+        g_message("[timing] Slide %s fertig: %d Schritte in %.0fms (davon %d durch Watchdog).",
+                  ah->visible ? "SHOW" : "HIDE", ah->tick_seq,
+                  (now - ah->anim_start_us) / 1000.0, ah->wd_steps);
+        return TRUE;
+    }
+    return FALSE;
+}
+
+static gboolean ah_tick_cb(GtkWidget *w, GdkFrameClock *clock, gpointer user_data) {
+    (void)w; (void)clock;
+    TbAutohide *ah = user_data;
+    if (ah_step(ah, g_get_monotonic_time())) {
+        ah->tick_id = 0; /* GTK entfernt den Callback selbst (Rueckgabe FALSE) */
+        if (ah->watchdog_id) { g_source_remove(ah->watchdog_id); ah->watchdog_id = 0; }
+        return G_SOURCE_REMOVE;
+    }
+    return G_SOURCE_CONTINUE;
+}
+
+/* Sicherheitsnetz: bleibt der Frame-Clock aus (z.B. weil der Compositor fuer
+ * eine ausserhalb liegende Layer-Surface keine Frame-Callbacks schickt),
+ * treibt der Watchdog die Animation weiter - sie kann so nie haengen. */
+static gboolean ah_watchdog_cb(gpointer user_data) {
+    TbAutohide *ah = user_data;
+    gint64 now = g_get_monotonic_time();
+    if (now - ah->last_step_us < AH_WATCHDOG_GAP_US) return G_SOURCE_CONTINUE;
+    ah->wd_steps++;
+    if (ah_step(ah, now)) {
+        ah->watchdog_id = 0;
+        if (ah->tick_id) {
+            gtk_widget_remove_tick_callback(GTK_WIDGET(ah->window), ah->tick_id);
+            ah->tick_id = 0;
+        }
         return G_SOURCE_REMOVE;
     }
     return G_SOURCE_CONTINUE;
@@ -2378,10 +3344,17 @@ static gboolean ah_anim_tick(GtkWidget *widget, GdkFrameClock *clock, gpointer u
 
 static void ah_start_slide(TbAutohide *ah) {
     ah->progress_from = ah->progress;
-    GdkFrameClock *clock = gtk_widget_get_frame_clock(GTK_WIDGET(ah->window));
-    ah->anim_start_us = clock ? gdk_frame_clock_get_frame_time(clock) : g_get_monotonic_time();
+    ah->anim_start_us = g_get_monotonic_time();
+    ah->last_step_us = ah->anim_start_us;
+    ah->tick_seq = 0;
+    ah->wd_steps = 0;
+    ah->prev_tick_us = 0;
+    g_message("[timing] ah_start_slide() bei t=%.1fms.", ah->anim_start_us / 1000.0);
+    ah->first_tick_pending = TRUE;
     if (ah->tick_id == 0)
-        ah->tick_id = gtk_widget_add_tick_callback(GTK_WIDGET(ah->window), ah_anim_tick, ah, NULL);
+        ah->tick_id = gtk_widget_add_tick_callback(GTK_WIDGET(ah->window), ah_tick_cb, ah, NULL);
+    if (ah->watchdog_id == 0)
+        ah->watchdog_id = g_timeout_add(AH_WATCHDOG_MS, ah_watchdog_cb, ah);
 }
 
 static void do_show(TbAutohide *ah) {
@@ -2395,6 +3368,62 @@ static void do_hide(TbAutohide *ah) {
     ah->visible = FALSE;
     g_message("[autohide] -> HIDE (progress war %.2f)", ah->progress);
     ah_start_slide(ah);
+}
+
+/* Unsichtbarer, 2px hoher Layer-Shell-Streifen am Bildschirmrand. Die Maus
+ * kann ihn beim Erreichen des Rands nicht verfehlen (der Cursor bleibt am
+ * Rand haengen) -> enter-notify kommt sofort vom Compositor, ganz ohne
+ * Polling-Wartezeit. Das Polling bleibt als Fallback und fuer's Verstecken. */
+static gboolean ah_sensor_enter(GtkWidget *w, GdkEventCrossing *ev, gpointer user_data) {
+    (void)w; (void)ev;
+    TbAutohide *ah = user_data;
+    if (!ah->locked && !ah->visible) {
+        g_message("[timing] Kantensensor: Maus am Rand -> do_show() (ohne Poll-Wartezeit).");
+        do_show(ah);
+    }
+    return FALSE;
+}
+
+static gboolean ah_sensor_draw(GtkWidget *w, cairo_t *cr, gpointer user_data) {
+    (void)w; (void)user_data;
+    cairo_set_operator(cr, CAIRO_OPERATOR_CLEAR);
+    cairo_paint(cr);
+    return TRUE;
+}
+
+static void ah_create_edge_sensor(TbAutohide *ah) {
+    GtkWidget *s = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+    GtkWindow *win = GTK_WINDOW(s);
+    gtk_widget_set_app_paintable(s, TRUE);
+    GdkVisual *visual = gdk_screen_get_rgba_visual(gtk_widget_get_screen(s));
+    if (visual) gtk_widget_set_visual(s, visual);
+    gtk_window_set_accept_focus(win, FALSE);
+    gtk_window_set_default_size(win, 1, AH_EDGE_SENSOR_PX);
+    gtk_widget_set_size_request(s, -1, AH_EDGE_SENSOR_PX);
+
+    gtk_layer_init_for_window(win);
+    gtk_layer_set_layer(win, GTK_LAYER_SHELL_LAYER_OVERLAY);
+    gtk_layer_set_namespace(win, "trafktuxbar-edge");
+    gboolean top = g_strcmp0(ah->cfg->position, "top") == 0;
+    gtk_layer_set_anchor(win, GTK_LAYER_SHELL_EDGE_LEFT, TRUE);
+    gtk_layer_set_anchor(win, GTK_LAYER_SHELL_EDGE_RIGHT, TRUE);
+    gtk_layer_set_anchor(win, top ? GTK_LAYER_SHELL_EDGE_TOP : GTK_LAYER_SHELL_EDGE_BOTTOM, TRUE);
+    gtk_layer_set_exclusive_zone(win, -1);
+    gtk_layer_set_keyboard_mode(win, GTK_LAYER_SHELL_KEYBOARD_MODE_NONE);
+
+    /* Gleicher Monitor wie die Bar (best effort). */
+    GdkWindow *barwin = gtk_widget_get_window(GTK_WIDGET(ah->window));
+    if (barwin) {
+        GdkMonitor *mon = gdk_display_get_monitor_at_window(gdk_display_get_default(), barwin);
+        if (mon) gtk_layer_set_monitor(win, mon);
+    }
+
+    gtk_widget_add_events(s, GDK_ENTER_NOTIFY_MASK);
+    g_signal_connect(s, "enter-notify-event", G_CALLBACK(ah_sensor_enter), ah);
+    g_signal_connect(s, "draw", G_CALLBACK(ah_sensor_draw), NULL);
+    gtk_widget_show_all(s);
+    ah->sensor = s;
+    g_message("[autohide] Kantensensor aktiv (%d px).", AH_EDGE_SENSOR_PX);
 }
 
 void tb_autohide_force_show(TbAutohide *ah) { do_show(ah); }
@@ -2450,6 +3479,9 @@ static void schedule_next_poll(TbAutohide *ah, int delay_ms) {
 static gboolean poll_once(gpointer user_data) {
     TbAutohide *ah = user_data;
     ah->poll_source_id = 0;
+    gint64 poll_start_now = g_get_monotonic_time();
+    gint64 prev_poll_start_us = ah->last_poll_start_us; /* fuer den [timing]-Log unten */
+    ah->last_poll_start_us = poll_start_now;
 
     /* Heartbeat: beweist, dass die Polling-Schleife ueberhaupt laeuft -
      * unabhaengig davon, ob Hyprland-IPC verfuegbar ist. Erste 5 Aufrufe
@@ -2457,7 +3489,7 @@ static gboolean poll_once(gpointer user_data) {
     static int poll_call_count = 0;
     static gint64 last_heartbeat_us = 0;
     gint64 hb_now = g_get_monotonic_time();
-    if (poll_call_count++ < 5 || hb_now - last_heartbeat_us >= 1000000) {
+    if (poll_call_count++ < 5 || hb_now - last_heartbeat_us >= 30000000) {
         last_heartbeat_us = hb_now;
         g_message("[autohide] poll_once() Aufruf #%d - Loop laeuft. visible=%d locked=%d "
                   "hypr_ipc_available=%d", poll_call_count, ah->visible, ah->locked,
@@ -2469,6 +3501,13 @@ static gboolean poll_once(gpointer user_data) {
         ah->refresh_counter = 0;
         g_free(ah->monitors);
         ah->monitors = hypr_ipc_get_monitors(&ah->monitors_count);
+        ah_update_base_offset(ah);
+    }
+
+    if (ah->force_visible || ah->menu_hold_until_us > poll_start_now) {
+        if (!ah->visible) do_show(ah);
+        schedule_next_poll(ah, MID_POLL_MS);
+        return G_SOURCE_REMOVE;
     }
 
     if (ah->locked) {
@@ -2486,24 +3525,31 @@ static gboolean poll_once(gpointer user_data) {
         }
     } else if (hypr_ipc_available()) {
         int cx, cy;
-        if (hypr_ipc_get_cursor_pos(&cx, &cy)) {
+        gint64 t_before_cmd = g_get_monotonic_time();
+        gboolean ok = hypr_ipc_get_cursor_pos(&cx, &cy);
+        gint64 t_after_cmd = g_get_monotonic_time();
+        if (ok) {
             float dist = get_dist_to_edge(ah, cx, cy, bottom_edge);
             int fast_zone = ah->cfg->hide_px * 2;
 
-            /* Diagnose, hoechstens 1x/Sekunde - hilft zu sehen, ob
-             * Cursor-Position/Distanz ueberhaupt sinnvoll ankommen. */
             gint64 now = g_get_monotonic_time();
-            if (now - ah->last_debug_log_us >= 1000000) {
+            /* Diagnose nur noch alle 5 s statt bei jedem Poll (jedes g_message
+             * ist ein write() auf stderr). */
+            if (now - ah->last_debug_log_us >= 5000000) {
                 ah->last_debug_log_us = now;
+                double since_last_poll_start_ms = prev_poll_start_us > 0
+                    ? (poll_start_now - prev_poll_start_us) / 1000.0 : -1.0;
                 HyprMonitor *m0 = ah->monitors_count > 0 ? &ah->monitors[0] : NULL;
-                g_message("[autohide] cursor=(%d,%d) dist=%.1f visible=%d trigger_px=%d hide_px=%d "
-                          "mon0[y=%.0f h=%.0f reservedT=%.0f reservedB=%.0f]",
-                           cx, cy, dist, ah->visible, ah->cfg->trigger_px, ah->cfg->hide_px,
-                           m0 ? m0->y : -1, m0 ? m0->h : -1,
-                           m0 ? m0->reserved_top : -1, m0 ? m0->reserved_bottom : -1);
+                g_message("[timing] cursor=(%d,%d) dist=%.1f visible=%d ipc_roundtrip=%.1fms "
+                          "seit_start_letzter_poll=%.1fms mon0[y=%.0f h=%.0f reservedB=%.0f]",
+                           cx, cy, dist, ah->visible, (t_after_cmd - t_before_cmd) / 1000.0,
+                           since_last_poll_start_ms, m0 ? m0->y : -1, m0 ? m0->h : -1,
+                           m0 ? m0->reserved_bottom : -1);
             }
 
             if (dist <= ah->cfg->trigger_px && !ah->visible) {
+                g_message("[timing] TRIGGER erkannt bei t=%.1fms (seit Programmstart), rufe do_show() auf.",
+                          now / 1000.0);
                 do_show(ah);
             } else if (dist > ah->cfg->hide_px && ah->visible) {
                 do_hide(ah);
@@ -2685,6 +3731,54 @@ static gboolean setup_realtime_signals(TbAutohide *ah) {
 
 /* ── API ─────────────────────────────────────────────────────────── */
 
+/* Erzwingt "sichtbar", unabhaengig von der Cursor-Position - z.B. waehrend
+ * die Bildschirmtastatur (wvkbd) an ist: die sitzt am unteren Bildschirm-
+ * rand, genau da, wo Autohide sonst "Maus ist weit weg -> verstecken"
+ * entscheiden wuerde, sobald man mitten im Tippen ist und die Maus/der
+ * letzte Finger dadurch nicht mehr "nah am Rand" im ueblichen Sinne ist.
+ * Einfacher, robuster Ansatz statt die Tastatur-Geometrie tracken zu
+ * muessen: waehrend sie an ist, bleibt die Bar schlicht immer da.
+ * (Deklaration weiter oben, direkt nach hypr_ipc_dispatch() - siehe
+ * Kommentar dort.) */
+static gboolean ah_kbd_recheck_cb(gpointer user_data) {
+    TbAutohide *ah = user_data;
+    if (ah != g_autohide_singleton || !ah->force_visible) return G_SOURCE_REMOVE;
+    g_free(ah->monitors);
+    ah->monitors = hypr_ipc_get_monitors(&ah->monitors_count);
+    ah_update_base_offset(ah);
+    return G_SOURCE_REMOVE;
+}
+
+/* Haelt die Bar sichtbar, solange ein Tray-Menue offen ist (das Menue haengt
+ * an der Bar-Surface; wuerde sie wegfahren, verschwaende das Menue mit). */
+static void tb_autohide_menu_hold(TbAutohide *ah, gboolean hold) {
+    if (!ah) return;
+    ah->menu_hold_until_us = hold ? g_get_monotonic_time() + 120 * G_USEC_PER_SEC : 0;
+    if (hold && !ah->visible) do_show(ah);
+}
+
+static void tb_autohide_set_force_visible(TbAutohide *ah, gboolean active) {
+    if (!ah || ah->force_visible == active) return; /* keine Aenderung */
+    ah->force_visible = active;
+    if (active) {
+        /* Reservierte Zone (Tastaturhoehe) sofort abfragen und in den
+         * naechsten Momenten noch ein paar Mal nachpruefen - die Tastatur
+         * meldet ihre Zone erst kurz nach dem Start. */
+        g_free(ah->monitors);
+        ah->monitors = hypr_ipc_get_monitors(&ah->monitors_count);
+        g_timeout_add(250, ah_kbd_recheck_cb, ah);
+        g_timeout_add(700, ah_kbd_recheck_cb, ah);
+        g_timeout_add(1500, ah_kbd_recheck_cb, ah);
+    }
+    ah_update_base_offset(ah);
+    if (active) {
+        g_message("[autohide] force_visible AN (z.B. Bildschirmtastatur aktiv) - Bar bleibt sichtbar.");
+        if (!ah->visible) do_show(ah);
+    } else {
+        g_message("[autohide] force_visible AUS - normales cursorbasiertes Autohide wieder aktiv.");
+    }
+}
+
 TbAutohide *tb_autohide_start(GtkWindow *window, BarConfig *cfg) {
     TbAutohide *ah = g_new0(TbAutohide, 1);
     ah->window = window;
@@ -2692,6 +3786,10 @@ TbAutohide *tb_autohide_start(GtkWindow *window, BarConfig *cfg) {
     ah->visible = TRUE;   /* Start sichtbar, dann uebernimmt das Polling */
     ah->progress = 1.0;
     ah->signal_fd = -1;
+    g_autohide_singleton = ah;
+    /* Ruhelage: die Reserve unter der Bar liegt unter dem Bildschirmrand. */
+    ah->slide_margin = -g_bar_filler_px;
+    ah_apply_margin(ah);
 
     write_pid_file();
 
@@ -2712,16 +3810,22 @@ TbAutohide *tb_autohide_start(GtkWindow *window, BarConfig *cfg) {
 
     setup_realtime_signals(ah);
 
+    if (cfg->autohide_enabled) ah_create_edge_sensor(ah);
+
     return ah;
 }
 
 void tb_autohide_stop(TbAutohide *ah) {
     if (!ah) return;
     if (ah->poll_source_id) g_source_remove(ah->poll_source_id);
-    if (ah->tick_id) gtk_widget_remove_tick_callback(GTK_WIDGET(ah->window), ah->tick_id);
+    /* Der Frame-Clock-Callback stirbt mit dem (beim Beenden schon
+     * zerstoerten) Fenster - hier nur den Timer entfernen. */
+    if (ah->watchdog_id) g_source_remove(ah->watchdog_id);
+    if (ah->sensor) gtk_widget_destroy(ah->sensor);
     if (ah->signal_watch_id) g_source_remove(ah->signal_watch_id);
     g_free(ah->monitors);
     unlink(PID_FILE);
+    if (g_autohide_singleton == ah) g_autohide_singleton = NULL;
     g_free(ah);
 }
 
@@ -2760,8 +3864,27 @@ static gboolean on_bar_draw(GtkWidget *widget, cairo_t *cr, gpointer user_data) 
     AppState *app = user_data;
     GtkAllocation alloc;
     gtk_widget_get_allocation(widget, &alloc);
-    nine_slice_draw(app->bar_bg, cr, alloc.width, alloc.height);
+    /* Die unteren g_bar_filler_px sind Reserve fuers Strecken (siehe oben). */
+    double bh = alloc.height - g_bar_filler_px;
+    if (bh < 1) bh = alloc.height;
+    cairo_save(cr);
+    if (g_bar_stretch > 1.0001) cairo_scale(cr, 1.0, g_bar_stretch);
+    nine_slice_draw(app->bar_bg, cr, alloc.width, bh);
+    cairo_restore(cr);
     return FALSE; /* Kinder (die Module) werden von GTK danach normal gezeichnet */
+}
+
+/* Die Reserve unter der Bar soll keine Klicks schlucken (z.B. auf die
+ * Bildschirmtastatur, wenn die Bar darueber sitzt): Eingabebereich = nur die Bar. */
+static void on_window_input_shape(GtkWidget *w, GdkRectangle *a, gpointer user_data) {
+    (void)user_data;
+    if (g_bar_filler_px <= 0) return;
+    GdkWindow *gw = gtk_widget_get_window(w);
+    if (!gw) return;
+    cairo_rectangle_int_t r = { 0, 0, a->width, MAX(1, a->height - g_bar_filler_px) };
+    cairo_region_t *reg = cairo_region_create_rectangle(&r);
+    gdk_window_input_shape_combine_region(gw, reg, 0, 0);
+    cairo_region_destroy(reg);
 }
 
 static void apply_layer_shell(GtkWindow *window, BarConfig *cfg) {
@@ -2828,7 +3951,7 @@ static gboolean enable_screen_alpha(GtkWidget *widget) {
  * (siehe main()). Damit ist zweifelsfrei nachpruefbar, welcher Build
  * tatsaechlich laeuft, statt es zu raten - bitte bei jedem Testlauf
  * die BUILD-Zeile mit posten. */
-#define TB_BUILD_TAG "2026-08-debug-2-uniform-corners"
+#define TB_BUILD_TAG "2026-09-async-cache-vsync-2-stretch"
 
 static gboolean on_window_click_probe(GtkWidget *widget, GdkEventButton *ev, gpointer user_data) {
     (void)widget; (void)user_data;
@@ -2847,9 +3970,53 @@ static void on_window_size_allocate_probe(GtkWidget *widget, GdkRectangle *alloc
     }
 }
 
+/* DIAGNOSE-Kanarienvogel: voellig unabhaengig von Autohide/Tray/Klicks -
+ * ein simpler g_timeout_add(), der alle 500ms tickt. Zweck: naechstes Mal,
+ * wenn "Klicks kommen nicht an" + "Autohide feuert nicht" gleichzeitig
+ * auftreten, sehen wir hier SOFORT, ob das GANZE GLib-Hauptloop nach dem
+ * Start ueberhaupt noch iteriert, oder ob es irgendwo (vermutlich in der
+ * Wayland/Layer-Shell-Anbindung) komplett haengen bleibt. Bleibt DIESE
+ * Meldung nach dem Start ebenfalls aus, ist es kein Klick- oder
+ * Autohide-spezifisches Problem, sondern die Hauptschleife selbst steht -
+ * dann brauchen wir als naechstes ein `gdb -p $(pidof TrafkTuxBar)` + `bt`
+ * waehrend die Bar haengt, um zu sehen, WO genau. Tickt sie dagegen brav
+ * weiter, ist es enger auf Autohide/Klicks eingegrenzt. */
+static gboolean canary_heartbeat(gpointer user_data) {
+    (void)user_data;
+    static int n = 0;
+    g_message("[canary] Hauptloop lebt noch, Tick #%d.", ++n);
+    return G_SOURCE_CONTINUE;
+}
+
 int main(int argc, char **argv) {
     g_message("[debug] TrafkTuxBar BUILD=" TB_BUILD_TAG " startet (PID %d)", getpid());
     gint64 t_start_us = g_get_monotonic_time();
+
+    /* WICHTIG fuer Autohide-Latenz: der Linux-Kernel darf Timer- und
+     * poll()/epoll_wait()-Aufwachzeiten (GENAU das, worauf g_timeout_add()
+     * intern basiert) um den "Timer Slack" des Prozesses nach hinten
+     * verschieben, um mehrere Aufwach-Ereignisse zu buendeln und Strom zu
+     * sparen. Default sind hier gemessen 50000ns (50 Mikrosekunden) - das
+     * allein erklaert KEINE hunderte Millisekunden Verzoegerung. Trotzdem
+     * gesetzt, weil es garantiert nicht schadet (ein bisschen mehr, dafuer
+     * praeziser getimte Aufwach-Events kostet praktisch nichts bei der
+     * Handvoll winziger IPC-Calls/Sekunde, die diese Bar macht) und weil
+     * es zusammen mit dem cpufreq/cpuidle-Governor (powersave vs.
+     * performance - genau der Unterschied, den du beobachtet hast) in
+     * dieselbe Kerbe schlaegt: je aggressiver der Kernel/die Hardware
+     * Aufwach-Events buendelt bzw. den Prozessor in tiefe C-States/
+     * niedrige Taktraten parkt, desto spaeter kommt JEDER Timer bei uns
+     * an - nicht nur der Poll-Timer, sondern auch der 16ms-Animations-
+     * Timer selbst. Der GROESSTE Hebel dafuer liegt aber ausserhalb
+     * dieses Programms, naemlich im cpufreq-Governor/Power-Profil des
+     * Systems (z.B. via powerprofilesctl/TLP/tuned) - das kann Code hier
+     * nicht erzwingen. */
+    if (prctl(PR_SET_TIMERSLACK, 1000UL, 0, 0, 0) != 0) {
+        g_warning("[timing] PR_SET_TIMERSLACK fehlgeschlagen: %s", g_strerror(errno));
+    } else {
+        g_message("[timing] Timer-Slack auf 1us gesetzt (weniger Timer-Buendelung durch den Kernel).");
+    }
+
     /* MUSS vor gtk_init() passieren - siehe Kommentar an
      * block_realtime_signals_early() selbst. */
     block_realtime_signals_early();
@@ -2954,13 +4121,23 @@ int main(int argc, char **argv) {
     gtk_widget_add_events(window, GDK_BUTTON_PRESS_MASK);
     g_signal_connect(window, "button-press-event", G_CALLBACK(on_window_click_probe), NULL);
     g_signal_connect(window, "size-allocate", G_CALLBACK(on_window_size_allocate_probe), NULL);
+    g_signal_connect(window, "size-allocate", G_CALLBACK(on_window_input_shape), NULL);
 
     gtk_widget_show_all(window);
+
+    /* Kanarienvogel so frueh wie moeglich einplanen - noch vor Tray/
+     * Autohide-Setup, damit wir im naechsten Log unabhaengig von beiden
+     * sehen, ob die Hauptschleife ueberhaupt am Laufen bleibt. */
+    g_timeout_add_seconds(10, canary_heartbeat, NULL);
 
     gint natural_min = 0, natural_nat = 0;
     gtk_widget_get_preferred_height(main_box, &natural_min, &natural_nat);
     int bar_height = MAX(natural_nat, cfg->height);
-    gtk_widget_set_size_request(main_box, -1, bar_height);
+    g_bar_filler_px = (g_strcmp0(cfg->position, "top") == 0) ? 0 : (int)ceil(bar_height * AH_FILLER_FRAC);
+    gtk_widget_set_size_request(main_box, -1, bar_height + g_bar_filler_px);
+    gtk_widget_set_margin_bottom(left_box, g_bar_filler_px);   /* Module bleiben an ihrer Position */
+    gtk_widget_set_margin_bottom(center_box, g_bar_filler_px);
+    gtk_widget_set_margin_bottom(right_box, g_bar_filler_px);
 
     g_message("[debug] BUILD=" TB_BUILD_TAG " cfg->height=%d bar_bg.left/right_slice=%d/%d "
               "bubble.min_size=%d bubble.padding=%d "

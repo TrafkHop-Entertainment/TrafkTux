@@ -12,4 +12,68 @@
 <startup-notify/>
 <directories/>
 </action>
+<action>
+<icon>emblem-symbolic-link</icon>
+<name>Symlink: Quelle merken</name>
+<submenu></submenu>
+<unique-id>1790102755330374-1</unique-id>
+<command>bash ~/.config/hypr/SymlinkShortcut.sh source %f</command>
+<description>Merkt die markierte Datei/den Ordner als Symlink-Quelle</description>
+<range></range>
+<patterns>*</patterns>
+<directories/>
+<audio-files/>
+<image-files/>
+<other-files/>
+<text-files/>
+<video-files/>
+</action>
+<action>
+<icon>emblem-symbolic-link</icon>
+<name>Symlink: hier erstellen</name>
+<submenu></submenu>
+<unique-id>1790102755330375-2</unique-id>
+<command>bash ~/.config/hypr/SymlinkShortcut.sh paste %d</command>
+<description>Erstellt im aktuellen Ordner einen relativen Symlink auf die gemerkte Quelle</description>
+<range></range>
+<patterns>*</patterns>
+<directories/>
+<audio-files/>
+<image-files/>
+<other-files/>
+<text-files/>
+<video-files/>
+</action>
+<action>
+<icon>emblem-symbolic-link</icon>
+<name>Symlink: zum Verschieben markieren</name>
+<submenu></submenu>
+<unique-id>1790102755330376-3</unique-id>
+<command>bash ~/.config/hypr/SymlinkShortcut.sh move %f</command>
+<description>Merkt den markierten Symlink zum Verschieben (danach im Zielordner "Symlink: hier erstellen" ausführen)</description>
+<range></range>
+<patterns>*</patterns>
+<directories/>
+<audio-files/>
+<image-files/>
+<other-files/>
+<text-files/>
+<video-files/>
+</action>
+<action>
+<icon>emblem-symbolic-link</icon>
+<name>Symlink: Ordner reparieren</name>
+<submenu></submenu>
+<unique-id>1790102755330377-4</unique-id>
+<command>bash ~/.config/hypr/SymlinkShortcut.sh repair %d</command>
+<description>Repariert kaputte relative Symlinks im aktuellen Ordner (Best Effort, sucht per Dateiname unter $HOME)</description>
+<range></range>
+<patterns>*</patterns>
+<directories/>
+<audio-files/>
+<image-files/>
+<other-files/>
+<text-files/>
+<video-files/>
+</action>
 </actions>

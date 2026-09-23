@@ -45,6 +45,7 @@ trafktux
 assets
 fonts
 theme.txt
+trafktux-generate-buckets.sh
 
 ./airootfs/boot/grub/themes/trafktux/assets:
 .
@@ -55,14 +56,13 @@ theme.txt
 32
 329
 43
-GrubLayer1.png
+GrubLayer2.png
 GrubLayer5.png
 
 ./airootfs/boot/grub/themes/trafktux/assets/1610:
 .
 ..
-GrubLayer0.png
-GrubLayer2.png
+GrubLayer1.png
 GrubLayer3.png
 GrubLayer4.png
 theme_1610.txt
@@ -70,8 +70,7 @@ theme_1610.txt
 ./airootfs/boot/grub/themes/trafktux/assets/169:
 .
 ..
-GrubLayer0.png
-GrubLayer2.png
+GrubLayer1.png
 GrubLayer3.png
 GrubLayer4.png
 theme_169.txt
@@ -79,8 +78,7 @@ theme_169.txt
 ./airootfs/boot/grub/themes/trafktux/assets/219:
 .
 ..
-GrubLayer0.png
-GrubLayer2.png
+GrubLayer1.png
 GrubLayer3.png
 GrubLayer4.png
 theme_219.txt
@@ -88,8 +86,7 @@ theme_219.txt
 ./airootfs/boot/grub/themes/trafktux/assets/32:
 .
 ..
-GrubLayer0.png
-GrubLayer2.png
+GrubLayer1.png
 GrubLayer3.png
 GrubLayer4.png
 theme_32.txt
@@ -97,8 +94,7 @@ theme_32.txt
 ./airootfs/boot/grub/themes/trafktux/assets/329:
 .
 ..
-GrubLayer0.png
-GrubLayer2.png
+GrubLayer1.png
 GrubLayer3.png
 GrubLayer4.png
 theme_329.txt
@@ -106,8 +102,7 @@ theme_329.txt
 ./airootfs/boot/grub/themes/trafktux/assets/43:
 .
 ..
-GrubLayer0.png
-GrubLayer2.png
+GrubLayer1.png
 GrubLayer3.png
 GrubLayer4.png
 theme_43.txt
@@ -261,7 +256,6 @@ pwquality.conf
 ./airootfs/etc/skel:
 .
 ..
-Archiso+SystemHomeFolder.txt
 .bash_profile
 .config
 .local
@@ -272,6 +266,7 @@ Vorlagen
 ./airootfs/etc/skel/.config:
 .
 ..
+Assets
 fastfetch
 gtk-3.0
 gtk-4.0
@@ -286,10 +281,23 @@ swaync
 systemd
 Thunar
 TrafkTuxBar
+TrafkTuxLauncher
 VSCodium
 waybar
 wireplumber
 xfce4
+
+./airootfs/etc/skel/.config/Assets:
+.
+..
+bubble-normal.png
+bubble-selected.png
+Left.png
+Right.png
+TrafkBubble1.png
+TrafkBubble2.png
+TrafkBubbleGlow1.png
+TrafkBubbleGlow2.png
 
 ./airootfs/etc/skel/.config/fastfetch:
 .
@@ -316,10 +324,11 @@ settings.ini
 .
 ..
 BUILD
+GameScopeDgvoodooExcludes.txt
 GameScopeExcludes.txt
 GameScopeWrapper.conf
 hyprland.lua
-hyprland_old.lua
+hyprlandOld.lua
 hyprlock.conf
 hyprlock.png
 hyprpaper.conf
@@ -354,36 +363,22 @@ SoundDaemon.c
 ./airootfs/etc/skel/.config/hypr/BUILD/TrafkCursor_Build:
 .
 ..
-build_theme_hyprcursor.sh
-build_theme_xcursor.sh
+hyprcursor.sh
+old
 Output
 TrafkTuxCursorPNGs
-unterderbruecke.de
+xcursor.sh
+
+./airootfs/etc/skel/.config/hypr/BUILD/TrafkCursor_Build/old:
+.
+..
+build_theme_hyprcursor.sh
+build_theme_xcursor.sh
 
 ./airootfs/etc/skel/.config/hypr/BUILD/TrafkCursor_Build/Output:
 .
 ..
-theme_TrafkTuxCursor
 TrafkTuxCursorLegacy
-
-./airootfs/etc/skel/.config/hypr/BUILD/TrafkCursor_Build/Output/theme_TrafkTuxCursor:
-.
-..
-hyprcursors
-manifest.hl
-
-./airootfs/etc/skel/.config/hypr/BUILD/TrafkCursor_Build/Output/theme_TrafkTuxCursor/hyprcursors:
-.
-..
-default.hlc
-grab-diagonal.hlc
-grab-straight.hlc
-link.hlc
-not-allowed.hlc
-openhand.hlc
-text.hlc
-wait.hlc
-X.hlc
 
 ./airootfs/etc/skel/.config/hypr/BUILD/TrafkCursor_Build/Output/TrafkTuxCursorLegacy:
 .
@@ -634,7 +629,6 @@ style-colors.conf
 .
 ..
 AppLauncher
-assets
 bubble-menu.py
 Makefile
 PowerMenu
@@ -645,18 +639,9 @@ RofiTrafkBubbleMenus.c
 .
 ..
 menu.json
+theme_older.rasi
 theme_old.rasi
 theme.rasi
-
-./airootfs/etc/skel/.config/rofi/assets:
-.
-..
-bubble-normal.png
-bubble-selected.png
-TrafkBubble1.png
-TrafkBubble2.png
-TrafkBubbleGlow1.png
-TrafkBubbleGlow2.png
 
 ./airootfs/etc/skel/.config/rofi/PowerMenu:
 .
@@ -703,6 +688,13 @@ TrafkTuxBar
 TrafkTuxBar.c
 TrafkTuxBar.jsonc
 
+./airootfs/etc/skel/.config/TrafkTuxLauncher:
+.
+..
+Makefile
+TrafkTuxLauncher
+TrafkTuxLauncher.c
+
 ./airootfs/etc/skel/.config/VSCodium:
 .
 ..
@@ -729,6 +721,7 @@ HideAll.sh
 Makefile
 ScreenRotationDaemon
 ScreenRotationDaemon.c
+ScreenRotationDaemonOld.c
 WaybarAutohideDaemon
 WaybarAutohideDaemon.c
 WaybarClicks.sh
@@ -128357,8 +128350,9 @@ trafktux
 0433.png
 0449.png
 0465.png
-PlymouthLayer1.png
-PlymouthLayer3.png
+GrubLayer1.png
+GrubLayer2.png
+GrubLayer5.png
 trafktux.plymouth
 trafktux.script
 
@@ -128400,7 +128394,27 @@ theme.conf
 ./airootfs/usr/share/trafktux:
 .
 ..
+dgvoodoo2
 WineWrapperDefaults.reg
+
+./airootfs/usr/share/trafktux/dgvoodoo2:
+.
+..
+New
+Old
+
+./airootfs/usr/share/trafktux/dgvoodoo2/New:
+.
+..
+d3dim.dll
+ddraw.dll
+dgVoodoo.conf
+
+./airootfs/usr/share/trafktux/dgvoodoo2/Old:
+.
+..
+d3dim.dll
+ddraw.dll
 
 ./efiboot:
 .

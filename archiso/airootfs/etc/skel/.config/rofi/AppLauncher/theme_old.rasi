@@ -19,8 +19,18 @@
  *   bubble-normal.png   → dunkle lila Blase (inaktiv)
  *   bubble-selected.png → helle/leuchtende Blase (aktiv)
  *
- * Größe der Blasen: ~190x190 px empfohlen (quadratisch).
- * Passe CELL_SIZE unten an deine tatsächlichen Asset-Dimensionen an.
+ * ── SCALING-FIX ─────────────────────────────────────────
+ * Rofi kennt "px" (rohe, physische Bildschirm-Pixel - reagiert NICHT auf
+ * -dpi) und "mm" (physische Größe, wird aus dem aktuellen -dpi-Wert
+ * berechnet: px = mm * dpi / 25.4 - reagiert also 1:1 wie der Text).
+ * Alle Layout-Werte hier sind deshalb von px auf mm umgerechnet, damit
+ * sie exakt so mitskalieren wie die Schrift, wenn hyprland.lua per
+ * "-dpi $(hyprctl ...)" den DPI-Wert dynamisch setzt.
+ *
+ * Umrechnung (Basis: 96 DPI = Faktor 1.0, also identisch zu vorher):
+ *   mm = px_original * 25.4 / 96
+ * Alle Werte unten sind 1:1 aus der Original-Datei übernommen,
+ * NUR die Einheit wurde geändert - keine Zahl wurde "korrigiert".
  */
 
 configuration {
@@ -42,12 +52,12 @@ configuration {
     bubble-normal:      url("/tmp/bubble-normal.png",   both);
     bubble-selected:    url("/tmp/bubble-selected.png", both);
 
-    /* ── Layout ──────────────────────────────────── */
-    /* Zellgröße = Breite/Höhe einer Blase. Muss zu deinen PNGs passen. */
-    cell-size:          1080px;
+    /* ── Layout (in mm statt px, siehe SCALING-FIX oben) ── */
+    /* 1080px @96dpi -> 285.75mm */
+    cell-size:          285.75mm;
     columns:            5;
     rows:               3;
-    cell-gap:           35px;
+    cell-gap:           9.26mm;   /* 35px @96dpi */
 
     font:               "Sans Bold 8";
 }
@@ -58,8 +68,8 @@ window {
     background-color:   rgba(0,0,0,0);
     border:             0px;
     padding:            0px;
-    /* Breite = 5 Zellen (@cell-size) + 4 Lücken (@cell-gap) + 2× Outer-Padding (35px) */
-    width: 1080px;
+    /* Original: 1080px @96dpi -> 285.75mm */
+    width: 285.75mm;
     max-width: 100%;
     location:           center;
     anchor:             center;
@@ -69,7 +79,7 @@ window {
 mainbox {
     background-color:   @bg-transparent;
     children:           [ listview ];
-    padding:            35px;
+    padding:            9.26mm;   /* 35px @96dpi */
     spacing:            0px;
 }
 
@@ -96,7 +106,7 @@ element {
     background-color:   @bg-transparent;
     background-image:   @bubble-normal;
     orientation:        vertical;
-    padding:            35px 35px 35px 35px;
+    padding:            9.26mm 9.26mm 9.26mm 9.26mm;   /* 35px @96dpi */
     border:             0px;
     cursor:             pointer;
 
@@ -115,11 +125,11 @@ element selected.active {
 /* ── Icon (App/Ordner-Icon innerhalb der Blase) ──────── */
 element-icon {
     background-color:   @bg-transparent;
-    size:               65px;
+    size:               17.2mm;   /* 65px @96dpi */
     horizontal-align:   0.5;
     vertical-align:     0.5;
     /* Oben etwas Platz lassen damit Icon mittig-oben in der Blase sitzt */
-    margin:             5px 5px 5px 5px;
+    margin:             1.32mm 1.32mm 1.32mm 1.32mm;   /* 5px @96dpi */
 }
 
 /* ── Label ───────────────────────────────────────────── */
@@ -131,7 +141,7 @@ element-text {
     vertical-align:     0.1;
     /* Leichter Text-Schatten über expand: rofi kann keinen echten Schatten,
      *       aber ein etwas dunklerer Hint color verhindert Leseproblem */
-    margin:             5px 5px 5px 5px;
+    margin:             1.32mm 1.32mm 1.32mm 1.32mm;   /* 5px @96dpi */
 }
 
 element selected.normal element-text,

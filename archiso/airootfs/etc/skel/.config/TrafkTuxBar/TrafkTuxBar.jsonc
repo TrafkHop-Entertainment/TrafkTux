@@ -47,7 +47,7 @@
         // ohne Vordergrund-Ebene (genau wie der bisherige Blasen-Look).
         "fg_normal": "",
         "fg_hover": "",
-        "transition_ms": 140,
+        "transition_ms": 220,
         "min_size": 26,
         "padding": 7,
         "margin": 5
@@ -69,7 +69,15 @@
         "trigger_px": 15,
         "hide_px": 65,
         "touch_timeout_sec": 5,
-        "slide_ms": 220
+        // War 220 - zusammen mit den jetzt schnelleren Poll-Intervallen
+        // (SLOW/MID/FAST_POLL_MS im Code, 60/28/12ms) UND der neuen
+        // ease-out-back-Kurve fuers Zeigen (kleiner bewusster Overshoot -
+        // der "Bounce") fuehlt sich das jetzt insgesamt viel zuegiger an,
+        // auch bei gleicher oder sogar kuerzerer Dauer wie vorher.
+        // Kleiner drehen: 150-170 wirkt noch knackiger, aber der Bounce braucht
+        // etwas Luft, um ueberhaupt sichtbar zu sein - unter ~150 wird er
+        // kaum noch wahrgenommen.
+        "slide_ms": 265
     },
 
     "modules_left": [
