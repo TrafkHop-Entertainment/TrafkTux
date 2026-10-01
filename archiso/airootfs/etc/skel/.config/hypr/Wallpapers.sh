@@ -10,6 +10,9 @@
 #
 # Verifikation ohne Anwenden:
 #   DRY_RUN=1 ~/.config/hypr/Wallpapers.sh
+#
+# Explizite Auswahl statt Zufall (siehe apply_image_to_monitor() unten):
+#   ~/.config/hypr/Wallpapers.sh --set /pfad/zum/bild.jpg [MONITOR]
 
 WALLPAPER_DIR="$HOME/.config/hypr/Wallpapers"
 CHANNEL="xfce4-desktop"
@@ -79,6 +82,54 @@ set_prop() {
     fi
 }
 
+apply_image_to_monitor() {
+    local mon="$1" image="$2"
+    local base="/backdrop/screen0/monitor${mon}/workspace0"
+    set_prop "$base/last-image"  string "$image"
+    set_prop "$base/image-style" int    5   # 5 = Vergrößert
+    set_prop "$base/color-style" int    0   # 0 = Durchsichtig
+}
+
+# ─────────────────────────────────────────────────────────────────
+# Explizite Auswahl (fürs Wallpapers-Tab in Appearance & Language):
+#   Wallpapers.sh --set /pfad/zum/bild.jpg [MONITORNAME]
+# Ohne MONITORNAME wird das Bild auf ALLE aktuell angeschlossenen
+# Monitore gesetzt (identisches Bild überall); mit MONITORNAME nur auf
+# den genannten (Name wie von "hyprctl monitors" gemeldet, z.B. "eDP-1",
+# "HDMI-A-1"). Nutzt dieselbe apply_image_to_monitor()-Funktion wie der
+# normale Zufalls-Durchlauf unten, damit beide Wege konsistent bleiben
+# und ein manuell gesetztes Bild dieselben xfconf-Keys bekommt wie ein
+# gewürfeltes.
+if [ "${1:-}" = "--set" ]; then
+    IMAGE="${2:-}"
+    TARGET_MON="${3:-}"
+
+    if [ -z "$IMAGE" ] || [ ! -f "$IMAGE" ]; then
+        echo "Usage: Wallpapers.sh --set /path/to/image [MONITOR]" >&2
+        exit 1
+    fi
+
+    if [ -n "$TARGET_MON" ]; then
+        MONS=("$TARGET_MON")
+    else
+        mapfile -t MONS < <(hyprctl monitors -j | jq -r '.[].name')
+    fi
+
+    if [ "${#MONS[@]}" -eq 0 ]; then
+        notify-send "Wallpaper" "Keine Monitore von hyprctl erhalten." 2>/dev/null
+        exit 1
+    fi
+
+    for MON in "${MONS[@]}"; do
+        apply_image_to_monitor "$MON" "$IMAGE"
+    done
+
+    killall xfdesktop 2>/dev/null || true
+    sleep 1
+    xfdesktop &
+    exit 0
+fi
+
 # Monitore einlesen: name, width, height
 mapfile -t MONITORS < <(
     hyprctl monitors -j | jq -r '.[] | [.name, (.width|tostring), (.height|tostring)] | @tsv'
@@ -110,10 +161,7 @@ for line in "${MONITORS[@]}"; do
         continue
     fi
 
-    BASE="/backdrop/screen0/monitor${MON}/workspace0"
-    set_prop "$BASE/last-image"  string "$IMAGE"
-    set_prop "$BASE/image-style" int    5   # 5 = Vergrößert
-    set_prop "$BASE/color-style" int    0   # 0 = Durchsichtig
+    apply_image_to_monitor "$MON" "$IMAGE"
 done
 
 if [ "$DRY_RUN" = "1" ]; then

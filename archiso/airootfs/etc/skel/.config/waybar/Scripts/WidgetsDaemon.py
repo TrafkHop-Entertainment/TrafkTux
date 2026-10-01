@@ -66,6 +66,30 @@ def _resolve_wallpaper_script() -> str:
             return candidate
     return WALLPAPER_SCRIPT  # Fallback nur für die Tooltip-Fehlermeldung
 
+# Ordnerstruktur von Wallpapers.sh: ~/.config/hypr/Wallpapers/<ratio>/,
+# Ratio-Keys 11/1610/169/219/329/43 (siehe Wallpapers.sh-Kommentar) -
+# für den neuen Wallpapers-Tab (Appearance & Language) wird hier
+# derselbe Ordner rekursiv gescannt, damit dort exakt dieselben Bilder
+# auftauchen, die auch beim Zufalls-Wallpaper zur Auswahl stehen.
+WALLPAPER_DIR = f"{HOME}/.config/hypr/Wallpapers"
+_WALLPAPER_EXTS = (".jpg", ".jpeg", ".png", ".webp")
+
+def _scan_wallpaper_images() -> list[str]:
+    """Rein lesendes os.walk() über lokale Dateien - schnell genug für
+    einen synchronen Aufruf. Das eigentliche Preview-Rendering (siehe
+    _build_appearance_wallpapers_tab) läuft trotzdem in einem eigenen
+    Thread, da GdkPixbuf.Pixbuf.new_from_file_at_scale() bei vielen
+    bzw. großen Bildern durchaus spürbar dauern kann und den GTK-
+    Main-Thread sonst blockieren würde."""
+    if not os.path.isdir(WALLPAPER_DIR):
+        return []
+    out = []
+    for root, _dirs, files in os.walk(WALLPAPER_DIR):
+        for f in files:
+            if f.lower().endswith(_WALLPAPER_EXTS):
+                out.append(os.path.join(root, f))
+    return sorted(out)
+
 WEATHER_CONF     = Path(HOME) / ".config" / "wb-daemon" / "weather.json"
 _DEFAULT_WEATHER_LOC = {"lat": 47.8121, "lon": 16.2506, "name": "Wiener Neustadt"}
 GOLD   = "#fff495"   # "ausgewählter" Text, Pünktchen, Slider
@@ -106,10 +130,56 @@ window {{
    padding/margin. War der eigentliche Grund für den riesigen Abstand
    zwischen Sektions-Buttons (z.B. "SCREEN: 100%") und dem Slider
    direkt darunter - kein Layout-/Spacing-Problem, sondern schlicht ein
-   viel zu hoher, unsichtbarer Button selbst. Global zurückgesetzt,
-   damit jeder Button im Programm wirklich auf seinen Text schrumpft.*/
-button {{
+   viel zu hoher, unsichtbarer Button selbst.
+
+   min-height: 0 auf "button" ALLEIN reicht aber nicht: das Theme setzt
+   ZUSÄTZLICH Padding auf den inneren Knoten (button-box/label/image
+   zwischen dem <button>-Rand und dem eigentlichen Text) - genau DAS
+   blieb bisher aktiv und blähte die Hitbox trotzdem weiter auf, auch
+   nachdem der äußere Button selbst schon auf 0 stand (das war der
+   eigentliche, bis zuletzt ungefundene Rest-Abstand zwischen Label und
+   Slider). Beides jetzt explizit zurückgesetzt - außen UND am inneren
+   Knoten -, alle spezifischeren Klassen weiter unten (.bubble.section,
+   .bubble.slider, button.bubble usw.) haben höhere Spezifität und
+   setzen ihr eigenes gewolltes Padding danach gezielt wieder. */
+button, button.text-button, button.image-button, button.toggle,
+button.flat {{
     min-height: 0;
+    min-width: 0;
+    padding: 0;
+    margin: 0;
+    border: none;
+    outline: none;
+    box-shadow: none;
+    background: none;
+    background-image: none;
+}}
+button > box, button > label, button > image {{
+    min-height: 0;
+    min-width: 0;
+    padding: 0;
+    margin: 0;
+    border: none;
+}}
+button:hover, button:active, button:checked, button:focus,
+button:focus-visible {{
+    box-shadow: none;
+    outline: none;
+    border: none;
+}}
+
+/* Gleiches Prinzip für die Scale-Knoten (Slider) - trough/highlight/
+   slider/value könnten vom Theme ebenfalls eigenes Padding/Margin
+   bekommen, das den Regler unnötig aufbläht. scale{{}} unten (Zeile mit
+   min-height: 15px) setzt danach gezielt die gewollte Reglerhöhe. */
+scale, scale contents, scale trough, scale highlight, scale slider,
+scale value {{
+    padding: 0;
+    margin: 0;
+    border: none;
+    outline: none;
+    box-shadow: none;
+    background-image: none;
 }}
 
 /* Basis für JEDEN reinen, NICHT klickbaren Text/Icon (Titel,
@@ -142,6 +212,7 @@ button {{
 .bubble.title.compact-title {{
     padding: 2px 22px;
     margin: 0px 0px;
+    font-size: 19px;
 }}
 
 /* NUR für reine Ziffern-/Uhrzeit-Anzeigen (z.B. die Uhr im
@@ -165,9 +236,21 @@ button {{
     font-family: "Noto Sans", sans-serif;
 }}
 
+/* NEU: eigener, großer Font-Grad NUR für die Uhr-Anzeige im neuen
+   dedizierten "Clock"-Haupttab (Redesign-Liste: "Das groß mittig die
+   Uhr und direkt darunter das Datum") - der alte .clock-digits-Fund
+   oben bleibt unverändert (nutzt weiterhin die kleinere .bubble.title-
+   Größe), nur der neue Tab bekommt diese deutlich größere Variante. */
+.clock-digits-huge {{
+    font-family: "Noto Sans", sans-serif;
+    font-size: 52px;
+    font-weight: bold;
+    letter-spacing: 1px;
+}}
+
 .bubble.section {{
     padding: 3px 16px;
-    margin: 6px 0px 1px 0px;
+    margin: 6px 0px 0px 0px;
     font-size: 11px;
     font-weight: bold;
     letter-spacing: 2px;
@@ -217,7 +300,7 @@ button {{
 .bubble.slider {{
     background: none;
     padding: 0px 14px;
-    margin: 1px 0px;
+    margin: 0px 0px;
 }}
 
 /* Echte Klick-Ziele (Buttons, Toggles, Kalendertage, Dropdowns, ...):
@@ -247,6 +330,17 @@ button.bubble.active {{
     color: {GOLD};
     font-weight: bold;
     text-shadow: 0 0 4px {GOLD}, 0 0 10px {GOLD};
+}}
+/* NUR für den "Dark Theme"-Umschalter in Appearance & Language (Look-
+   Tab): wenn Dark-Mode aktiv ist, ein eigener lila Glow statt des
+   normalen goldenen - Redesign-Vorgabe "wenn dark auf die Farbe
+   #9C81CF mit #7554B3 Glow, wenn light der normale Glow". 3 Klassen
+   ((0,3,0)) schlagen die 2 Klassen von button.bubble.active
+   ((0,2,0)) gezielt NUR hier, ohne jeden anderen aktiven Button in
+   der App zu beeinflussen. */
+button.bubble.active.theme-glow-dark {{
+    color: #9C81CF;
+    text-shadow: 0 0 4px #7554B3, 0 0 10px #7554B3;
 }}
 button.bubble.title {{
     padding: 8px 22px;
@@ -294,7 +388,32 @@ separator.tab-divider {{
     margin: 4px 10px 8px 10px;
 }}
 
-scrollbar {{ background-color: transparent; min-width: 3px; }}
+/* NUR für den Settings-Hub-Titel ("Settings"-Überschrift im Haupt-
+   Einstellungsmenü) - Redesign-Vorgabe: "kein dünner Strich mehr,
+   sondern ein fetterer als bei den Tabs, Abstand verringern, Über-
+   schrift soll fast auf dem Strich stehen". Bewusst NOCH kräftiger
+   als .tab-divider oben (3px statt 2px, mehr Deckkraft) und mit
+   deutlich knapperem Rand zur Überschrift hin. */
+separator.hub-divider {{
+    background-color: rgba(255,244,149,0.9);
+    min-height: 3px;
+    margin: 1px 10px 6px 10px;
+}}
+
+/* NUR für den "Connected as ..."-Link oben im Tailscale-Tab -
+   Redesign-Vorgabe: "sollte viel größer sein und leuchten". */
+.tailscale-conn-big {{
+    font-size: 20px;
+    font-weight: bold;
+    color: {GOLD};
+    text-shadow: 0 0 4px {GOLD}, 0 0 10px {GOLD};
+}}
+/* NUR für "Start on boot" im Tailscale-Tab - Redesign-Vorgabe "start
+   on boot bissl kleiner machen". */
+button.bubble.compact-btn {{
+    font-size: 12px;
+    padding: 4px 12px;
+}}
 scrollbar slider {{
     background-color: rgba(255,244,149,0.3);
     border-radius: 2px;
@@ -1057,6 +1176,14 @@ def tab_sep() -> Gtk.Separator:
     s.get_style_context().add_class("tab-divider")
     return s
 
+def hub_sep() -> Gtk.Separator:
+    """NOCH kräftigerer Trennstrich NUR für den Settings-Hub-Titel
+    (siehe separator.hub-divider in der CSS) - Redesign-Vorgabe "ein
+    fetterer als bei den Tabs"."""
+    s = Gtk.Separator()
+    s.get_style_context().add_class("hub-divider")
+    return s
+
 def pad(w: Gtk.Widget, h: int = 10, v: int = 10) -> Gtk.Widget:
     w.set_margin_start(h); w.set_margin_end(h)
     w.set_margin_top(v);   w.set_margin_bottom(v)
@@ -1184,10 +1311,11 @@ class _SegmentedControl:
     aufklappbaren Menüs eine Reihe direkt sichtbarer, antippbarer
     Knöpfe. Vorteil ggü. echtem Dropdown: alle Optionen sofort
     sichtbar, kein Extra-Klick zum Aufklappen, besser für Touch.
-    (Rotation selbst ist inzwischen KEIN Anwendungsfall mehr dafür -
-    die ist ein echter Zieh-Regler geworden, siehe rot_slider in
-    _build_monitor_row(); diese Klasse wird aktuell für Refresh-Rate
-    (hz_combo) genutzt.)
+    (Rotation und Hz nutzen das mittlerweile beide NICHT mehr - Rotation
+    ist eine Gtk.ComboBoxText geworden (siehe rot_combo in
+    _build_monitor_row()), Hz ebenso (siehe hz_combo dort) - diese
+    Klasse wird aktuell für den Monitor-Ziel-Wähler im Wallpapers-Tab
+    genutzt, siehe target_ctrl in _build_appearance_wallpapers_tab().)
 
     Bildet bewusst NUR die Teilmenge der Gtk.ComboBoxText-API ab, die
     die aufrufenden Stellen tatsächlich nutzen (get_active_text,
@@ -1808,9 +1936,13 @@ def _dns_content(win: Gtk.Window) -> Gtk.Box:
     Kein Lazy-Loading nötig wie beim Firewall-Tab - nichts hier drin
     braucht beim ersten Anzeigen schon root/pkexec, nur der DoT-Toggle
     beim tatsächlichen Umschalten."""
-    root = vbox(4); pad(root, h=4, v=6)
-    root.pack_start(btitle("󰙲  DNS"), False, False, 0)
-    root.pack_start(sep(), False, False, 2)
+    root = vbox(4); pad(root, h=4, v=2)
+    # Redesign-Liste: "Keine Überschrift. Nur den Trennstrich unter
+    # Encryption stehen lassen, den darüber nicht. Abstand oben
+    # entfernen/verringern." - btitle()+sep() oben sind weg, top-
+    # Padding von 6 auf 2 verringert; der sep() direkt unter der
+    # Encryption-Zeile (siehe "root.pack_start(sep(), ...)" nach
+    # dot_row weiter unten) bleibt unverändert stehen.
 
     status_lbl = Gtk.Label(label="")
     status_lbl.get_style_context().add_class("caption")
@@ -2518,6 +2650,91 @@ def _bright_pct() -> int:
         return max(5, int(cur / mx * 100))
     except: return 50
 
+def _internal_panel_available() -> bool:
+    """brightnessctl ohne -d steuert das Default-Gerät der Klasse
+    'backlight' - existiert keins (z.B. Desktop-PC ohne eingebautes
+    Panel), liefert 'brightnessctl max' 0 oder einen Fehler."""
+    try:
+        return int(run(["brightnessctl", "max"]) or 0) > 0
+    except Exception:
+        return False
+
+def _ddcutil_available() -> bool:
+    return shutil.which("ddcutil") is not None
+
+def _ddcutil_displays() -> list[dict]:
+    """Externe Monitore mit DDC/CI-Unterstützung, via 'ddcutil detect'.
+    NICHT jeder Monitor/jedes Kabel unterstützt DDC/CI (v.a. manche
+    USB-C-Docks/KVMs blockieren das) - taucht ein Monitor hier nicht
+    auf, findet ddcutil ihn schlicht nicht, kein Fehlerfall. ACHTUNG:
+    dieser Aufruf tastet den I2C-Bus ab und kann pro Anzeige gut eine
+    halbe bis mehrere Sekunden dauern - IMMER via in_thread() aufrufen,
+    NIE direkt im GTK-Main-Thread (siehe _load_monitor_brightness())."""
+    if not _ddcutil_available():
+        return []
+    out = run(["ddcutil", "detect", "--brief"], timeout=15)
+    displays: list[dict] = []
+    cur: dict | None = None
+    for line in (out or "").splitlines():
+        line = line.strip()
+        m = re.match(r'Display\s+(\d+)', line)
+        if m:
+            if cur:
+                displays.append(cur)
+            cur = {"display": int(m.group(1)), "model": ""}
+            continue
+        if cur is not None:
+            mm = re.match(r'Model:\s*(.+)', line)
+            if mm:
+                cur["model"] = mm.group(1).strip()
+    if cur:
+        displays.append(cur)
+    return displays
+
+def _ddcutil_get_brightness(display: int) -> int:
+    """VCP-Code 0x10 = Helligkeit (Standard-DDC/CI-Feature-Code, siehe
+    MCCS-Spezifikation) - '--brief' liefert eine einzeilige Ausgabe im
+    Format 'VCP 10 C <aktuell> <max>', dritter Wert ist der aktuelle
+    Rohwert (praktisch immer bereits 0-100 bei Helligkeit)."""
+    out = run(["ddcutil", "--display", str(display), "getvcp", "10",
+               "--brief"], timeout=8)
+    parts = (out or "").split()
+    try:
+        idx = parts.index("10")
+        return int(parts[idx + 2])
+    except (ValueError, IndexError):
+        return 50
+
+def _ddcutil_set_brightness(display: int, value: int) -> None:
+    run(["ddcutil", "--display", str(display), "setvcp", "10", str(value)],
+        timeout=8)
+
+def _brightness_devices() -> list[dict]:
+    """Alle steuerbaren Bildschirm-Helligkeiten in EINER Liste: das
+    interne Panel (immer über brightnessctl, DDC/CI gibt's dafür
+    nicht) + jeder per ddcutil erkannte externe Monitor. Rein lesende
+    Erkennung (ddcutil detect + brightnessctl max) - läuft im Aufrufer
+    IMMER per in_thread(), da ddcutil-Bus-Polling spürbar dauern kann
+    (siehe _ddcutil_displays()-Docstring). Analog zu _get_sinks() im
+    Audio-Widget: liefert eine einfache Liste von Dicts, die
+    _build_monitor_brightness_row() dann in Zeilen umsetzt (gleiches
+    Muster wie _build_device_row() für Audiogeräte)."""
+    devices: list[dict] = []
+    if _internal_panel_available():
+        devices.append({
+            "kind": "internal", "id": None,
+            "label": "Internal Display",
+            "min": 5, "cur": _bright_pct(),
+        })
+    for d in _ddcutil_displays():
+        disp = d["display"]
+        devices.append({
+            "kind": "ddcutil", "id": disp,
+            "label": d["model"] or f"Display {disp}",
+            "min": 0, "cur": _ddcutil_get_brightness(disp),
+        })
+    return devices
+
 def _nl_available() -> str | None:
     for cmd in ["gammastep", "hyprsunset", "wlsunset"]:
         if run(["which", cmd]): return cmd
@@ -2711,6 +2928,63 @@ def _openrgb_set_color(dev_name: str, hex_color: str) -> None:
     except Exception:
         pass
 
+def _build_monitor_brightness_row(dev: dict) -> Gtk.Box:
+    """Eine Zeile PRO ERKANNTER ANZEIGE im Monitor-Tab des Brightness-
+    Widgets - exakt dasselbe Muster wie _build_device_row() im Audio-
+    Widget (Redesign-Vorgabe: "Pro Monitor Überschrift wie bei audio
+    devices"): Name+Wert in EINEM zentrierten Label, darunter ein
+    Regler ohne Icon, reduzierter Abstand. dev kommt aus
+    _brightness_devices() - "kind" entscheidet nur, welcher Backend-
+    Aufruf beim Ziehen läuft (brightnessctl fürs interne Panel,
+    ddcutil/DDC-CI für externe Monitore)."""
+    row = vbox(1)
+    row.get_style_context().add_class("bubble")
+    pad(row, h=8, v=4)
+
+    val_state = [dev["cur"]]
+
+    def _label_text():
+        return f'{dev["label"]}: {val_state[0]}%'
+
+    name_lbl = bsec(_label_text())
+    name_widget = name_lbl.get_children()[0]
+    row.pack_start(name_lbl, False, False, 0)
+
+    debounce_id = [0]
+
+    def _apply_value(v: int):
+        if dev["kind"] == "internal":
+            run(["brightnessctl", "set", f"{v}%"])
+        else:
+            _ddcutil_set_brightness(dev["id"], v)
+
+    def _on_change(s):
+        val_state[0] = int(s.get_value())
+        name_widget.set_label(_label_text())
+        # ddcutil ist deutlich langsamer pro Aufruf als brightnessctl
+        # (I2C-Bus statt sysfs) - Debounce verhindert, dass beim Ziehen
+        # ein Rattenschwanz an Hintergrund-Threads sich gegenseitig
+        # überholt und die Anzeige am Ende auf einem veralteten Wert
+        # hängen bleibt.
+        if debounce_id[0]:
+            GLib.source_remove(debounce_id[0])
+        def _fire():
+            debounce_id[0] = 0
+            in_thread(_apply_value, val_state[0])
+            return False
+        debounce_id[0] = GLib.timeout_add(150, _fire)
+
+    box, _ = bslider("", dev["min"], 100, 1, dev["cur"], cb=_on_change, show_val=False)
+    for ch in box.get_children():
+        if isinstance(ch, Gtk.Label):
+            box.remove(ch)
+            break
+    box.set_halign(Gtk.Align.CENTER)
+    box.set_size_request(220, -1)
+    row.pack_start(box, False, False, 0)
+
+    return row
+
 def _brightness_content(win: Gtk.Window) -> Gtk.Box:
     # Roadmap-Punkt "Brightness Rework": vorher eine einzige lange Liste
     # (Screen/Keyboard/RGB/Night Light untereinander) - jetzt 2 Tabs:
@@ -2729,36 +3003,51 @@ def _brightness_content(win: Gtk.Window) -> Gtk.Box:
     # KEIN Titel/Icon mehr - der Tab-Button "Monitor" sagt schon alles,
     # eine zusätzliche Überschrift wäre redundant.
 
-    wallpaper_script = _resolve_wallpaper_script()
+    # BUGFIX ("mehrere Monitore werden nicht angezeigt"): hier stand
+    # bisher GENAU EIN globaler brightnessctl-Regler ("Screen: X%"),
+    # unabhängig davon, wie viele Bildschirme tatsächlich angeschlossen
+    # sind - brightnessctl kennt naturgemäß nur das interne Panel, nie
+    # externe DP/HDMI-Monitore. Jetzt: eine Zeile PRO erkannter Anzeige
+    # (internes Panel via brightnessctl + jeder per DDC/CI erkannte
+    # externe Monitor via ddcutil, siehe _brightness_devices()), exakt
+    # nach demselben "Pro Monitor Überschrift wie bei audio devices"-
+    # Muster aus der Redesign-Liste. Erkennung läuft async (ddcutil ist
+    # I2C-Bus-Polling, spürbar langsam), Platzhalter bis dahin.
+    #
+    # Der Klick-zum-Wallpaper-neu-würfeln auf dem alten "Screen"-Label
+    # ist bewusst WEG (Redesign-Liste: "Screen Label triggert jetzt
+    # beim klicken das was vorher das Symbol rechts davon gemacht hätte
+    # - geben wir weg") - Wallpaper-Auswahl lebt jetzt vollständig im
+    # neuen Wallpapers-Tab unter Appearance & Language (manuelle Auswahl
+    # mit Preview statt nur Zufalls-Reroll).
+    mon_section = vbox(4)
+    t1.pack_start(mon_section, False, False, 0)
+    _loading_lbl = bitem("Loading displays…", dim=True)
+    mon_section.pack_start(_loading_lbl, False, False, 0)
 
-    def _on_wallpaper(_w):
-        run_bg(["bash", wallpaper_script])
+    def _load_monitor_brightness():
+        try:
+            devices = _brightness_devices()
+        except Exception:
+            devices = []
+        def _apply():
+            if _loading_lbl.get_parent() is not None:
+                mon_section.remove(_loading_lbl)
+            if not devices:
+                mon_section.pack_start(
+                    bitem("No controllable displays found "
+                          "(internal panel, or ddcutil for external "
+                          "monitors)", dim=True),
+                    False, False, 0)
+            for i, dev in enumerate(devices):
+                mon_section.pack_start(
+                    _build_monitor_brightness_row(dev), False, False,
+                    0 if i == 0 else 4)
+            mon_section.show_all()
+            return False
+        GLib.idle_add(_apply)
 
-    # "Screen: 80%" ist jetzt EIN klickbares Label - Klick löst aus,
-    # was vorher der separate Reroll-Icon-Button daneben gemacht hat
-    # (Wallpaper neu würfeln). Kein Icon mehr am Slider darunter.
-    screen_btn = bsec_btn(f"Screen: {_bright_pct()}%")
-    screen_btn.set_tooltip_text("Click to reroll wallpaper")
-    if not os.path.isfile(wallpaper_script):
-        screen_btn.set_sensitive(False)
-        screen_btn.set_tooltip_text(
-            f"Wallpaper script not found in ~/.config/hypr "
-            f"(looked for: {', '.join(_WALLPAPER_SCRIPT_CANDIDATES)})")
-    screen_btn.connect("clicked", _on_wallpaper)
-    t1.pack_start(screen_btn, False, False, 0)
-
-    def _on_bright(s):
-        val = int(s.get_value())
-        screen_btn.set_label(f"SCREEN: {val}%")
-        in_thread(run, ["brightnessctl", "set", f"{val}%"])
-    bright_box, _ = bslider("", 5, 100, 1, _bright_pct(), cb=_on_bright, show_val=False)
-    for ch in bright_box.get_children():
-        if isinstance(ch, Gtk.Label):
-            bright_box.remove(ch)
-            break
-    bright_box.set_halign(Gtk.Align.CENTER)
-    bright_box.set_size_request(230, -1)
-    t1.pack_start(bright_box, False, False, 0)
+    in_thread(_load_monitor_brightness)
 
     # NIGHT LIGHT: das Label SELBST ist jetzt der An/Aus-Schalter -
     # kein "On"/"Off"-Text mehr daneben, leuchtet stattdessen einfach,
@@ -4373,7 +4662,7 @@ def _geocode(query: str) -> list:
 def _fetch_weather() -> dict:
     r = {"icon": "🌡️", "desc": "–", "temp": "–",
          "humidity": "–", "precip": "–",
-         "day1_icon": "–", "day2_icon": "–", "location": "–"}
+         "hourly": [], "daily": [], "location": "–"}
     loc = _load_weather_location()
     r["location"] = loc.get("name", "–")
     try:
@@ -4382,9 +4671,10 @@ def _fetch_weather() -> dict:
             "latitude": loc["lat"], "longitude": loc["lon"],
             "current": "temperature_2m,relative_humidity_2m,"
                        "precipitation,weather_code,is_day",
-            "daily": "weather_code",
+            "hourly": "temperature_2m,weather_code",
+            "daily": "weather_code,temperature_2m_max,temperature_2m_min",
             "timezone": "auto",
-            "forecast_days": 3,
+            "forecast_days": 7,
             "models": "best_match",
         }
         url = "https://api.open-meteo.com/v1/forecast?" + urllib.parse.urlencode(params)
@@ -4404,9 +4694,50 @@ def _fetch_weather() -> dict:
         precip = cur.get("precipitation")
         r["precip"] = f"{precip} mm" if precip is not None else "–"
 
-        daily_codes = data.get("daily", {}).get("weather_code", [])
-        if len(daily_codes) > 1: r["day1_icon"] = _wicon_wmo(daily_codes[1])
-        if len(daily_codes) > 2: r["day2_icon"] = _wicon_wmo(daily_codes[2])
+        # "Das Wetter in den nächsten paar Stunden" - die nächsten 6
+        # vollen Stunden AB JETZT (nicht ab Mitternacht, wie Open-Meteo
+        # die hourly-Liste sonst liefert) - daher hier per aktueller
+        # Systemzeit in die Liste reingesucht statt einfach Index 0.
+        hourly = data.get("hourly", {})
+        times = hourly.get("time", [])
+        temps = hourly.get("temperature_2m", [])
+        codes = hourly.get("weather_code", [])
+        now_iso = datetime.now().strftime("%Y-%m-%dT%H:00")
+        start_idx = 0
+        for i, t in enumerate(times):
+            if t >= now_iso:
+                start_idx = i
+                break
+        for i in range(start_idx, min(start_idx + 6, len(times))):
+            try:
+                hh = times[i].split("T")[1][:5]
+                r["hourly"].append({
+                    "label": hh,
+                    "icon": _wicon_wmo(codes[i]) if i < len(codes) else "–",
+                    "temp": f"{round(temps[i])}°" if i < len(temps) else "–",
+                })
+            except (IndexError, ValueError):
+                continue
+
+        # "Die 7 Tage Prognose" - Tagesname (Mo/Di/...) + Icon +
+        # Min/Max-Temperatur, inklusive heute als erster Eintrag.
+        daily = data.get("daily", {})
+        d_times = daily.get("time", [])
+        d_codes = daily.get("weather_code", [])
+        d_max = daily.get("temperature_2m_max", [])
+        d_min = daily.get("temperature_2m_min", [])
+        for i, dstr in enumerate(d_times[:7]):
+            try:
+                wd = date.fromisoformat(dstr)
+                label = "Today" if i == 0 else DAYS_EN[wd.weekday()]
+                r["daily"].append({
+                    "label": label,
+                    "icon": _wicon_wmo(d_codes[i]) if i < len(d_codes) else "–",
+                    "hi": f"{round(d_max[i])}°" if i < len(d_max) else "–",
+                    "lo": f"{round(d_min[i])}°" if i < len(d_min) else "–",
+                })
+            except (IndexError, ValueError):
+                continue
     except Exception:
         try:
             import urllib.request, json as _json
@@ -4423,15 +4754,46 @@ def _fetch_weather() -> dict:
             r["humidity"] = f'{cur.get("humidity", "–")}%'
             r["precip"] = f'{cur.get("precipMM", "0.0")} mm'
 
-            def _midday_code(day: dict) -> str:
-                hrs = day.get("hourly", [])
-                if len(hrs) > 4: return hrs[4].get("weatherCode", "")
-                if hrs: return hrs[len(hrs)//2].get("weatherCode", "")
-                return ""
-
             days = data.get("weather", [])
-            if len(days) > 1: r["day1_icon"] = _wicon(_midday_code(days[1]))
-            if len(days) > 2: r["day2_icon"] = _wicon(_midday_code(days[2]))
+            now_hour = datetime.now().hour
+            if days:
+                # wttr.in liefert pro Tag 8 Einträge im 3h-Raster
+                # ("time": "0","300",...,"2100") - die ab JETZT
+                # passenden aus heute + (falls nötig) morgen sammeln.
+                pool = []
+                for di, day in enumerate(days[:2]):
+                    for h in day.get("hourly", []):
+                        try:
+                            slot_hour = int(h.get("time", "0")) // 100
+                        except ValueError:
+                            continue
+                        abs_hour = slot_hour + di * 24
+                        pool.append((abs_hour, h))
+                for abs_hour, h in pool:
+                    if abs_hour < now_hour:
+                        continue
+                    if len(r["hourly"]) >= 6:
+                        break
+                    r["hourly"].append({
+                        "label": f"{abs_hour % 24:02d}:00",
+                        "icon": _wicon(h.get("weatherCode", "")),
+                        "temp": f'{h.get("tempC", "–")}°',
+                    })
+
+            for i, day in enumerate(days[:7]):
+                try:
+                    wd = date.fromisoformat(day.get("date", ""))
+                    label = "Today" if i == 0 else DAYS_EN[wd.weekday()]
+                except ValueError:
+                    label = f"D{i}"
+                hrs = day.get("hourly", [])
+                mid_code = hrs[4].get("weatherCode", "") if len(hrs) > 4 else ""
+                r["daily"].append({
+                    "label": label,
+                    "icon": _wicon(mid_code),
+                    "hi": f'{day.get("maxtempC", "–")}°',
+                    "lo": f'{day.get("mintempC", "–")}°',
+                })
         except Exception:
             pass
     return r
@@ -4746,32 +5108,61 @@ def _clock_content(win: Gtk.Window) -> Gtk.Box:
     stack.set_hhomogeneous(False)
     stack.set_vhomogeneous(False)
 
+    # ── TAB 0: Clock (NEU - eigener Haupttab) ────────────────────────
+    # Redesign-Liste: "Vorher neuer Haupttab: Clock: Das groß mittig
+    # die Uhr und direkt darunter das Datum" - Uhrzeit/Datum standen
+    # bisher klein mit im Weather-Tab (dt_row unten) - jetzt eigener,
+    # eigenständiger Tab mit großer, zentrierter Anzeige.
+    t0 = vbox(6); pad(t0, h=4, v=18)
+    time_lbl = Gtk.Label(label="--:--")
+    time_lbl.get_style_context().add_class("clock-digits-huge")
+    time_lbl.set_halign(Gtk.Align.CENTER)
+    date_lbl = Gtk.Label(label="")
+    date_lbl.get_style_context().add_class("value-md")
+    date_lbl.set_halign(Gtk.Align.CENTER)
+    t0.pack_start(time_lbl, False, False, 0)
+    t0.pack_start(date_lbl, False, False, 0)
+
     # ── TAB 1: Weather ──────────────────────────────────────
+    # Redesign-Liste: "Oben Mittig Was grad ist. Oben links das
+    # Location Pin Icon. Oben rechts die 2 anderen Stats" + "Unten
+    # mitte: das Wetter in den nächsten paar Stunden" + "Unten unten
+    # Mitte: die 7 Tage Prognose".
     t1 = vbox(4); pad(t1, h=4, v=6)
 
-    today_card = hbox(12)
-    today_card.get_style_context().add_class("bubble")
-    today_card.get_style_context().add_class("item")
+    top_row = hbox(8)
+    top_row.set_halign(Gtk.Align.FILL)
 
-    icon_lbl = Gtk.Label(label="🌡️")
-    icon_lbl.get_style_context().add_class("icon-xl")
-    today_card.pack_start(icon_lbl, False, False, 0)
+    loc_btn = Gtk.Button(label="📍")
+    loc_btn.set_relief(Gtk.ReliefStyle.NONE)
+    loc_btn.get_style_context().add_class("flat")
+    loc_btn.set_can_focus(False)
+    loc_btn.set_halign(Gtk.Align.START)
+    loc_btn.set_valign(Gtk.Align.START)
+    loc_btn.set_tooltip_text("Change location")
+    top_row.pack_start(loc_btn, False, False, 0)
 
     mid_box = vbox(2)
     mid_box.set_valign(Gtk.Align.CENTER)
+    mid_box.set_halign(Gtk.Align.CENTER)
+    mid_box.set_hexpand(True)
+    icon_row = hbox(6)
+    icon_row.set_halign(Gtk.Align.CENTER)
+    icon_lbl = Gtk.Label(label="🌡️")
+    icon_lbl.get_style_context().add_class("icon-xl")
     temp_lbl = Gtk.Label(label="–")
     temp_lbl.get_style_context().add_class("temp-xl")
-    temp_lbl.set_halign(Gtk.Align.START)
+    icon_row.pack_start(icon_lbl, False, False, 0)
+    icon_row.pack_start(temp_lbl, False, False, 0)
     desc_lbl = Gtk.Label(label="Loading weather…")
     desc_lbl.get_style_context().add_class("value-md")
-    desc_lbl.set_halign(Gtk.Align.START)
-    mid_box.pack_start(temp_lbl, False, False, 0)
+    desc_lbl.set_halign(Gtk.Align.CENTER)
+    mid_box.pack_start(icon_row, False, False, 0)
     mid_box.pack_start(desc_lbl, False, False, 0)
-    mid_box.set_hexpand(True)
-    today_card.pack_start(mid_box, True, True, 0)
+    top_row.pack_start(mid_box, True, True, 0)
 
     stats_box = vbox(3)
-    stats_box.set_valign(Gtk.Align.CENTER)
+    stats_box.set_valign(Gtk.Align.START)
     hum_lbl = Gtk.Label(label="💧 –")
     hum_lbl.get_style_context().add_class("caption")
     hum_lbl.set_halign(Gtk.Align.END)
@@ -4780,18 +5171,11 @@ def _clock_content(win: Gtk.Window) -> Gtk.Box:
     rain_lbl.get_style_context().add_class("caption")
     rain_lbl.set_halign(Gtk.Align.END)
     rain_lbl.set_tooltip_text("Precipitation (mm)")
-    loc_btn = Gtk.Button(label="📍")
-    loc_btn.set_relief(Gtk.ReliefStyle.NONE)
-    loc_btn.get_style_context().add_class("flat")
-    loc_btn.set_can_focus(False)
-    loc_btn.set_halign(Gtk.Align.END)
-    loc_btn.set_tooltip_text("Change location")
     stats_box.pack_start(hum_lbl,  False, False, 0)
     stats_box.pack_start(rain_lbl, False, False, 0)
-    stats_box.pack_start(loc_btn,  False, False, 0)
-    today_card.pack_start(stats_box, False, False, 0)
+    top_row.pack_start(stats_box, False, False, 0)
 
-    t1.pack_start(today_card, False, False, 0)
+    t1.pack_start(top_row, False, False, 0)
 
     def _prompt_change_location(_w=None):
         """Standort-Such-Dialog - nutzt denselben _geocode()-Helper
@@ -4869,52 +5253,56 @@ def _clock_content(win: Gtk.Window) -> Gtk.Box:
 
     loc_btn.connect("clicked", _prompt_change_location)
 
-    fc_row = hbox(6)
-    fc_row.set_halign(Gtk.Align.CENTER)
+    t1.pack_start(sep(), False, False, 2)
 
-    d1_box = hbox(0)
-    d1_box.get_style_context().add_class("bubble")
-    d1_box.get_style_context().add_class("item")
-    d1_box.set_size_request(70, -1)
-    d1_box.set_halign(Gtk.Align.CENTER)
-    d1_lbl = Gtk.Label(label="–")
-    d1_lbl.get_style_context().add_class("icon-lg")
-    d1_box.pack_start(d1_lbl, True, True, 0)
-
-    d2_box = hbox(0)
-    d2_box.get_style_context().add_class("bubble")
-    d2_box.get_style_context().add_class("item")
-    d2_box.set_size_request(70, -1)
-    d2_box.set_halign(Gtk.Align.CENTER)
-    d2_lbl = Gtk.Label(label="–")
-    d2_lbl.get_style_context().add_class("icon-lg")
-    d2_box.pack_start(d2_lbl, True, True, 0)
-
-    fc_row.pack_start(d1_box, False, False, 0)
-    fc_row.pack_start(d2_box, False, False, 0)
-    t1.pack_start(fc_row, False, False, 0)
+    # ── "Unten mitte": Wetter in den nächsten paar Stunden ──────────
+    _N_HOURLY = 6
+    hourly_row = hbox(4)
+    hourly_row.set_halign(Gtk.Align.CENTER)
+    hourly_slots = []
+    for _ in range(_N_HOURLY):
+        cell = vbox(1)
+        cell.get_style_context().add_class("bubble")
+        cell.get_style_context().add_class("item")
+        cell.set_size_request(48, -1)
+        cell.set_halign(Gtk.Align.CENTER)
+        h_time = Gtk.Label(label="–")
+        h_time.get_style_context().add_class("caption")
+        h_icon = Gtk.Label(label="–")
+        h_icon.get_style_context().add_class("icon-lg")
+        h_temp = Gtk.Label(label="–")
+        h_temp.get_style_context().add_class("caption")
+        cell.pack_start(h_time, False, False, 0)
+        cell.pack_start(h_icon, False, False, 0)
+        cell.pack_start(h_temp, False, False, 0)
+        hourly_row.pack_start(cell, False, False, 0)
+        hourly_slots.append((cell, h_time, h_icon, h_temp))
+    t1.pack_start(hourly_row, False, False, 0)
 
     t1.pack_start(sep(), False, False, 2)
 
-    dt_row = hrow()
-    dt_row.set_halign(Gtk.Align.CENTER)
-
-    date_box = hbox(0)
-    date_box.get_style_context().add_class("bubble")
-    date_box.get_style_context().add_class("item")
-    date_lbl = Gtk.Label(label="")
-    date_box.pack_start(date_lbl, False, False, 0)
-
-    time_box = hbox(0)
-    time_box.get_style_context().add_class("bubble")
-    time_box.get_style_context().add_class("title")
-    time_lbl = Gtk.Label(label="--:--")
-    time_lbl.get_style_context().add_class("clock-digits")
-    time_box.pack_start(time_lbl, False, False, 0)
-
-    dt_row.pack_start(date_box, False, False, 0)
-    dt_row.pack_start(time_box, False, False, 0)
-    t1.pack_start(dt_row, False, False, 0)
+    # ── "Unten unten Mitte": die 7-Tage-Prognose ─────────────────────
+    daily_row = hbox(4)
+    daily_row.set_halign(Gtk.Align.CENTER)
+    daily_slots = []
+    for _ in range(7):
+        cell = vbox(1)
+        cell.get_style_context().add_class("bubble")
+        cell.get_style_context().add_class("item")
+        cell.set_size_request(44, -1)
+        cell.set_halign(Gtk.Align.CENTER)
+        d_lbl = Gtk.Label(label="–")
+        d_lbl.get_style_context().add_class("caption")
+        d_icon = Gtk.Label(label="–")
+        d_icon.get_style_context().add_class("icon-lg")
+        d_temp = Gtk.Label(label="–")
+        d_temp.get_style_context().add_class("caption")
+        cell.pack_start(d_lbl, False, False, 0)
+        cell.pack_start(d_icon, False, False, 0)
+        cell.pack_start(d_temp, False, False, 0)
+        daily_row.pack_start(cell, False, False, 0)
+        daily_slots.append((cell, d_lbl, d_icon, d_temp))
+    t1.pack_start(daily_row, False, False, 0)
 
     # ── TAB 2: Calendar ─────────────────────────────────────
     t2 = vbox(2); pad(t2, h=6, v=4)
@@ -5288,16 +5676,38 @@ def _clock_content(win: Gtk.Window) -> Gtk.Box:
             desc_lbl.set_label(w["desc"])
             hum_lbl.set_label(f'💧 {w["humidity"]}')
             rain_lbl.set_label(f'☔ {w["precip"]}')
-            d1_lbl.set_label(w["day1_icon"])
-            d2_lbl.set_label(w["day2_icon"])
+
+            for i, (cell, h_time, h_icon, h_temp) in enumerate(hourly_slots):
+                if i < len(w["hourly"]):
+                    h = w["hourly"][i]
+                    h_time.set_label(h["label"])
+                    h_icon.set_label(h["icon"])
+                    h_temp.set_label(h["temp"])
+                    cell.set_no_show_all(False)
+                    cell.show_all()
+                else:
+                    cell.hide()
+
+            for i, (cell, d_lbl, d_icon, d_temp) in enumerate(daily_slots):
+                if i < len(w["daily"]):
+                    d = w["daily"][i]
+                    d_lbl.set_label(d["label"])
+                    d_icon.set_label(d["icon"])
+                    d_temp.set_label(f'{d["hi"]}/{d["lo"]}')
+                    cell.set_no_show_all(False)
+                    cell.show_all()
+                else:
+                    cell.hide()
+
             loc_tip = f'Location: {w["location"]}\nClick 📍 to change'
-            today_card.set_tooltip_text(loc_tip)
+            mid_box.set_tooltip_text(loc_tip)
         GLib.idle_add(_apply)
 
     in_thread(_load_weather)
     add_timer(600_000, lambda: in_thread(_load_weather) or True)
 
     # ── Tabs zusammensetzen (gleiches Muster wie Media/Devices/Apps) ─
+    stack.add_named(t0, "clock")
     stack.add_named(t1, "weather")
     stack.add_named(t2, "calendar")
 
@@ -5310,12 +5720,14 @@ def _clock_content(win: Gtk.Window) -> Gtk.Box:
             ctx = b.get_style_context()
             if n == name: ctx.add_class("active")
             else:         ctx.remove_class("active")
-    for name, label in (("weather", "󰖐  Weather"),
+    for name, label in (("clock", "🕐  Clock"),
+                         ("weather", "󰖐  Weather"),
                          ("calendar", "󰃭  Calendar")):
-        b = btn(label, active=(name == "weather"))
+        b = btn(label, active=(name == "clock"))
         b.connect("clicked", lambda _b, n=name: _switch_tab(n))
         tab_btns[name] = b
         tab_row.pack_start(b, False, False, 0)
+    stack.set_visible_child_name("clock")
 
     outer = vbox(4); safe_pad(outer, 460)
     outer.pack_start(tab_row, True, False, 2)
@@ -5476,6 +5888,131 @@ def _build_settings_placeholder(page: Gtk.Box, key: str, label: str, win: Gtk.Wi
 def _build_settings_network(page: Gtk.Box, key: str, label: str, win: Gtk.Window) -> None:
     page.pack_start(_network_content(win), True, True, 0)
 
+def _build_appearance_wallpapers_tab(win: Gtk.Window) -> Gtk.Box:
+    """Neuer Wallpapers-Tab (Appearance & Language) - scannt beim
+    Öffnen automatisch den Wallpapers.sh-Ordner (~/.config/hypr/
+    Wallpapers/<ratio>/, siehe _scan_wallpaper_images()) und zeigt
+    JEDES gefundene Bild als Preview-Kachel. Klick auf eine Kachel
+    setzt sie sofort als Wallpaper über 'Wallpapers.sh --set' (neuer
+    Modus, siehe dortiger Kommentar) - entweder auf ALLE Monitore oder
+    nur auf den oben per Segmented-Control gewählten einzelnen.
+    Umsetzt den Wunsch aus dem Chat: "über das selbe skript wie bei den
+    zufalls sachen... beim skript was hinzufügen... die wallpaper
+    sollen automatisch geladen werden, einfach beim öffnen des widgets
+    den ordner scannen und alle anzeigen (mit preview gleich dazu)".
+    Behebt nebenbei den zweiten gemeldeten Bug ("wahrscheinlich kann
+    man deswegen auch nicht das wallpaper ändern") - vorher gab es
+    NUR den Zufalls-Reroll (siehe alter screen_btn in
+    _brightness_content), keine Möglichkeit, ein bestimmtes Bild
+    gezielt auszuwählen."""
+    outer = vbox(4)
+    wallpaper_script = _resolve_wallpaper_script()
+
+    if not os.path.isfile(wallpaper_script):
+        outer.pack_start(
+            bitem(f"Wallpaper script not found in ~/.config/hypr "
+                  f"(looked for: {', '.join(_WALLPAPER_SCRIPT_CANDIDATES)})",
+                  dim=True), False, False, 0)
+        return outer
+
+    # ── Zielauswahl: alle Monitore (Default) oder ein bestimmter ────
+    mon_names = [m.get("name") for m in _hypr_monitors_live() if m.get("name")]
+    target_ctrl = _SegmentedControl()
+    target_ctrl.get_style_context().add_class("bubble")
+    target_ctrl.get_style_context().add_class("segmented")
+    target_ctrl.set_can_focus(False)
+    target_ctrl.append_text("All Displays")
+    for n in mon_names:
+        target_ctrl.append_text(n)
+    target_ctrl.set_active(0)
+    if len(mon_names) <= 1:
+        target_ctrl.set_sensitive(False)
+        target_ctrl.set_tooltip_text("Only one display connected.")
+    target_row = hbox(6)
+    target_row.set_halign(Gtk.Align.CENTER)
+    target_row.pack_start(target_ctrl.widget, False, False, 0)
+    outer.pack_start(target_row, False, False, 0)
+
+    def _selected_monitor() -> str | None:
+        idx = target_ctrl._active
+        return mon_names[idx - 1] if idx > 0 else None
+
+    status_lbl = Gtk.Label(label="")
+    status_lbl.get_style_context().add_class("caption")
+    status_lbl.set_opacity(0.75)
+    status_lbl.set_no_show_all(True)
+    status_lbl.hide()
+
+    scroller, scroll_inner = scroll_box(max_h=260)
+    flow = Gtk.FlowBox()
+    flow.set_valign(Gtk.Align.START)
+    flow.set_selection_mode(Gtk.SelectionMode.NONE)
+    flow.set_homogeneous(True)
+    flow.set_max_children_per_line(4)
+    flow.set_min_children_per_line(2)
+    flow.set_row_spacing(6)
+    flow.set_column_spacing(6)
+    scroll_inner.pack_start(flow, True, True, 0)
+    outer.pack_start(scroller, False, False, 0)
+
+    loading_lbl = bitem("Scanning wallpapers…", dim=True)
+    outer.pack_start(loading_lbl, False, False, 0)
+    outer.pack_start(status_lbl, False, False, 4)
+
+    _THUMB = 96
+
+    def _on_pick(path: str):
+        mon = _selected_monitor()
+        cmd = ["bash", wallpaper_script, "--set", path] + ([mon] if mon else [])
+        in_thread(run, cmd)
+        status_lbl.set_label(
+            f"Applied: {os.path.basename(path)}"
+            + (f" → {mon}" if mon else " → all displays"))
+        status_lbl.show()
+        GLib.timeout_add(2500, lambda: (status_lbl.hide(), False)[1])
+
+    def _load_previews():
+        # GdkPixbuf.new_from_file_at_scale() ist synchrones Datei-I/O +
+        # Dekodierung - bei vielen/großen Bildern spürbar langsam, daher
+        # komplett im Hintergrund-Thread, nur der fertige Kachel-Aufbau
+        # läuft über GLib.idle_add() zurück im Main-Thread (gleiches
+        # Muster wie _load_rgb_devices() im Brightness-Widget).
+        tiles = []
+        for p in _scan_wallpaper_images():
+            try:
+                pix = GdkPixbuf.Pixbuf.new_from_file_at_scale(
+                    p, _THUMB, _THUMB, True)
+            except Exception:
+                continue
+            tiles.append((p, pix))
+
+        def _apply():
+            if loading_lbl.get_parent() is not None:
+                outer.remove(loading_lbl)
+            if not tiles:
+                outer.pack_start(
+                    bitem(f"No wallpapers found in {WALLPAPER_DIR}",
+                          dim=True), False, False, 0)
+                outer.show_all()
+                status_lbl.hide()
+                return False
+            for path, pix in tiles:
+                tile_btn = Gtk.Button()
+                tile_btn.get_style_context().add_class("bubble")
+                tile_btn.set_can_focus(False)
+                tile_btn.set_tooltip_text(os.path.basename(path))
+                tile_btn.add(Gtk.Image.new_from_pixbuf(pix))
+                tile_btn.connect("clicked", lambda _b, p=path: _on_pick(p))
+                flow.add(tile_btn)
+            flow.show_all()
+            outer.show_all()
+            status_lbl.hide()
+            return False
+        GLib.idle_add(_apply)
+
+    in_thread(_load_previews)
+    return outer
+
 def _build_settings_appearance(page: Gtk.Box, key: str, label: str, win: Gtk.Window) -> None:
     # 3 Unterreiter statt einer einzigen langen Liste (Sachen aus dem
     # README, die sich alle auf "Appearance & Language" bezogen):
@@ -5513,24 +6050,27 @@ def _build_settings_appearance(page: Gtk.Box, key: str, label: str, win: Gtk.Win
         GLib.timeout_add(ms, lambda: (appearance_status_lbl.hide(), False)[1])
 
     # ══════════════════════════ TAB: LOOK ════════════════════════════
-    # Theme + Cursor effects in EINER Zeile statt zwei getrennten
-    # Sektionen mit eigenem Header+Trennstrich dazwischen (README-
-    # Feedback: "Appearance, da kann man viel Platz sparen, Sachen
-    # nebeneinander machen") - Shake-to-find bleibt eine eigene Zeile
-    # darunter, weil sie von "Cursor effects" abhängt (nur aktiv, wenn
-    # das an ist) und optisch als Unterpunkt lesbar bleiben soll.
+    # Theme + Cursor effects + Shake-to-find jetzt EIN einziger,
+    # zentrierter Row - "Wiedermal die on off Sachen auf die Label
+    # verschieben": kein separates Label+Toggle-Paar mehr, der
+    # Button-Text SELBST ist die Beschreibung, leuchtet per aktiver
+    # Klasse (exakt dasselbe Muster wie bei Privacy/DNS/Tailscale,
+    # siehe "Enforce DoT"/"Guest WiFi"/"Start on boot").
     t_look.pack_start(bsec("APPEARANCE & CURSOR"), False, False, 0)
-    dark_row = hbox(10)
-    dark_lbl = Gtk.Label(label="Theme:")
-    dark_lbl.get_style_context().add_class("caption")
-    dark_toggle = btn("", active=_is_dark_mode())
-    def _refresh_dark_label():
+
+    # "Theme: wenn dark auf die Farbe #9C81CF mit #7554B3 Glow, wenn
+    # light der normale Glow - button entfernen und aufs Label geben":
+    # der Button ist IMMER "aktiv" (irgendein Theme ist ja immer
+    # gewählt) - nur die GLOW-FARBE zeigt an, welches: lila bei Dark
+    # (theme-glow-dark-Klasse, siehe CSS oben), normales Gold bei
+    # Light (Standard-.active-Look, keine Zusatzklasse nötig).
+    theme_toggle = btn("Dark Theme", active=True)
+    def _refresh_theme_toggle():
         is_dark = _is_dark_mode()
-        dark_toggle.set_label("Dark" if is_dark else "Light")
-        ctx = dark_toggle.get_style_context()
-        if is_dark: ctx.add_class("active")
-        else:       ctx.remove_class("active")
-    _refresh_dark_label()
+        ctx = theme_toggle.get_style_context()
+        if is_dark: ctx.add_class("theme-glow-dark")
+        else:       ctx.remove_class("theme-glow-dark")
+    _refresh_theme_toggle()
 
     def _on_dark_toggle(_w):
         new_dark = not _is_dark_mode()
@@ -5539,49 +6079,37 @@ def _build_settings_appearance(page: Gtk.Box, key: str, label: str, win: Gtk.Win
             if not ok:
                 raise RuntimeError(err)
         def _reset():
-            _refresh_dark_label()
-        # Sofortiges visuelles Feedback am Button selbst, bevor
-        # apply_fn im Hintergrund fertig ist - _is_dark_mode() liest ja
-        # erst NACH dem Apply den neuen Zustand, bis dahin zeigt der
-        # Button sonst noch den alten Zustand. Schlägt der Apply doch
-        # fehl, macht _reset() das wieder rückgängig.
-        dark_toggle.set_label("Dark" if new_dark else "Light")
-        ctx = dark_toggle.get_style_context()
-        if new_dark: ctx.add_class("active")
-        else:        ctx.remove_class("active")
+            _refresh_theme_toggle()
+        # Sofortiges visuelles Feedback, bevor apply_fn im Hintergrund
+        # fertig ist - siehe Docstring-Kommentar an anderen Toggles.
+        ctx = theme_toggle.get_style_context()
+        if new_dark: ctx.add_class("theme-glow-dark")
+        else:        ctx.remove_class("theme-glow-dark")
         apply_change(f"Theme: {'Dark' if new_dark else 'Light'}", _apply,
                      on_status=_flash_appearance_status, reset_fn=_reset)
 
-    dark_toggle.connect("clicked", _on_dark_toggle)
+    theme_toggle.connect("clicked", _on_dark_toggle)
     # Ehrlicher Hinweis statt eines leeren Versprechens: GTK/Firefox
     # ziehen i.d.R. live nach (gsettings + Portal-Neustart, siehe
     # _broadcast_theme_change), Qt/Kvantum-Apps können das laut
     # Kvantum-Upstream technisch NICHT ohne Neustart - kein Bug hier,
     # sondern eine Qt-Plattform-Grenze. Steht jetzt nur noch als
     # Tooltip da statt als eigener, klein gedruckter Textblock.
-    dark_toggle.set_tooltip_text(
+    theme_toggle.set_tooltip_text(
         "GTK & Firefox switch live. Qt/Kvantum apps need a restart to fully redraw.")
 
     # ── Cursor: dynamic_cursors Plugin (Tilt/Stretch-Effekte + Shake-to-Find) ──
-    cursor_lbl = Gtk.Label(label="Cursor effects:")
-    cursor_lbl.get_style_context().add_class("caption")
-    cursor_toggle = btn("", active=_cursor_plugin_enabled())
-
-    shake_row = hbox(8)
-    shake_lbl = Gtk.Label(label="Shake-to-find:")
-    shake_lbl.get_style_context().add_class("caption")
-    shake_toggle = btn("", active=_cursor_shake_enabled())
+    cursor_toggle = btn("Cursor effects", active=_cursor_plugin_enabled())
+    shake_toggle = btn("Shake-to-find", active=_cursor_shake_enabled())
 
     def _refresh_cursor_toggle(enabled: bool):
-        cursor_toggle.set_label("On" if enabled else "Off")
         ctx = cursor_toggle.get_style_context()
         if enabled: ctx.add_class("active")
         else:       ctx.remove_class("active")
         # Shake ergibt nur Sinn, wenn das Plugin selbst überhaupt an ist
-        shake_row.set_sensitive(enabled)
+        shake_toggle.set_sensitive(enabled)
 
     def _refresh_shake_toggle(enabled: bool):
-        shake_toggle.set_label("On" if enabled else "Off")
         ctx = shake_toggle.get_style_context()
         if enabled: ctx.add_class("active")
         else:       ctx.remove_class("active")
@@ -5620,80 +6148,61 @@ def _build_settings_appearance(page: Gtk.Box, key: str, label: str, win: Gtk.Win
     cursor_toggle.set_tooltip_text(_cursor_reload_tip)
     shake_toggle.set_tooltip_text(_cursor_reload_tip)
 
-    dark_row.pack_start(dark_lbl, False, False, 0)
-    dark_row.pack_start(dark_toggle, False, False, 0)
-    dark_row.pack_start(cursor_lbl, False, False, 0)
-    dark_row.pack_start(cursor_toggle, False, False, 0)
-    t_look.pack_start(dark_row, False, False, 0)
-
-    shake_row.pack_start(shake_lbl, False, False, 0)
-    shake_row.pack_start(shake_toggle, False, False, 0)
-    t_look.pack_start(shake_row, False, False, 0)
+    look_row = hbox(10)
+    look_row.set_halign(Gtk.Align.CENTER)
+    look_row.pack_start(theme_toggle, False, False, 0)
+    look_row.pack_start(cursor_toggle, False, False, 0)
+    look_row.pack_start(shake_toggle, False, False, 0)
+    t_look.pack_start(look_row, False, False, 0)
 
     # ══════════════════════════ TAB: SOUND ═══════════════════════════
-    # ── Systemsounds: globaler An/Aus-Schalter (SoundCenter.sh) ──────
-    # Steuert dieselbe State-Datei, die SoundCenter.sh selbst prüft - dieser
-    # Switch hier ist also nur EIN möglicher Ort, an dem man umschalten
-    # kann, kein eigener Zustand. Genau wie beim Dark-Toggle: sofortiges
-    # visuelles Feedback am Button, bevor die Datei tatsächlich geschrieben
-    # ist, mit _reset() als Fallback bei Fehlern.
-    t_sound.pack_start(bsec("SYSTEM SOUNDS"), False, False, 0)
-    sound_row = hbox(8)
-    sound_lbl = Gtk.Label(label="Click/UI sounds:")
-    sound_lbl.get_style_context().add_class("caption")
-    sound_toggle = btn("", active=_sounds_enabled())
+    # Redesign-Liste: "eine Überschrift nur mehr: 'Sounds' kann man
+    # klicken um alle sounds zu aktivieren/deaktivieren - click/ui
+    # sounds Schalter entfernen". Die vorher separate "Click/UI
+    # sounds"-Zeile UND die separate "SOUND EVENTS"-Zwischenüberschrift
+    # sind beide weg - die einzige verbleibende Überschrift ("Sounds")
+    # ist selbst der globale An/Aus-Schalter (gleiches bsec_btn()-
+    # Muster wie "VOLUME: 45%" im Media-Tab), Events hängen direkt
+    # darunter, kein Trennstrich mehr dazwischen ("keine Striche").
+    sounds_hdr = bsec_btn("Sounds", active=_sounds_enabled())
 
-    def _refresh_sound_toggle(enabled: bool):
-        sound_toggle.set_label("On" if enabled else "Off")
-        ctx = sound_toggle.get_style_context()
+    def _refresh_sounds_hdr(enabled: bool):
+        ctx = sounds_hdr.get_style_context()
         if enabled: ctx.add_class("active")
         else:       ctx.remove_class("active")
 
-    _refresh_sound_toggle(_sounds_enabled())
-
-    def _on_sound_toggle(_w):
+    def _on_sounds_hdr_toggle(_w):
         new_val = not _sounds_enabled()
         def _apply():
             _set_sounds_enabled(new_val)
         def _reset():
-            _refresh_sound_toggle(_sounds_enabled())
-        _refresh_sound_toggle(new_val)  # sofortiges visuelles Feedback, siehe Dark-Mode-Toggle oben
+            _refresh_sounds_hdr(_sounds_enabled())
+        _refresh_sounds_hdr(new_val)  # sofortiges visuelles Feedback, siehe Dark-Mode-Toggle oben
         apply_change(f"System sounds: {'On' if new_val else 'Off'}", _apply,
                      on_status=_flash_appearance_status, reset_fn=_reset)
 
-    sound_toggle.connect("clicked", _on_sound_toggle)
-    sound_row.pack_start(sound_lbl, False, False, 0)
-    sound_row.pack_start(sound_toggle, False, False, 0)
-    t_sound.pack_start(sound_row, False, False, 0)
+    sounds_hdr.connect("clicked", _on_sounds_hdr_toggle)
+    sounds_hdr.set_tooltip_text("Click to toggle all system sounds on/off")
+    t_sound.pack_start(sounds_hdr, False, False, 0)
 
-    # ── Systemsounds: pro Event einzeln (SOUND_EVENTS) ───────────────
-    # Gleiches Muster wie der globale Schalter direkt darüber, nur pro
-    # Event statt global - nutzt SoundControls --status/--enable/
-    # --disable MIT Event-Namen (siehe _event_sound_enabled/
-    # _set_event_sound_enabled oben), läuft also über dieselben
-    # Statusdateien, die SoundDaemon beim Abspielen sowieso schon prüft.
-    # Wirkt nur, wenn der globale Schalter oben an ist (Master UND Event
-    # müssen beide an sein, damit ein Sound tatsächlich spielt - exakt
-    # wie im SoundDaemon-Code selbst).
-    t_sound.pack_start(sep(), False, False, 3)
-    t_sound.pack_start(bsec("SOUND EVENTS"), False, False, 0)
-
+    # ── Pro-Event-Schalter (SOUND_EVENTS) ─────────────────────────────
+    # Nutzt SoundControls --status/--enable/--disable MIT Event-Namen
+    # (siehe _event_sound_enabled/_set_event_sound_enabled oben), läuft
+    # also über dieselben Statusdateien, die SoundDaemon beim
+    # Abspielen sowieso schon prüft. Wirkt nur, wenn der globale
+    # Schalter oben an ist (Master UND Event müssen beide an sein).
+    # "die ganzen On/Off Dinger weg, das machen die Label" - der
+    # Event-Name selbst ist jetzt der Schalter, kein separates
+    # On/Off-Label mehr daneben.
     def _make_sound_event_row(event: str) -> Gtk.Box:
-        row = hbox(6)
-        row.set_hexpand(True)
-        lbl = Gtk.Label(label=event)
-        lbl.get_style_context().add_class("caption")
-        lbl.set_halign(Gtk.Align.START)
-        lbl.set_hexpand(True)
-        toggle = btn("", active=_event_sound_enabled(event))
+        row = hbox(0)
+        row.set_halign(Gtk.Align.CENTER)
+        toggle = btn(event, active=_event_sound_enabled(event))
 
         def _refresh(enabled: bool, _toggle=toggle):
-            _toggle.set_label("On" if enabled else "Off")
             ctx = _toggle.get_style_context()
             if enabled: ctx.add_class("active")
             else:       ctx.remove_class("active")
-
-        _refresh(_event_sound_enabled(event))
 
         def _on_event_toggle(_w, _event=event, _refresh=_refresh):
             new_val = not _event_sound_enabled(_event)
@@ -5706,17 +6215,17 @@ def _build_settings_appearance(page: Gtk.Box, key: str, label: str, win: Gtk.Win
                          on_status=_flash_appearance_status, reset_fn=_reset)
 
         toggle.connect("clicked", _on_event_toggle)
-        row.pack_start(lbl, True, True, 0)
-        row.pack_start(toggle, False, False, 0)
+        row.pack_start(toggle, True, True, 0)
         return row
 
-    # 2 Spalten statt 1 - bei 11 Events sind das 6 Zeilen statt 11,
-    # spart ordentlich Höhe (README-Feedback: "Appearance, da kann man
-    # viel Platz sparen, Sachen nebeneinander machen").
+    # "weniger Abstand zwischen den 2 Spalten" (vorher 14px) - und die
+    # Events hängen jetzt ohne jeden Zusatzabstand/Trennstrich direkt
+    # unterm Sounds-Header ("die buttons alle den Abstand zu oben
+    # verringern").
     _events_grid = Gtk.Grid()
     _events_grid.set_column_homogeneous(True)
-    _events_grid.set_column_spacing(14)
-    _events_grid.set_row_spacing(2)
+    _events_grid.set_column_spacing(4)
+    _events_grid.set_row_spacing(0)
     for idx, _event in enumerate(SOUND_EVENTS):
         _events_grid.attach(_make_sound_event_row(_event), idx % 2, idx // 2, 1, 1)
     t_sound.pack_start(_events_grid, False, False, 0)
@@ -5857,10 +6366,17 @@ def _build_settings_appearance(page: Gtk.Box, key: str, label: str, win: Gtk.Win
     kb_row = hrow(kb_combo, kb_custom_btn, sp=8)
     t_lang.pack_start(kb_row, False, False, 0)
 
+    # NEU: Wallpapers-Tab (siehe _build_appearance_wallpapers_tab()) -
+    # eigene Funktion statt inline hier, da sie unabhängig vom Rest
+    # dieser Funktion (kein Zugriff auf appearance_status_lbl o.ä.
+    # nötig) und dadurch auch unabhängig testbar ist.
+    t_wall = _build_appearance_wallpapers_tab(win)
+
     # ══════════════════════ Tabs zusammensetzen ══════════════════════
     stack.add_named(t_sound, "sound")
     stack.add_named(t_look,  "look")
     stack.add_named(t_lang,  "language")
+    stack.add_named(t_wall,  "wallpapers")
 
     tab_row = hbox(6)
     tab_row.set_halign(Gtk.Align.CENTER)
@@ -5872,7 +6388,8 @@ def _build_settings_appearance(page: Gtk.Box, key: str, label: str, win: Gtk.Win
             if n == name: ctx.add_class("active")
             else:         ctx.remove_class("active")
     for name, tlabel in (("sound", "🔊  Sound"), ("look", "🎨  Look"),
-                          ("language", "🌐  Language")):
+                          ("language", "🌐  Language"),
+                          ("wallpapers", "🖼  Wallpapers")):
         b = btn(tlabel, active=(name == "sound"))
         b.connect("clicked", lambda _b, n=name: _switch(n))
         tab_btns[name] = b
@@ -6319,12 +6836,23 @@ def _edid_extra_modes(name: str) -> dict:
         extra.setdefault(res, set()).add(hz_str)
     return extra
 
-def _write_hdr_fields(block_text: str, hdr_on: bool) -> str:
+def _write_hdr_fields(block_text: str, hdr_on: bool,
+                       sdr_brightness: float = 1.0,
+                       sdr_saturation: float = 1.0) -> str:
     """Fügt bitdepth/cm-Felder in einen bestehenden hl.monitor({...})-
     Blocktext ein bzw. aktualisiert sie, oder setzt sie explizit auf
     die Nicht-HDR-Standardwerte zurück (statt die Felder einfach zu
     entfernen - explizit "bitdepth=8, cm=srgb" ist klarer beim
-    Nachlesen der Datei als ein stillschweigend fehlendes Feld)."""
+    Nachlesen der Datei als ein stillschweigend fehlendes Feld).
+
+    sdrbrightness/sdrsaturation (siehe Hyprland-Wiki "Colors and
+    colorspaces") werden nach demselben Muster IMMER explizit gesetzt,
+    nie weggelassen - dieselbe Begründung wie beim ursprünglichen
+    bitdepth/cm-Bugfix oben: ein "hyprctl keyword monitor"-Aufruf ist
+    ein Teil-Reconfigure, weggelassene Felder blieben sonst auf einem
+    evtl. veralteten Wert von einem früheren Apply hängen. Bei
+    ausgeschaltetem HDR werden sie auf 1.0 (= "unverändert", Hyprland-
+    Default) zurückgesetzt statt entfernt."""
     if hdr_on:
         if re.search(r'bitdepth\s*=', block_text):
             block_text = re.sub(r'bitdepth\s*=\s*[^,\n]+', 'bitdepth = 10', block_text)
@@ -6339,6 +6867,21 @@ def _write_hdr_fields(block_text: str, hdr_on: bool) -> str:
             block_text = re.sub(r'bitdepth\s*=\s*[^,\n]+', 'bitdepth = 8', block_text)
         if re.search(r'\bcm\s*=', block_text):
             block_text = re.sub(r'\bcm\s*=\s*"[^"]*"', 'cm       = "srgb"', block_text)
+
+    sdr_bri_val = round(sdr_brightness if hdr_on else 1.0, 3)
+    sdr_sat_val = round(sdr_saturation if hdr_on else 1.0, 3)
+    if re.search(r'\bsdrbrightness\s*=', block_text):
+        block_text = re.sub(r'sdrbrightness\s*=\s*[^,\n]+',
+                             f'sdrbrightness = {sdr_bri_val}', block_text)
+    else:
+        block_text = re.sub(r'(\}\)\s*$)',
+                             f'    sdrbrightness = {sdr_bri_val},\n\\1', block_text)
+    if re.search(r'\bsdrsaturation\s*=', block_text):
+        block_text = re.sub(r'sdrsaturation\s*=\s*[^,\n]+',
+                             f'sdrsaturation = {sdr_sat_val}', block_text)
+    else:
+        block_text = re.sub(r'(\}\)\s*$)',
+                             f'    sdrsaturation = {sdr_sat_val},\n\\1', block_text)
     return block_text
 
 # ════════════════════════════════════════════════════════════
@@ -6513,10 +7056,19 @@ def _build_settings_display(page: Gtk.Box, key: str, label: str, win: Gtk.Window
     # reachable" melden würden.
     rotation_up = _rotation_daemon_available()
     rotation_map = _rotation_list() if rotation_up else {}
+    # Redesign-Liste: "Unter Display eine fette Linie anstatt einer
+    # dünnen. Andere Linien entfernen." + "Unter einem Display keine
+    # Linie mehr - Bildschirm Label regelt das." - der einzige
+    # verbleibende Strich auf dieser Seite ist der fette hub_sep()
+    # direkt unter der Seiten-Überschrift (kommt vom generischen
+    # Settings-Seiten-Rahmen); alle sep()-Trennstriche, die hier vorher
+    # zwischen Auto-Rotate/den Monitor-Blöcken standen, sind weg - jeder
+    # Monitor-Block grenzt sich jetzt über seine eigene, deutlich
+    # sichtbare header_row (Icon+Name+HDR, siehe _build_monitor_row())
+    # selbst genug vom nächsten ab.
     if rotation_up:
         page.pack_start(bsec("Auto-Rotate"), False, False, 0)
         page.pack_start(_build_autorotate_row(), False, False, 0)
-        page.pack_start(sep(), False, False, 4)
 
     # Gemeinsamer Debounce-Status für den Waybar/Autohide-Reload - siehe
     # Kommentar bei waybar_restart_id in _build_monitor_row(). Ohne das
@@ -6529,11 +7081,11 @@ def _build_settings_display(page: Gtk.Box, key: str, label: str, win: Gtk.Window
 
     for mon in monitors:
         mon_name = mon.get("name", "?")
-        page.pack_start(bsec(mon_name.upper()), False, False, 0)
-        row = _build_monitor_row(mon, monitors, lua_path, win, waybar_restart_id,
-                                  rotation_map.get(mon_name) if rotation_up else None)
+        header_row, row = _build_monitor_row(
+            mon, monitors, lua_path, win, waybar_restart_id,
+            rotation_map.get(mon_name) if rotation_up else None)
+        page.pack_start(header_row, False, False, 6)
         page.pack_start(row, False, False, 0)
-        page.pack_start(sep(), False, False, 4)
 
 _HEIGHT_SCALE_TABLE = [
     (480,  0.5),
@@ -6604,7 +7156,8 @@ def _auto_scale_for_height(h: int) -> float:
     return max(lo, min(hi, scale))
 
 def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.Window,
-                        waybar_restart_id: list, rotation_transform: int | None = None) -> Gtk.Box:
+                        waybar_restart_id: list,
+                        rotation_transform: int | None = None) -> tuple[Gtk.Box, Gtk.Box]:
     name    = mon.get("name", "?")
     cur_res = f'{mon.get("width")}x{mon.get("height")}'
     cur_hz  = f'{mon.get("refreshRate", 0):.2f}'
@@ -6636,12 +7189,21 @@ def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.W
         res_combo.append_text(r)
     res_combo.append_text(CUSTOM_LABEL)
 
-    # Refresh-Rate hat pro Auflösung nur eine HANDVOLL fester Werte
-    # (siehe modes-Dict oben) -> genau der "Dropdown mit Limits"-Fall
-    # aus dem README, deshalb hier die Knopfreihe statt ComboBoxText.
-    hz_combo = _SegmentedControl()
+    # Hz ist jetzt ein ECHTES Dropdown, genau wie Res (Redesign-Wunsch:
+    # "die Hz soll wie Res ein Dropdown sein") - vorher eine Reihe
+    # einzelner Knöpfe (_SegmentedControl), die ursprünglich als
+    # Touch-freundlicherer Ersatz für ein Dropdown mit wenigen Optionen
+    # gedacht war (siehe _SegmentedControl-Docstring), das wird hier
+    # jetzt aber ausdrücklich nicht mehr gewollt. Gtk.ComboBoxText hat
+    # zufällig exakt dieselbe API, die _fill_hz() weiter unten schon
+    # benutzt hat (remove_all/append_text/set_active/handler_block/
+    # unblock/get_active_text) - _fill_hz() selbst bleibt dadurch
+    # unverändert. "Custom... entfernen, das kommt jetzt, wenn man auf
+    # die Hz drückt" ist damit auch automatisch erledigt: "Custom…" ist
+    # jetzt einfach der letzte Dropdown-Eintrag, exakt wie bei Res.
+    hz_combo = Gtk.ComboBoxText()
     hz_combo.get_style_context().add_class("bubble")
-    hz_combo.get_style_context().add_class("segmented")
+    hz_combo.get_style_context().add_class("dropdown")
     hz_combo.set_can_focus(False)
 
     custom_state = {"res": cur_res, "hz": cur_hz}
@@ -6761,13 +7323,106 @@ def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.W
     # Wiki-Doku zu Color Management). Startzustand wird aus
     # colorManagementPreset gelesen (liefert hyprctl bereits fertig -
     # "hdr"/"hdredid" heißt an, alles andere (z.B. "srgb") heißt aus).
-    hdr_check = Gtk.CheckButton(label="HDR")
-    hdr_check.set_active(mon.get("colorManagementPreset") in ("hdr", "hdredid"))
-    hdr_check.set_can_focus(False)
-    hdr_check.set_tooltip_text(
+    #
+    # Redesign-Liste: "HDR ist nun einfach 'HDR' neben dem Label" - kein
+    # Checkbox+Text-Paar mehr in einer eigenen Zeile, sondern ein
+    # einzelnes klickbares Wort "HDR", das in der Kopfzeile direkt neben
+    # dem (jetzt vergrößerten) Monitornamen sitzt - siehe header_row
+    # ganz am Ende dieser Funktion, wo hdr_toggle tatsächlich platziert
+    # wird. Zustand jetzt in hdr_state (statt Gtk.CheckButton.get_active()),
+    # damit ein einfacher btn() genügt statt eines Checkbox-Widgets mit
+    # eigenem Kästchen.
+    hdr_state = {"on": mon.get("colorManagementPreset") in ("hdr", "hdredid")}
+    hdr_toggle = btn("HDR", active=hdr_state["on"])
+    hdr_toggle.set_tooltip_text(
         "10-bit color + HDR color management (bitdepth=10, cm=hdr). "
         "Needs display/cable support, otherwise no effect or worse image.")
-    hdr_check.connect("toggled", lambda _w: _apply_now())
+    # BUGFIX ("keine richtigen HDR-Settings pro Monitor"): bisher war
+    # HDR nur ein reiner An/Aus-Schalter (bitdepth+cm). Die Hyprland-
+    # Wiki-Doku (Colors & Colorspaces) nennt sdrbrightness/
+    # sdrsaturation als die eigentlichen PRO-MONITOR-Stellschrauben, um
+    # SDR-Inhalte innerhalb eines aktiven HDR-Modus nutzbar hell/
+    # gesättigt zu halten (Wiki-Beispiel: sdrbrightness=1.2,
+    # sdrsaturation=0.98 - Default für beide ist 1.0 = unverändert).
+    # Bewusst NUR diese beiden zusätzlich zu bitdepth/cm - andere HDR-
+    # Felder wie sdr_max_luminance/sdr_min_luminance werden laut
+    # bestätigtem Hyprland-Bug von "hyprctl keyword monitor" mit
+    # "invalid syntax" abgelehnt und funktionieren nur über einen
+    # kompletten Hyprland-Neustart mit der reinen Lua-Config - für ein
+    # Live-Regler-UI hier also ungeeignet.
+    #
+    # Immer noch "nicht wirklich gut zum einstellen" (Feedback) - jetzt
+    # mit eigenen, beschrifteten Zeilen statt zweier namenloser Slider
+    # nebeneinander, damit klar ist, welcher Regler was tut, plus
+    # Live-Prozentanzeige im Label selbst statt nur der reinen Zahl auf
+    # dem Slider.
+    sdr_bri_state = {"value": float(mon.get("sdrBrightness", 1.0) or 1.0)}
+    sdr_sat_state = {"value": float(mon.get("sdrSaturation", 1.0) or 1.0)}
+
+    sdr_bri_lbl = bsec(f'SDR brightness: {round(sdr_bri_state["value"] * 100)}%')
+    sdr_bri_val_widget = sdr_bri_lbl.get_children()[0]
+    sdr_bri_box, sdr_bri_slider = bslider(
+        "", 0.5, 2.0, 0.05, sdr_bri_state["value"], cb=None, show_val=False)
+    for ch in sdr_bri_box.get_children():
+        if isinstance(ch, Gtk.Label):
+            sdr_bri_box.remove(ch); break
+    sdr_bri_box.set_halign(Gtk.Align.CENTER)
+    sdr_bri_box.set_size_request(180, -1)
+
+    sdr_sat_lbl = bsec(f'SDR saturation: {round(sdr_sat_state["value"] * 100)}%')
+    sdr_sat_val_widget = sdr_sat_lbl.get_children()[0]
+    sdr_sat_box, sdr_sat_slider = bslider(
+        "", 0.5, 1.5, 0.05, sdr_sat_state["value"], cb=None, show_val=False)
+    for ch in sdr_sat_box.get_children():
+        if isinstance(ch, Gtk.Label):
+            sdr_sat_box.remove(ch); break
+    sdr_sat_box.set_halign(Gtk.Align.CENTER)
+    sdr_sat_box.set_size_request(180, -1)
+
+    sdr_col = vbox(1)
+    sdr_col.pack_start(sdr_bri_lbl, False, False, 0)
+    sdr_col.pack_start(sdr_bri_box, False, False, 0)
+    sdr_col.pack_start(sdr_sat_lbl, False, False, 0)
+    sdr_col.pack_start(sdr_sat_box, False, False, 0)
+
+    _sdr_debounce_id = [0]
+
+    def _on_sdr_change(_s=None):
+        sdr_bri_state["value"] = round(sdr_bri_slider.get_value(), 3)
+        sdr_sat_state["value"] = round(sdr_sat_slider.get_value(), 3)
+        sdr_bri_val_widget.set_label(f'SDR BRIGHTNESS: {round(sdr_bri_state["value"] * 100)}%')
+        sdr_sat_val_widget.set_label(f'SDR SATURATION: {round(sdr_sat_state["value"] * 100)}%')
+        if _sdr_debounce_id[0]:
+            GLib.source_remove(_sdr_debounce_id[0])
+        def _fire():
+            _sdr_debounce_id[0] = 0
+            _apply_now()
+            return False
+        _sdr_debounce_id[0] = GLib.timeout_add(200, _fire)
+
+    sdr_bri_slider.connect("value-changed", _on_sdr_change)
+    sdr_sat_slider.connect("value-changed", _on_sdr_change)
+    sdr_bri_slider.set_tooltip_text(
+        "SDR brightness while HDR is active on this monitor (default 100%).")
+    sdr_sat_slider.set_tooltip_text(
+        "SDR saturation while HDR is active on this monitor (default 100%).")
+
+    def _sync_sdr_sensitivity():
+        sdr_col.set_sensitive(hdr_state["on"])
+
+    def _set_hdr_ui(on: bool):
+        hdr_state["on"] = on
+        ctx = hdr_toggle.get_style_context()
+        if on: ctx.add_class("active")
+        else:  ctx.remove_class("active")
+        _sync_sdr_sensitivity()
+
+    def _on_hdr_toggle(_w):
+        _set_hdr_ui(not hdr_state["on"])
+        _apply_now()
+
+    hdr_toggle.connect("clicked", _on_hdr_toggle)
+    _sync_sdr_sensitivity()
 
     # ── Position / Anordnung relativ zu anderen Monitoren ────────────
     # Hyprland nutzt ein invertiertes Y-Koordinatensystem (negativeres
@@ -6907,7 +7562,8 @@ def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.W
              else (res_list[0] if res_list else ""), preselect=cur_hz)
     _update_custom_visibility()
 
-    orig = [cur_res, cur_hz, cur_scale, True, hdr_check.get_active(), 0]
+    orig = [cur_res, cur_hz, cur_scale, True, hdr_state["on"], 0,
+            sdr_bri_state["value"], sdr_sat_state["value"]]
 
     def _resolve_res_hz() -> tuple[str, str] | tuple[None, None]:
         if res_combo.get_active_text() == CUSTOM_LABEL:
@@ -6957,7 +7613,7 @@ def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.W
                 f"Scale {scale:g} unsafe for {res} (allowed {lo:g}–{hi:g}) — "
                 f"would risk locking you out of this Settings window. Not applied.")
         pos_x, pos_y = _resolve_position(res, scale)
-        hdr_on = hdr_check.get_active()
+        hdr_on = hdr_state["on"]
 
         # Ab hier: alles, was hyprctl aufruft und/oder hyprland.lua
         # liest+verändert+schreibt, läuft SERIALISIERT unter
@@ -6991,10 +7647,23 @@ def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.W
             # nie mehr weggelassen - "aus" heißt jetzt aktiv "bitdepth,8,
             # cm,auto" statt einer Auslassung, auf deren Nebenwirkungen man
             # sich nicht verlassen kann.
+            # sdrbrightness/sdrsaturation sind laut bestätigtem Hyprland-
+            # Verhalten (anders als sdr_max_luminance/sdr_min_luminance,
+            # die "hyprctl keyword monitor" mit "invalid syntax"
+            # ablehnt) auch über die kommagetrennte Keyword-Syntax
+            # akzeptiert - werden also, genau wie bitdepth/cm, bei JEDEM
+            # Apply explizit mitgeschickt (aus = 1.0/1.0, siehe
+            # _write_hdr_fields()-Docstring für die Begründung).
+            sdr_bri = round(sdr_bri_state["value"] if hdr_on else 1.0, 3)
+            sdr_sat = round(sdr_sat_state["value"] if hdr_on else 1.0, 3)
             if hdr_on:
-                monitor_arg = f"{name},{mode},{pos_x}x{pos_y},{scale},bitdepth,10,cm,hdr"
+                monitor_arg = (f"{name},{mode},{pos_x}x{pos_y},{scale},"
+                                f"bitdepth,10,cm,hdr,"
+                                f"sdrbrightness,{sdr_bri},sdrsaturation,{sdr_sat}")
             else:
-                monitor_arg = f"{name},{mode},{pos_x}x{pos_y},{scale},bitdepth,8,cm,srgb"
+                monitor_arg = (f"{name},{mode},{pos_x}x{pos_y},{scale},"
+                                f"bitdepth,8,cm,srgb,"
+                                f"sdrbrightness,{sdr_bri},sdrsaturation,{sdr_sat}")
             out, err, rc = run_ec(["hyprctl", "keyword", "monitor", monitor_arg])
             if rc != 0 or "err" in (out or "").lower() or err:
                 raise RuntimeError(
@@ -7045,7 +7714,9 @@ def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.W
                                         f'scale    = {scale}', new_block)
                     new_block = re.sub(r'position\s*=\s*"[^"]*"',
                                         f'position = "{pos_x}x{pos_y}"', new_block)
-                    new_block = _write_hdr_fields(new_block, hdr_on)
+                    new_block = _write_hdr_fields(new_block, hdr_on,
+                                                   sdr_bri_state["value"],
+                                                   sdr_sat_state["value"])
                     txt = txt[:m.start()] + new_block + txt[m.end():]
                 else:
                     # WICHTIG: kein Block für diesen Monitor gefunden - das
@@ -7071,6 +7742,10 @@ def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.W
                     if hdr_on:
                         new_block_lines.append('    bitdepth = 10,')
                         new_block_lines.append('    cm       = "hdr",')
+                        new_block_lines.append(
+                            f'    sdrbrightness = {round(sdr_bri_state["value"], 3)},')
+                        new_block_lines.append(
+                            f'    sdrsaturation = {round(sdr_sat_state["value"], 3)},')
                     new_block_lines.append("})")
                     new_block = "\n".join(new_block_lines)
 
@@ -7099,6 +7774,7 @@ def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.W
             orig[0], orig[1] = res, hz
             orig[2], orig[3] = scale, scale_auto_check.get_active()
             orig[4], orig[5] = hdr_on, pos_combo.get_active()
+            orig[6], orig[7] = sdr_bri_state["value"], sdr_sat_state["value"]
 
     def _reset():
         if orig[0] in res_list:
@@ -7108,7 +7784,7 @@ def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.W
             custom_state["res"] = orig[0]
         _fill_hz(orig[0] if orig[0] in res_list else "", preselect=orig[1])
         if orig[0] not in res_list or orig[1] not in modes.get(orig[0], []):
-            hz_combo.set_active(hz_combo.n_items() - 1)
+            hz_combo.set_active(hz_combo.get_model().iter_n_children(None) - 1)
             custom_state["hz"] = orig[1]
         scale_auto_check.set_active(orig[3])
         if not orig[3]:
@@ -7117,8 +7793,12 @@ def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.W
             scale_slider.set_value(orig[2])
             scale_slider.handler_unblock(scale_handler_id)
         _sync_scale_slider_range()
-        hdr_check.set_active(orig[4])
+        _set_hdr_ui(orig[4])
         pos_combo.set_active(orig[5])
+        sdr_bri_state["value"], sdr_sat_state["value"] = orig[6], orig[7]
+        sdr_bri_slider.set_value(orig[6])
+        sdr_sat_slider.set_value(orig[7])
+        _sync_sdr_sensitivity()
         _update_custom_visibility()
 
     def _apply_now():
@@ -7126,7 +7806,7 @@ def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.W
         res, hz = _resolve_res_hz()
         scale_txt = "auto" if scale_auto_check.get_active() else f"{scale_state['value']:g}"
         extras = []
-        if hdr_check.get_active():
+        if hdr_state["on"]:
             extras.append("HDR")
         if pos_combo.get_active() > 0:
             extras.append(pos_combo.get_active_text())
@@ -7156,66 +7836,64 @@ def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.W
     scale_slider.set_tooltip_text("Drag to set the monitor scale manually.")
     scale_box.pack_start(scale_auto_check, False, False, 0)
 
-    combos_row = hrow(res_combo, hz_combo.widget, sp=8)
+    combos_row = hrow(res_combo, hz_combo, sp=8)
     custom_row = hrow(res_val_lbl, hz_val_lbl, sp=8)
-    hdr_row    = hrow(hdr_check, sp=8)
-    pos_row    = hrow(Gtk.Label(label="Position:"), pos_combo, sp=8)
+    # Redesign-Liste: "Position: kein Label mehr, nur die Box - die
+    # etwas verkürzt wird" + "Rotation: nun wieder eine Box wie
+    # Position - wird rechts neben Position hingepackt, 2 Boxen in der
+    # selben Zeile" - pos_combo wird hier bewusst NOCH NICHT in eine
+    # Zeile gepackt, das passiert erst weiter unten zusammen mit
+    # rot_combo (falls der Rotation-Daemon für diesen Monitor
+    # verfügbar ist), siehe pos_rot_row.
+    pos_combo.set_size_request(150, -1)
     wrap = vbox(6)
     wrap.pack_start(combos_row, False, False, 0)
     wrap.pack_start(custom_row, False, False, 0)
     wrap.pack_start(scale_box, False, False, 0)
-    wrap.pack_start(hdr_row, False, False, 0)
-    wrap.pack_start(pos_row, False, False, 0)
+    wrap.pack_start(sdr_col, False, False, 0)
     wrap.pack_start(status_lbl, False, False, 0)
 
-    # ── Rotation (ScreenRotationDaemon, nur wenn Daemon diesen Monitor
-    #    kennt - siehe rotation_transform-Übergabe in
-    #    _build_settings_display()) ─────────────────────────────────
-    # Bewusst getrennt von _apply()/_apply_now() oben: Rotation läuft
-    # NICHT über "hyprctl keyword monitor" + hyprland.lua-Textersetzung
-    # wie Auflösung/Scale/HDR/Position, sondern über den eigenen
-    # ScreenRotationDaemon-Socket (siehe Kommentar bei
-    # _rotation_socket_cmd()). Wird hier also absichtlich nicht in
-    # _apply() mit reingezogen, sondern eigenständig behandelt - auch
-    # damit ein Rotations-Fehler nie eine Resolution/Scale-Änderung
-    # blockiert oder umgekehrt.
-    if rotation_transform is not None:
-        rot_status_lbl = Gtk.Label(label="")
-        rot_status_lbl.get_style_context().add_class("caption")
-        rot_status_lbl.set_opacity(0.75)
-        rot_status_lbl.set_no_show_all(True)
-        rot_status_lbl.hide()
+    # ── Position + Rotation ───────────────────────────────────────────
+    # Redesign-Liste: "Rotation: nun wieder eine Box wie Position - wird
+    # rechts neben Position hingepackt, 2 Boxen in der selben Zeile."
+    # Rotation läuft NICHT über "hyprctl keyword monitor" + hyprland.
+    # lua-Textersetzung wie Auflösung/Scale/HDR/Position, sondern über
+    # den eigenen ScreenRotationDaemon-Socket (siehe Kommentar bei
+    # _rotation_socket_cmd()) - bewusst NICHT in _apply() mit reinge-
+    # zogen, sondern eigenständig behandelt, auch damit ein Rotations-
+    # Fehler nie eine Resolution/Scale-Änderung blockiert oder
+    # umgekehrt. Nur angeboten, wenn der Rotation-Daemon diesen Monitor
+    # tatsächlich kennt - sonst bleibt Position allein in der Zeile,
+    # keine leere zweite Box.
+    pos_rot_row = hrow(pos_combo, sp=8)
+    rot_status_lbl = Gtk.Label(label="")
+    rot_status_lbl.get_style_context().add_class("caption")
+    rot_status_lbl.set_opacity(0.75)
+    rot_status_lbl.set_no_show_all(True)
+    rot_status_lbl.hide()
 
+    if rotation_transform is not None:
         def _flash_rot(text: str, ms: int = 2500):
             rot_status_lbl.set_label(text)
             rot_status_lbl.show()
             GLib.timeout_add(ms, lambda: (rot_status_lbl.hide(), False)[1])
 
         rot_state = {"current": rotation_transform}
-        _rot_label_by_val = dict(_ROTATIONS)   # {0: "0°", 1: "90°", ...}
 
-        rot_deg_lbl = Gtk.Label(label=_rot_label_by_val[rotation_transform])
-        rot_deg_lbl.get_style_context().add_class("caption")
-        rot_deg_lbl.set_opacity(0.65)
-        rot_deg_lbl.set_size_request(40, -1)
-        rot_deg_lbl.set_halign(Gtk.Align.END)
-
-        # Rotation ist zwar inhaltlich diskret (nur 4 mögliche Werte),
-        # wird aber jetzt trotzdem als echter Zieh-Regler dargestellt
-        # statt als 4 einzelne Knöpfe - gleiche Behandlung wie beim
-        # Scale-Regler weiter oben. step=1 sorgt dafür, dass Pfeiltasten/
-        # Scroll direkt auf ganze Werte springen; beim Ziehen mit der
-        # Maus wird trotzdem in _on_rot_slider() hart auf den
-        # nächstliegenden ganzzahligen Wert (0-3) gerundet UND der
-        # Regler nach dem Loslassen sichtbar dahin einrasten gelassen -
-        # ein "Rotation von 47°" soll es nicht geben können.
-        rot_box, rot_slider = bslider(
-            "󰑖", 0, len(_ROTATIONS) - 1, 1, rotation_transform,
-            cb=None, show_val=False, suffix_lbl=rot_deg_lbl)
-        for mark_val, _lbl in _ROTATIONS:
-            rot_slider.add_mark(mark_val, Gtk.PositionType.BOTTOM, None)
-
-        _rot_debounce_id = [0]
+        # "nun wieder eine Box wie Position" - echtes Dropdown statt des
+        # vorherigen Zieh-Reglers (der Slider war selbst schon eine
+        # frühere Abkehr von genau so einer Box, siehe README-Verweis
+        # oben bei _SegmentedControl - jetzt per explizitem Wunsch
+        # wieder zurück).
+        rot_combo = Gtk.ComboBoxText()
+        rot_combo.get_style_context().add_class("bubble")
+        rot_combo.get_style_context().add_class("dropdown")
+        rot_combo.set_can_focus(False)
+        rot_combo.set_size_request(110, -1)
+        for _val, _lbl in _ROTATIONS:
+            rot_combo.append_text(_lbl)
+        rot_combo.set_active(rotation_transform)
+        rot_combo.set_tooltip_text("Rotate this monitor in 90° steps.")
 
         def _apply_rotation(value: int, prev: int):
             def _apply():
@@ -7225,47 +7903,47 @@ def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.W
 
             def _reset():
                 rot_state["current"] = prev
-                rot_deg_lbl.set_label(_rot_label_by_val[prev])
-                rot_slider.handler_block(rot_handler_id)
-                rot_slider.set_value(prev)
-                rot_slider.handler_unblock(rot_handler_id)
+                rot_combo.handler_block(rot_handler_id)
+                rot_combo.set_active(prev)
+                rot_combo.handler_unblock(rot_handler_id)
 
             apply_change(f"{name}: rotate {value * 90}°",
                          _apply, on_status=_flash_rot, reset_fn=_reset)
 
-        def _on_rot_slider(s):
-            raw = s.get_value()
-            snapped = int(round(raw))
-            snapped = max(0, min(len(_ROTATIONS) - 1, snapped))
-            rot_deg_lbl.set_label(_rot_label_by_val[snapped])
-            # Debounced statt bei jedem Drag-Event: verhindert Spam auf
-            # den ScreenRotationDaemon-Socket, während man noch zieht.
-            if _rot_debounce_id[0]:
-                GLib.source_remove(_rot_debounce_id[0])
-            def _fire():
-                _rot_debounce_id[0] = 0
-                # Beim Loslassen sichtbar auf den ganzzahligen Wert
-                # einrasten, statt ihn optisch irgendwo dazwischen
-                # stehen zu lassen - kurz blockiert, damit das
-                # set_value() hier nicht nochmal _on_rot_slider() (und
-                # damit eine neue, unnötige Debounce-Runde) auslöst.
-                s.handler_block(rot_handler_id)
-                s.set_value(snapped)
-                s.handler_unblock(rot_handler_id)
-                if snapped != rot_state["current"]:
-                    prev = rot_state["current"]
-                    rot_state["current"] = snapped
-                    _apply_rotation(snapped, prev)
-                return False
-            _rot_debounce_id[0] = GLib.timeout_add(180, _fire)
+        def _on_rot_change(_w):
+            new_val = rot_combo.get_active()
+            if new_val < 0 or new_val == rot_state["current"]:
+                return
+            prev = rot_state["current"]
+            rot_state["current"] = new_val
+            _apply_rotation(new_val, prev)
 
-        rot_handler_id = rot_slider.connect("value-changed", _on_rot_slider)
-        rot_slider.set_tooltip_text("Drag to rotate this monitor in 90° steps.")
+        rot_handler_id = rot_combo.connect("changed", _on_rot_change)
+        pos_rot_row.pack_start(rot_combo, False, False, 0)
 
-        wrap.pack_start(rot_box, False, False, 0)
-        wrap.pack_start(rot_status_lbl, False, False, 0)
+    wrap.pack_start(pos_rot_row, False, False, 0)
+    wrap.pack_start(rot_status_lbl, False, False, 0)
 
-    return wrap
+    # ── Kopfzeile: Icon + Monitorname (vergrößert) + HDR-Toggle ──────
+    # Redesign-Liste: "Ein einzelnes Icon neben dem Label des Monitors.
+    # Label des Monitors vergrößern." + "HDR ist nun einfach 'HDR'
+    # neben dem Label." Ersetzt das simple bsec(mon_name.upper()) aus
+    # _build_settings_display() komplett - "Bildschirm Label regelt
+    # das" (Redesign-Liste, zum Wegfall der Trennstriche zwischen den
+    # Monitor-Blöcken): diese Kopfzeile übernimmt jetzt selbst die
+    # optische Abgrenzung zum nächsten Monitor-Block, kein sep() mehr
+    # nötig.
+    header_row = hbox(8)
+    header_row.set_halign(Gtk.Align.CENTER)
+    mon_icon_lbl = Gtk.Label(label="󰍹")
+    mon_icon_lbl.get_style_context().add_class("icon-lg")
+    mon_name_lbl = Gtk.Label(label=name)
+    mon_name_lbl.get_style_context().add_class("value-lg")
+    header_row.pack_start(mon_icon_lbl, False, False, 0)
+    header_row.pack_start(mon_name_lbl, False, False, 0)
+    header_row.pack_start(hdr_toggle, False, False, 0)
+
+    return header_row, wrap
 
 def _waybar_config_paths() -> list:
     """Findet die Waybar-Config-Datei(en). Normalerweise genau eine
@@ -7585,8 +8263,6 @@ def _privacy_content(win: Gtk.Window) -> Gtk.Box:
     umgesetzt, die anderen 4 folgen als weitere Tabs in
     _security_content() unten."""
     root = vbox(4); pad(root, h=4, v=6)
-    root.pack_start(btitle("󰦝  Privacy"), False, False, 0)
-    root.pack_start(sep(), False, False, 2)
 
     status_lbl = Gtk.Label(label="")
     status_lbl.get_style_context().add_class("caption")
@@ -7611,13 +8287,11 @@ def _privacy_content(win: Gtk.Window) -> Gtk.Box:
     _force_block_fns: list = []
     _refresh_fns: list = []
 
-    panic_btn = btn("🚨  Lock everything")
-    panic_btn.set_halign(Gtk.Align.CENTER)
+    panic_btn = btn("🚨  Everything")
+    panic_btn.set_hexpand(True)
     panic_btn.set_tooltip_text(
         "Immediately blocks Wi-Fi, Bluetooth, WWAN/GPS, Camera and "
         "Microphone all at once (meeting-mode style).")
-    root.pack_start(panic_btn, False, False, 0)
-    root.pack_start(sep(), False, False, 4)
 
     # Jede Zeile ist jetzt EIN EINZIGER Button (Text = Schalter, kein
     # separates Toggle-Element daneben mehr) - klick auf den Text selbst
@@ -7733,6 +8407,13 @@ def _privacy_content(win: Gtk.Window) -> Gtk.Box:
     _privacy_rows.append(_make_bool_row(
         "👆", "Touchscreen", _touchscreen_blocked, _touchscreen_set_blocked,
         missing_tip="No touchscreen found"))
+    # "Der Lock everything Button ist noch 'Everything' mit Emoji und
+    # kommt rechts von Touchscreen hin" - Touchscreen ist der 7. (also
+    # ungerade) Eintrag in _privacy_rows, hätte in der 2er-Paarung
+    # unten sonst keinen Partner in seiner Zeile; panic_btn füllt genau
+    # diese Lücke, statt wie vorher als eigene Zeile ganz oben zu
+    # stehen.
+    _privacy_rows.append(panic_btn)
 
     # 2 pro Zeile via normalem hbox-Paar (kein Gtk.Grid).
     for i in range(0, len(_privacy_rows), 2):
@@ -7892,9 +8573,11 @@ def _parse_ufw_log_line(line: str) -> dict:
     }
 
 def _ufw_content(win: Gtk.Window) -> Gtk.Box:
+    # Redesign-Liste: "Keine Überschrift – keine Trennstriche" - die
+    # vorherige btitle()+sep()-Kopfzeile UND der separate On/Off-Block
+    # darüber sind beide weg. Status/Schalter lebt jetzt als eigener
+    # Sub-Tab ("Firewall") neben Rules/Log (3 Sub-Tabs statt 2).
     root = vbox(4); pad(root, h=4, v=6)
-    root.pack_start(btitle("󰈸  Firewall"), False, False, 0)
-    root.pack_start(sep(), False, False, 2)
 
     if not _ufw_available():
         root.pack_start(bitem("ufw is not installed", dim=True), False, False, 0)
@@ -7912,62 +8595,32 @@ def _ufw_content(win: Gtk.Window) -> Gtk.Box:
         status_lbl.show()
         GLib.timeout_add(ms, lambda: (status_lbl.hide(), False)[1])
 
-    # ── Ein/Aus-Schalter: "Firewall:" oben, Status+Refresh darunter,
-    # beides zentriert (README-Feedback) ─────────────────────────────
-    onoff_col = vbox(2)
-    onoff_col.set_halign(Gtk.Align.CENTER)
-    onoff_lbl = Gtk.Label(label="Firewall:")
-    onoff_lbl.get_style_context().add_class("caption")
-    onoff_lbl.set_halign(Gtk.Align.CENTER)
-    onoff_col.pack_start(onoff_lbl, False, False, 0)
-
-    onoff_state_row = hbox(8)
-    onoff_state_row.set_halign(Gtk.Align.CENTER)
-    onoff_toggle = btn("")
-    refresh_b = Gtk.Button(label="󰑐")
-    refresh_b.set_relief(Gtk.ReliefStyle.NONE)
-    refresh_b.get_style_context().add_class("flat")
-    refresh_b.set_opacity(0.7)
-    refresh_b.set_tooltip_text("Refresh status")
-    onoff_state_row.pack_start(onoff_toggle, False, False, 0)
-    onoff_state_row.pack_start(refresh_b, False, False, 0)
-    onoff_col.pack_start(onoff_state_row, False, False, 0)
-    root.pack_start(onoff_col, False, False, 0)
-
-    # ── Presets: ein Klick für ein paar gängige, oft gebrauchte
-    # Portfreigaben, statt jedes Mal den Add-Rule-Dialog per Hand
-    # auszufüllen. Zeigt seinen eigenen An/Aus-Zustand, erkannt aus der
-    # aktuellen Regelliste (siehe _ufw_preset_active()).
-    root.pack_start(sep(), False, False, 4)
-    root.pack_start(bsec("PRESETS"), False, False, 0)
-    preset_row = hbox(6)
-    preset_row.set_halign(Gtk.Align.CENTER)
-    preset_btns: dict = {}
-    for pname, pspecs in _UFW_PRESETS:
-        pb = btn(pname)
-        preset_btns[pname] = pb
-        def _on_preset(_w, n=pname, sp=pspecs):
-            new_val = not _ufw_preset_active(sp, _state["rules"])
-            def _apply():
-                ok, err = _ufw_apply_preset(sp, new_val)
-                if not ok:
-                    raise RuntimeError(err)
-            apply_change(f"{n}: {'On' if new_val else 'Off'}", _apply, on_status=_flash)
-            GLib.timeout_add(600, lambda: (_load_status(), False)[1])
-        pb.connect("clicked", _on_preset)
-        preset_row.pack_start(pb, False, False, 0)
-    root.pack_start(preset_row, False, False, 0)
-    root.pack_start(sep(), False, False, 4)
-
-    # ── 2 Sub-Tabs: Rules (wie bisher) + neu Log ──────────────────────
+    # ── 3 Sub-Tabs: Firewall (neu) / Rules / Log ──────────────────────
     stack = Gtk.Stack()
     stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
     stack.set_transition_duration(200)
     stack.set_hhomogeneous(False)
     stack.set_vhomogeneous(False)
 
+    # ── Sub-Tab: Firewall - "Label: 'Firewall' mit dem grünen/roten
+    # Symbol dazu - label button zum ein-aus schalten". Ein einziger
+    # klickbarer Button trägt Name+Status-Punkt zusammen, kein
+    # separates Label+Toggle-Paar mehr (gleiches Muster wie überall
+    # sonst in diesem Redesign-Durchgang).
+    t_fw = vbox(4); pad(t_fw, h=4, v=10)
+    fw_row = hbox(8)
+    fw_row.set_halign(Gtk.Align.CENTER)
+    onoff_toggle = btn("🔴  Firewall")
+    refresh_b = Gtk.Button(label="󰑐")
+    refresh_b.set_relief(Gtk.ReliefStyle.NONE)
+    refresh_b.get_style_context().add_class("flat")
+    refresh_b.set_opacity(0.7)
+    refresh_b.set_tooltip_text("Refresh status")
+    fw_row.pack_start(onoff_toggle, False, False, 0)
+    fw_row.pack_start(refresh_b, False, False, 0)
+    t_fw.pack_start(fw_row, False, False, 0)
+
     t_rules = vbox(3)
-    t_rules.pack_start(bsec("RULES"), False, False, 0)
     rules_sw, rules_box = scroll_box(200)
     t_rules.pack_start(rules_sw, False, False, 0)
     add_row_btn = btn("➕  Add rule")
@@ -7979,8 +8632,9 @@ def _ufw_content(win: Gtk.Window) -> Gtk.Box:
     refresh_log_btn = btn("󰑐  Refresh log")
     t_log.pack_start(refresh_log_btn, False, False, 0)
 
+    stack.add_named(t_fw,    "firewall")
     stack.add_named(t_rules, "rules")
-    stack.add_named(t_log, "log")
+    stack.add_named(t_log,   "log")
 
     tab_row = hbox(6)
     tab_row.set_halign(Gtk.Align.CENTER)
@@ -7997,12 +8651,13 @@ def _ufw_content(win: Gtk.Window) -> Gtk.Box:
             if n == name: ctx.add_class("active")
             else:         ctx.remove_class("active")
 
-    for tname, tlabel in (("rules", "Rules"), ("log", "Log")):
-        tb = btn(tlabel, active=(tname == "rules"))
+    for tname, tlabel in (("firewall", "Firewall"), ("rules", "Rules"),
+                           ("log", "Log")):
+        tb = btn(tlabel, active=(tname == "firewall"))
         tb.connect("clicked", lambda _b, n=tname: _switch_ufw_tab(n))
         tab_btns[tname] = tb
         tab_row.pack_start(tb, False, False, 0)
-    stack.set_visible_child_name("rules")
+    stack.set_visible_child_name("firewall")
 
     root.pack_start(tab_row, True, False, 2)
     root.pack_start(tab_sep(), False, False, 0)
@@ -8085,18 +8740,10 @@ def _ufw_content(win: Gtk.Window) -> Gtk.Box:
         GLib.idle_add(_shrink_to_fit, win)
 
     def _refresh_onoff_ui():
-        onoff_toggle.set_label("🟢 Active" if _state["active"] else "🔴 Inactive")
+        onoff_toggle.set_label("🟢  Firewall" if _state["active"] else "🔴  Firewall")
         ctx = onoff_toggle.get_style_context()
         if _state["active"]: ctx.add_class("active")
         else:                ctx.remove_class("active")
-
-    def _refresh_presets_ui():
-        for pname, pspecs in _UFW_PRESETS:
-            ctx = preset_btns[pname].get_style_context()
-            if _ufw_preset_active(pspecs, _state["rules"]):
-                ctx.add_class("active")
-            else:
-                ctx.remove_class("active")
 
     def _load_status():
         def _work():
@@ -8108,7 +8755,6 @@ def _ufw_content(win: Gtk.Window) -> Gtk.Box:
                 _state["active"] = data["active"]
                 _state["rules"] = data["rules"]
                 _refresh_onoff_ui()
-                _refresh_presets_ui()
                 _rebuild_rules_ui()
             GLib.idle_add(_apply)
         in_thread(_work)
@@ -8395,8 +9041,7 @@ def _tailscale_content(win: Gtk.Window) -> Gtk.Box:
     erst noch sein eigenes bewusstes Opt-in-UI braucht, kein einfacher
     Toggle nebenbei)."""
     root = vbox(4); pad(root, h=4, v=6)
-    root.pack_start(btitle("󰖂  Tailscale"), False, False, 0)
-    root.pack_start(sep(), False, False, 2)
+    # Redesign-Liste: "Keine Überschrift - kein Strich."
 
     if not _tailscale_available():
         root.pack_start(bitem("tailscale is not installed", dim=True), False, False, 0)
@@ -8414,9 +9059,24 @@ def _tailscale_content(win: Gtk.Window) -> Gtk.Box:
         status_lbl.show()
         GLib.timeout_add(ms, lambda: (status_lbl.hide(), False)[1])
 
-    conn_lbl = Gtk.Label(label="Checking…")
-    conn_lbl.get_style_context().add_class("caption")
+    # "Connected as ... sollte viel größer sein und leuchten - wenn man
+    # da drauf klickt, dann soll man auf die Tailscale-Seite kommen, wo
+    # man sich auch abmelden kann und alles konfigurieren kann" - jetzt
+    # ein klickbarer Button statt eines reinen Labels, öffnet die
+    # Tailscale-Admin-Konsole im Standardbrowser (login.tailscale.com/
+    # admin/machines - von dort aus lassen sich Geräte abmelden,
+    # umbenennen, Exit-Nodes/ACLs konfigurieren usw., alles was
+    # Tailscale selbst an Verwaltung anbietet).
+    conn_lbl = Gtk.Button(label="Checking…")
+    conn_lbl.set_relief(Gtk.ReliefStyle.NONE)
+    conn_lbl.get_style_context().add_class("flat")
+    conn_lbl.get_style_context().add_class("tailscale-conn-big")
+    conn_lbl.set_can_focus(False)
     conn_lbl.set_halign(Gtk.Align.CENTER)
+    conn_lbl.set_tooltip_text("Open the Tailscale admin console")
+    conn_lbl.connect("clicked", lambda _w: subprocess.Popen(
+        ["xdg-open", "https://login.tailscale.com/admin/machines"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
     root.pack_start(conn_lbl, False, False, 0)
 
     ip_row = hbox(6)
@@ -8468,6 +9128,7 @@ def _tailscale_content(win: Gtk.Window) -> Gtk.Box:
     autostart_row = hbox(8)
     autostart_row.set_halign(Gtk.Align.CENTER)
     autostart_toggle = btn("Start on boot")
+    autostart_toggle.get_style_context().add_class("compact-btn")
     autostart_row.pack_start(autostart_toggle, False, False, 0)
     root.pack_start(autostart_row, False, False, 0)
 
@@ -9506,8 +10167,7 @@ def _clamav_content(win: Gtk.Window) -> Gtk.Box:
     t_auto.pack_start(autoscan_row, False, False, 0)
 
     autoscan_note = Gtk.Label(
-        label="Re-scans the whole ~/Downloads folder whenever it changes "
-              "(new/removed/renamed file) - not a true per-file watcher.")
+        label="Re-scans ~/Downloads on any change (not per-file).")
     autoscan_note.get_style_context().add_class("caption")
     autoscan_note.set_opacity(0.5)
     autoscan_note.set_line_wrap(True)
@@ -9699,7 +10359,7 @@ def _security_content(win: Gtk.Window) -> Gtk.Box:
         target_row.pack_start(b, False, False, 0)
     stack.set_visible_child_name("privacy")
 
-    outer = vbox(4); safe_pad(outer, 380)
+    outer = vbox(4); safe_pad_edge(outer, 380, top=False, bottom=True)
     outer.pack_start(tab_row_top, True, False, 2)
     outer.pack_start(tab_row_bottom, True, False, 0)
     outer.pack_start(tab_sep(), False, False, 0)
@@ -9756,7 +10416,12 @@ def build_settings(win: Gtk.Window):
             page = vbox(4); safe_pad_edge(page, 420, top=True, bottom=False)
             if cat_key not in _reused_widget_categories:
                 page.pack_start(btitle(f"{icon}  {cat_label}"), False, False, 0)
-                page.pack_start(sep(), False, False, 2)
+                # Redesign-Liste: "Unter Display eine fette Linie
+                # anstatt einer dünnen" - NUR für die Display-Seite,
+                # alle anderen Kategorien behalten den normalen
+                # dünnen sep().
+                page.pack_start(hub_sep() if cat_key in ("display", "security") else sep(),
+                                 False, False, 2)
             # WICHTIG: _current_win muss HIER, unmittelbar um den
             # Builder-Aufruf, gesetzt sein - nicht nur beim initialen
             # build_settings(win) in toggle_widget(). Diese Seiten
@@ -9787,7 +10452,7 @@ def build_settings(win: Gtk.Window):
     hub_title = btitle("󰒓  Settings")
     hub_title.get_style_context().add_class("compact-title")
     hub.pack_start(hub_title, False, False, 0)
-    hub.pack_start(sep(), False, False, 0)
+    hub.pack_start(hub_sep(), False, False, 0)
 
     # Dynamische Sortierung: Kategorien mit einem Widget, das gerade
     # in der Waybar (modules-left/-center/-right) auftaucht, landen im

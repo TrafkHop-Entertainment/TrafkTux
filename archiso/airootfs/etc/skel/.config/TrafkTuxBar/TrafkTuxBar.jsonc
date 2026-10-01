@@ -26,6 +26,29 @@
     // Taskbar-Groessenordnung.
     "height": 68,
     "exclusive_zone": false,
+    // Abstand links/rechts, bevor die erste/letzte Modul-Blase beginnt -
+    // soll erst NACH der Eckenrundung der Bar anfangen (nicht mehr direkt
+    // am Rand kleben wie vorher). left_slice/right_slice oben sind 220 bei
+    // 1920px Bildbreite - bei 68px Bar-Hoehe skaliert die Rundung uniform
+    // mit runter, 46px hier ist ein guter Startwert dafuer. Bei Bedarf
+    // direkt hier anpassen, ohne neu zu kompilieren.
+    "edge_margin": 34,
+
+    // Mehrere Monitore: es gibt immer nur EINE Bar. Leer lassen = sie folgt
+    // dem Cursor und erscheint an dem Monitor, an dessen Rand du die Maus
+    // hinbewegst (samt Rand-Sensor und Tastatur-Offset). Ein Name (z.B.
+    // "eDP-1", herausfinden mit `hyprctl monitors`, Feld "name") pinnt die
+    // Bar dauerhaft auf diesen Monitor.
+    "monitor": "",
+
+    // Center-Modul (offene Fenster): wie viel von der LOGISCHEN (schon
+    // durch den jeweiligen Skalierungsfaktor geteilten) Monitor-Breite
+    // maximal fuer die Fenster-Reihe verwendet wird, bevor der Rest auf
+    // eine neue Zeile/Seite umbricht. 0.30 = 30% der Bildschirmbreite -
+    // dadurch automatisch aufloesungs-/skalierungsunabhaengig statt
+    // eines fest verdrahteten Pixelwerts (der Grund, warum bei 1080p+2x
+    // Fenster einfach nicht mehr angezeigt wurden).
+    "center_width_fraction": 0.30,
 
     "bar_background": {
         "image": "/tmp/Bar.png",
@@ -77,7 +100,14 @@
         // Kleiner drehen: 150-170 wirkt noch knackiger, aber der Bounce braucht
         // etwas Luft, um ueberhaupt sichtbar zu sein - unter ~150 wird er
         // kaum noch wahrgenommen.
-        "slide_ms": 265
+        "slide_ms": 265,
+        // Wie weit der unsichtbare Kantensensor ueber den Bildschirmrand
+        // hinausragt (in Pixeln, negativer Rand). Erleichtert das Aufrufen
+        // der Bar bei Monitoren ueber anderen Monitoren erheblich, weil die
+        // Maus am oberen Rand des darunterliegenden Monitors sofort den
+        // Sensor trifft. Bei gesperrter Bar (bar-lock) hat das keinen Effekt.
+        // 0 = deaktiviert (altes Verhalten). Standard: 15.
+        "edge_overhang_px": 15
     },
 
     "modules_left": [
@@ -85,13 +115,7 @@
             "id": "appmenu",
             "icon": "view-app-grid-symbolic",
             "tooltip": "App Launcher",
-            "on_click": "rofi -show bubble -modi \"bubble:$HOME/.config/rofi/RofiTrafkBubbleMenus --menu AppLauncher --x11\" -theme $HOME/.config/rofi/AppLauncher/theme.rasi -show-icons -no-custom -x11 -monitor \"$(hyprctl monitors -j | jq -r '.[] | select(.focused) | .name')\" -kb-row-up 'Up,Control+p,w' -kb-row-down 'Down,Control+n,s' -kb-row-left 'Control+Page_Up,a' -kb-row-right 'Control+Page_Down,d' -kb-accept-entry 'Control+j,Control+m,Return,KP_Enter,space,less' -kb-custom-1 'q' -kb-custom-2 'e' -kb-custom-3 'x' && bash ~/.config/hypr/soundctl.sh click &"
-        },
-        {
-            "id": "powermenu",
-            "icon": "system-shutdown-symbolic",
-            "tooltip": "Power Menu",
-            "on_click": "rofi -show bubble -modi \"bubble:$HOME/.config/rofi/RofiTrafkBubbleMenus --menu PowerMenu --x11\" -theme $HOME/.config/rofi/PowerMenu/theme.rasi -show-icons -no-custom -x11 -monitor \"$(hyprctl monitors -j | jq -r '.[] | select(.focused) | .name')\" -kb-row-up 'Up,Control+p,w' -kb-row-down 'Down,Control+n,s' -kb-row-left 'Control+Page_Up,a' -kb-row-right 'Control+Page_Down,d' -kb-accept-entry 'Control+j,Control+m,Return,KP_Enter,space,less' -kb-custom-1 'q' -kb-custom-2 'e' -kb-custom-3 'x' && bash ~/.config/hypr/soundctl.sh click &"
+            "on_click": "$HOME/.config/TrafkTuxLauncher/TrafkTuxLauncher --show AppLauncher && bash ~/.config/hypr/soundctl.sh click &"
         },
         {
             "id": "workspaces-view",
@@ -100,95 +124,63 @@
             "on_click": "hyprctl eval 'hl.plugin.hyprexpo.expo(\"toggle\")' ; hyprctl eval 'hl.dispatch(hl.dsp.submap(\"hyprexpo\"))' ; bash ~/.config/hypr/soundctl.sh click &"
         },
         {
-            "id": "hide-windows",
-            "icon": "view-restore-symbolic",
-            "icon_active": "view-restore-symbolic",
-            "tooltip": "Alle Fenster verstecken/wiederherstellen",
-            // Nutzt dein bestehendes, echtes hideall.sh (bleibt an seinem
-            // bisherigen Ort liegen, wird nicht in den TrafkTuxBar-Ordner
-            // verschoben) - das Skript spielt seinen "Minimize"-Sound beim
-            // Verstecken schon selbst am Ende von do_hide, daher hier
-            // KEIN zusaetzlicher soundctl.sh-Aufruf.
-            "exec_cmd": "~/.config/waybar/Scripts/HideAll.sh status",
-            "exec_interval_sec": 1,
-            "exec_return_json": true,
-            "on_click": "~/.config/waybar/Scripts/HideAll.sh toggle &"
+            "id": "powermenu",
+            "icon": "system-shutdown-symbolic",
+            "tooltip": "Power Menu",
+            "on_click": "$HOME/.config/TrafkTuxLauncher/TrafkTuxLauncher --show PowerMenu && bash ~/.config/hypr/soundctl.sh click &"
         },
         {
-            // Entspricht dem alten "margin-left: 35px" auf
-            // #custom-shortcut-kitty in style.css - trennt den festen
-            // Cluster (appmenu..hide-windows) optisch von den
-            // App-Shortcuts.
+            // Trennt den festen 3er-Cluster (appmenu/workspaces-view/
+            // powermenu) optisch von den gepinnten Apps darunter/danach.
             "type": "spacer",
-            "width": 35
+            "width": 28
         },
         {
-            "id": "shortcut-kitty",
-            "icon": "utilities-terminal-symbolic",
-            "tooltip": "Xfce4 Terminal",
-            "on_click": "setsid xfce4-terminal && bash ~/.config/hypr/soundctl.sh click &"
-        },
-        {
-            "id": "shortcut-thunar",
-            "icon": "system-file-manager-symbolic",
-            "tooltip": "Thunar",
-            "on_click": "setsid thunar && bash ~/.config/hypr/soundctl.sh click &"
-        },
-        {
-            "id": "shortcut-firefox",
-            "icon": "firefox",
-            "tooltip": "Firefox",
-            "on_click": "setsid firefox && bash ~/.config/hypr/soundctl.sh click &"
+            // Gepinnte Apps: "visible_count" Stueck sind immer sichtbar,
+            // der Rest bricht in eine neue Zeile um; die Pfeile daneben
+            // blaettern zwischen den Zeilen (Mausrad ueber den Icons auch).
+            // Standard 3 - hier frei einstellbar, unabhaengig von
+            // Aufloesung/Skalierung.
+            "id": "pinned",
+            "type": "button_row",
+            "visible_count": 3,
+            "items": [
+                {
+                    "id": "shortcut-kitty",
+                    "icon": "utilities-terminal-symbolic",
+                    "tooltip": "Xfce4 Terminal",
+                    "on_click": "setsid xfce4-terminal && bash ~/.config/hypr/soundctl.sh click &"
+                },
+                {
+                    "id": "shortcut-thunar",
+                    "icon": "system-file-manager-symbolic",
+                    "tooltip": "Thunar",
+                    "on_click": "setsid thunar && bash ~/.config/hypr/soundctl.sh click &"
+                },
+                {
+                    "id": "shortcut-firefox",
+                    "icon": "firefox",
+                    "tooltip": "Firefox",
+                    "on_click": "setsid firefox && bash ~/.config/hypr/soundctl.sh click &"
+                }
+            ]
         }
     ],
 
     "modules_center": [
         {
+            // Zeigt nur den AKTIVEN Workspace als Zahlen-Blase (Pfeile
+            // daneben wechseln den Workspace) plus die offenen Fenster
+            // DIESES Workspace. Wie viele davon pro Zeile passen, wird
+            // automatisch aus der Monitor-Breite und dem Skalierungsfaktor
+            // berechnet (siehe "center_width_fraction" ganz oben) - ein
+            // eigener Wert hier ist nicht mehr noetig.
             "id": "workspaces",
             "type": "hyprland_workspaces"
         }
     ],
 
     "modules_right": [
-        {
-            "id": "volume",
-            "icon": "audio-volume-high-symbolic",
-            "tooltip": "Volume & Audio",
-            "on_click": "socat - UNIX-CONNECT:/tmp/wb-daemon.sock <<< volume"
-        },
-        {
-            "id": "network",
-            "icon": "network-wireless-symbolic",
-            "tooltip": "Netzwerk / Wi-Fi",
-            "on_click": "socat - UNIX-CONNECT:/tmp/wb-daemon.sock <<< network"
-        },
-        {
-            "id": "bluetooth",
-            "icon": "bluetooth-symbolic",
-            "tooltip": "Bluetooth",
-            "on_click": "socat - UNIX-CONNECT:/tmp/wb-daemon.sock <<< bluetooth"
-        },
-        {
-            "id": "brightness",
-            "icon": "display-brightness-symbolic",
-            "tooltip": "Helligkeit & Nachtlicht",
-            "on_click": "socat - UNIX-CONNECT:/tmp/wb-daemon.sock <<< brightness"
-        },
-        {
-            "id": "akku",
-            "icon": "battery-good-symbolic",
-            "tooltip": "Akku-Info",
-            "on_click": "socat - UNIX-CONNECT:/tmp/wb-daemon.sock <<< akku"
-        },
-        {
-            "id": "osk",
-            "icon": "input-keyboard-symbolic",
-            "tooltip": "Bildschirmtastatur",
-            "exec_cmd": "pgrep -x wvkbd-mobintl >/dev/null && echo '{\"class\":\"active\"}' || echo '{\"class\":\"inactive\"}'",
-            "exec_interval_sec": 2,
-            "exec_return_json": true,
-            "on_click": "(pgrep -x wvkbd-mobintl >/dev/null && pkill -x wvkbd-mobintl || setsid wvkbd-mobintl -L 300); bash ~/.config/hypr/soundctl.sh toggle &"
-        },
         {
             "id": "tray",
             "type": "tray"
@@ -199,6 +191,56 @@
             "format": "%H:%M",
             "format_alt": "%d.%m.%Y",
             "on_click": "socat - UNIX-CONNECT:/tmp/wb-daemon.sock <<< clock"
+        },
+        {
+            // "visible_count" Widgets sind immer sichtbar, der Rest
+            // bricht in eine neue Zeile um; die Pfeile daneben blaettern
+            // zwischen den Zeilen (Mausrad ueber den Icons auch). Standard
+            // 3 - hier frei einstellbar.
+            "id": "other-widgets",
+            "type": "widget_grid",
+            "visible_count": 3,
+            "items": [
+                {
+                    "id": "volume",
+                    "icon": "audio-volume-high-symbolic",
+                    "tooltip": "Volume & Audio",
+                    "on_click": "socat - UNIX-CONNECT:/tmp/wb-daemon.sock <<< volume"
+                },
+                {
+                    "id": "network",
+                    "icon": "network-wireless-symbolic",
+                    "tooltip": "Netzwerk / Wi-Fi",
+                    "on_click": "socat - UNIX-CONNECT:/tmp/wb-daemon.sock <<< network"
+                },
+                {
+                    "id": "bluetooth",
+                    "icon": "bluetooth-symbolic",
+                    "tooltip": "Bluetooth",
+                    "on_click": "socat - UNIX-CONNECT:/tmp/wb-daemon.sock <<< bluetooth"
+                },
+                {
+                    "id": "brightness",
+                    "icon": "display-brightness-symbolic",
+                    "tooltip": "Helligkeit & Nachtlicht",
+                    "on_click": "socat - UNIX-CONNECT:/tmp/wb-daemon.sock <<< brightness"
+                },
+                {
+                    "id": "akku",
+                    "icon": "battery-good-symbolic",
+                    "tooltip": "Akku-Info",
+                    "on_click": "socat - UNIX-CONNECT:/tmp/wb-daemon.sock <<< akku"
+                },
+                {
+                    "id": "osk",
+                    "icon": "input-keyboard-symbolic",
+                    "tooltip": "Bildschirmtastatur",
+                    "exec_cmd": "pgrep -x wvkbd-mobintl >/dev/null && echo '{\"class\":\"active\"}' || echo '{\"class\":\"inactive\"}'",
+                    "exec_interval_sec": 2,
+                    "exec_return_json": true,
+                    "on_click": "(pgrep -x wvkbd-mobintl >/dev/null && pkill -x wvkbd-mobintl || setsid wvkbd-mobintl -L 300); bash ~/.config/hypr/soundctl.sh toggle &"
+                }
+            ]
         },
         {
             "id": "settings",

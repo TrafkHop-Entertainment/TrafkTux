@@ -2,7 +2,7 @@
 
 *"Unique Creativity meets QOL and Streamlining"*
 
-> **This project is NOT Open Source — read the LICENSE for more!**
+> **This project is SOURCE AVAILABLE— read the LICENSE for more!**
 > Copyright © 2026 TrafkHop Entertainment. All rights reserved.
 
 ## About
@@ -237,7 +237,7 @@ TrafkTux comes preinstalled with a bunch of software while still not overdoing i
 - CUPS, HPLIP
 - pipewire and all other audio stuff
 - Bluetooth
-- Canon printer drivers
+- Canon printer drivers (cnijfilter2)
 - gnome-network-displays
 
 **Boot & Display**
@@ -277,6 +277,7 @@ Those apps are **NOT PREINSTALLED** and can be installed via the App Settings me
 - handbrake *(pacman)*
 
 **Work**
+- obsidian
 - jetbrains-toolbox *(aur)*
 - bambustudio-bin *(aur)*
 - audacity, obs-studio, gimp, qalculate-gtk, libreoffice-fresh, lmms *(pacman)*
@@ -568,21 +569,21 @@ Change the scale (to a certain degree). Toggle HDR. Change where your other moni
 Still to be themed / done:
 - Calamares
 - Optional package installer
-- Waybar redesign aka TrafkTuxBar **– partyheld**
+- Waybar redesign aka TrafkTuxBar **– volloeko**
 - Editor for: Rofi folders/apps, Waybar widgets/shortcuts, autostart apps, default apps
 - TrafkTuxLauncher **– mailueberfall**
 - TrafkTux App Editor
 - Widgets **– wolke7**
+- fido key authentication
 
 ## Known Bugs
 
 - The ISO doesn't currently boot – since the distro is still in development, this is a minor issue that will be fixed soon. Some grub permission problem or something
-- All authentification with "Authentifizierung erforderlich", the floating password windows, they do currently do not support any finger print authentification
-- finger print authentification has to be failed before allowing the normal password – should be both at the same time
-- On-screen keyboard button on waybar should be automatically hidden if the screen does not support touch – and the trafktuxbar needs a fix where the bar is under the on screen keyboard, not ontop of the keyboard (it should sit on top of it)
+- guest wifi / captive /vsolutioncast not working
+- Since Avahi is masked duo a wifi bug where other devices do not get much bandwidth, you cannot connect printer automaticly
 
 ### Other Stuff
-- Finish System Sounds
+- Finish System Sounds - tortenboxer
 - make sddm idle animations  – turboprinz
 - rerender plymouth bubble animation – turboprinz
 - Mouse cursor redesign

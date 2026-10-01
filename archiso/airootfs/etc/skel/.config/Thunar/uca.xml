@@ -17,8 +17,8 @@
 <name>Symlink: Quelle merken</name>
 <submenu></submenu>
 <unique-id>1790102755330374-1</unique-id>
-<command>bash ~/.config/hypr/SymlinkShortcut.sh source %f</command>
-<description>Merkt die markierte Datei/den Ordner als Symlink-Quelle</description>
+<command>bash ~/.config/hypr/SymlinkShortcut.sh source %F</command>
+<description>Merkt die markierte(n) Datei(en)/Ordner als Symlink-Quelle(n)</description>
 <range></range>
 <patterns>*</patterns>
 <directories/>
@@ -33,7 +33,7 @@
 <name>Symlink: hier erstellen</name>
 <submenu></submenu>
 <unique-id>1790102755330375-2</unique-id>
-<command>bash ~/.config/hypr/SymlinkShortcut.sh paste %d</command>
+<command>bash ~/.config/hypr/SymlinkShortcut.sh paste .</command>
 <description>Erstellt im aktuellen Ordner einen relativen Symlink auf die gemerkte Quelle</description>
 <range></range>
 <patterns>*</patterns>
@@ -49,8 +49,8 @@
 <name>Symlink: zum Verschieben markieren</name>
 <submenu></submenu>
 <unique-id>1790102755330376-3</unique-id>
-<command>bash ~/.config/hypr/SymlinkShortcut.sh move %f</command>
-<description>Merkt den markierten Symlink zum Verschieben (danach im Zielordner "Symlink: hier erstellen" ausführen)</description>
+<command>bash ~/.config/hypr/SymlinkShortcut.sh move %F</command>
+<description>Merkt die markierten Symlinks zum Verschieben (danach im Zielordner "Symlink: hier erstellen" ausführen)</description>
 <range></range>
 <patterns>*</patterns>
 <directories/>
@@ -65,8 +65,8 @@
 <name>Symlink: Ordner reparieren</name>
 <submenu></submenu>
 <unique-id>1790102755330377-4</unique-id>
-<command>bash ~/.config/hypr/SymlinkShortcut.sh repair %d</command>
-<description>Repariert kaputte relative Symlinks im aktuellen Ordner (Best Effort, sucht per Dateiname unter $HOME)</description>
+<command>bash ~/.config/hypr/SymlinkShortcut.sh repair %F</command>
+<description>Repariert kaputte relative Symlinks in markierten Ordner(n) bzw. einzeln markierten Symlinks (Best Effort, sucht per Dateiname unter $HOME)</description>
 <range></range>
 <patterns>*</patterns>
 <directories/>

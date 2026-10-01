@@ -220,7 +220,7 @@ hl.config({
 
 hl.config({
     cursor = {
-        no_warps = false,
+        no_warps = true,
     },
 })
 
@@ -389,7 +389,7 @@ hl.window_rule({
 hl.config({
     input = {
         kb_layout = "de",
-        follow_mouse = 0,
+        follow_mouse = 1,
         float_switch_override_focus = 0,
         sensitivity = 0,
         touchpad = {
@@ -1204,7 +1204,7 @@ if hl.plugin.dynamic_cursors then
                     enabled = false,
 
                     threshold = 5.0,
-                    base = 1.0,
+                    base = 0.1,
                     speed = 1.0,
                     influence = 1.0,
                     limit = 0.0,
