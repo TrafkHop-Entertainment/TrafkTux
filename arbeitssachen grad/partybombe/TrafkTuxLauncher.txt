@@ -1,0 +1,3 @@
+Weiter
+
+aber ich muss sagen, es soll das switch nicht blockieren, es soll die animation einfach schneller machen und anpassa a wie schnell man drückt. muss ja nicht perfekt sein, bissl goofy und funktional. dann passts. aber man soll schon schnell die seite wechseln können.
