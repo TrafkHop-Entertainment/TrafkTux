@@ -420,6 +420,121 @@ scrollbar slider {{
     min-width: 3px;
     min-height: 20px;
 }}
+
+/* ── Theme-unabhängige Overrides ────────────────────────────────────
+   Das Fenster hat immer denselben dunklen Cairo-Blob als Hintergrund,
+   egal ob GTK im Dark- oder Light-Mode ist. Alle Widgets, bei denen
+   GTK-Light-Mode sonst eigene helle Hintergründe / dunkle Texte
+   einschleust (GtkEntry, GtkComboBoxText-Popup, GtkNotebook-Tabs,
+   GtkTreeView) werden hier explizit in unserer Farb-Welt gehalten.
+   Das ist der Fix für „im Light-Mode sind viele Texte weiß/unleserlich"
+   – die Texte SOLLEN immer gold/cremefarben bleiben. */
+
+/* Entries (Custom-Res/Hz-Felder) */
+entry, entry text {{
+    background: rgba(255,244,149,0.07);
+    color: {GOLD};
+    caret-color: {GOLD};
+    border: 1px solid rgba(255,244,149,0.25);
+    border-radius: 6px;
+    padding: 2px 8px;
+    box-shadow: none;
+}}
+entry:focus, entry text:focus {{
+    border-color: rgba(255,244,149,0.6);
+    background: rgba(255,244,149,0.12);
+}}
+
+/* ComboBoxText – die ausklappbare Liste (GtkMenu/GtkTreeView drin) */
+combobox button {{
+    background: rgba(255,244,149,0.07);
+    color: {GOLD};
+    border: 1px solid rgba(255,244,149,0.25);
+    border-radius: 6px;
+    padding: 2px 8px;
+    min-height: 0;
+}}
+combobox button:hover, combobox button:active {{
+    background: rgba(255,244,149,0.15);
+    color: {GOLD};
+}}
+combobox button arrow {{
+    color: {GOLD};
+    min-width: 12px;
+    min-height: 12px;
+}}
+/* Popup-Menü des ComboBox */
+menu, menu menuitem {{
+    background-color: #1a1535;
+    color: {GOLD};
+    border: none;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.6);
+}}
+menu menuitem:hover, menu menuitem:selected {{
+    background-color: rgba(255,244,149,0.15);
+    color: {GOLD};
+}}
+
+/* Notebook-Tabs (Sub-Tabs innerhalb Settings) – damit Tab-Labels
+   im Light-Mode nicht plötzlich schwarz auf hellem Grund stehen */
+notebook > header {{
+    background: none;
+    border: none;
+    box-shadow: none;
+}}
+notebook > header tab {{
+    background: none;
+    color: {TEXT_NORMAL};
+    border: none;
+    padding: 4px 12px;
+    margin: 0;
+    min-height: 0;
+}}
+notebook > header tab:checked, notebook > header tab:hover {{
+    background: none;
+    color: {GOLD};
+    box-shadow: none;
+}}
+notebook > header tabs indicator {{
+    background-color: {GOLD};
+    min-height: 2px;
+}}
+
+/* TreeView / ListView (Prozessliste etc.) */
+treeview, treeview.view {{
+    background-color: transparent;
+    color: {GOLD};
+}}
+treeview:selected, treeview.view:selected {{
+    background-color: rgba(255,244,149,0.15);
+    color: {GOLD};
+}}
+treeview header button {{
+    background: none;
+    color: {TEXT_NORMAL};
+    border: none;
+    border-bottom: 1px solid rgba(255,244,149,0.2);
+    border-radius: 0;
+    padding: 3px 8px;
+    font-weight: bold;
+    letter-spacing: 1px;
+    font-size: 11px;
+}}
+treeview header button:hover {{
+    color: {GOLD};
+}}
+
+/* Tooltip immer dunkel */
+tooltip {{
+    background-color: #1a1535;
+    color: {GOLD};
+    border: 1px solid rgba(255,244,149,0.25);
+    border-radius: 6px;
+}}
+tooltip label {{
+    color: {GOLD};
+    padding: 2px 6px;
+}}
 """.encode()
 
 # ════════════════════════════════════════════════════════════
@@ -1419,14 +1534,15 @@ def bslider(icon: str, lo: float, hi: float, step: float, val: float,
     s.set_hexpand(True)
     s.set_draw_value(show_val)
     s.set_can_focus(False)
-    # ALLGEMEIN (Formatierungs-Feedback): Slider sollen NICHT per
-    # Mausrad verstellbar sein - GtkRange (Basisklasse von GtkScale)
-    # reagiert sonst standardmäßig auf "scroll-event" und ändert dabei
-    # den Wert, oft ungewollt beim einfachen Durchscrollen des Fensters.
-    # Da bslider() die EINZIGE Stelle im ganzen Programm ist, die
-    # Gtk.Scale erzeugt, reicht dieser eine Handler für jeden Slider
-    # überall (Lautstärke, Helligkeit, Scale, Rotation, Night Light, ...).
-    s.connect("scroll-event", lambda *_: True)
+    # ALLGEMEIN: Slider sollen NICHT per Mausrad verstellbar sein.
+    # `lambda *_: True` reicht NICHT — GtkRange verarbeitet scroll-event
+    # im C-Level-Default-Handler, der trotz `return True` vom User-Handler
+    # weiter läuft. GLib.signal_stop_emission_by_name() bricht dagegen
+    # die komplette Signal-Emission inkl. Default-Handler ab.
+    def _block_scroll_on_slider(widget, _event):
+        widget.stop_emission_by_name("scroll-event")
+        return True
+    s.connect("scroll-event", _block_scroll_on_slider)
     if show_val:
         s.set_value_pos(Gtk.PositionType.RIGHT)
     if cb: s.connect("value-changed", cb)
@@ -1660,19 +1776,20 @@ def _volume_content(win: Gtk.Window) -> Gtk.Box:
         for c in t2.get_children(): t2.remove(c)
         default_sink = _default_sink_name()
         t2.pack_start(bsec("OUTPUT"), False, False, 0)
+        t2.pack_start(hub_sep(), False, False, 2)
         for s in _get_sinks():
-            t2.pack_start(
-                _build_device_row(s, "sink", s["name"] == default_sink,
-                                   _refresh_devices),
-                False, False, 0)
-        t2.pack_start(sep(), False, False, 4)
+            row = _build_device_row(s, "sink", s["name"] == default_sink,
+                                    _refresh_devices)
+            row.set_halign(Gtk.Align.CENTER)
+            t2.pack_start(row, False, False, 0)
         default_source = _default_source_name()
-        t2.pack_start(bsec("INPUT"), False, False, 0)
+        t2.pack_start(bsec("INPUT"), False, False, 4)
+        t2.pack_start(hub_sep(), False, False, 2)
         for s in _get_sources():
-            t2.pack_start(
-                _build_device_row(s, "source", s["name"] == default_source,
-                                   _refresh_devices),
-                False, False, 0)
+            row = _build_device_row(s, "source", s["name"] == default_source,
+                                    _refresh_devices)
+            row.set_halign(Gtk.Align.CENTER)
+            t2.pack_start(row, False, False, 0)
         t2.show_all()
 
     _refresh_devices()
@@ -2504,8 +2621,8 @@ def _bluetooth_content() -> Gtk.Box:
     root = vbox(4); safe_pad(root, 380)
     powered = [_bt_powered()]
 
-    root.pack_start(btitle("󰂯  Bluetooth"), False, False, 0)
-    root.pack_start(tab_sep(), False, False, 0)
+    root.pack_start(btitle("Bluetooth"), False, False, 0)
+    root.pack_start(hub_sep(), False, False, 0)
 
     # Icon-only, oben links (Ein/Aus) / oben rechts (Scan) direkt unter
     # dem fetten Trennstrich - kein Text mehr, nur noch das Symbol.
@@ -5310,17 +5427,31 @@ def _clock_content(win: Gtk.Window) -> Gtk.Box:
     now = datetime.now()
     cur = [now.year, now.month]
 
-    prev_b      = btn("󰅁", tip="Previous month")
-    next_b      = btn("󰅂", tip="Next month")
-    mth_box, mth_lbl = bitem_ref("")
-    storage_btn = btn("📁", tip="Change where calendar data is stored (e.g. for multi-device sync)")
-    nav_row = hrow(prev_b, mth_box, next_b, storage_btn, sp=4)
+    prev_b = btn("󰅁", tip="Previous month")
+    next_b = btn("󰅂", tip="Next month")
+    # Redesign: Monat/Jahr-Label als klickbarer Button (Hover-Glow zeigt
+    # Klickbarkeit). Klick öffnet den Kalender-Speicherort-Dialog, der
+    # früher am separaten storage_btn hing. Pfeilabstand reduziert (sp=2).
+    mth_btn = Gtk.Button()
+    mth_btn.set_relief(Gtk.ReliefStyle.NONE)
+    mth_btn.get_style_context().add_class("flat")
+    mth_btn.get_style_context().add_class("bubble")
+    mth_btn.set_can_focus(False)
+    mth_btn.set_tooltip_text("Click to change calendar storage location")
+    mth_lbl = Gtk.Label(label="")
+    mth_lbl.set_halign(Gtk.Align.CENTER)
+    mth_btn.add(mth_lbl)
+    nav_row = hbox(2)
+    nav_row.set_halign(Gtk.Align.CENTER)
+    nav_row.pack_start(prev_b,  False, False, 0)
+    nav_row.pack_start(mth_btn, False, False, 2)
+    nav_row.pack_start(next_b,  False, False, 0)
     t2.pack_start(nav_row, False, False, 0)
 
     def _on_storage_btn(_w):
         cal_name = _khal_default_calendar_name()
         if not cal_name:
-            storage_btn.set_tooltip_text("No default calendar found in khal's config.")
+            mth_btn.set_tooltip_text("No default calendar found in khal's config.")
             return
         current = _khal_calendar_paths().get(cal_name)
         dlg = Gtk.FileChooserDialog(
@@ -5364,7 +5495,7 @@ def _clock_content(win: Gtk.Window) -> Gtk.Box:
         def _worker():
             ok, msg = _khal_change_storage_path(cal_name, new_dir, copy_old)
             def _after():
-                storage_btn.set_tooltip_text(
+                mth_btn.set_tooltip_text(
                     msg if msg else "Storage location changed."
                     if ok else f"Failed: {msg}")
                 if ok:
@@ -5372,7 +5503,7 @@ def _clock_content(win: Gtk.Window) -> Gtk.Box:
             GLib.idle_add(_after)
         in_thread(_worker)
 
-    storage_btn.connect("clicked", _on_storage_btn)
+    mth_btn.connect("clicked", _on_storage_btn)
 
     CELL = 34   # kompakter (vorher 40) - jetzt, wo die Zellen die
                 # schlanke .cal-cell-Klasse statt .bubble.item nutzen,
@@ -6064,27 +6195,55 @@ def _build_settings_appearance(page: Gtk.Box, key: str, label: str, win: Gtk.Win
     # gewählt) - nur die GLOW-FARBE zeigt an, welches: lila bei Dark
     # (theme-glow-dark-Klasse, siehe CSS oben), normales Gold bei
     # Light (Standard-.active-Look, keine Zusatzklasse nötig).
-    theme_toggle = btn("Dark Theme", active=True)
+    theme_toggle = btn("", active=True)
     def _refresh_theme_toggle():
+        # Robuster: _is_dark_mode() liest aus Gtk.Settings (live im Prozess)
+        # UND fällt auf gsettings zurück, falls die In-Prozess-Property
+        # noch den alten Start-Zustand hat.
         is_dark = _is_dark_mode()
+        try:
+            _gs_out = run(["gsettings", "get",
+                           "org.gnome.desktop.interface", "color-scheme"])
+            if _gs_out.strip():
+                is_dark = "dark" in _gs_out.lower()
+        except Exception:
+            pass
+        # Label: "🌙 Dark" wenn Dark-Mode aktiv, "☀️ Light" wenn Light aktiv.
+        # Eindeutiger als vorher (kein "Dark Theme" das im Light-Modus
+        # verwirrt) - das aktive Icon + Glow zeigt, was GERADE läuft.
+        theme_toggle.set_label("🌙 Dark" if is_dark else "☀️ Light")
         ctx = theme_toggle.get_style_context()
-        if is_dark: ctx.add_class("theme-glow-dark")
-        else:       ctx.remove_class("theme-glow-dark")
+        if is_dark:
+            ctx.add_class("active")
+            ctx.add_class("theme-glow-dark")
+        else:
+            ctx.add_class("active")
+            ctx.remove_class("theme-glow-dark")
     _refresh_theme_toggle()
 
     def _on_dark_toggle(_w):
         new_dark = not _is_dark_mode()
+        try:
+            _gs_out = run(["gsettings", "get",
+                           "org.gnome.desktop.interface", "color-scheme"])
+            if _gs_out.strip():
+                new_dark = not ("dark" in _gs_out.lower())
+        except Exception:
+            pass
+
         def _apply():
             ok, err = _set_dark_mode(new_dark)
             if not ok:
                 raise RuntimeError(err)
         def _reset():
             _refresh_theme_toggle()
-        # Sofortiges visuelles Feedback, bevor apply_fn im Hintergrund
-        # fertig ist - siehe Docstring-Kommentar an anderen Toggles.
+        # Sofortiges visuelles Feedback
+        theme_toggle.set_label("🌙 Dark" if new_dark else "☀️ Light")
         ctx = theme_toggle.get_style_context()
-        if new_dark: ctx.add_class("theme-glow-dark")
-        else:        ctx.remove_class("theme-glow-dark")
+        if new_dark:
+            ctx.add_class("theme-glow-dark")
+        else:
+            ctx.remove_class("theme-glow-dark")
         apply_change(f"Theme: {'Dark' if new_dark else 'Light'}", _apply,
                      on_status=_flash_appearance_status, reset_fn=_reset)
 
@@ -7067,25 +7226,59 @@ def _build_settings_display(page: Gtk.Box, key: str, label: str, win: Gtk.Window
     # sichtbare header_row (Icon+Name+HDR, siehe _build_monitor_row())
     # selbst genug vom nächsten ab.
     if rotation_up:
-        page.pack_start(bsec("Auto-Rotate"), False, False, 0)
-        page.pack_start(_build_autorotate_row(), False, False, 0)
+        page.pack_start(_build_autorotate_row(), False, False, 4)
 
-    # Gemeinsamer Debounce-Status für den Waybar/Autohide-Reload - siehe
-    # Kommentar bei waybar_restart_id in _build_monitor_row(). Ohne das
-    # würde bei kurz hintereinander geänderten Monitor-Einstellungen
-    # (jede wird sofort einzeln übernommen) der Reload einmal PRO
-    # Änderung feuern, was zu einem Race zwischen zwei fast
-    # gleichzeitigen "killall -SIGUSR2 waybar" +
-    # "systemctl restart wb-autohide.service" führen kann.
     waybar_restart_id = [0]
 
-    for mon in monitors:
-        mon_name = mon.get("name", "?")
+    if len(monitors) == 1:
+        # Einzelner Monitor: direkt ohne Tab-Bar anzeigen
+        mon = monitors[0]
         header_row, row = _build_monitor_row(
             mon, monitors, lua_path, win, waybar_restart_id,
-            rotation_map.get(mon_name) if rotation_up else None)
+            rotation_map.get(mon.get("name", "?")) if rotation_up else None)
         page.pack_start(header_row, False, False, 6)
         page.pack_start(row, False, False, 0)
+    else:
+        # Mehrere Monitore: Standard-Tab-Pattern wie überall sonst im Programm
+        # (btn()-Buttons + tab_sep() + Gtk.Stack) statt Gtk.Notebook.
+        mon_stack = Gtk.Stack()
+        mon_stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
+        mon_stack.set_transition_duration(150)
+        mon_stack.set_hhomogeneous(False)
+        mon_stack.set_vhomogeneous(False)
+
+        mon_tab_row = hbox(6)
+        mon_tab_row.set_halign(Gtk.Align.CENTER)
+        mon_tab_btns: dict = {}
+
+        def _switch_mon(name):
+            mon_stack.set_visible_child_name(name)
+            for n, b in mon_tab_btns.items():
+                ctx = b.get_style_context()
+                if n == name: ctx.add_class("active")
+                else:         ctx.remove_class("active")
+
+        for i, mon in enumerate(monitors):
+            mon_name = mon.get("name", "?")
+            header_row, row = _build_monitor_row(
+                mon, monitors, lua_path, win, waybar_restart_id,
+                rotation_map.get(mon_name) if rotation_up else None)
+            mon_page = vbox(4)
+            mon_page.pack_start(header_row, False, False, 6)
+            mon_page.pack_start(row, False, False, 0)
+            mon_stack.add_named(mon_page, mon_name)
+
+            tab_b = btn(mon_name, active=(i == 0))
+            tab_b.connect("clicked", lambda _b, n=mon_name: _switch_mon(n))
+            mon_tab_btns[mon_name] = tab_b
+            mon_tab_row.pack_start(tab_b, False, False, 0)
+
+        if monitors:
+            mon_stack.set_visible_child_name(monitors[0].get("name", "?"))
+
+        page.pack_start(mon_tab_row, False, False, 2)
+        page.pack_start(tab_sep(), False, False, 0)
+        page.pack_start(mon_stack, False, False, 0)
 
 _HEIGHT_SCALE_TABLE = [
     (480,  0.5),
@@ -7154,6 +7347,130 @@ def _auto_scale_for_height(h: int) -> float:
     # die die obige Tabelle keinen passgenauen Eintrag hat.
     lo, hi = _scale_bounds(h)
     return max(lo, min(hi, scale))
+
+def _valid_scales_for_resolution(width: int, height: int) -> list[float]:
+    """Gibt alle Scale-Werte zurück, bei denen sowohl width/scale als
+    auch height/scale exakt ganzzahlig sind – nur diese Werte führen in
+    Hyprland zu pixelgenauen, überlappungsfreien Monitor-Layouts.
+    Brute-Force über rationale Zahlen p/q (q ≤ 20), Bereich 0.5–3.0."""
+    seen: set[float] = set()
+    valid: list[float] = []
+    for q in range(1, 21):
+        for p in range(max(1, q // 4), q * 4 + 1):
+            scale = p / q
+            if scale < 0.5 or scale > 3.0:
+                continue
+            key = round(scale, 4)
+            if key in seen:
+                continue
+            lw = width / scale
+            lh = height / scale
+            if abs(lw - round(lw)) < 0.01 and abs(lh - round(lh)) < 0.01:
+                seen.add(key)
+                valid.append(key)
+    # Auch die bounds prüfen
+    lo, hi = _scale_bounds(height)
+    valid = [s for s in valid if lo <= s <= hi]
+    return sorted(valid) or [1.0]
+
+def _repack_lua_positions(lua_txt: str,
+                          live_mons: list[dict],
+                          changed_name: str,
+                          new_phys_w: int, new_phys_h: int,
+                          new_scale: float) -> str:
+    """Schreibt nach einer Scale-/Auflösungsänderung die Positionen
+    ALLER Monitore im Lua-Text neu, damit keine Lücken oder Überlappungen
+    entstehen.
+
+    Hyprland-Positionskoordinaten sind logische Pixel (physical / scale).
+    Wenn Monitor A seine Scale ändert, verändert sich seine logische Breite
+    → alle Monitore die RECHTS/UNTER A sitzen, müssen verschoben werden.
+
+    Unterstützt rein horizontale und rein vertikale Arrangements sowie
+    Standard-Grid-Layouts. L-förmige Sonder-Setups werden nicht
+    vollständig re-packed; es wird aber sichergestellt dass direkte
+    Nachbarn des geänderten Monitors korrekt gesetzt werden.
+    """
+    import math as _math
+
+    # Alle Monitore: starte mit live-Daten von hyprctl
+    # (nach dem hyprctl-keyword-Apply schon aktuell).
+    mon_data: dict[str, dict] = {}
+    for m in live_mons:
+        n = m.get("name", "")
+        if not n:
+            continue
+        mon_data[n] = {
+            "x":     int(m.get("x", 0)),
+            "y":     int(m.get("y", 0)),
+            "phys_w": int(m.get("width", 0)),
+            "phys_h": int(m.get("height", 0)),
+            "scale": float(m.get("scale", 1.0) or 1.0),
+        }
+    # Überschreibe den gerade geänderten Monitor mit den NEUEN Werten
+    if changed_name in mon_data:
+        mon_data[changed_name]["phys_w"] = new_phys_w
+        mon_data[changed_name]["phys_h"] = new_phys_h
+        mon_data[changed_name]["scale"]  = new_scale
+    else:
+        return lua_txt  # Monitor unbekannt → nichts tun
+
+    def logical_size(n):
+        d = mon_data.get(n, {})
+        sc = d.get("scale", 1.0) or 1.0
+        return (int(round(d.get("phys_w", 0) / sc)),
+                int(round(d.get("phys_h", 0) / sc)))
+
+    names = list(mon_data.keys())
+    if len(names) <= 1:
+        return lua_txt  # Nur ein Monitor → nichts zu re-packen
+
+    # Bestimme ob Layout eher horizontal oder vertikal ist
+    # (Tipp: größte x-Differenz vs größte y-Differenz)
+    max_dx = max(mon_data[b]["x"] - mon_data[a]["x"]
+                 for a in names for b in names)
+    max_dy = max(mon_data[b]["y"] - mon_data[a]["y"]
+                 for a in names for b in names)
+
+    new_positions: dict[str, tuple[int, int]] = {}
+
+    if max_dx >= max_dy:
+        # ── Horizontales Layout (Monitors nebeneinander) ──────────────
+        # Anchor ist der Monitor mit dem kleinsten x
+        sorted_h = sorted(names, key=lambda n: mon_data[n]["x"])
+        # Anchor bleibt an seiner y-Position; ab x=0 aufaddieren
+        anchor_y = mon_data[sorted_h[0]]["y"]
+        cursor_x = mon_data[sorted_h[0]]["x"]  # normalerweise 0
+        for nm in sorted_h:
+            lw, lh = logical_size(nm)
+            new_positions[nm] = (cursor_x, mon_data[nm]["y"])
+            cursor_x += lw
+    else:
+        # ── Vertikales Layout (Monitors übereinander) ─────────────────
+        sorted_v = sorted(names, key=lambda n: mon_data[n]["y"])
+        cursor_y = mon_data[sorted_v[0]]["y"]  # normalerweise 0
+        for nm in sorted_v:
+            lw, lh = logical_size(nm)
+            new_positions[nm] = (mon_data[nm]["x"], cursor_y)
+            cursor_y += lh
+
+    # Lua-Text: für jeden Monitor dessen position-Zeile aktualisieren
+    block_re = re.compile(r'(hl\.monitor\(\{[^}]*\}\))', re.S)
+    def _patch_block(m):
+        block = m.group(1)
+        nm_m = re.search(r'output\s*=\s*"([^"]*)"', block)
+        if not nm_m:
+            return block
+        nm = nm_m.group(1)
+        if nm not in new_positions:
+            return block
+        px, py = new_positions[nm]
+        old_pos = (mon_data[nm]["x"], mon_data[nm]["y"])
+        if (px, py) == old_pos:
+            return block  # keine Änderung nötig
+        return re.sub(r'position\s*=\s*"[^"]*"',
+                      f'position = "{px}x{py}"', block)
+    return block_re.sub(_patch_block, lua_txt)
 
 def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.Window,
                         waybar_restart_id: list,
@@ -7252,70 +7569,62 @@ def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.W
         dlg.destroy()
         return val or None
 
-    scale_auto_check = Gtk.CheckButton(label="Auto")
-    scale_auto_check.set_active(True)
-    scale_auto_check.set_can_focus(False)
-    scale_auto_check.set_tooltip_text(
-        "Automatically derive scale from height. Uncheck to set manually.")
+    # Scale als Dropdown mit ausschließlich hyprland-sicheren Werten
+    # (ganzzahlige logische Auflösung → kein Monitor-Überlappen).
+    # Kein Slider + kein "Auto"-Haken mehr (Redesign + User-Feedback).
+    _scale_valid_vals: list[float] = _valid_scales_for_resolution(
+        int(cur_res.split("x")[0]), int(cur_res.split("x")[1]))
+    _scale_auto_default = _auto_scale_for_height(int(cur_res.split("x")[1]))
+    # Nächsten gültigen Wert zum aktuellen Scale vorauswählen
+    def _nearest_valid_scale(target: float, vals: list[float]) -> int:
+        if not vals:
+            return 0
+        return min(range(len(vals)), key=lambda i: abs(vals[i] - target))
 
-    # Scale ist im Gegensatz zu Resolution/Hz ein WIRKLICH stufenloser
-    # Wert (siehe README: "some widgets have dropdown menus with
-    # limits ... like the scale and rotation boxes/buttons") - deshalb
-    # hier bewusst ein echter Zieh-Regler (bslider(), dasselbe Muster
-    # wie Helligkeit/Lautstärke) statt Dropdown ODER Knopfreihe. Vorher
-    # musste man den Wert über einen Text-Dialog eintippen - unpraktisch
-    # gerade auf Touch.
-    scale_state = {"value": cur_scale}
-    _scale_lo0, _scale_hi0 = _scale_bounds(int(cur_res.split("x")[1]))
-    scale_box, scale_slider = bslider(
-        "⛶", _scale_lo0, _scale_hi0, 0.05, cur_scale, cb=None)
-    scale_slider.set_digits(2)
-    scale_slider.set_sensitive(False)   # "Auto" ist per Default an
+    scale_combo = Gtk.ComboBoxText()
+    scale_combo.get_style_context().add_class("bubble")
+    scale_combo.get_style_context().add_class("dropdown")
+    scale_combo.set_can_focus(False)
+    scale_combo.set_tooltip_text(
+        "Only integer-logical-resolution scales are listed — "
+        "these are guaranteed not to cause monitor overlap in Hyprland.")
 
-    _scale_debounce_id = [0]
+    scale_handler_id = [None]
 
-    def _on_scale_slider(s):
-        scale_state["value"] = round(s.get_value(), 3)
-        # Debounced statt bei jedem einzelnen Drag-Event: _apply_now()
-        # schreibt die Lua-Config UND ruft hyprctl auf - das bei jedem
-        # Pixel Mausbewegung zu tun, würde beim Ziehen spürbar
-        # ruckeln/spammen.
-        if _scale_debounce_id[0]:
-            GLib.source_remove(_scale_debounce_id[0])
-        def _fire():
-            _scale_debounce_id[0] = 0
-            _apply_now()
-            return False
-        _scale_debounce_id[0] = GLib.timeout_add(200, _fire)
-
-    scale_handler_id = scale_slider.connect("value-changed", _on_scale_slider)
+    def _fill_scale_combo(res_str: str, preselect: float = None):
+        w_str, h_str = res_str.split("x")
+        vals = _valid_scales_for_resolution(int(w_str), int(h_str))
+        _scale_valid_vals[:] = vals
+        if scale_handler_id[0] is not None:
+            scale_combo.handler_block(scale_handler_id[0])
+        try:
+            scale_combo.remove_all()
+            for v in vals:
+                scale_combo.append_text(f"{v:g}×")
+            target = preselect if preselect is not None else _auto_scale_for_height(int(h_str))
+            idx = _nearest_valid_scale(target, vals)
+            scale_combo.set_active(idx)
+        finally:
+            if scale_handler_id[0] is not None:
+                scale_combo.handler_unblock(scale_handler_id[0])
 
     def _sync_scale_slider_range():
-        """Bounds des Reglers an die AKTUELL gewählte Auflösung
-        anpassen (siehe _scale_bounds()) - ändert sich die Auflösung,
-        ändert sich auch der sichere Scale-Bereich. Klemmt den
-        aktuellen Wert mit rein, falls er durch den Auflösungswechsel
-        jetzt außerhalb der neuen Grenzen liegen würde."""
-        target_res, _target_hz = _resolve_res_hz()
-        target_h_str = (target_res or cur_res).split("x")[1]
-        lo, hi = _scale_bounds(int(target_h_str))
-        scale_slider.set_range(lo, hi)
-        clamped = round(max(lo, min(hi, scale_state["value"])), 3)
-        if clamped != scale_state["value"]:
-            scale_state["value"] = clamped
-            # handler_block: set_value() würde sonst selbst wieder
-            # "value-changed" auslösen -> _on_scale_slider() ->
-            # debounced _apply_now() -> Endlosschleife mit dem
-            # eigentlichen Auflösungswechsel-Apply.
-            scale_slider.handler_block(scale_handler_id)
-            scale_slider.set_value(clamped)
-            scale_slider.handler_unblock(scale_handler_id)
+        """Beim Auflösungswechsel Scale-Dropdown neu befüllen."""
+        target_res, _ = _resolve_res_hz()
+        res = target_res or cur_res
+        cur_txt = scale_combo.get_active_text() or ""
+        try:
+            cur_val = float(cur_txt.replace("×", "").strip())
+        except ValueError:
+            cur_val = cur_scale
+        _fill_scale_combo(res, preselect=cur_val)
 
-    def _on_scale_auto_toggle(_w):
-        scale_slider.set_sensitive(not scale_auto_check.get_active())
+    _fill_scale_combo(cur_res, preselect=cur_scale)
+
+    def _on_scale_combo(_w):
         _apply_now()
 
-    scale_auto_check.connect("toggled", _on_scale_auto_toggle)
+    scale_handler_id[0] = scale_combo.connect("changed", _on_scale_combo)
 
     # ── HDR ──────────────────────────────────────────────────────────
     # Hyprlands eigene hl.monitor({...})-Lua-DSL unterstützt HDR über
@@ -7434,11 +7743,11 @@ def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.W
     # muss.
     other_monitors = [m for m in all_monitors if m.get("name") != name]
     POS_OPTIONS: list[tuple[str, str | None, str | None]] = [
-        ("Manual / keep current position", None, None)]
+        ("Manual", None, None)]
     for om in other_monitors:
         om_name = om.get("name", "?")
-        for direction, dir_label in (("right", "Right of"), ("left", "Left of"),
-                                       ("above", "Above"), ("below", "Below")):
+        for direction, dir_label in (("right", "→"), ("left", "←"),
+                                       ("above", "↑"), ("below", "↓")):
             POS_OPTIONS.append((f"{dir_label} {om_name}", om_name, direction))
 
     pos_combo = Gtk.ComboBoxText()
@@ -7562,7 +7871,7 @@ def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.W
              else (res_list[0] if res_list else ""), preselect=cur_hz)
     _update_custom_visibility()
 
-    orig = [cur_res, cur_hz, cur_scale, True, hdr_state["on"], 0,
+    orig = [cur_res, cur_hz, cur_scale, None, hdr_state["on"], 0,
             sdr_bri_state["value"], sdr_sat_state["value"]]
 
     def _resolve_res_hz() -> tuple[str, str] | tuple[None, None]:
@@ -7588,9 +7897,12 @@ def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.W
         return res, hz
 
     def _resolve_scale(height_for_auto: int) -> float | None:
-        if scale_auto_check.get_active():
-            return _auto_scale_for_height(height_for_auto)
-        return scale_state["value"] if scale_state["value"] > 0 else None
+        txt = (scale_combo.get_active_text() or "").replace("×", "").strip()
+        try:
+            val = float(txt)
+            return val if val > 0 else None
+        except ValueError:
+            return None
 
     def _apply():
         res, hz = _resolve_res_hz()
@@ -7769,10 +8081,44 @@ def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.W
                             txt = txt[:insert_at] + "\n\n" + new_block + txt[insert_at:]
                         else:
                             txt = txt.rstrip() + "\n\n" + new_block + "\n"
+                # ── Positions aller Monitore neu berechnen ─────────────
+                # Jetzt wo der geänderte Monitor in Lua + live korrekt ist,
+                # sicherstellen dass NACHBAR-Monitore nicht mehr überlappen.
+                # _repack_lua_positions() liest die aktuellen hyprctl-Daten
+                # (actual) und schreibt alle position-Zeilen im Lua-Text neu.
+                new_w_str, new_h_str = res.split("x")
+                txt = _repack_lua_positions(
+                    txt, actual,
+                    name, int(new_w_str), int(new_h_str), scale)
                 atomic_write_text(lua_path, txt)
 
+                # Nachbar-Positionen auch live per hyprctl setzen, damit
+                # Hyprland sofort reagiert und nicht erst beim nächsten Reload
+                neighbor_block_re = re.compile(
+                    r'hl\.monitor\(\{[^}]*\}\)', re.S)
+                out_name_re = re.compile(r'output\s*=\s*"([^"]*)"')
+                mode_re     = re.compile(r'mode\s*=\s*"([^"]*)"')
+                pos_re      = re.compile(r'position\s*=\s*"([^"]*)"')
+                sc_re       = re.compile(r'scale\s*=\s*([0-9.]+)')
+                for nb in neighbor_block_re.finditer(txt):
+                    blk = nb.group(0)
+                    nm_m = out_name_re.search(blk)
+                    if not nm_m or nm_m.group(1) == name:
+                        continue  # skip the monitor we just did
+                    nb_name = nm_m.group(1)
+                    _mm = mode_re.search(blk)
+                    _pm = pos_re.search(blk)
+                    _sm = sc_re.search(blk)
+                    nb_mode = _mm.group(1) if _mm else ""
+                    nb_pos  = _pm.group(1) if _pm else "0x0"
+                    nb_sc   = _sm.group(1) if _sm else "1"
+                    if not nb_mode:
+                        continue
+                    nb_arg = f"{nb_name},{nb_mode},{nb_pos},{nb_sc}"
+                    run(["hyprctl", "keyword", "monitor", nb_arg])
+
             orig[0], orig[1] = res, hz
-            orig[2], orig[3] = scale, scale_auto_check.get_active()
+            orig[2] = scale
             orig[4], orig[5] = hdr_on, pos_combo.get_active()
             orig[6], orig[7] = sdr_bri_state["value"], sdr_sat_state["value"]
 
@@ -7786,13 +8132,7 @@ def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.W
         if orig[0] not in res_list or orig[1] not in modes.get(orig[0], []):
             hz_combo.set_active(hz_combo.get_model().iter_n_children(None) - 1)
             custom_state["hz"] = orig[1]
-        scale_auto_check.set_active(orig[3])
-        if not orig[3]:
-            scale_state["value"] = orig[2]
-            scale_slider.handler_block(scale_handler_id)
-            scale_slider.set_value(orig[2])
-            scale_slider.handler_unblock(scale_handler_id)
-        _sync_scale_slider_range()
+        _fill_scale_combo(orig[0], preselect=orig[2])
         _set_hdr_ui(orig[4])
         pos_combo.set_active(orig[5])
         sdr_bri_state["value"], sdr_sat_state["value"] = orig[6], orig[7]
@@ -7804,7 +8144,7 @@ def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.W
     def _apply_now():
         _update_custom_visibility()
         res, hz = _resolve_res_hz()
-        scale_txt = "auto" if scale_auto_check.get_active() else f"{scale_state['value']:g}"
+        scale_txt = (scale_combo.get_active_text() or "?").replace("×", "").strip()
         extras = []
         if hdr_state["on"]:
             extras.append("HDR")
@@ -7833,8 +8173,14 @@ def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.W
     res_combo.connect("changed", _on_res_change)
     hz_handler_id[0] = hz_combo.connect("changed", _on_hz_change)
 
-    scale_slider.set_tooltip_text("Drag to set the monitor scale manually.")
-    scale_box.pack_start(scale_auto_check, False, False, 0)
+    # Scale-Zeile: Icon-Label + Dropdown nebeneinander, zentriert
+    scale_row_lbl = Gtk.Label(label="⛶")
+    scale_row_lbl.get_style_context().add_class("bubble")
+    scale_row_lbl.set_opacity(0.7)
+    scale_row = hbox(8)
+    scale_row.set_halign(Gtk.Align.CENTER)
+    scale_row.pack_start(scale_row_lbl, False, False, 0)
+    scale_row.pack_start(scale_combo, False, False, 0)
 
     combos_row = hrow(res_combo, hz_combo, sp=8)
     custom_row = hrow(res_val_lbl, hz_val_lbl, sp=8)
@@ -7849,7 +8195,7 @@ def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.W
     wrap = vbox(6)
     wrap.pack_start(combos_row, False, False, 0)
     wrap.pack_start(custom_row, False, False, 0)
-    wrap.pack_start(scale_box, False, False, 0)
+    wrap.pack_start(scale_row, False, False, 0)
     wrap.pack_start(sdr_col, False, False, 0)
     wrap.pack_start(status_lbl, False, False, 0)
 

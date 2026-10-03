@@ -181,6 +181,7 @@ SYSTEM_CONFIG_ROOTS=(
     "etc/sysctl.d"
     "etc/security"
     "etc/pam.d"
+    "etc/avahi"
 )
 
 # ---------------------------------------------------------------------

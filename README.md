@@ -1,10 +1,15 @@
+
+---
+> Copyright © 2026 TrafkHop Entertainment™
+> All rights reserved.
+---
+>This Project is Source Available, NOT Open Source!
+---
+>This Project was coded partially by A with strict human superventionI! Visuals, controls and every other part has been fully made by humans!
+---
 # TrafkTux v0.85
 
 *"Unique Creativity meets QOL and Streamlining"*
-
-> **This project is SOURCE AVAILABLE— read the LICENSE for more!**
-> Copyright © 2026 TrafkHop Entertainment. All rights reserved.
-
 ## About
 
 **TrafkTux** is an **Arch + Hyprland** based Linux distribution with the focus of being an easy to use and streamlined system.

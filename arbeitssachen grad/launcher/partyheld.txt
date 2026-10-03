@@ -1,0 +1,41 @@
+Also
+1. die switch base animationsgeschwindigkeit ist jetzt höher als vorher????? das sollte nicht sein...... es sollte nur schneller werden, wenn beim nächsten switchen die animation noch nicht fertig gespielt wurde.... auch logisch oder?
+2. die navigationsanimation mit wasd und so, die ist viel zu langsam und flackern tut sie auch nicht.
+3. 0.65 sollte die transparenz sein, nicht 0,55 und 0,85 nicht 0,82.
+
+insgesamt ein schritt in die richtige richtung, aber nur mit einem bein.
+kannste ja jetzt korrigieren
+
+
+und außerdem: was für TrafkTuxLauncher/Assets????
+TrafkTuxLauncher: front-selected -> /tmp/TrafkBubbleGlow1.png
+TrafkTuxLauncher: arrow-left     -> /tmp/Left.png
+TrafkTuxLauncher: arrow-left-glow -> NICHT GEFUNDEN (geprüft: /tmp/LeftGlow.png, /home/hopx/.config/TrafkTuxLauncher/AppLauncher/assets/LeftGlow.png)
+TrafkTuxLauncher: arrow-right    -> /tmp/Right.png
+TrafkTuxLauncher: arrow-right-glow -> NICHT GEFUNDEN (geprüft: /tmp/RightGlow.png, /home/hopx/.config/TrafkTuxLauncher/AppLauncher/assets/RightGlow.png)
+[hopx@trafktux TrafkTuxLauncher]$ ./old/TrafkTuxLauncher
+TrafkTuxLauncher: back-normal    -> /tmp/TrafkBubble2.png
+TrafkTuxLauncher: back-selected  -> /tmp/TrafkBubbleGlow2.png
+TrafkTuxLauncher: front-normal   -> /tmp/TrafkBubble1.png
+TrafkTuxLauncher: front-selected -> /tmp/TrafkBubbleGlow1.png
+TrafkTuxLauncher: arrow-left     -> /tmp/Left.png
+TrafkTuxLauncher: arrow-left-glow -> NICHT GEFUNDEN (geprüft: /tmp/LeftGlow.png, /home/hopx/.config/TrafkTuxLauncher/AppLauncher/assets/LeftGlow.png)
+TrafkTuxLauncher: arrow-right    -> /tmp/Right.png
+TrafkTuxLauncher: arrow-right-glow -> NICHT GEFUNDEN (geprüft: /tmp/RightGlow.png, /home/hopx/.config/TrafkTuxLauncher/AppLauncher/assets/RightGlow.png)
+[hopx@trafktux TrafkTuxLauncher]$ ./TrafkTuxLauncher
+TrafkTuxLauncher: back-normal    -> /tmp/TrafkBubble2.png
+TrafkTuxLauncher: back-selected  -> /tmp/TrafkBubbleGlow2.png
+TrafkTuxLauncher: front-normal   -> /tmp/TrafkBubble1.png
+TrafkTuxLauncher: front-selected -> /tmp/TrafkBubbleGlow1.png
+TrafkTuxLauncher: arrow-left     -> /tmp/Left.png
+TrafkTuxLauncher: arrow-left-glow -> NICHT GEFUNDEN (geprüft: /tmp/LeftGlow.png, /home/hopx/.config/TrafkTuxLauncher/AppLauncher/assets/LeftGlow.png)
+TrafkTuxLauncher: arrow-right    -> /tmp/Right.png
+TrafkTuxLauncher: arrow-right-glow -> NICHT GEFUNDEN (geprüft: /tmp/RightGlow.png, /home/hopx/.config/TrafkTuxLauncher/AppLauncher/assets/RightGlow.png)
+
+
+
+es gibt kein "RightGlow".... es gibt Left.png und Right.png und die leuchten schon.... (und die 4 bubble bilder. aber mehr nicht.) deswegen die transparenz da ja ändern....... boah es dein "glow" ist einfach die transparenz ändern...........
+
+
+
+und das switchen von der seite da der speed "fix"... der funktioniert nichtmal. die animationen werden noch immer abgehackt von der nächsten....... JUNGE WAS MACHST DU????

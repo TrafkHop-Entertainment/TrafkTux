@@ -79,6 +79,7 @@ sof-firmware
 # --- Netzwerk / Bluetooth ---
 bluez-cups
 avahi
+reflector
 
 # --- Firewall / Sicherheit / Policy ---
 ufw
