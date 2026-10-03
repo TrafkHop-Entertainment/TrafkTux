@@ -22,7 +22,7 @@ hl.monitor({
     output = "eDP-1",
     mode = "1920x1200@60",
     position = "0x0",
-    scale = 1.07,
+    scale = 1,
 })
 
 -- Programme & Befehle
@@ -389,7 +389,7 @@ hl.window_rule({
 hl.config({
     input = {
         kb_layout = "de",
-        follow_mouse = 1,
+        follow_mouse = 0,
         float_switch_override_focus = 0,
         sensitivity = 0,
         touchpad = {
@@ -459,7 +459,7 @@ hl.bind(
 
 hl.config({
     scrolling = {
-        wrap_focus = false,
+        wrap_focus = true,
         column_width = 0.5,
     },
 })
