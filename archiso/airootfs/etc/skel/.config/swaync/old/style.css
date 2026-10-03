@@ -2,14 +2,10 @@
    TrafkTux swaync style
    Nur noch Bild + Text: keine eigene Rahmen-/Hintergrundfarbe
    mehr, die Blase besteht ausschließlich aus dem Bild und dem
-   Text drüber.
-   FIX: bubble-selected.png gibt's nicht mehr (ersetzt durch die 4
-   neuen Bilder, siehe WidgetsDaemon.py/TrafkTuxBar.c) - swaync
-   zeigte deshalb noch die Glow/"ausgewählt"-Optik, jetzt auf
-   /tmp/TrafkBubbleGlow2.png umgestellt (die Hover/Glow-Variante
-   des Hintergrund-Bilds TrafkBubble2.png - passt optisch am besten
-   zum bisherigen "immer leicht hervorgehoben" look von Notifications/
-   Control-Center). Textfarben/Font wie im Rest vom Desktop
+   Text drüber. Kein neues Bild/kein neuer cp-Befehl nötig - das
+   Hintergrundbild ist /tmp/bubble-selected.png, das hyprland.lua
+   beim Autostart sowieso schon aus ~/.config/rofi/assets/ dorthin
+   kopiert (für Rofi). Textfarben/Font wie im Rest vom Desktop
    (GOLD/TEXT_NORMAL, JetBrainsMono Nerd Font).
    ════════════════════════════════════════════════════════════ */
 
@@ -35,7 +31,7 @@
 }
 
 .notification-background {
-  background-image: url("file:///tmp/TrafkBubbleGlow2.png");
+  background-image: url("file:///tmp/bubble-selected.png");
   background-size: 100% 100%;
   background-position: center;
   background-repeat: no-repeat;
@@ -91,7 +87,7 @@
 
 /* ── Control-Center: gleiches Bild, gleiches Prinzip ── */
 .control-center {
-  background-image: url("file:///tmp/TrafkBubbleGlow2.png");
+  background-image: url("file:///tmp/bubble-selected.png");
   background-size: cover;
   background-position: center;
 }

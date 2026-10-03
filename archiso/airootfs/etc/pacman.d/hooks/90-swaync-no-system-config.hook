@@ -1,0 +1,17 @@
+# Ziel im archiso-Projekt: airootfs/etc/pacman.d/hooks/90-swaync-no-system-config.hook
+# Landet per unpackfs auch auf dem installierten System.
+#
+# TrafkTux nutzt ausschliesslich ~/.config/swaync (kommt aus etc/skel).
+# Das vom Paket gelieferte /etc/xdg/swaync/ (config.json, configSchema.json,
+# style.css) wird nach jedem Install/Upgrade von swaync wieder entfernt.
+
+[Trigger]
+Operation = Install
+Operation = Upgrade
+Type = Path
+Target = etc/xdg/swaync/*
+
+[Action]
+Description = Entferne swaync-Systemconfig (TrafkTux nutzt ~/.config/swaync)...
+When = PostTransaction
+Exec = /usr/bin/rm -rf /etc/xdg/swaync

@@ -124,6 +124,24 @@ window {{
     border: none;
 }}
 
+/* FIX ("vieler Text ist noch immer schwarz statt weiß-gelb, wenn das
+   GTK-Theme auf Light steht"): jedes Label OHNE eigene color-Angabe
+   (z.B. reine .caption-only-Labels, oder sonstige bare Gtk.Label-
+   Instanzen ohne .bubble-Klasse) hatte bisher GAR KEINE eigene
+   color-Property und übernahm damit stillschweigend GTKs Theme-
+   Default-Textfarbe - unter einem hellen (Light) GTK-Theme ist das
+   naturgemäß schwarz/dunkelgrau statt der hier gewollten TEXT_NORMAL-
+   Farbe. Bewusst als simpler ELEMENT-Selektor (Spezifität 0,0,1) ganz
+   am Anfang des Stylesheets platziert: ".bubble" (color: GOLD),
+   "button.bubble"/".bubble.dropdown" (color: TEXT_NORMAL) und alle
+   anderen spezifischeren Klassen-Regeln weiter unten haben höhere
+   CSS-Spezifität (mind. 0,1,0) und überschreiben diese Basis-Regel
+   wie gehabt - hier wird NUR der bisher komplett ungesetzte Fall
+   (kein .bubble, keine andere color-Regel) auf TEXT_NORMAL gelegt. */
+label {{
+    color: {TEXT_NORMAL};
+}}
+
 /* GTK-Themes setzen auf "button" oft eine eigene Mindesthöhe für
    Touch-Bedienbarkeit (z.B. 34px) - die hat bisher JEDEN button.bubble
    im Programm unsichtbar aufgebläht, unabhängig vom eigenen
@@ -4410,6 +4428,26 @@ def _processes_content(win: Gtk.Window) -> Gtk.Box:
     sw, box = scroll_box(300)
     root.pack_start(sw, True, True, 0)
 
+    # FIX ("processes monitor geht auch nicht gescheit"): ein Kill, der
+    # mit AccessDenied/NoSuchProcess fehlschlägt (z.B. Systemprozess,
+    # nicht der eigene Nutzer), wurde bisher im "except Exception: pass"
+    # unten KOMPLETT stillschweigend verschluckt - der Button tat dann
+    # buchstäblich nichts sichtbares, ohne jede Rückmeldung, was sich
+    # wie "geht nicht" anfühlt. Jetzt mit einer kleinen Statuszeile
+    # (gleiches Flash-Muster wie in den anderen Tabs, z.B. Privacy),
+    # die nach jedem Kill-Versuch Erfolg/Fehler meldet.
+    status_lbl = Gtk.Label(label="")
+    status_lbl.get_style_context().add_class("caption")
+    status_lbl.set_opacity(0.75)
+    status_lbl.set_no_show_all(True)
+    status_lbl.hide()
+    root.pack_start(status_lbl, False, False, 0)
+
+    def _flash(text: str, ms: int = 3000):
+        status_lbl.set_label(text)
+        status_lbl.show()
+        GLib.timeout_add(ms, lambda: (status_lbl.hide(), False)[1])
+
     _proc_cache: dict = {}    # pid -> psutil.Process, siehe Docstring oben
     _row_widgets: dict = {}   # pid -> (row_box, name_lbl, stat_lbl)
     _order: list = []         # aktuelle, STABILE Anzeige-Reihenfolge (PIDs)
@@ -4452,9 +4490,10 @@ def _processes_content(win: Gtk.Window) -> Gtk.Box:
             if not _confirm_kill_dialog(win, n, p):
                 return
             def _worker():
+                import psutil
+                err_msg = None
                 try:
                     proc = _proc_cache.get(p)
-                    import psutil
                     if proc is None:
                         proc = psutil.Process(p)
                     proc.terminate()
@@ -4462,9 +4501,22 @@ def _processes_content(win: Gtk.Window) -> Gtk.Box:
                         proc.wait(timeout=3)
                     except psutil.TimeoutExpired:
                         proc.kill()  # nicht kooperativ -> hart nachlegen
-                except Exception:
-                    pass  # Prozess war evtl. schon weg - kein Grund für Fehlerdialog
-                GLib.idle_add(_refresh)
+                except psutil.NoSuchProcess:
+                    pass  # Prozess war schon weg - kein Fehler, kein Hinweis nötig
+                except psutil.AccessDenied:
+                    # Vorher hier stillschweigend verschluckt (siehe FIX-
+                    # Kommentar oben) - das war vermutlich ein guter Teil
+                    # des "geht nicht gescheit": Klick auf Kill bei einem
+                    # fremden/Root-Prozess tat rein gar nichts sichtbares.
+                    err_msg = f"No permission to end “{n}” (PID {p})."
+                except Exception as e:
+                    err_msg = f"Failed to end “{n}”: {e}"
+                def _done():
+                    if err_msg:
+                        _flash(f"⚠ {err_msg}")
+                    _refresh()
+                    return False
+                GLib.idle_add(_done)
             in_thread(_worker)
         kill_b.connect("clicked", _on_kill)
         row.pack_start(kill_b, False, False, 0)
@@ -6910,6 +6962,19 @@ def _set_cursor_plugin_enabled(enabled: bool) -> tuple[bool, str]:
         if n == 0:
             return False, "dynamic_cursors plugin block not found in hyprland.lua."
         path.write_text(new_txt)
+        # FIX: bisher wurde NUR die Datei geschrieben (wirkt erst nach
+        # 'hyprctl reload'/Neustart) - kein Live-Apply. Jetzt zusätzlich
+        # sofort per "hyprctl eval" gegen den laufenden Lua-State
+        # anwenden, exakt dasselbe Muster wie effects_battery_enable/
+        # disable() weiter oben (siehe _hypr_eval()-Kommentar). Fehler
+        # hier werden bewusst NICHT den Rückgabewert kippen - die Datei
+        # wurde korrekt geschrieben, das ist die "Quelle der Wahrheit";
+        # schlägt nur das Live-Apply fehl, greift der neue Wert spätestens
+        # beim nächsten Reload.
+        _hypr_eval(
+            "if hl.plugin.dynamic_cursors then hl.config({ plugin = "
+            "{ dynamic_cursors = { enabled = " +
+            ("true" if enabled else "false") + " } } }) end")
         return True, ""
     except Exception as e:
         return False, str(e)
@@ -6928,6 +6993,15 @@ def _set_cursor_shake_enabled(enabled: bool) -> tuple[bool, str]:
         if n == 0:
             return False, "shake block not found in hyprland.lua."
         path.write_text(new_txt)
+        # FIX ("Shake-to-find geht nicht mehr"): wie bei
+        # _set_cursor_plugin_enabled() oben fehlte das Live-Apply
+        # komplett - nur die Datei wurde geändert, Hyprland bekam davon
+        # erst nach einem Reload etwas mit. Jetzt zusätzlich sofort per
+        # "hyprctl eval" gesetzt.
+        _hypr_eval(
+            "if hl.plugin.dynamic_cursors then hl.config({ plugin = "
+            "{ dynamic_cursors = { shake = { enabled = " +
+            ("true" if enabled else "false") + " } } } }) end")
         return True, ""
     except Exception as e:
         return False, str(e)
@@ -7968,21 +8042,49 @@ def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.W
             # _write_hdr_fields()-Docstring für die Begründung).
             sdr_bri = round(sdr_bri_state["value"] if hdr_on else 1.0, 3)
             sdr_sat = round(sdr_sat_state["value"] if hdr_on else 1.0, 3)
+            # FIX (Display-Tab "applied nix"): "hyprctl keyword monitor" ist
+            # der ALTE hyprlang-Kompatibilitäts-Shim. Gegen eine Lua-Config
+            # (hyprland.lua, hl.*-API) ist das laut Hyprland-Wiki
+            # ("Configuring/Advanced-and-Cool/Using-hyprctl") kein
+            # zuverlässiger Weg mehr, live etwas zu setzen - das Keyword
+            # schreibt oft klaglos "ok" obwohl de facto nichts angewendet
+            # wird, weil die Lua-Config beim nächsten internen Reload den
+            # alten Lua-Zustand wiederherstellt. Der korrekte Weg unter
+            # Hyprland 0.65.2+ mit Lua-Config ist "hyprctl eval <lua>", das
+            # GEGEN DENSELBEN persistenten Lua-State läuft wie die Config
+            # selbst (siehe _hypr_eval()-Docstring/Kommentar oben, bereits
+            # so für effects_battery_enable/disable() verwendet) - hier also
+            # dieselbe hl.monitor({...})-Tabellen-Syntax wie in hyprland.lua.
             if hdr_on:
-                monitor_arg = (f"{name},{mode},{pos_x}x{pos_y},{scale},"
-                                f"bitdepth,10,cm,hdr,"
-                                f"sdrbrightness,{sdr_bri},sdrsaturation,{sdr_sat}")
+                monitor_lua = (
+                    "hl.monitor({ output = \"" + name + "\", "
+                    "mode = \"" + mode + "\", "
+                    f"position = \"{pos_x}x{pos_y}\", "
+                    f"scale = {scale}, "
+                    "bitdepth = 10, cm = \"hdr\", "
+                    f"sdrbrightness = {sdr_bri}, sdrsaturation = {sdr_sat} }})"
+                )
             else:
-                monitor_arg = (f"{name},{mode},{pos_x}x{pos_y},{scale},"
-                                f"bitdepth,8,cm,srgb,"
-                                f"sdrbrightness,{sdr_bri},sdrsaturation,{sdr_sat}")
-            out, err, rc = run_ec(["hyprctl", "keyword", "monitor", monitor_arg])
-            if rc != 0 or "err" in (out or "").lower() or err:
+                monitor_lua = (
+                    "hl.monitor({ output = \"" + name + "\", "
+                    "mode = \"" + mode + "\", "
+                    f"position = \"{pos_x}x{pos_y}\", "
+                    f"scale = {scale}, "
+                    "bitdepth = 8, cm = \"srgb\", "
+                    f"sdrbrightness = {sdr_bri}, sdrsaturation = {sdr_sat} }})"
+                )
+            out, err, rc = _hypr_eval(monitor_lua)
+            if rc != 0 or err or "error" in (out or "").lower():
                 raise RuntimeError(
-                    f"hyprctl rejected monitor command: {(err or out or 'unknown error')[:120]}")
+                    f"hyprctl eval rejected monitor command: {(err or out or 'unknown error')[:160]}")
 
+            # Zweiter Eval-Aufruf wie zuvor beim "keyword"-Pfad: manche
+            # Treiber/Monitore brauchen laut bestätigtem Hyprland-Verhalten
+            # einen kurzen Moment + einen zweiten Reconfigure-Stoß, bis
+            # Scale/Mode tatsächlich greifen (siehe time.sleep(0.2) unten -
+            # unverändert aus dem alten Code übernommen).
             time.sleep(0.2)
-            run(["hyprctl", "keyword", "monitor", monitor_arg])
+            _hypr_eval(monitor_lua)
 
             actual = jrun(["hyprctl", "monitors", "-j"]) or []
             for m2 in actual:
@@ -8114,8 +8216,16 @@ def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.W
                     nb_sc   = _sm.group(1) if _sm else "1"
                     if not nb_mode:
                         continue
-                    nb_arg = f"{nb_name},{nb_mode},{nb_pos},{nb_sc}"
-                    run(["hyprctl", "keyword", "monitor", nb_arg])
+                    # Gleicher Fix wie oben: "keyword" durch "eval" +
+                    # hl.monitor({...}) ersetzt, siehe Kommentar beim
+                    # primären monitor_lua-Aufruf weiter oben.
+                    nb_lua = (
+                        "hl.monitor({ output = \"" + nb_name + "\", "
+                        "mode = \"" + nb_mode + "\", "
+                        f"position = \"{nb_pos}\", "
+                        f"scale = {nb_sc} }})"
+                    )
+                    _hypr_eval(nb_lua)
 
             orig[0], orig[1] = res, hz
             orig[2] = scale
@@ -8460,6 +8570,19 @@ def _run_maybe_priv(cmd: list, timeout: int = 10) -> tuple[bool, str]:
             return True, out
     return False, (err or f"exit code {ec}")
 
+def _run_maybe_priv_force(cmd: list, timeout: int = 10) -> tuple[bool, str]:
+    """Wie _run_maybe_priv(), aber OHNE die stderr-Text-Heuristik: wird
+    nur für Kommandos benutzt, bei denen bereits der unprivilegierte
+    Versuch gelaufen und fehlgeschlagen ist (der Aufrufer prüft das
+    selbst) - eskaliert dann bedingungslos mit pkexec, statt sich
+    darauf zu verlassen, dass die Fehlermeldung zu einem der bekannten
+    "Permission denied"-artigen Muster passt. Siehe _rfkill_set()-
+    Kommentar für den konkreten Bug, den das behebt."""
+    out, err, ec = run_ec(["pkexec"] + cmd, timeout=max(timeout, 60))
+    if ec == 0:
+        return True, out
+    return False, (err or f"exit code {ec}")
+
 # ── Wifi/Bluetooth: rfkill (echter Kernel-Funk-Killswitch) ───────────
 def _rfkill_devices() -> list:
     data = jrun(["rfkill", "--json"]) or {}
@@ -8485,7 +8608,23 @@ def _rfkill_set(rf_type: str, blocked: bool) -> tuple[bool, str]:
     # nur einzelner IDs - blockiert/entblockt damit in EINEM Aufruf
     # gleich alle Adapter dieses Typs (z.B. beide Wifi-Karten bei einem
     # Dual-Radio-Laptop).
-    return _run_maybe_priv(["rfkill", "block" if blocked else "unblock", rf_type])
+    cmd = ["rfkill", "block" if blocked else "unblock", rf_type]
+    out, err, ec = run_ec(cmd)
+    if ec == 0:
+        return True, out
+    # FIX ("es kommt kein sudo-Popup, weswegen man so oder so nix
+    # blockieren kann"): _run_maybe_priv() eskaliert nur auf pkexec,
+    # wenn die stderr-Meldung gegen eine feste Liste bekannter
+    # Permission-Formulierungen passt - rfkill meldet auf manchen
+    # Systemen/Versionen aber gar KEINEN Text, der da reinpasst (z.B.
+    # einfach einen stillen Fehlschlag ohne "permission"/"root"/etc. im
+    # Wortlaut), wodurch needs_root nie True wurde und pkexec NIE
+    # aufgerufen wurde - der Passwort-Dialog kam folglich nie,
+    # unabhängig vom UI-Zustand. Genau wie bei der Kamera
+    # (_camera_set_blocked(), siehe deren Kommentar) wird jetzt bei
+    # JEDEM Fehlschlag bedingungslos mit pkexec eskaliert, statt sich
+    # auf eine Text-Heuristik zu verlassen.
+    return _run_maybe_priv_force(cmd)
 
 # ── Kamera: Device-Node-Zugriff komplett sperren ─────────────────────
 # Bewusst KEIN Kernel-Modul-Unbind (uvcvideo etc.) - das ist je nach
@@ -8650,6 +8789,10 @@ def _privacy_content(win: Gtk.Window) -> Gtk.Box:
         b.set_hexpand(True)
 
         def _refresh():
+            # FIX ("die sachen die nicht blockiert sind, sollten
+            # leuchten, nicht die blockierten"): "active"-Klasse (Glow)
+            # wird jetzt für NICHT-blockierte/erlaubte Zustände gesetzt,
+            # nicht mehr für blockierte - vorher exakt umgekehrt.
             state = _rfkill_state(rf_type)
             ctx = b.get_style_context()
             if state == "missing":
@@ -8658,15 +8801,15 @@ def _privacy_content(win: Gtk.Window) -> Gtk.Box:
                 b.set_tooltip_text("No adapter found")
             elif state == "hard-blocked":
                 b.set_sensitive(False)
-                ctx.add_class("active")
+                ctx.remove_class("active")
                 b.set_tooltip_text(
                     "Blocked by a physical switch/airplane-mode key - "
                     "can't be re-enabled from software.")
             else:
                 b.set_sensitive(True)
                 blocked = state == "soft-blocked"
-                if blocked: ctx.add_class("active")
-                else:       ctx.remove_class("active")
+                if blocked: ctx.remove_class("active")
+                else:       ctx.add_class("active")
                 b.set_tooltip_text("Tap to " + ("allow" if blocked else "block"))
 
         def _on_click(_w):
@@ -8675,8 +8818,10 @@ def _privacy_content(win: Gtk.Window) -> Gtk.Box:
                 return
             new_blocked = state != "soft-blocked"
             ctx = b.get_style_context()
-            if new_blocked: ctx.add_class("active")
-            else:           ctx.remove_class("active")
+            # Optimistisches UI-Update spiegelt dieselbe Umkehr wie
+            # _refresh() oben: glow = erlaubt, nicht blockiert.
+            if new_blocked: ctx.remove_class("active")
+            else:           ctx.add_class("active")
             def _apply():
                 ok, err = _rfkill_set(rf_type, new_blocked)
                 if not ok:
@@ -8708,6 +8853,8 @@ def _privacy_content(win: Gtk.Window) -> Gtk.Box:
         b.set_hexpand(True)
 
         def _refresh():
+            # FIX: siehe _make_rfkill_row() oben - glow ("active") zeigt
+            # jetzt "nicht blockiert/erlaubt" statt "blockiert" an.
             blocked = get_blocked()
             ctx = b.get_style_context()
             if blocked is None:
@@ -8716,8 +8863,8 @@ def _privacy_content(win: Gtk.Window) -> Gtk.Box:
                 b.set_tooltip_text(missing_tip)
                 return
             b.set_sensitive(True)
-            if blocked: ctx.add_class("active")
-            else:       ctx.remove_class("active")
+            if blocked: ctx.remove_class("active")
+            else:       ctx.add_class("active")
             b.set_tooltip_text("Tap to " + ("allow" if blocked else "block"))
 
         def _on_click(_w):
@@ -8726,8 +8873,8 @@ def _privacy_content(win: Gtk.Window) -> Gtk.Box:
                 return
             new_val = not cur
             ctx = b.get_style_context()
-            if new_val: ctx.add_class("active")
-            else:       ctx.remove_class("active")
+            if new_val: ctx.remove_class("active")
+            else:       ctx.add_class("active")
             def _apply():
                 ok, err = set_blocked(new_val)
                 if not ok:

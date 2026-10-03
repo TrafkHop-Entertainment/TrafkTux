@@ -16,9 +16,12 @@
  *     (kein externer Daemon + Signale mehr noetig).
  *
  *  Konfiguration: ~/.config/TrafkTuxBar/TrafkTuxBar.jsonc
- *  Blasen-Bilder erwartet unter /tmp/ (bubble-normal.png etc., analog
- *  zum bisherigen rofi/waybar-Setup, das sie beim Hyprland-Start dorthin
- *  kopiert) - siehe README.md.
+ *  Blasen-Bilder: wie in WidgetsDaemon.py jetzt /tmp/TrafkBubble2.png
+ *  (Hintergrund/"hinten") + /tmp/TrafkBubble1.png (Vordergrund/"vorne",
+ *  liegt ueber Icon/Text) - ersetzt die alten, nicht mehr vorhandenen
+ *  bubble-normal.png/bubble-selected.png, siehe config_load() unten.
+ *  Bar.png liegt jetzt unter ~/.config/Assets/Bar.png (vorher im
+ *  TrafkTuxBar-eigenen assets/-Unterordner) - siehe README.md.
  * ═══════════════════════════════════════════════════════════════════ */
 
 #include <cairo.h>
@@ -324,15 +327,29 @@ BarConfig *config_load(const char *path) {
         ? json_object_get_double_member(root, "center_width_fraction") : 0.30;
 
     JsonObject *bg = jobj(root, "bar_background");
-    cfg->bar_bg.image_path = g_strdup(jstr(bg, "image", "Bar.png"));
+    /* FIX: alle Bild-Assets (Bar.png inklusive) liegen bei dir in /tmp/,
+     * absoluter Default-Pfad daher direkt hier - config_resolve_asset()
+     * reicht einen bereits absoluten Pfad unveraendert durch. */
+    cfg->bar_bg.image_path = g_strdup(jstr(bg, "image", "/tmp/Bar.png"));
     cfg->bar_bg.left_slice = jint(bg, "left_slice", 140);
     cfg->bar_bg.right_slice = jint(bg, "right_slice", 140);
 
     JsonObject *bub = jobj(root, "bubble");
-    cfg->bubble.bg_normal_path = g_strdup(jstr(bub, "bg_normal", "bubble-normal.png"));
-    cfg->bubble.bg_hover_path = g_strdup(jstr(bub, "bg_hover", "bubble-selected.png"));
-    cfg->bubble.fg_normal_path = g_strdup(jstr(bub, "fg_normal", NULL));
-    cfg->bubble.fg_hover_path = g_strdup(jstr(bub, "fg_hover", NULL));
+    /* FIX ("die 2 alten Blasenbilder gibts nicht mehr, Bar startet
+     * nicht"): bubble-normal.png/bubble-selected.png existieren nicht
+     * mehr - ersetzt durch die 4 neuen Bilder, exakt wie in
+     * WidgetsDaemon.py (TrafkBubble2.png = Hintergrund/"hinten", siehe
+     * dort BUBBLE_PATH; TrafkBubble1.png = Vordergrund-Overlay/"vorne",
+     * siehe dort OVERLAY_PATH), PLUS die beiden "Glow"-Hover-Varianten
+     * (TrafkBubbleGlow1/2.png), die es in WidgetsDaemon.py gar nicht
+     * gibt, hier aber schon immer vorgesehen waren (bg_hover/fg_hover-
+     * Felder + die Hover-Ueberblendung in on_draw()). Alle Pfade bereits
+     * absolut (/tmp/...), config_resolve_asset() reicht sie unveraendert
+     * durch. */
+    cfg->bubble.bg_normal_path = g_strdup(jstr(bub, "bg_normal", "/tmp/TrafkBubble2.png"));
+    cfg->bubble.bg_hover_path = g_strdup(jstr(bub, "bg_hover", "/tmp/TrafkBubbleGlow2.png"));
+    cfg->bubble.fg_normal_path = g_strdup(jstr(bub, "fg_normal", "/tmp/TrafkBubble1.png"));
+    cfg->bubble.fg_hover_path = g_strdup(jstr(bub, "fg_hover", "/tmp/TrafkBubbleGlow1.png"));
     cfg->bubble.transition_ms = jint(bub, "transition_ms", 140);
     cfg->bubble.min_size = jint(bub, "min_size", 28);
     cfg->bubble.padding = jint(bub, "padding", 8);
@@ -364,7 +381,17 @@ BarConfig *config_load(const char *path) {
 }
 
 char *config_resolve_asset(BarConfig *cfg, const char *maybe_relative) {
-    if (!maybe_relative) return NULL;
+    if (!maybe_relative || !*maybe_relative) return NULL;
+    /* "~" oder "~/..." (falls mal ein Asset doch wieder unters eigene
+     * Home wandert) -> IMMER dynamisch ueber g_get_home_dir() aufgeloest,
+     * NIE ein fest eingetragener Benutzername - aktuell liegen bei dir
+     * alle Assets absolut unter /tmp/, dieser Zweig greift momentan also
+     * einfach nicht, schadet aber auch nicht. */
+    if (maybe_relative[0] == '~' &&
+        (maybe_relative[1] == '/' || maybe_relative[1] == '\0')) {
+        const char *rest = (maybe_relative[1] == '/') ? maybe_relative + 2 : "";
+        return g_build_filename(g_get_home_dir(), rest, NULL);
+    }
     if (g_path_is_absolute(maybe_relative)) return g_strdup(maybe_relative);
     return g_build_filename(cfg->config_dir, "assets", maybe_relative, NULL);
 }

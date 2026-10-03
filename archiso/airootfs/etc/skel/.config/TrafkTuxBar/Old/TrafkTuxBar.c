@@ -51,7 +51,9 @@ typedef enum {
     MOD_CLOCK,          /* Uhrzeit, per Timer aktualisiert */
     MOD_HYPR_WORKSPACES,/* dynamische Workspace-Pillen + Taskbar-Icons */
     MOD_TRAY,           /* StatusNotifierItem Systemtray */
-    MOD_SPACER          /* fester Leerraum zum optischen Gruppieren */
+    MOD_SPACER,         /* fester Leerraum zum optischen Gruppieren */
+    MOD_BUTTON_ROW,     /* horizontale Reihe von Buttons, max_width + Scrollbalken (z.B. gepinnte Apps) */
+    MOD_WIDGET_GRID      /* Buttons, die bei max_width umbrechen; Balken blaettert zwischen den Zeilen */
 } ModuleType;
 
 typedef struct {
@@ -80,7 +82,17 @@ typedef struct {
     char *clock_format_alt;  /* nur MOD_CLOCK, Rechtsklick toggelt */
 
     int   spacer_width;      /* nur MOD_SPACER, in px */
+
+    GPtrArray *items;         /* ModuleConfig*, nur MOD_BUTTON_ROW/MOD_WIDGET_GRID */
+    int   max_width;          /* nur MOD_HYPR_WORKSPACES (Apps-Reihe): Fallback, falls monitor-Erkennung fehlschlaegt */
+    int   visible_count;      /* nur MOD_BUTTON_ROW/MOD_WIDGET_GRID: wie viele Items IMMER angezeigt werden,
+                                * bevor der Rest auf eine neue Zeile/Seite umbricht - anders als max_width
+                                * ist das aufloesungs-/skalierungs-unabhaengig ("immer genau 3"), was der
+                                * eigentliche Sinn dieses Feldes ist. Default 3. */
 } ModuleConfig;
+
+static void module_free(gpointer p); /* Vorwaertsdeklaration: parse_module() unten braucht sie schon
+                                       * als Free-Func fuer verschachtelte "items"-Module. */
 
 typedef struct {
     int left_slice, right_slice;
@@ -124,6 +136,26 @@ typedef struct {
     int   hide_px;
     int   touch_timeout_sec;
     int   slide_ms;
+    int   edge_overhang_px;  /* Wie viele Pixel der Kantensensor ueber den Bildschirmrand
+                               * hinaus reicht (negativer Rand an der Bildschirmkante).
+                               * Erleichtert das Aufrufen der Bar bei Monitoren, die ueber
+                               * anderen Monitoren positioniert sind. Standard 10px. */
+
+    int   edge_margin;   /* Abstand der Module-Boxen zum Bar-Rand (siehe Kommentar bei config_load) */
+
+    /* Mehrere Monitore: Name des Ausgangs, auf dem die Bar erscheinen soll
+     * (z.B. "eDP-1" oder "HDMI-A-1" - mit "hyprctl monitors" herausfinden).
+     * Gesetzt = Bar bleibt fest an diesem Monitor. Leer/NULL = die EINE
+     * Bar folgt dem Cursor: sie zieht auf den Monitor um, an dessen Rand
+     * der Cursor die Bar ausloest. */
+    char *monitor;
+
+    /* Center-Modul (offene Fenster): wie viel vom LOGISCHEN (skalierten)
+     * Breite des Ziel-Monitors maximal fuer die Reihe offener Fenster
+     * verwendet wird, bevor der Rest auf eine neue Zeile/Seite umbricht -
+     * das macht die Breite automatisch aufloesungs-/skalierungs-
+     * unabhaengig statt eines festen Pixelwerts. */
+    double center_width_fraction;
 
     /* Module */
     GPtrArray *modules_left;    /* ModuleConfig* */
@@ -206,8 +238,12 @@ static ModuleType parse_module_type(const char *s) {
     if (g_strcmp0(s, "hyprland_workspaces") == 0) return MOD_HYPR_WORKSPACES;
     if (g_strcmp0(s, "tray") == 0) return MOD_TRAY;
     if (g_strcmp0(s, "spacer") == 0) return MOD_SPACER;
+    if (g_strcmp0(s, "button_row") == 0) return MOD_BUTTON_ROW;
+    if (g_strcmp0(s, "widget_grid") == 0) return MOD_WIDGET_GRID;
     return MOD_BUTTON;
 }
+
+static void parse_module_array(JsonObject *root, const char *key, GPtrArray *out); /* s.u. */
 
 static ModuleConfig *parse_module(JsonObject *mo) {
     ModuleConfig *m = g_new0(ModuleConfig, 1);
@@ -226,6 +262,14 @@ static ModuleConfig *parse_module(JsonObject *mo) {
     m->spacer_width = jint(mo, "width", 20);
     m->clock_format = g_strdup(jstr(mo, "format", "%H:%M"));
     m->clock_format_alt = g_strdup(jstr(mo, "format_alt", "%d.%m.%Y"));
+    m->max_width = jint(mo, "max_width", 220);
+    m->visible_count = jint(mo, "visible_count", 3);
+    /* items: verschachtelte Buttons fuer button_row/widget_grid. Der
+     * Free-Func wird direkt hier gesetzt, damit ein "items"-Array nie
+     * unbeaufsichtigt herumliegt. */
+    m->items = g_ptr_array_new_with_free_func(module_free);
+    if (m->type == MOD_BUTTON_ROW || m->type == MOD_WIDGET_GRID)
+        parse_module_array(mo, "items", m->items);
     return m;
 }
 
@@ -271,6 +315,13 @@ BarConfig *config_load(const char *path) {
     cfg->position = g_strdup(jstr(root, "position", "bottom"));
     cfg->height = jint(root, "height", 45);
     cfg->exclusive_zone = jbool(root, "exclusive_zone", FALSE);
+    /* Abstand links/rechts, bevor die erste/letzte Modul-Blase beginnt -
+     * soll erst NACH der Rundung der Bar-Ecke anfangen, siehe Redesign-
+     * Skizze. Default grosszuegiger als die alten fest verdrahteten 15px. */
+    cfg->edge_margin = jint(root, "edge_margin", 34);
+    cfg->monitor = g_strdup(jstr(root, "monitor", ""));
+    cfg->center_width_fraction = json_object_has_member(root, "center_width_fraction")
+        ? json_object_get_double_member(root, "center_width_fraction") : 0.30;
 
     JsonObject *bg = jobj(root, "bar_background");
     cfg->bar_bg.image_path = g_strdup(jstr(bg, "image", "Bar.png"));
@@ -297,6 +348,7 @@ BarConfig *config_load(const char *path) {
     cfg->autohide_enabled = jbool(ah, "enabled", TRUE);
     cfg->trigger_px = jint(ah, "trigger_px", 5);
     cfg->hide_px = jint(ah, "hide_px", 65);
+    cfg->edge_overhang_px = jint(ah, "edge_overhang_px", 10);
     cfg->touch_timeout_sec = jint(ah, "touch_timeout_sec", 5);
     cfg->slide_ms = jint(ah, "slide_ms", 220);
 
@@ -323,12 +375,14 @@ static void module_free(gpointer p) {
     g_free(m->text); g_free(m->tooltip);
     g_free(m->on_click); g_free(m->on_click_right); g_free(m->on_click_middle);
     g_free(m->exec_cmd); g_free(m->clock_format); g_free(m->clock_format_alt);
+    if (m->items) g_ptr_array_free(m->items, TRUE); /* free_func = module_free, siehe parse_module() */
     g_free(m);
 }
 
 void config_free(BarConfig *cfg) {
     if (!cfg) return;
     g_free(cfg->position);
+    g_free(cfg->monitor);
     g_free(cfg->bar_bg.image_path);
     g_free(cfg->bubble.bg_normal_path); g_free(cfg->bubble.bg_hover_path);
     g_free(cfg->bubble.fg_normal_path); g_free(cfg->bubble.fg_hover_path);
@@ -468,6 +522,33 @@ void nine_slice_draw(NineSlice *ns, cairo_t *cr, double w, double h) {
     }
     cairo_set_source_surface(cr, ns->cache, 0, 0);
     cairo_paint(cr);
+}
+
+/* Wie nine_slice_draw(), verlaengert die Bar aber zusaetzlich um `extra`
+ * Pixel NACH UNTEN, indem eine Bildzeile weit unten im Bar-Bild
+ * (deckend, nicht der evtl. halbtransparente Rand ganz unten) vertikal
+ * auf `extra` Pixel gedehnt wird. Keine Verzerrung der Bar selbst und
+ * keine Abhaengigkeit vom Frame-Timing: die Verlaengerung ist IMMER da.
+ * Im Ruhezustand liegt sie unter dem Bildschirmrand (unsichtbar), beim
+ * Aufklapp-Overshoot deckt sie genau den Bereich ab, in dem sonst ein
+ * Spalt zum Desktop zu sehen waere. (Vorher: Bild dehnen per
+ * cairo_scale - der Streckfaktor kam durch das Zeichnen im NAECHSTEN
+ * Frame aber immer einen Schritt zu spaet, dieser Rueckstand WAR der
+ * Spalt.) */
+void nine_slice_draw_extended(NineSlice *ns, cairo_t *cr, double w, double h, double extra) {
+    nine_slice_draw(ns, cr, w, h);
+    if (!ns || !ns->cache || extra <= 0.5) return;
+    double src_row = MAX(0.0, h - 4.0); /* logische Zeile knapp ueber dem Rand */
+    cairo_save(cr);
+    cairo_rectangle(cr, 0, h, w, extra);
+    cairo_clip(cr);
+    cairo_translate(cr, 0, h);
+    cairo_scale(cr, 1.0, extra);
+    cairo_set_source_surface(cr, ns->cache, 0, -src_row);
+    cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_NEAREST);
+    cairo_rectangle(cr, 0, 0, w, 1.0);
+    cairo_fill(cr);
+    cairo_restore(cr);
 }
 
 void nine_slice_free(NineSlice *ns) {
@@ -1226,6 +1307,10 @@ typedef struct {
     float x, y, w, h;
     float reserved_top, reserved_bottom, reserved_left, reserved_right;
     int id;
+    char name[64];   /* Ausgangsname wie "eDP-1"/"HDMI-A-1" - fest statt Pointer,
+                       * damit die bestehenden g_free(mons)-Aufrufe ueberall
+                       * unveraendert bleiben koennen (kein extra Feld zum
+                       * Freigeben, kein Leck-Risiko). */
 } HyprMonitor;
 
 typedef struct {
@@ -1408,6 +1493,10 @@ HyprMonitor *hypr_ipc_get_monitors(int *out_count) {
         if (json_object_has_member(o, "disabled") && json_object_get_boolean_member(o, "disabled"))
             continue;
         mons[count].id = json_object_has_member(o, "id") ? (int)json_object_get_int_member(o, "id") : count;
+        if (json_object_has_member(o, "name")) {
+            const char *nm = json_object_get_string_member(o, "name");
+            if (nm) g_strlcpy(mons[count].name, nm, sizeof(mons[count].name));
+        }
         mons[count].x = json_object_has_member(o, "x") ? (float)json_object_get_double_member(o, "x") : 0;
         mons[count].y = json_object_has_member(o, "y") ? (float)json_object_get_double_member(o, "y") : 0;
 
@@ -1445,6 +1534,67 @@ HyprMonitor *hypr_ipc_get_monitors(int *out_count) {
     g_object_unref(parser);
     return mons;
 }
+
+/* Sucht in einer hypr_ipc_get_monitors()-Liste den per cfg->monitor
+ * benannten Ausgang; leer/NULL/nicht gefunden -> erster Monitor (best
+ * effort, wie an anderen Stellen in dieser Datei schon so gehandhabt,
+ * z.B. ah_update_base_offset()). Gibt NULL zurueck nur wenn die Liste
+ * leer ist. */
+static HyprMonitor *find_target_hypr_monitor(BarConfig *cfg, HyprMonitor *mons, int count) {
+    if (!mons || count <= 0) return NULL;
+    if (cfg->monitor && *cfg->monitor) {
+        for (int i = 0; i < count; i++) {
+            if (g_strcmp0(mons[i].name, cfg->monitor) == 0) return &mons[i];
+        }
+        g_warning("[monitor] '%s' nicht unter den aktuell erkannten Monitoren gefunden "
+                  "(pruefe den Namen mit 'hyprctl monitors') - falle auf den ersten Monitor zurueck.",
+                  cfg->monitor);
+    }
+    return &mons[0];
+}
+
+/* Hyprland-Monitor, in dem der Cursor (logische Koordinaten) gerade liegt;
+ * NULL, wenn er in keinem liegt. Obere Grenzen exklusiv, damit zwei
+ * nebeneinanderliegende Monitore am gemeinsamen Rand eindeutig bleiben. */
+static HyprMonitor *tb_hypr_monitor_at(HyprMonitor *mons, int count, int cx, int cy) {
+    for (int i = 0; i < count; i++) {
+        HyprMonitor *m = &mons[i];
+        if (cx >= m->x && cx < m->x + m->w && cy >= m->y && cy < m->y + m->h)
+            return m;
+    }
+    return NULL;
+}
+
+/* Passenden GdkMonitor zu einem Hyprland-Monitor finden. gtk-layer-shell
+ * braucht ein echtes GdkMonitor*, Hyprland liefert nur Namen/Position.
+ * GDKs Monitor-Geometrie liegt unter Wayland in denselben logischen
+ * Koordinaten wie Hyprlands x/y -> Match ueber die Position, als
+ * Rueckfall ueber eine eindeutige Groesse. NULL, wenn nichts passt. */
+static GdkMonitor *tb_gdk_monitor_for_hypr(const HyprMonitor *m) {
+    if (!m) return NULL;
+    GdkDisplay *disp = gdk_display_get_default();
+    if (!disp) return NULL;
+    int n = gdk_display_get_n_monitors(disp);
+    GdkMonitor *best = NULL, *by_size = NULL;
+    double best_d = 1e9;
+    int size_hits = 0;
+    for (int i = 0; i < n; i++) {
+        GdkMonitor *gm = gdk_display_get_monitor(disp, i);
+        GdkRectangle g;
+        gdk_monitor_get_geometry(gm, &g);
+        double d = fabs(g.x - m->x) + fabs(g.y - m->y);
+        if (d < best_d) { best_d = d; best = gm; }
+        if (fabs(g.width - m->w) < 2 && fabs(g.height - m->h) < 2) { by_size = gm; size_hits++; }
+    }
+    if (best && best_d < 4) return best;
+    if (size_hits == 1) return by_size;
+    return NULL;
+}
+
+/* Monitor, auf dem die Bar gerade sitzt (wird in apply_layer_shell()
+ * gesetzt, danach vom Autohide bei jedem Umzug nachgefuehrt). */
+static char        g_bar_monitor_name[64];
+static GdkMonitor *g_bar_gdk_monitor;
 
 GPtrArray *hypr_ipc_get_workspaces(void) {
     char *out = hypr_cmd("j/workspaces");
@@ -2493,6 +2643,207 @@ TbModules *tb_modules_build(GtkWidget *box, GPtrArray *module_configs,
 void       tb_modules_free(TbModules *m);
 
 
+/* ═══════════════════════════ scrollbar : schmaler, gelber Blaetterbalken ═══════════════════════════ */
+/* Rein Cairo-gezeichnet (kein GTK-Scrollbar-Theming). Arbeitet IMMER
+ * ueber ein GtkAdjustment:
+ *  - echte Reihen-Scrollbars (gepinnte Apps, Taskbar-Icons) haengen am
+ *    hadjustment des GtkScrolledWindow der jeweiligen Reihe (Pixel-Basis)
+ *  - "Stepper" (Workspace-Wechsel, Widget-Seiten) bekommen ein eigenes,
+ *    klein angelegtes Index-Adjustment (0..N-1, page_size meist 1)
+ * Zeichnen/Klick/Wheel ist fuer beide Faelle identisch - nur was beim
+ * Wert-Wechsel passiert (Scroll-Offset vs. echte Aktion) unterscheidet
+ * sich, und das entscheidet allein, WER das Adjustment "value-changed"
+ * abonniert (der Anlegende), nicht der Balken selbst. */
+typedef struct {
+    GtkWidget *area;
+    GtkOrientation orient;
+    GtkAdjustment *adj;   /* nicht besessen */
+    gboolean hover;
+    int hover_btn;         /* -1 = keins, 0 = erster Pfeil, 1 = zweiter Pfeil */
+} TbScrollBar;
+
+static void sb_redraw_cb(GtkAdjustment *adj, gpointer ud) {
+    (void)adj;
+    gtk_widget_queue_draw(GTK_WIDGET(ud));
+}
+
+/* KEIN Hintergrund-Rechteck mehr - nur noch die reinen Pfeil-Glyphen in
+ * der dunklen "Thumb"-Farbe (genau das, was am Anfang gewuenscht war:
+ * "sollten die Farbe des Scrollbalken-Mitteldings haben"), direkt auf dem
+ * Bar-Hintergrund sitzend. Kein Rechteck heisst auch: nichts, womit die
+ * Pfeile ueberlappen/verschmelzen koennten. */
+static gboolean sb_on_draw(GtkWidget *w, cairo_t *cr, gpointer user_data) {
+    TbScrollBar *sb = user_data;
+    GtkAllocation alloc;
+    gtk_widget_get_allocation(w, &alloc);
+    double W = alloc.width, H = alloc.height;
+    if (W < 3 || H < 3) return FALSE;
+    gboolean horiz = (sb->orient == GTK_ORIENTATION_HORIZONTAL);
+
+    GdkRGBA col;
+    gdk_rgba_parse(&col, "#fff495");
+    GdkRGBA dark = col;
+    dark.red *= 0.55; dark.green *= 0.55; dark.blue *= 0.40;
+
+    double gap = 2.0;
+    double main_total = horiz ? W : H;
+    double cross = horiz ? H : W;
+    double half = (main_total - gap) / 2.0;
+
+    for (int btn = 0; btn < 2; btn++) {
+        double bx, by, bw, bh;
+        if (horiz) { bx = btn == 0 ? 0 : half + gap; by = 0; bw = half; bh = cross; }
+        else       { bx = 0; by = btn == 0 ? 0 : half + gap; bw = cross; bh = half; }
+
+        double cx = bx + bw / 2.0, cy = by + bh / 2.0;
+        double s = MIN(bw, bh) * 0.40;
+        double a = sb->hover_btn == btn ? 1.0 : 0.9;
+        cairo_set_source_rgba(cr, dark.red, dark.green, dark.blue, a);
+        if (horiz) {
+            if (btn == 0) { /* Pfeil nach links */
+                cairo_move_to(cr, cx + s * 0.6, cy - s);
+                cairo_line_to(cr, cx - s * 0.7, cy);
+                cairo_line_to(cr, cx + s * 0.6, cy + s);
+            } else { /* Pfeil nach rechts */
+                cairo_move_to(cr, cx - s * 0.6, cy - s);
+                cairo_line_to(cr, cx + s * 0.7, cy);
+                cairo_line_to(cr, cx - s * 0.6, cy + s);
+            }
+        } else {
+            if (btn == 0) { /* Pfeil nach oben */
+                cairo_move_to(cr, cx - s, cy + s * 0.6);
+                cairo_line_to(cr, cx, cy - s * 0.7);
+                cairo_line_to(cr, cx + s, cy + s * 0.6);
+            } else { /* Pfeil nach unten */
+                cairo_move_to(cr, cx - s, cy - s * 0.6);
+                cairo_line_to(cr, cx, cy + s * 0.7);
+                cairo_line_to(cr, cx + s, cy - s * 0.6);
+            }
+        }
+        cairo_close_path(cr);
+        cairo_fill(cr);
+    }
+    return FALSE;
+}
+
+static void sb_step(TbScrollBar *sb, double dir) {
+    if (!sb->adj) return;
+    double step = gtk_adjustment_get_step_increment(sb->adj);
+    if (step <= 0) step = 1.0;
+    double lo = gtk_adjustment_get_lower(sb->adj);
+    double hi = gtk_adjustment_get_upper(sb->adj) - gtk_adjustment_get_page_size(sb->adj);
+    gtk_adjustment_set_value(sb->adj, CLAMP(gtk_adjustment_get_value(sb->adj) + dir * step, lo, MAX(lo, hi)));
+}
+
+/* Nur noch 2 Haelften, keine Lauffläche/Thumb-Logik mehr - Klick in die
+ * erste Haelfte = ein Schritt zurueck, zweite Haelfte = ein Schritt vor. */
+static gboolean sb_on_press(GtkWidget *w, GdkEventButton *ev, gpointer user_data) {
+    TbScrollBar *sb = user_data;
+    if (ev->button != 1 || !sb->adj) return FALSE;
+    GtkAllocation alloc;
+    gtk_widget_get_allocation(w, &alloc);
+    gboolean horiz = sb->orient == GTK_ORIENTATION_HORIZONTAL;
+    double pos = horiz ? ev->x : ev->y;
+    double main_len = horiz ? alloc.width : alloc.height;
+    sb_step(sb, pos < main_len / 2.0 ? -1 : 1);
+    return TRUE;
+}
+
+static gboolean sb_on_scroll(GtkWidget *w, GdkEventScroll *ev, gpointer user_data) {
+    (void)w;
+    TbScrollBar *sb = user_data;
+    double dir = 0;
+    if (ev->direction == GDK_SCROLL_UP || ev->direction == GDK_SCROLL_LEFT) dir = -1;
+    else if (ev->direction == GDK_SCROLL_DOWN || ev->direction == GDK_SCROLL_RIGHT) dir = 1;
+    else if (ev->direction == GDK_SCROLL_SMOOTH) dir = (ev->delta_y + ev->delta_x) > 0 ? 1 : -1;
+    if (dir != 0) sb_step(sb, dir);
+    return TRUE;
+}
+
+static gboolean sb_on_motion(GtkWidget *w, GdkEventMotion *ev, gpointer ud) {
+    TbScrollBar *sb = ud;
+    GtkAllocation alloc;
+    gtk_widget_get_allocation(w, &alloc);
+    gboolean horiz = sb->orient == GTK_ORIENTATION_HORIZONTAL;
+    double pos = horiz ? ev->x : ev->y;
+    double main_len = horiz ? alloc.width : alloc.height;
+    int btn = pos < main_len / 2.0 ? 0 : 1;
+    if (btn != sb->hover_btn) { sb->hover_btn = btn; gtk_widget_queue_draw(w); }
+    return FALSE;
+}
+static gboolean sb_on_enter(GtkWidget *w, GdkEventCrossing *ev, gpointer ud) {
+    (void)ev; TbScrollBar *sb = ud; sb->hover = TRUE; gtk_widget_queue_draw(w); return FALSE;
+}
+static gboolean sb_on_leave(GtkWidget *w, GdkEventCrossing *ev, gpointer ud) {
+    (void)ev; TbScrollBar *sb = ud; sb->hover = FALSE; sb->hover_btn = -1; gtk_widget_queue_draw(w); return FALSE;
+}
+
+/* adj darf NULL sein und spaeter per tb_scrollbar_set_adjustment() gesetzt
+ * werden (z.B. wenn das GtkScrolledWindow sein hadjustment erst nach dem
+ * Anlegen des Balkens preisgibt). */
+/* thick ist die Dicke QUER zur Scrollrichtung (Touch-Ziel-Groesse); die
+ * LAENGE in Scrollrichtung ist jetzt fix 2*thick+2px (zwei quadratische
+ * Pfeil-Buttons + kleiner Zwischenraum) statt vorher ueber vexpand/FILL
+ * auf die volle Zeilenhoehe gestreckt - kein Track mehr, der gestreckt
+ * werden muesste. */
+static TbScrollBar *tb_scrollbar_new(GtkOrientation orient, GtkAdjustment *adj, int thick) {
+    TbScrollBar *sb = g_new0(TbScrollBar, 1);
+    sb->orient = orient;
+    sb->hover_btn = -1;
+    sb->area = g_object_ref_sink(gtk_drawing_area_new());
+    int main_total = thick * 2 + 2;
+    if (orient == GTK_ORIENTATION_HORIZONTAL) gtk_widget_set_size_request(sb->area, main_total, thick);
+    else gtk_widget_set_size_request(sb->area, thick, main_total);
+    gtk_widget_set_app_paintable(sb->area, TRUE);
+    gtk_widget_add_events(sb->area, GDK_BUTTON_PRESS_MASK | GDK_SCROLL_MASK |
+                          GDK_ENTER_NOTIFY_MASK | GDK_LEAVE_NOTIFY_MASK | GDK_POINTER_MOTION_MASK);
+    g_signal_connect(sb->area, "draw", G_CALLBACK(sb_on_draw), sb);
+    g_signal_connect(sb->area, "button-press-event", G_CALLBACK(sb_on_press), sb);
+    g_signal_connect(sb->area, "scroll-event", G_CALLBACK(sb_on_scroll), sb);
+    g_signal_connect(sb->area, "motion-notify-event", G_CALLBACK(sb_on_motion), sb);
+    g_signal_connect(sb->area, "enter-notify-event", G_CALLBACK(sb_on_enter), sb);
+    g_signal_connect(sb->area, "leave-notify-event", G_CALLBACK(sb_on_leave), sb);
+    if (adj) {
+        sb->adj = adj;
+        g_signal_connect(adj, "value-changed", G_CALLBACK(sb_redraw_cb), sb->area);
+        g_signal_connect(adj, "changed", G_CALLBACK(sb_redraw_cb), sb->area);
+    }
+    return sb;
+}
+
+static GtkWidget *tb_scrollbar_widget(TbScrollBar *sb) { return sb->area; }
+
+/* Leitet Mausrad-Events von einem BELIEBIGEN anderen Widget (z.B. dem
+ * Blasenbereich, den der Balken steuert) an dieselbe sb_on_scroll()-Logik
+ * weiter wie ein Wheel-Event direkt auf dem Balken. So funktioniert
+ * Scrollen auch, wenn man mit der Maus/dem Finger genau ueber den
+ * Icons/Blasen steht statt exakt ueber dem schmalen Balken. */
+static void tb_scrollbar_forward_wheel_from(TbScrollBar *sb, GtkWidget *source_widget) {
+    gtk_widget_add_events(source_widget, GDK_SCROLL_MASK);
+    g_signal_connect(source_widget, "scroll-event", G_CALLBACK(sb_on_scroll), sb);
+}
+
+static void tb_scrollbar_free(TbScrollBar *sb) {
+    if (!sb) return;
+    g_clear_object(&sb->area);
+    g_free(sb);
+}
+
+/* Blendet den Balken aus, wenn sein Adjustment gar nichts zu scrollen hat
+ * (upper-lower <= page_size) - sonst haengt ein toter Pfeil-Balken herum,
+ * wo eh alles passt. */
+static void sb_autohide_cb(GtkAdjustment *adj, gpointer user_data) {
+    GtkWidget *bar_widget = user_data;
+    gboolean need = (gtk_adjustment_get_upper(adj) - gtk_adjustment_get_lower(adj)) >
+                    gtk_adjustment_get_page_size(adj) + 0.5;
+    gtk_widget_set_visible(bar_widget, need);
+}
+static void tb_scrollbar_enable_autohide(TbScrollBar *sb) {
+    if (!sb->adj) return;
+    g_signal_connect(sb->adj, "changed", G_CALLBACK(sb_autohide_cb), sb->area);
+    sb_autohide_cb(sb->adj, sb->area);
+}
+
 /* ═══════════════════════════ modules : Implementierung ═══════════════════════════ */
 typedef struct {
     ModuleConfig *mc;
@@ -2506,11 +2857,48 @@ typedef struct {
 
 typedef struct {
     ModuleConfig *mc;
-    GtkWidget *container;   /* eigene HBox fuer Workspace-Pillen + Fenster-Icons */
+    GtkWidget *container;   /* einfache HBox: [Workspace-Blase][vBalken][Fenster-Reihe] */
     BubbleAssets *assets;
     BarConfig *cfg;
-    GPtrArray *bubbles;     /* TbBubble*, wird bei jedem Rebuild neu befuellt */
+    GPtrArray *bubbles;     /* TbBubble* der Fenster-Icons, wird bei jedem Rebuild neu befuellt */
     guint pending_rebuild_id; /* Debounce - siehe on_hypr_event() */
+
+    /* Redesign: nur noch EINE Blase zeigt die aktive Workspace-Nummer,
+     * ein senkrechter Balken daneben wechselt zwischen Workspaces (statt
+     * vorher einer Pille pro Workspace nebeneinander). Die Fenster-Icons
+     * zeigen nur noch die des AKTIVEN Workspace, in einer eigenen
+     * Scroll-Reihe OHNE eigenen Balken (keine horizontalen Balken mehr
+     * im Design - Mausrad ueber den Icons scrollt trotzdem, das kann
+     * GtkScrolledWindow von Haus aus). */
+    TbBubble *ws_bubble;
+    GtkAdjustment *ws_adj;   /* Index-Adjustment 0..workspaces-1 */
+    TbScrollBar *vbar;
+    GArray *ws_ids;          /* int, sortierte Workspace-IDs - Index<->ID-Mapping fuer ws_adj */
+    gboolean syncing;        /* TRUE waehrend rebuild() ws_adj nur nach einem echten Hyprland-
+                               * Event NACHZIEHT - verhindert, dass das dabei ausgeloeste
+                               * "value-changed" faelschlich nochmal einen Workspace-Wechsel dispatcht */
+
+    /* Fenster-Reihe: wie bei MOD_WIDGET_GRID brechen zu viele offene
+     * Fenster jetzt in eine neue Zeile/Seite um (statt gecropt/versteckt
+     * zu werden) - ein eigener senkrechter Balken blaettert dazwischen.
+     * apps_per_row wird EINMAL beim Bauen aus der Monitor-Breite
+     * berechnet (siehe compute_dynamic_apps_per_row()), damit es auf
+     * jeder Aufloesung/jedem Skalierungsfaktor sinnvoll viele Fenster
+     * pro Zeile zeigt statt eines fest verdrahteten Pixelwerts. */
+    int apps_per_row;
+    GtkWidget *apps_rows_box;      /* vbox, ein Kind (hbox) pro Zeile/Seite */
+    GPtrArray *apps_page_boxes;    /* GtkWidget* je Zeile, wird bei jedem Rebuild neu aufgebaut */
+    GtkAdjustment *apps_page_adj;
+    TbScrollBar *apps_vbar;
+
+    /* Preview-Modus: Scroll/Pfeil auf dem Workspace-Balken wechselt NICHT
+     * den aktiven Workspace (das passiert nur bei Klick auf die Zahlen-Blase),
+     * sondern zeigt nur die Apps des gewaehlten Workspace als Vorschau.
+     * viewing_override=TRUE solange der Nutzer manuell gescrollt hat;
+     * viewed_ws_id ist die angezeigte Workspace-ID.
+     * Reset passiert, wenn die Bar sich wieder versteckt (do_hide). */
+    gboolean viewing_override;
+    int      viewed_ws_id;
 } WorkspacesRuntime;
 
 typedef struct {
@@ -2523,7 +2911,24 @@ typedef struct {
     GtkWidget *widget; /* leerer Platzhalter-Widget fester Breite */
 } SpacerRuntime;
 
-typedef enum { RT_BUTTON, RT_WORKSPACES, RT_TRAY, RT_SPACER } RuntimeKind;
+/* MOD_BUTTON_ROW (gepinnte Apps) und MOD_WIDGET_GRID (die anderen
+ * Widgets) sind jetzt IDENTISCH umgesetzt: Items brechen bei max_width in
+ * eine neue Zeile um statt horizontal zu scrollen (keine horizontalen
+ * Balken mehr im Design), es ist immer nur eine Zeile ("Seite") sichtbar,
+ * ein senkrechter Balken blaettert zwischen den Zeilen. Beide Modul-Typen
+ * benutzen denselben Runtime-Typ und Builder (build_widget_grid) - der
+ * Modul-Typ in der jsonc ist nur noch eine kosmetische Unterscheidung. */
+typedef struct {
+    ModuleConfig *mc;
+    GtkWidget *container;      /* hbox: [rows_box][vBalken] */
+    GtkWidget *rows_box;       /* vbox, ein Kind (hbox) pro Zeile/Seite */
+    GPtrArray *page_boxes;     /* GtkWidget* je Zeile */
+    GPtrArray *item_runtimes;  /* ModuleRuntime* (RT_BUTTON), alle Items ueber alle Zeilen */
+    GtkAdjustment *page_adj;
+    TbScrollBar *vbar;
+} WidgetGridRuntime;
+
+typedef enum { RT_BUTTON, RT_WORKSPACES, RT_TRAY, RT_SPACER, RT_WIDGET_GRID } RuntimeKind;
 
 typedef struct {
     RuntimeKind kind;
@@ -2532,12 +2937,43 @@ typedef struct {
         WorkspacesRuntime workspaces;
         TrayRuntime tray;
         SpacerRuntime spacer;
+        WidgetGridRuntime widget_grid;
     } u;
 } ModuleRuntime;
 
 struct TbModules {
     GPtrArray *runtimes; /* ModuleRuntime* */
 };
+
+static void widget_grid_page_changed_cb(GtkAdjustment *adj, gpointer user_data); /* s.u. */
+static void apps_page_changed_cb(GtkAdjustment *adj, gpointer user_data); /* s.o. bei workspaces */
+static void workspaces_rebuild(WorkspacesRuntime *wr); /* Forward-Decl: benoetigt von do_hide() */
+
+/* Muss NACH gtk_widget_show_all(window) aufgerufen werden (siehe main()):
+ * show_all() macht JEDES Kind-Widget sichtbar, auch die Seiten 1..n
+ * eines Widget-Grids ODER der Workspace-Fenster-Zeilen, die wir beim
+ * Aufbau bewusst versteckt hatten. Ohne diesen Re-Sync stehen alle
+ * Seiten gleichzeitig da und blaehen die Bar-Hoehe massiv auf (war der
+ * Grund fuer die viel zu grosse Bar). */
+static void tb_modules_resync_pages(TbModules *m) {
+    if (!m) return;
+    for (guint i = 0; i < m->runtimes->len; i++) {
+        ModuleRuntime *rt = g_ptr_array_index(m->runtimes, i);
+        if (rt->kind == RT_WIDGET_GRID) {
+            WidgetGridRuntime *wg = &rt->u.widget_grid;
+            widget_grid_page_changed_cb(wg->page_adj, wg);
+            /* gtk_widget_show_all() macht ALLE Widgets sichtbar, auch den
+             * Navigations-Balken der nur 1 Zeile hat. Hier nachholen. */
+            sb_autohide_cb(wg->page_adj, tb_scrollbar_widget(wg->vbar));
+        } else if (rt->kind == RT_WORKSPACES) {
+            WorkspacesRuntime *wr = &rt->u.workspaces;
+            apps_page_changed_cb(wr->apps_page_adj, wr);
+            sb_autohide_cb(wr->ws_adj,       tb_scrollbar_widget(wr->vbar));
+            sb_autohide_cb(wr->apps_page_adj, tb_scrollbar_widget(wr->apps_vbar));
+        }
+    }
+}
+
 
 /* ── Shell-Kommandos ausfuehren (wie waybar on-click) ──────────────── */
 
@@ -2720,6 +3156,48 @@ static void ws_click(gpointer ud) {
     hypr_ipc_dispatch(cmd);
 }
 
+/* Linksklick auf die Zahlen-Blase: in den gerade ANGEZEIGTEN (preview)
+ * Workspace wechseln und Preview-Override zuruecksetzen. */
+static void ws_bubble_click(gpointer ud) {
+    WorkspacesRuntime *wr = ud;
+    int id;
+    if (wr->viewing_override && wr->viewed_ws_id > 0) {
+        id = wr->viewed_ws_id;
+    } else {
+        int idx = (int)lround(gtk_adjustment_get_value(wr->ws_adj));
+        if (!wr->ws_ids || idx < 0 || (guint)idx >= wr->ws_ids->len) return;
+        id = g_array_index(wr->ws_ids, int, idx);
+    }
+    wr->viewing_override = FALSE;
+    ws_click(GINT_TO_POINTER(id));
+}
+
+/* Reagiert auf Scroll/Pfeil-Klicks auf dem senkrechten Workspace-Balken.
+ * KEIN Workspace-Wechsel mehr - das passiert nur beim Klick auf die
+ * Zahlen-Blase (ws_bubble). Stattdessen: Preview-Modus aktivieren und
+ * die App-Reihe fuer den gewaehlten Workspace zeigen. */
+static void ws_adj_changed_cb(GtkAdjustment *adj, gpointer user_data) {
+    WorkspacesRuntime *wr = user_data;
+    if (wr->syncing) return;
+    int idx = (int)lround(gtk_adjustment_get_value(adj));
+    if (!wr->ws_ids || idx < 0 || (guint)idx >= wr->ws_ids->len) return;
+    int id = g_array_index(wr->ws_ids, int, idx);
+    wr->viewing_override = TRUE;
+    wr->viewed_ws_id = id;
+    workspaces_rebuild(wr); /* zeigt Apps des angepeilten Workspace, kein Dispatcher */
+}
+
+/* Blaettert zwischen den Zeilen/Seiten der offenen Fenster - exakt
+ * dasselbe Prinzip wie widget_grid_page_changed_cb(), nur auf
+ * WorkspacesRuntime statt WidgetGridRuntime, weil die Fenster-Liste
+ * dynamisch (aus Hyprland) statt aus statischen Config-Items kommt. */
+static void apps_page_changed_cb(GtkAdjustment *adj, gpointer user_data) {
+    WorkspacesRuntime *wr = user_data;
+    int idx = (int)lround(gtk_adjustment_get_value(adj));
+    for (guint i = 0; i < wr->apps_page_boxes->len; i++)
+        gtk_widget_set_visible(g_ptr_array_index(wr->apps_page_boxes, i), (int)i == idx);
+}
+
 /* Linksklick auf ein Taskbar-Fenster-Icon: fokussieren (wechselt bei
  * Bedarf automatisch den Workspace). 1:1 dieselbe Dispatcher-Syntax wie
  * im alten, nachweislich funktionierenden WaybarClicks.sh. */
@@ -2885,18 +3363,12 @@ static char *guess_icon_for_class(const char *class_name) {
 }
 
 static void workspaces_rebuild(WorkspacesRuntime *wr) {
-    /* alte Bubbles entfernen - WICHTIG: erst tb_bubble_free() (entfernt
-     * u.a. einen ggf. noch laufenden Hover-Timer, der frueher noch ein
-     * gueltiges Widget brauchte), DANACH erst das Widget zerstoeren.
-     * Umgekehrte Reihenfolge loeste bei jedem Rebuild ein
-     * "gtk_widget_remove_tick_callback: assertion GTK_IS_WIDGET failed"
-     * aus, sobald eine Bubble gerade eine Hover-Animation laufen hatte.
-     * Die Reihenfolge schadet weiterhin nichts, auch nachdem der
-     * Hover-Tick von gtk_widget_add_tick_callback() auf ein normales
-     * g_timeout_add() umgestellt wurde (siehe anim_tick()) - schoener
-     * Nebeneffekt: g_source_remove() in tb_bubble_free() haengt jetzt
-     * gar nicht mehr vom Widget-Zustand ab, der urspruengliche Bug ist
-     * also strukturell gar nicht mehr moeglich. */
+    /* alte Fenster-Icon-Bubbles UND die alten Zeilen-Boxen der Apps-Reihe
+     * entfernen - erst tb_bubble_free(), DANACH das Widget zerstoeren
+     * (Reihenfolge s. Kommentar an gleicher Stelle in aelteren Versionen
+     * dieser Datei). Die Zeilen-Boxen selbst werden bei JEDEM Rebuild neu
+     * aufgebaut, weil sich die Fensteranzahl (und damit die Seitenzahl)
+     * jederzeit aendern kann. */
     for (guint i = 0; i < wr->bubbles->len; i++) {
         TbBubble *b = g_ptr_array_index(wr->bubbles, i);
         GtkWidget *w = tb_bubble_widget(b);
@@ -2904,9 +3376,13 @@ static void workspaces_rebuild(WorkspacesRuntime *wr) {
         gtk_widget_destroy(w);
     }
     g_ptr_array_set_size(wr->bubbles, 0);
+    for (guint i = 0; i < wr->apps_page_boxes->len; i++)
+        gtk_widget_destroy(g_ptr_array_index(wr->apps_page_boxes, i));
+    g_ptr_array_set_size(wr->apps_page_boxes, 0);
 
     if (!hypr_ipc_available()) {
         g_warning("[workspaces] hypr_ipc_available()==FALSE - Workspace-Modul bleibt leer.");
+        tb_bubble_set_text(wr->ws_bubble, "-");
         return;
     }
 
@@ -2916,46 +3392,99 @@ static void workspaces_rebuild(WorkspacesRuntime *wr) {
     g_message("[workspaces] rebuild: %u workspaces, %u clients, active_id=%d",
               ws->len, clients->len, active_id);
 
+    g_array_set_size(wr->ws_ids, 0);
+    int active_idx = 0;
     for (guint i = 0; i < ws->len; i++) {
         HyprWorkspace *w = g_ptr_array_index(ws, i);
-        char num[16];
-        g_snprintf(num, sizeof(num), "%d", w->id);
+        g_array_append_val(wr->ws_ids, w->id);
+        if (w->id == active_id) active_idx = (int)i;
+    }
 
-        TbBubble *b = tb_bubble_new(wr->assets, wr->cfg, NULL, num);
-        tb_bubble_set_forced_active(b, w->id == active_id);
-        tb_bubble_set_click_handlers(b, ws_click, NULL, NULL, GINT_TO_POINTER(w->id));
-        gtk_box_pack_start(GTK_BOX(wr->container), tb_bubble_widget(b), FALSE, FALSE, 0);
-        gtk_widget_show_all(tb_bubble_widget(b));
-        g_ptr_array_add(wr->bubbles, b);
-
-        for (guint c = 0; c < clients->len; c++) {
-            HyprClient *cl = g_ptr_array_index(clients, c);
-            if (cl->minimized || cl->workspace_id != w->id) continue;
-
-            char *icon = guess_icon_for_class(cl->class_name);
-            TbBubble *wb = tb_bubble_new(wr->assets, wr->cfg, icon, NULL);
-            g_free(icon);
-            tb_bubble_set_tooltip(wb, cl->title);
-            /* address wird an das Bubble-"user_data" gehaengt und lebt
-             * so lange wie die Bubble selbst - g_strdup + Free beim
-             * naechsten Rebuild ueber ein Quark am Widget. */
-            char *addr_copy = g_strdup(cl->address);
-            g_object_set_data_full(G_OBJECT(tb_bubble_widget(wb)), "tb-win-addr",
-                                    addr_copy, g_free);
-            tb_bubble_set_click_handlers(wb, win_click_left, win_click_right, win_click_middle, addr_copy);
-            gtk_box_pack_start(GTK_BOX(wr->container), tb_bubble_widget(wb), FALSE, FALSE, 0);
-            gtk_widget_show_all(tb_bubble_widget(wb));
-            g_ptr_array_add(wr->bubbles, wb);
+    /* Preview-Modus: viewing_override=TRUE bedeutet, der Nutzer hat per
+     * Scroll/Pfeil einen anderen Workspace gewaehlt, ohne dorthin zu wechseln.
+     * Pruefe ob der gemerkte Workspace noch existiert - falls nicht,
+     * Override aufheben und zum aktiven zurueckfallen. */
+    int viewed_idx = active_idx;
+    if (wr->viewing_override && wr->viewed_ws_id > 0) {
+        gboolean still_exists = FALSE;
+        for (guint i = 0; i < wr->ws_ids->len; i++) {
+            if (g_array_index(wr->ws_ids, int, i) == wr->viewed_ws_id) {
+                viewed_idx = (int)i;
+                still_exists = TRUE;
+                break;
+            }
+        }
+        if (!still_exists) {
+            wr->viewing_override = FALSE;
+            wr->viewed_ws_id = 0;
         }
     }
+    int display_id = wr->viewing_override ? wr->viewed_ws_id : active_id;
+
+    /* Zahlen-Blase: zeigt den gerade angezeigten WS (Preview oder aktiv). */
+    char num[16];
+    g_snprintf(num, sizeof(num), "%d", display_id);
+    tb_bubble_set_text(wr->ws_bubble, num);
+
+    /* syncing=TRUE: die folgenden gtk_adjustment_set_*()-Aufrufe loesen
+     * "value-changed" aus - der Handler soll das aber NICHT als
+     * Benutzerwunsch missverstehen. Im Preview-Modus behalten wir den
+     * vom Nutzer gewaehlten Index (viewed_idx); sonst folgen wir dem
+     * aktiven Workspace (active_idx). */
+    wr->syncing = TRUE;
+    gtk_adjustment_set_lower(wr->ws_adj, 0);
+    gtk_adjustment_set_upper(wr->ws_adj, MAX(1, (double)ws->len));
+    gtk_adjustment_set_page_size(wr->ws_adj, 1);
+    gtk_adjustment_set_step_increment(wr->ws_adj, 1);
+    gtk_adjustment_set_value(wr->ws_adj, viewed_idx);
+    wr->syncing = FALSE;
+
+    /* Fenster des angezeigten (preview oder aktiven) Workspace einsammeln. */
+    GtkWidget *cur_row = NULL;
+    guint shown = 0;
+    for (guint c = 0; c < clients->len; c++) {
+        HyprClient *cl = g_ptr_array_index(clients, c);
+        if (cl->minimized || cl->workspace_id != display_id) continue;
+
+        if (shown % (guint)wr->apps_per_row == 0) {
+            cur_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+            gtk_box_pack_start(GTK_BOX(wr->apps_rows_box), cur_row, FALSE, FALSE, 0);
+            g_ptr_array_add(wr->apps_page_boxes, cur_row);
+        }
+        shown++;
+
+        char *icon = guess_icon_for_class(cl->class_name);
+        TbBubble *wb = tb_bubble_new(wr->assets, wr->cfg, icon, NULL);
+        g_free(icon);
+        tb_bubble_set_tooltip(wb, cl->title);
+        char *addr_copy = g_strdup(cl->address);
+        g_object_set_data_full(G_OBJECT(tb_bubble_widget(wb)), "tb-win-addr", addr_copy, g_free);
+        tb_bubble_set_click_handlers(wb, win_click_left, win_click_right, win_click_middle, addr_copy);
+        gtk_box_pack_start(GTK_BOX(cur_row), tb_bubble_widget(wb), FALSE, FALSE, 0);
+        gtk_widget_show_all(tb_bubble_widget(wb));
+        g_ptr_array_add(wr->bubbles, wb);
+    }
+    if (wr->apps_page_boxes->len == 0) { /* keine Fenster offen - trotzdem eine leere Seite, sonst NULL-Zugriffe unten */
+        cur_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+        gtk_box_pack_start(GTK_BOX(wr->apps_rows_box), cur_row, FALSE, FALSE, 0);
+        g_ptr_array_add(wr->apps_page_boxes, cur_row);
+    }
+
+    /* Seiten-Adjustment nachziehen - aktuelle Seite beibehalten, wenn sie
+     * nach dem Rebuild noch existiert, sonst auf die letzte gueltige. */
+    double old_page = gtk_adjustment_get_value(wr->apps_page_adj);
+    double new_upper = MAX(1, (double)wr->apps_page_boxes->len);
+    gtk_adjustment_set_upper(wr->apps_page_adj, new_upper);
+    gtk_adjustment_set_value(wr->apps_page_adj, CLAMP(old_page, 0, new_upper - 1));
+    apps_page_changed_cb(wr->apps_page_adj, wr);
 
     hypr_ipc_free_workspaces(ws);
     hypr_ipc_free_clients(clients);
 }
 
-/* Ein einzelner globaler Event-Handler reicht (i.d.R. genau ein
- * Workspace-Modul pro Bar) - haelt die Liste der interessierten
- * WorkspacesRuntime-Instanzen und rebuilt bei relevanten Events. */
+/* Ein einzelner globaler Event-Handler reicht: Hyprland-Events kommen
+ * fuer alle Monitore/Workspaces auf demselben Socket rein, jede
+ * WorkspacesRuntime-Instanz wird bei relevanten Events neu gebaut. */
 static GPtrArray *g_ws_runtimes = NULL; /* WorkspacesRuntime* */
 
 static gboolean debounced_rebuild_cb(gpointer user_data) {
@@ -3006,15 +3535,97 @@ static ModuleRuntime *build_workspaces(ModuleConfig *mc, GtkWidget *box, BubbleA
     wr->assets = assets;
     wr->cfg = cfg;
     wr->bubbles = g_ptr_array_new();
+    wr->ws_ids = g_array_new(FALSE, FALSE, sizeof(int));
+    wr->apps_page_boxes = g_ptr_array_new();
 
-    wr->container = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    /* Blase mit der aktuellen Workspace-Nummer - bleibt dauerhaft
+     * bestehen (nicht wie frueher pro Rebuild neu erzeugt), nur Text
+     * und Adjustment werden nachgezogen. Optisch immer im "aktiv"-Look,
+     * es ist ja per Definition immer DER aktuelle Workspace. */
+    wr->ws_bubble = tb_bubble_new(assets, cfg, NULL, "-");
+    tb_bubble_set_forced_active(wr->ws_bubble, TRUE);
+    /* Linksklick auf die Zahlen-Blase: in den angezeigten Workspace wechseln
+     * (Preview oder aktiv) und Preview-Override zuruecksetzen. */
+    tb_bubble_set_click_handlers(wr->ws_bubble, ws_bubble_click, NULL, NULL, wr);
+
+    wr->ws_adj = gtk_adjustment_new(0, 0, 1, 1, 1, 1);
+    g_signal_connect(wr->ws_adj, "value-changed", G_CALLBACK(ws_adj_changed_cb), wr);
+    /* Feste Groesse, angelehnt an die Blasen-Groesse statt an der
+     * Ziffernbreite (das war vorher fast unsichtbar duenn) UND ohne die
+     * spaetere Uebertreibung nach oben - orientiert sich jetzt an der
+     * halben Blasen-Hoehe, damit die 2 Pfeil-Buttons zusammen etwa eine
+     * Blase hoch sind, nicht mehr. */
+    int nav_thick = MAX(16, cfg->bubble.min_size - 6);
+    wr->vbar = tb_scrollbar_new(GTK_ORIENTATION_VERTICAL, wr->ws_adj, nav_thick);
+    tb_scrollbar_enable_autohide(wr->vbar); /* bei nur 1 Workspace: Balken weg */
+    /* Mausrad soll auch ueber der Workspace-Zahlen-Blase selbst wechseln,
+     * nicht nur exakt ueber dem schmalen Balken. */
+    tb_scrollbar_forward_wheel_from(wr->vbar, tb_bubble_widget(wr->ws_bubble));
+
+    /* Dynamisch statt fester Pixelwert: wie viele offene Fenster passen
+     * pro Zeile, bevor der Rest umbricht? Berechnet aus der LOGISCHEN
+     * (schon durch den Skalierungsfaktor geteilten) Breite des Ziel-
+     * Monitors - genau das hat vorher bei 1080p+2x gefehlt (ein fest
+     * verdrahteter max_width-Pixelwert kennt weder Aufloesung noch
+     * Skalierung des Geraets, auf dem TrafkTuxBar gerade laeuft). */
+    int item_w = cfg->bubble.min_size + 2 * cfg->bubble.padding + 2 * cfg->bubble.margin;
+    int mon_count = 0;
+    HyprMonitor *mons = hypr_ipc_get_monitors(&mon_count);
+    HyprMonitor *target = find_target_hypr_monitor(cfg, mons, mon_count);
+    /* Bar folgt dem Cursor (cfg->monitor leer) -> sie kann auf jedem Monitor
+     * landen, also nach dem SCHMALSTEN Monitor rechnen, damit die Fenster-
+     * Reihe ueberall passt. Fester Monitor -> nach dem. */
+    double ref_w = target ? target->w : 0.0;
+    if (!(cfg->monitor && *cfg->monitor)) {
+        for (int i = 0; i < mon_count; i++)
+            if (ref_w <= 0.0 || mons[i].w < ref_w) ref_w = mons[i].w;
+    }
+    double avail_w = ref_w > 0.0 ? ref_w * cfg->center_width_fraction : 400.0;
+    wr->apps_per_row = MAX(1, (int)(avail_w / MAX(1, item_w)));
+    g_message("[workspaces] dynamische Breite: Monitor '%s' %.0fx%.0f -> "
+              "%.0fpx verfuegbar (Faktor %.2f) -> %d Fenster/Zeile",
+              (cfg->monitor && *cfg->monitor && target) ? target->name : "(kleinster)", ref_w, target ? target->h : 0.0,
+              avail_w, cfg->center_width_fraction, wr->apps_per_row);
+    g_free(mons);
+
+    int bubble_h = cfg->bubble.min_size + 2 * cfg->bubble.padding + 2 * cfg->bubble.margin;
+    wr->apps_rows_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_widget_set_size_request(wr->apps_rows_box, -1, bubble_h); /* nur 1 Zeile hoch, wie bei MOD_WIDGET_GRID */
+
+    wr->apps_page_adj = gtk_adjustment_new(0, 0, 1, 1, 1, 1);
+    g_signal_connect(wr->apps_page_adj, "value-changed", G_CALLBACK(apps_page_changed_cb), wr);
+    wr->apps_vbar = tb_scrollbar_new(GTK_ORIENTATION_VERTICAL, wr->apps_page_adj, nav_thick);
+    tb_scrollbar_enable_autohide(wr->apps_vbar); /* nur 1 Zeile Fenster: Balken weg */
+
+    /* wr->apps_rows_box ist eine reine GtkBox OHNE eigenes GdkWindow -
+     * Mausrad ueber der leeren Flaeche zwischen/neben den Fenster-Icons
+     * kam da nie zuverlaessig an (derselbe Bug wie bei MOD_WIDGET_GRID,
+     * siehe dort). GtkEventBox erzwingt ein echtes Fenster dafuer. */
+    GtkWidget *wheel_catcher = gtk_event_box_new();
+    gtk_container_add(GTK_CONTAINER(wheel_catcher), wr->apps_rows_box);
+    tb_scrollbar_forward_wheel_from(wr->apps_vbar, wheel_catcher);
+
+    /* Einfache Box statt Grid: [Zahlen-Blase][vBalken][Fenster-Zeilen][vBalken]
+     * in einer einzigen Zeile - robuster als eine Grid-Konstruktion (die
+     * u.a. mitverantwortlich fuer die viel zu grosse Bar-Hoehe war, siehe
+     * Kommentar bei gtk_widget_show_all(window) in main()). */
+    wr->container = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 3);
+    gtk_box_pack_start(GTK_BOX(wr->container), tb_bubble_widget(wr->ws_bubble), FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(wr->container), tb_scrollbar_widget(wr->vbar), FALSE, FALSE, 0);
+    gtk_widget_set_valign(tb_scrollbar_widget(wr->vbar), GTK_ALIGN_CENTER); /* feste kompakte Groesse, nicht strecken */
+    gtk_box_pack_start(GTK_BOX(wr->container), wheel_catcher, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(wr->container), tb_scrollbar_widget(wr->apps_vbar), FALSE, FALSE, 0);
+    gtk_widget_set_valign(tb_scrollbar_widget(wr->apps_vbar), GTK_ALIGN_CENTER);
+
     gtk_box_pack_start(GTK_BOX(box), wr->container, FALSE, FALSE, 0);
-    gtk_widget_show(wr->container);
+    gtk_widget_show_all(wr->container);
 
     if (!g_ws_runtimes) g_ws_runtimes = g_ptr_array_new();
     g_ptr_array_add(g_ws_runtimes, wr);
 
     workspaces_rebuild(wr);
+    sb_autohide_cb(wr->ws_adj, tb_scrollbar_widget(wr->vbar)); /* Anfangszustand nachziehen, s. Kommentar bei tb_scrollbar_enable_autohide() */
+    sb_autohide_cb(wr->apps_page_adj, tb_scrollbar_widget(wr->apps_vbar));
 
     static gboolean subscribed = FALSE;
     if (!subscribed && hypr_ipc_available()) {
@@ -3023,7 +3634,6 @@ static ModuleRuntime *build_workspaces(ModuleConfig *mc, GtkWidget *box, BubbleA
     }
     return rt;
 }
-
 /* ── MOD_TRAY ───────────────────────────────────────────────────── */
 
 static ModuleRuntime *build_tray(ModuleConfig *mc, GtkWidget *box, BubbleAssets *assets, BarConfig *cfg) {
@@ -3036,6 +3646,96 @@ static ModuleRuntime *build_tray(ModuleConfig *mc, GtkWidget *box, BubbleAssets 
     gtk_widget_show(tr->container);
     tr->tray = tb_tray_new(tr->container, assets, cfg);
     return rt;
+}
+
+/* ── MOD_BUTTON_ROW / MOD_WIDGET_GRID (gemeinsam) ──────────────────── */
+/* Beide Modul-Typen sind jetzt derselbe Mechanismus: Items brechen bei
+ * max_width in eine neue Zeile um, nur eine Zeile ("Seite") ist
+ * sichtbar, ein senkrechter Balken blaettert zwischen den Zeilen. Kein
+ * horizontales Scrollen/keine horizontalen Balken mehr. */
+
+static ModuleRuntime *build_button(ModuleConfig *mc, GtkWidget *box, BubbleAssets *assets, BarConfig *cfg); /* s.o. */
+
+static void widget_grid_page_changed_cb(GtkAdjustment *adj, gpointer user_data) {
+    WidgetGridRuntime *wg = user_data;
+    int idx = (int)lround(gtk_adjustment_get_value(adj));
+    for (guint i = 0; i < wg->page_boxes->len; i++)
+        gtk_widget_set_visible(g_ptr_array_index(wg->page_boxes, i), (int)i == idx);
+}
+
+static ModuleRuntime *build_widget_grid(ModuleConfig *mc, GtkWidget *box, BubbleAssets *assets, BarConfig *cfg) {
+    ModuleRuntime *rt = g_new0(ModuleRuntime, 1);
+    rt->kind = RT_WIDGET_GRID;
+    WidgetGridRuntime *wg = &rt->u.widget_grid;
+    wg->mc = mc;
+    wg->item_runtimes = g_ptr_array_new();
+    wg->page_boxes = g_ptr_array_new();
+
+    /* Anzahl statt Pixelbreite: aufloesungs-/skalierungsunabhaengig -
+     * "immer genau N Stueck", egal auf welchem Bildschirm/Scale-Faktor
+     * das laeuft. Das war der eigentliche Bug bei 1080p+2x: ein fester
+     * max_width-Pixelwert passt eben nicht auf jede Aufloesung. */
+    int per_row = mc->visible_count > 0 ? mc->visible_count : 3;
+
+    wg->rows_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    GtkWidget *cur_row = NULL;
+    for (guint i = 0; i < mc->items->len; i++) {
+        if (i % (guint)per_row == 0) {
+            cur_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+            gtk_box_pack_start(GTK_BOX(wg->rows_box), cur_row, FALSE, FALSE, 0);
+            g_ptr_array_add(wg->page_boxes, cur_row);
+        }
+        ModuleConfig *item_mc = g_ptr_array_index(mc->items, i);
+        ModuleRuntime *item_rt = build_button(item_mc, cur_row, assets, cfg);
+        g_ptr_array_add(wg->item_runtimes, item_rt);
+    }
+    if (wg->page_boxes->len == 0) { /* keine Items konfiguriert - trotzdem eine leere Seite, sonst NULL-Zugriffe unten */
+        cur_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+        gtk_box_pack_start(GTK_BOX(wg->rows_box), cur_row, FALSE, FALSE, 0);
+        g_ptr_array_add(wg->page_boxes, cur_row);
+    }
+
+    wg->page_adj = gtk_adjustment_new(0, 0, MAX(1, (double)wg->page_boxes->len), 1, 1, 1);
+    g_signal_connect(wg->page_adj, "value-changed", G_CALLBACK(widget_grid_page_changed_cb), wg);
+    int nav_thick = MAX(16, cfg->bubble.min_size - 6); /* s. Kommentar bei build_workspaces() */
+    wg->vbar = tb_scrollbar_new(GTK_ORIENTATION_VERTICAL, wg->page_adj, nav_thick);
+    tb_scrollbar_enable_autohide(wg->vbar);
+    /* wg->rows_box ist eine reine GtkBox OHNE eigenes GdkWindow - Events
+     * (Mausrad!) ueber der leeren Flaeche zwischen/neben den Icons kamen
+     * da nie zuverlaessig an. GtkEventBox erzwingt ein echtes Fenster
+     * fuer genau diesen Bereich, damit Mausrad ueber der ganzen Reihe
+     * (nicht nur exakt ueber dem schmalen Balken) sicher greift. */
+    GtkWidget *wheel_catcher = gtk_event_box_new();
+    gtk_container_add(GTK_CONTAINER(wheel_catcher), wg->rows_box);
+    tb_scrollbar_forward_wheel_from(wg->vbar, wheel_catcher);
+
+    wg->container = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 3);
+    gtk_box_pack_start(GTK_BOX(wg->container), wheel_catcher, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(wg->container), tb_scrollbar_widget(wg->vbar), FALSE, FALSE, 0);
+    /* Balken ist jetzt eine feste, kompakte Groesse (2 Pfeil-Buttons,
+     * kein Track mehr, der auf volle Zeilenhoehe gestreckt werden muss)
+     * - einfach vertikal mittig neben die Reihe setzen. */
+    gtk_widget_set_valign(tb_scrollbar_widget(wg->vbar), GTK_ALIGN_CENTER);
+    gtk_box_pack_start(GTK_BOX(box), wg->container, FALSE, FALSE, 0);
+    gtk_widget_show_all(wg->container);
+
+    widget_grid_page_changed_cb(wg->page_adj, wg); /* nur Seite 0 sichtbar */
+    sb_autohide_cb(wg->page_adj, tb_scrollbar_widget(wg->vbar));
+    /* WICHTIG: gtk_widget_show_all(window) in main() laeuft NACH dem
+     * Bau aller Module und macht ALLE Kinder wieder sichtbar - auch die
+     * hier bewusst versteckten Seiten 1..n! Das war der Grund fuer die
+     * viel zu grosse Bar (main_box wollte ploetzlich Platz fuer ALLE
+     * Seiten gleichzeitig). main() ruft darum tb_modules_resync_pages()
+     * NACH gtk_widget_show_all(window) nochmal auf - siehe dort. */
+    return rt;
+}
+
+/* MOD_BUTTON_ROW ist inzwischen exakt derselbe Mechanismus wie
+ * MOD_WIDGET_GRID (Zeilenumbruch + Seiten-Balken statt Scrollen) - beide
+ * jsonc-Typnamen bleiben erhalten (unterschiedliche Bedeutung fuer den
+ * Menschen, der die Config liest), teilen sich aber denselben Builder. */
+static ModuleRuntime *build_button_row(ModuleConfig *mc, GtkWidget *box, BubbleAssets *assets, BarConfig *cfg) {
+    return build_widget_grid(mc, box, assets, cfg);
 }
 
 /* ── MOD_SPACER ─────────────────────────────────────────────────── */
@@ -3066,6 +3766,8 @@ TbModules *tb_modules_build(GtkWidget *box, GPtrArray *module_configs,
             case MOD_HYPR_WORKSPACES: rt = build_workspaces(mc, box, assets, cfg); break;
             case MOD_TRAY: rt = build_tray(mc, box, assets, cfg); break;
             case MOD_SPACER: rt = build_spacer(mc, box); break;
+            case MOD_BUTTON_ROW: rt = build_button_row(mc, box, assets, cfg); break;
+            case MOD_WIDGET_GRID: rt = build_widget_grid(mc, box, assets, cfg); break;
             case MOD_BUTTON:
             default: rt = build_button(mc, box, assets, cfg); break;
         }
@@ -3073,6 +3775,8 @@ TbModules *tb_modules_build(GtkWidget *box, GPtrArray *module_configs,
     }
     return m;
 }
+
+static void runtime_free(ModuleRuntime *rt); /* rekursiv, siehe RT_WIDGET_GRID unten */
 
 static void runtime_free(ModuleRuntime *rt) {
     switch (rt->kind) {
@@ -3089,6 +3793,11 @@ static void runtime_free(ModuleRuntime *rt) {
             for (guint i = 0; i < wr->bubbles->len; i++)
                 tb_bubble_free(g_ptr_array_index(wr->bubbles, i));
             g_ptr_array_free(wr->bubbles, TRUE);
+            tb_bubble_free(wr->ws_bubble);
+            tb_scrollbar_free(wr->vbar);
+            tb_scrollbar_free(wr->apps_vbar);
+            g_ptr_array_free(wr->apps_page_boxes, TRUE); /* Widgets selbst sterben mit dem Fenster */
+            g_array_free(wr->ws_ids, TRUE);
             break;
         }
         case RT_TRAY: {
@@ -3099,6 +3808,15 @@ static void runtime_free(ModuleRuntime *rt) {
         case RT_SPACER:
             /* Widget wird von GTK selbst zerstoert (Kind der Box) */
             break;
+        case RT_WIDGET_GRID: {
+            WidgetGridRuntime *wg = &rt->u.widget_grid;
+            for (guint i = 0; i < wg->item_runtimes->len; i++)
+                runtime_free(g_ptr_array_index(wg->item_runtimes, i));
+            g_ptr_array_free(wg->item_runtimes, TRUE);
+            g_ptr_array_free(wg->page_boxes, TRUE);
+            tb_scrollbar_free(wg->vbar);
+            break;
+        }
     }
     g_free(rt);
 }
@@ -3153,15 +3871,15 @@ void tb_autohide_force_hide(TbAutohide *ah);
 #define AH_WATCHDOG_MS      10      /* Sicherheitsnetz, falls der Frame-Clock stillsteht */
 #define AH_WATCHDOG_GAP_US  24000
 #define AH_EDGE_SENSOR_PX   2       /* Hoehe des unsichtbaren Rand-Sensors */
-#define AH_FILLER_FRAC      0.30    /* Reserve unter der Bar (Anteil der Bar-Hoehe) fuers Strecken */
+#define AH_FILLER_FRAC      0.30    /* Reserve unter der Bar (Anteil der Bar-Hoehe) fuer den Overshoot */
 
 /* Beim Overshoot faehrt die Bar ueber ihre Ruheposition hinaus. Damit dabei
  * unten keine Luecke entsteht, ist das Fenster um g_bar_filler_px hoeher als
- * die Bar (Reserve liegt in Ruhe unter dem Bildschirmrand) und der
- * Hintergrund wird um g_bar_stretch vertikal gestreckt, so dass er immer
- * bis zum Rand reicht. Nur fuer Bars am unteren Rand (Top-Bar: 0 = kein Overshoot). */
+ * die Bar (Reserve liegt in Ruhe unter dem Bildschirmrand) und der Bereich
+ * darin wird von nine_slice_draw_extended() mit einer Bar-Bildzeile
+ * aufgefuellt, so dass die Bar immer bis zum Rand reicht. Nur fuer Bars am
+ * unteren Rand (Top-Bar: 0 = kein Overshoot). */
 static int    g_bar_filler_px = 0;
-static double g_bar_stretch = 1.0;
 
 struct TbAutohide {
     GtkWindow *window;
@@ -3195,6 +3913,9 @@ struct TbAutohide {
     HyprMonitor *monitors;
     int monitors_count;
     int refresh_counter;
+
+    char        bar_monitor[64];  /* Hyprland-Name des Monitors, auf dem die Bar gerade sitzt */
+    GdkMonitor *bar_gdk;          /* dazugehoeriger GdkMonitor (fuer Rand-Sensor) */
 
     int  signal_fd;         /* signalfd() fuer SIGRTMIN/SIGRTMIN+1 */
     guint signal_watch_id;  /* GIOChannel-Watch auf signal_fd */
@@ -3245,7 +3966,11 @@ static void ah_apply_margin(TbAutohide *ah) {
 static void ah_update_base_offset(TbAutohide *ah) {
     int off = 0;
     if (ah->force_visible && ah->monitors_count > 0) {
+        /* Der Monitor, auf dem die Bar gerade sitzt (nicht mehr blind der erste). */
         HyprMonitor *m = &ah->monitors[0];
+        for (int i = 0; i < ah->monitors_count; i++) {
+            if (g_strcmp0(ah->monitors[i].name, ah->bar_monitor) == 0) { m = &ah->monitors[i]; break; }
+        }
         gboolean top = g_strcmp0(ah->cfg->position, "top") == 0;
         off = (int)(top ? m->reserved_top : m->reserved_bottom);
         if (off < 0) off = 0;
@@ -3255,6 +3980,52 @@ static void ah_update_base_offset(TbAutohide *ah) {
         ah->base_offset = off;
         ah_apply_margin(ah);
     }
+}
+
+/* Nach einem Monitor-Wechsel: die Eingabe-Region (nur die Bar, nicht die
+ * Reserve darunter) neu setzen - die Surface wurde neu erzeugt. */
+static void on_window_input_shape(GtkWidget *w, GdkRectangle *a, gpointer user_data);
+static gboolean ah_reapply_shape_cb(gpointer user_data) {
+    TbAutohide *ah = user_data;
+    if (ah != g_autohide_singleton) return G_SOURCE_REMOVE;
+    GtkWidget *w = GTK_WIDGET(ah->window);
+    GtkAllocation a;
+    gtk_widget_get_allocation(w, &a);
+    if (a.width > 1 && a.height > 1) on_window_input_shape(w, &a, NULL);
+    return G_SOURCE_REMOVE;
+}
+
+/* Bar (und Rand-Sensor) auf einen anderen Monitor umziehen. Margin,
+ * Anker und Groesse bleiben erhalten, gtk-layer-shell mappt die Surface
+ * dafuer neu. Tastatur-Offset wird fuer den neuen Monitor neu berechnet. */
+static void ah_move_bar_to(TbAutohide *ah, HyprMonitor *m) {
+    if (!m || g_strcmp0(ah->bar_monitor, m->name) == 0) return;
+    GdkMonitor *gm = tb_gdk_monitor_for_hypr(m);
+    if (!gm) {
+        static gboolean warned = FALSE;
+        if (!warned) {
+            warned = TRUE;
+            g_warning("[monitor] Kein GDK-Monitor fuer '%s' (%.0f,%.0f) gefunden - Bar kann nicht umziehen.",
+                      m->name, m->x, m->y);
+        }
+        return;
+    }
+    g_message("[monitor] Bar zieht um: '%s' -> '%s'.", ah->bar_monitor[0] ? ah->bar_monitor : "?", m->name);
+    g_strlcpy(ah->bar_monitor, m->name, sizeof(ah->bar_monitor));
+    ah->bar_gdk = gm;
+    gtk_layer_set_monitor(ah->window, gm);
+    if (ah->sensor) gtk_layer_set_monitor(GTK_WINDOW(ah->sensor), gm);
+    ah_update_base_offset(ah);
+    g_idle_add(ah_reapply_shape_cb, ah);
+    g_timeout_add(150, ah_reapply_shape_cb, ah);
+}
+
+/* Bar folgt dem Cursor: sitzt sie nicht auf dem Monitor unter dem Cursor,
+ * zieht sie dorthin. Nicht bei fest eingestelltem "monitor" in der jsonc. */
+static void ah_follow_cursor(TbAutohide *ah, int cx, int cy) {
+    if (ah->cfg->monitor && *ah->cfg->monitor) return;
+    HyprMonitor *m = tb_hypr_monitor_at(ah->monitors, ah->monitors_count, cx, cy);
+    if (m) ah_move_bar_to(ah, m);
 }
 
 /* Ein Animationsschritt, rein zeitbasiert (Wanduhr) - egal ob vom Frame-Clock
@@ -3290,18 +4061,12 @@ static gboolean ah_step(TbAutohide *ah, gint64 now) {
     ah->slide_margin = (int)lround(-win_h + v);
     ah_apply_margin(ah);
 
-    /* Overshoot: Bar-Hintergrund auf die sichtbare Hoehe strecken. Bei
-     * Aenderung die ganze Bar neu zeichnen (gecachte Surfaces, billig),
-     * sonst nur minimaler Damage: haelt den GDK-Frame-Clock ueber die
+    /* Nur minimaler Damage: haelt den GDK-Frame-Clock ueber die
      * Frame-Callbacks des Compositors auf dessen echter Bildwiederholrate
-     * (60/120/144 Hz). */
-    double stretch = v > height ? v / height : 1.0;
-    if (fabs(stretch - g_bar_stretch) > 0.001) {
-        g_bar_stretch = stretch;
-        gtk_widget_queue_draw(widget);
-    } else {
-        gtk_widget_queue_draw_area(widget, 0, 0, 1, 1);
-    }
+     * (60/120/144 Hz). Ein Neuzeichnen der ganzen Bar ist nicht mehr
+     * noetig - die Verlaengerung nach unten (nine_slice_draw_extended)
+     * steht immer schon da. */
+    gtk_widget_queue_draw_area(widget, 0, 0, 1, 1);
 
     if (raw >= 1.0) {
         g_message("[timing] Slide %s fertig: %d Schritte in %.0fms (davon %d durch Watchdog).",
@@ -3368,6 +4133,18 @@ static void do_hide(TbAutohide *ah) {
     ah->visible = FALSE;
     g_message("[autohide] -> HIDE (progress war %.2f)", ah->progress);
     ah_start_slide(ah);
+    /* Preview-Override aller Workspace-Module zuruecksetzen: beim naechsten
+     * Oeffnen der Bar zeigt sie wieder den aktiven Workspace. */
+    if (g_ws_runtimes) {
+        for (guint _i = 0; _i < g_ws_runtimes->len; _i++) {
+            WorkspacesRuntime *_wr = g_ptr_array_index(g_ws_runtimes, _i);
+            if (_wr->viewing_override) {
+                _wr->viewing_override = FALSE;
+                _wr->viewed_ws_id = 0;
+                workspaces_rebuild(_wr);
+            }
+        }
+    }
 }
 
 /* Unsichtbarer, 2px hoher Layer-Shell-Streifen am Bildschirmrand. Die Maus
@@ -3411,19 +4188,30 @@ static void ah_create_edge_sensor(TbAutohide *ah) {
     gtk_layer_set_exclusive_zone(win, -1);
     gtk_layer_set_keyboard_mode(win, GTK_LAYER_SHELL_KEYBOARD_MODE_NONE);
 
-    /* Gleicher Monitor wie die Bar (best effort). */
-    GdkWindow *barwin = gtk_widget_get_window(GTK_WIDGET(ah->window));
-    if (barwin) {
-        GdkMonitor *mon = gdk_display_get_monitor_at_window(gdk_display_get_default(), barwin);
-        if (mon) gtk_layer_set_monitor(win, mon);
+    /* Ueberhang: negativer Rand an der Bildschirmkante schiebt den Sensor
+     * um edge_overhang_px HINTER den Bildschirmrand. Damit reicht seine
+     * Hitbox auch in den Bereich des darunterliegenden Monitors hinein -
+     * das Aufrufen der Bar ist dadurch viel einfacher, wenn dieser Monitor
+     * ueber einem anderen positioniert ist (Maus am oberen Rand des
+     * unteren Monitors trifft den Sensor sofort). Bei gesperrter Bar
+     * (bar-lock) hat das keine Nebenwirkungen. */
+    int overhang = ah->cfg->edge_overhang_px;
+    if (overhang > 0) {
+        GtkLayerShellEdge opp = top ? GTK_LAYER_SHELL_EDGE_BOTTOM : GTK_LAYER_SHELL_EDGE_TOP;
+        gtk_layer_set_margin(win, top ? GTK_LAYER_SHELL_EDGE_TOP : GTK_LAYER_SHELL_EDGE_BOTTOM, -overhang);
+        (void)opp; /* nur fuer eventuelle kuenftige Nutzung, kein Warning */
     }
+
+    /* Gleicher Monitor wie die Bar; beim Umzug der Bar zieht er mit
+     * (ah_move_bar_to()). */
+    if (ah->bar_gdk) gtk_layer_set_monitor(win, ah->bar_gdk);
 
     gtk_widget_add_events(s, GDK_ENTER_NOTIFY_MASK);
     g_signal_connect(s, "enter-notify-event", G_CALLBACK(ah_sensor_enter), ah);
     g_signal_connect(s, "draw", G_CALLBACK(ah_sensor_draw), NULL);
     gtk_widget_show_all(s);
     ah->sensor = s;
-    g_message("[autohide] Kantensensor aktiv (%d px).", AH_EDGE_SENSOR_PX);
+    g_message("[autohide] Kantensensor aktiv (%d px, overhang=%dpx).", AH_EDGE_SENSOR_PX, overhang);
 }
 
 void tb_autohide_force_show(TbAutohide *ah) { do_show(ah); }
@@ -3547,10 +4335,16 @@ static gboolean poll_once(gpointer user_data) {
                            m0 ? m0->reserved_bottom : -1);
             }
 
-            if (dist <= ah->cfg->trigger_px && !ah->visible) {
-                g_message("[timing] TRIGGER erkannt bei t=%.1fms (seit Programmstart), rufe do_show() auf.",
-                          now / 1000.0);
-                do_show(ah);
+            if (dist <= ah->cfg->trigger_px) {
+                /* Zuerst auf den Monitor unter dem Cursor umziehen (falls
+                 * noetig), erst dann zeigen. Gilt auch, wenn die Bar auf
+                 * einem anderen Monitor schon sichtbar ist. */
+                ah_follow_cursor(ah, cx, cy);
+                if (!ah->visible) {
+                    g_message("[timing] TRIGGER erkannt bei t=%.1fms (seit Programmstart), rufe do_show() auf.",
+                              now / 1000.0);
+                    do_show(ah);
+                }
             } else if (dist > ah->cfg->hide_px && ah->visible) {
                 do_hide(ah);
             }
@@ -3607,6 +4401,14 @@ static void notify(const char *message) {
 }
 
 static void handle_touch_signal(TbAutohide *ah) {
+    if (hypr_ipc_available() && !(ah->cfg->monitor && *ah->cfg->monitor)) {
+        int cx, cy;
+        if (hypr_ipc_get_cursor_pos(&cx, &cy)) {
+            g_free(ah->monitors);
+            ah->monitors = hypr_ipc_get_monitors(&ah->monitors_count);
+            ah_follow_cursor(ah, cx, cy);
+        }
+    }
     if (!ah->visible) do_show(ah);
     ah->touch_override_active = TRUE;
     ah->touch_override_until_us = g_get_monotonic_time() + (gint64)TOUCH_TIMEOUT_SEC * 1000000;
@@ -3787,6 +4589,8 @@ TbAutohide *tb_autohide_start(GtkWindow *window, BarConfig *cfg) {
     ah->progress = 1.0;
     ah->signal_fd = -1;
     g_autohide_singleton = ah;
+    g_strlcpy(ah->bar_monitor, g_bar_monitor_name, sizeof(ah->bar_monitor));
+    ah->bar_gdk = g_bar_gdk_monitor;
     /* Ruhelage: die Reserve unter der Bar liegt unter dem Bildschirmrand. */
     ah->slide_margin = -g_bar_filler_px;
     ah_apply_margin(ah);
@@ -3864,13 +4668,13 @@ static gboolean on_bar_draw(GtkWidget *widget, cairo_t *cr, gpointer user_data) 
     AppState *app = user_data;
     GtkAllocation alloc;
     gtk_widget_get_allocation(widget, &alloc);
-    /* Die unteren g_bar_filler_px sind Reserve fuers Strecken (siehe oben). */
+    /* Die unteren g_bar_filler_px sind Reserve fuer den Aufklapp-Overshoot:
+     * dort wird die Bar nach unten VERLAENGERT (nicht gestreckt), siehe
+     * nine_slice_draw_extended(). Immer gezeichnet, unabhaengig vom
+     * aktuellen Animationsstand - kein Frame-Rueckstand mehr moeglich. */
     double bh = alloc.height - g_bar_filler_px;
     if (bh < 1) bh = alloc.height;
-    cairo_save(cr);
-    if (g_bar_stretch > 1.0001) cairo_scale(cr, 1.0, g_bar_stretch);
-    nine_slice_draw(app->bar_bg, cr, alloc.width, bh);
-    cairo_restore(cr);
+    nine_slice_draw_extended(app->bar_bg, cr, alloc.width, bh, g_bar_filler_px);
     return FALSE; /* Kinder (die Module) werden von GTK danach normal gezeichnet */
 }
 
@@ -3891,6 +4695,50 @@ static void apply_layer_shell(GtkWindow *window, BarConfig *cfg) {
     gtk_layer_init_for_window(window);
     gtk_layer_set_layer(window, GTK_LAYER_SHELL_LAYER_OVERLAY);
     gtk_layer_set_namespace(window, "trafktuxbar");
+
+    /* Mehrere Monitore: OHNE das hier faellt die Wahl gtk-layer-shell /
+     * dem Compositor selbst zu, was NICHT zwingend der Monitor ist, auf
+     * dem der Mensch die Bar tatsaechlich haben will (der urspruengliche
+     * Bug-Report: "Bar taucht am falschen Monitor auf"). gtk-layer-shell
+     * will dafuer ein echtes GdkMonitor* - das gibt es nur ueber GDK,
+     * nicht ueber Hyprlands IPC. Deshalb: Hyprland nennt uns per Name
+     * (cfg->monitor) den Ziel-Monitor samt Position (x,y in LOGISCHEN
+     * Koordinaten, schon durch den Skalierungsfaktor geteilt), und wir
+     * suchen unter ALLEN GdkMonitoren denjenigen mit genau dieser
+     * Position - das ist portabel und funktioniert ohne wayland-
+     * spezifische APIs, weil GDKs eigene Monitor-Geometrie in
+     * derselben logischen Koordinatenwelt wie Hyprlands x/y liegt. */
+    {
+        /* "monitor" gesetzt -> Bar bleibt fest dort. Leer -> Startmonitor ist
+         * der unter dem Cursor; danach zieht der Autohide die Bar bei jedem
+         * Ausloesen auf den Monitor, an dessen Rand der Cursor ist. */
+        int mon_count = 0;
+        HyprMonitor *mons = hypr_ipc_get_monitors(&mon_count);
+        HyprMonitor *target = NULL;
+        if (cfg->monitor && *cfg->monitor) {
+            target = find_target_hypr_monitor(cfg, mons, mon_count);
+        } else {
+            int cx, cy;
+            if (hypr_ipc_get_cursor_pos(&cx, &cy))
+                target = tb_hypr_monitor_at(mons, mon_count, cx, cy);
+            if (!target && mon_count > 0) target = &mons[0];
+        }
+        if (target) {
+            GdkMonitor *found = tb_gdk_monitor_for_hypr(target);
+            if (found) {
+                gtk_layer_set_monitor(window, found);
+                g_bar_gdk_monitor = found;
+                g_strlcpy(g_bar_monitor_name, target->name, sizeof(g_bar_monitor_name));
+                g_message("[monitor] Bar startet an Monitor '%s' (%.0f,%.0f).",
+                          target->name, target->x, target->y);
+            } else {
+                g_warning("[monitor] Kein GDK-Monitor an Position (%.0f,%.0f) gefunden fuer '%s' - "
+                          "Compositor/gtk-layer-shell entscheiden selbst.",
+                          target->x, target->y, target->name);
+            }
+        }
+        g_free(mons);
+    }
 
     gboolean top = g_strcmp0(cfg->position, "top") == 0;
     gtk_layer_set_anchor(window, GTK_LAYER_SHELL_EDGE_LEFT, TRUE);
@@ -3951,7 +4799,7 @@ static gboolean enable_screen_alpha(GtkWidget *widget) {
  * (siehe main()). Damit ist zweifelsfrei nachpruefbar, welcher Build
  * tatsaechlich laeuft, statt es zu raten - bitte bei jedem Testlauf
  * die BUILD-Zeile mit posten. */
-#define TB_BUILD_TAG "2026-09-async-cache-vsync-2-stretch"
+#define TB_BUILD_TAG "2026-09-redesign-fix6-follow-cursor-monitor"
 
 static gboolean on_window_click_probe(GtkWidget *widget, GdkEventButton *ev, gpointer user_data) {
     (void)widget; (void)user_data;
@@ -4100,9 +4948,11 @@ int main(int argc, char **argv) {
     gtk_widget_set_valign(center_box, GTK_ALIGN_END);
     gtk_widget_set_valign(right_box, GTK_ALIGN_END);
 
-    gtk_box_pack_start(GTK_BOX(main_box), left_box, FALSE, FALSE, 15);
+    /* Abstand zum Bar-Rand: soll erst nach der Eckenrundung anfangen,
+     * siehe Kommentar bei cfg->edge_margin in config_load(). */
+    gtk_box_pack_start(GTK_BOX(main_box), left_box, FALSE, FALSE, cfg->edge_margin);
     gtk_box_set_center_widget(GTK_BOX(main_box), center_box);
-    gtk_box_pack_end(GTK_BOX(main_box), right_box, FALSE, FALSE, 15);
+    gtk_box_pack_end(GTK_BOX(main_box), right_box, FALSE, FALSE, cfg->edge_margin);
 
     app.mod_left = tb_modules_build(left_box, cfg->modules_left, app.assets, cfg);
     app.mod_center = tb_modules_build(center_box, cfg->modules_center, app.assets, cfg);
@@ -4124,6 +4974,14 @@ int main(int argc, char **argv) {
     g_signal_connect(window, "size-allocate", G_CALLBACK(on_window_input_shape), NULL);
 
     gtk_widget_show_all(window);
+
+    /* show_all() hat gerade ALLE Kinder sichtbar gemacht, auch die
+     * bewusst versteckten Widget-Grid-Seiten (siehe Kommentar bei
+     * tb_modules_resync_pages()) - sofort korrigieren, bevor irgendeine
+     * Groessen-Anfrage/Zeichnung damit rechnet. */
+    tb_modules_resync_pages(app.mod_left);
+    tb_modules_resync_pages(app.mod_center);
+    tb_modules_resync_pages(app.mod_right);
 
     /* Kanarienvogel so frueh wie moeglich einplanen - noch vor Tray/
      * Autohide-Setup, damit wir im naechsten Log unabhaengig von beiden

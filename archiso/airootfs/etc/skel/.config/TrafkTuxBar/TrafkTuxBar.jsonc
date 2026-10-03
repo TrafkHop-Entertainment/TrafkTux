@@ -3,10 +3,12 @@
 //  Ersetzt waybar/config.jsonc + style.css komplett.
 //
 //  Pfad: ~/.config/TrafkTuxBar/TrafkTuxBar.jsonc
-//  Alle Bild-Assets (Bar.png, Blasen-Bilder) liegen in /tmp/ - werden
-//  beim Hyprland-Start dorthin kopiert (aus dem bisherigen waybar-
-//  Assets-Ordner), genau wie es die zwei bestehenden cp-Zeilen fuer
-//  die Blasen-Bilder schon tun. Siehe README.md.
+//  Alle Bild-Assets liegen in /tmp/. Blasen-Bilder: TrafkBubble2.png =
+//  Hintergrund/"hinten" + TrafkBubble1.png = Vordergrund-Overlay/"vorne"
+//  (dieselben beiden, die WidgetsDaemon.py schon benutzt), PLUS
+//  TrafkBubbleGlow2.png/TrafkBubbleGlow1.png als deren Hover-Varianten
+//  (gibt's in WidgetsDaemon.py nicht, hier aber schon immer vorgesehen).
+//  Siehe README.md.
 //
 //  WICHTIG - "icon": die Werte unten sind freedesktop-Standardnamen
 //  als Platzhalter. Ersetze sie durch die tatsaechlichen Namen aus
@@ -61,15 +63,17 @@
     },
 
     "bubble": {
-        // Blasen-Bilder liegen in /tmp (wie bisher bei dir ueblich -
-        // von hyprland.lua beim Login dorthin kopiert).
-        "bg_normal": "/tmp/bubble-normal.png",
-        "bg_hover": "/tmp/bubble-selected.png",
-        // Vordergrund-Layer (Glanzlicht/Kante) kommt spaeter - bis dahin
-        // leer lassen, dann zeichnet TrafkTuxBar nur Hintergrund+Icon/Text
-        // ohne Vordergrund-Ebene (genau wie der bisherige Blasen-Look).
-        "fg_normal": "",
-        "fg_hover": "",
+        // FIX ("bubble-normal.png/bubble-selected.png gibt's nicht mehr,
+        // Bar startet nicht"): jetzt die 4 neuen Bilder, genau wie in
+        // WidgetsDaemon.py (BUBBLE_PATH/OVERLAY_PATH dort) fuer die
+        // Normal-Varianten - TrafkBubble2 als Hintergrund ("hinten"),
+        // TrafkBubble1 als Vordergrund-Overlay ("vorne", liegt ueber
+        // Icon/Text) - PLUS die beiden "Glow"-Hover-Bilder dazu, die es
+        // nur hier (nicht in WidgetsDaemon.py) gibt.
+        "bg_normal": "/tmp/TrafkBubble2.png",
+        "bg_hover": "/tmp/TrafkBubbleGlow2.png",
+        "fg_normal": "/tmp/TrafkBubble1.png",
+        "fg_hover": "/tmp/TrafkBubbleGlow1.png",
         "transition_ms": 220,
         "min_size": 26,
         "padding": 7,
