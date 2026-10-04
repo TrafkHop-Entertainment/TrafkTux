@@ -1281,7 +1281,12 @@ typedef struct {
     guint arrow_tick_id;
     gboolean arrow_had_prev, arrow_had_next; /* letzter gezeichneter aktiv/inaktiv-Stand */
     gint64 arrow_left_fade_us, arrow_right_fade_us; /* Start des letzten Zustandswechsels */
-    gboolean anim_reversed; /* TRUE bei "rückwärts" (q/links/Zurück) - Stagger-Reihenfolge umgedreht */
+    gboolean anim_reversed; /* TRUE bei "rückwärts" (q/links/Zurück) - nur noch Info, Stagger läuft jetzt radial */
+    /* Startbubble der Wechsel-Animation (Index im Grid): die zum Wechselzeitpunkt
+     * ausgewählte (Glow-)Bubble. origin_old = Auswahl auf der ALTEN Seite
+     * (von dort schrumpft's raus), origin_new = Auswahl auf der NEUEN Seite
+     * (von dort wächst's rein). */
+    int origin_old, origin_new;
     /* Kleiner Pop, wenn die Auswahl (WASD/Hover) auf eine andere Bubble
      * springt - NICHT beim Seiten-/Ordnerwechsel (das hat schon seine
      * eigene Animation), nur beim reinen Cursor-Bewegen auf derselben
@@ -1580,6 +1585,76 @@ static void clear_transparent(cairo_t *cr) {
  * wann geklärt wird - beim Crossfade z.B. erst NACH dem alten Snapshot).
  * bubble_scale skaliert jede Bubble/Pfeil um ihren EIGENEN Mittelpunkt -
  * für den Öffnen/Schließen-Bounce (siehe ease_out_back). 1.0 = normal. */
+/* ── Benutzer-Einstellungen (~/.config/TrafkTuxLauncher/Settings.json) ──────
+ * Eigene Datei, damit eine externe Settings-App sie ändern kann, ohne die
+ * menu.json anzufassen. Wird bei jedem Öffnen frisch gelesen (show_app) -
+ * Änderungen greifen also, ohne den Daemon neu zu starten.
+ *
+ *   { "Animation": { "Style": "Classic" | "Radial",
+ *                    "Speed": "Normal" | "Fast" | "Turbo" | <Zahl> } }
+ *
+ * Schlüssel sind PascalCase (case-sensitiv), die Textwerte egal ob gross/klein.
+ *
+ * Style: Classic = Lesereihenfolge (vorwärts: oben links, rückwärts: unten rechts)
+ *        Radial  = Ausbreitung von der ausgewählten Bubble
+ * Speed: Normal = 1x, Fast = 2x (halbe Dauer), Turbo = 3x (Drittel der Dauer);
+ *        eine Zahl wird direkt als Faktor genommen (0.25 .. 8).
+ * Fehlt die Datei oder ein Wert / ist er ungültig -> Default (Classic, Normal). */
+typedef enum { ANIMSTYLE_CLASSIC = 0, ANIMSTYLE_RADIAL } AnimStyle;
+static struct {
+    AnimStyle style;
+    double    speed_mult;   /* Zeitfaktor aller Bubble-Animationen, 1.0 = normal */
+} g_settings = { ANIMSTYLE_CLASSIC, 1.0 };
+
+static void load_settings(void) {
+    g_settings.style = ANIMSTYLE_CLASSIC;
+    g_settings.speed_mult = 1.0;
+
+    gchar *path = g_build_filename(g_get_home_dir(), ".config", "TrafkTuxLauncher", "Settings.json", NULL);
+    JsonParser *parser = json_parser_new();
+    GError *err = NULL;
+    if (!g_file_test(path, G_FILE_TEST_EXISTS) ||
+        !json_parser_load_from_file(parser, path, &err)) {
+        if (err) {
+            g_printerr("TrafkTuxLauncher: Settings.json nicht lesbar (%s) - nutze Defaults.\n", err->message);
+            g_error_free(err);
+        }
+        g_object_unref(parser);
+        g_free(path);
+        return;
+    }
+
+    JsonNode *rootn = json_parser_get_root(parser);
+    JsonObject *root = (rootn && JSON_NODE_HOLDS_OBJECT(rootn)) ? json_node_get_object(rootn) : NULL;
+    if (root && json_object_has_member(root, "Animation")) {
+        JsonNode *an = json_object_get_member(root, "Animation");
+        JsonObject *anim = JSON_NODE_HOLDS_OBJECT(an) ? json_node_get_object(an) : NULL;
+        if (anim && json_object_has_member(anim, "Style")) {
+            const gchar *st = json_object_get_string_member_with_default(anim, "Style", "Classic");
+            if (g_ascii_strcasecmp(st, "Radial") == 0) g_settings.style = ANIMSTYLE_RADIAL;
+            else if (g_ascii_strcasecmp(st, "Classic") != 0)
+                g_printerr("TrafkTuxLauncher: unbekannter Animation.Style '%s' - nutze Classic.\n", st);
+        }
+        if (anim && json_object_has_member(anim, "Speed")) {
+            JsonNode *sp = json_object_get_member(anim, "Speed");
+            if (JSON_NODE_HOLDS_VALUE(sp)) {
+                GType t = json_node_get_value_type(sp);
+                if (t == G_TYPE_STRING) {
+                    const gchar *v = json_node_get_string(sp);
+                    if      (g_ascii_strcasecmp(v, "Normal") == 0) g_settings.speed_mult = 1.0;
+                    else if (g_ascii_strcasecmp(v, "Fast")   == 0) g_settings.speed_mult = 2.0;
+                    else if (g_ascii_strcasecmp(v, "Turbo")  == 0) g_settings.speed_mult = 3.0;
+                    else g_printerr("TrafkTuxLauncher: unbekannter Animation.Speed '%s' - nutze Normal.\n", v);
+                } else if (t == G_TYPE_DOUBLE || t == G_TYPE_INT64) {
+                    g_settings.speed_mult = CLAMP(json_node_get_double(sp), 0.25, 8.0);
+                }
+            }
+        }
+    }
+    g_object_unref(parser);
+    g_free(path);
+}
+
 #define ANIM_POP_US       65000.0   /* Pop-Dauer EINER Bubble, wie gewünscht */
 #define ANIM_STAGGER_US   23000.0   /* Startzeit-Versatz pro Bubble in Lesereihenfolge */
 #define ARROW_PRESS_US    150000.0  /* Dauer des kleinen Press-Pulses auf einem Pfeil */
@@ -1646,8 +1721,21 @@ static GPtrArray* copy_slots(GPtrArray *src) {
  * is_switch=FALSE -> ease_out_back + OPEN/CLOSE-Timing + Iris-Wipe für Auswahl-Wechsel. */
 static void draw_bubbles(App *app, cairo_t *cr, PangoLayout *layout, GPtrArray *slots,
                           gboolean animate, gboolean growing, gint64 elapsed_us, int selected_idx,
-                          gboolean is_switch) {
+                          gboolean is_switch, int origin_idx) {
     if (!slots) return;
+
+    /* Beim Seitenwechsel breitet sich die Animation radial von der Startbubble
+     * (origin_idx) aus: Rang = Position in der nach Abstand zur Startbubble
+     * sortierten Reihenfolge (Gleichstand -> Lesereihenfolge). Rang statt
+     * Rohabstand, damit Takt (STAGGER) und Gesamtdauer EXAKT gleich bleiben. */
+    gboolean radial = (animate && is_switch && g_settings.style == ANIMSTYLE_RADIAL);
+    int ocol = 0, orow = 0;
+    if (radial) {
+        int o = origin_idx;
+        if (o < 0 || o >= (int)slots->len) o = 0;
+        ocol = o % app->columns;
+        orow = o / app->columns;
+    }
 
     double pop_us     = ANIM_POP_US;
     double stagger_us = ANIM_STAGGER_US;
@@ -1669,7 +1757,18 @@ static void draw_bubbles(App *app, cairo_t *cr, PangoLayout *layout, GPtrArray *
 
         double scale = 1.0;
         if (animate) {
-            guint stagger_idx = app->anim_reversed ? (slots->len - 1 - i) : i;
+            guint stagger_idx = app->anim_reversed ? (slots->len - 1 - i) : i; /* classic */
+            if (radial) {
+                int di = (int)(i % app->columns) - ocol, dj = (int)(i / app->columns) - orow;
+                int d2 = di * di + dj * dj;
+                stagger_idx = 0;
+                for (guint j = 0; j < slots->len; j++) {
+                    if (j == i) continue;
+                    int ej = (int)(j % app->columns) - ocol, fj = (int)(j / app->columns) - orow;
+                    int e2 = ej * ej + fj * fj;
+                    if (e2 < d2 || (e2 == d2 && j < i)) stagger_idx++;
+                }
+            }
             double bubble_elapsed = elapsed_us - (double)stagger_idx * stagger_us;
             double bt = (bubble_elapsed <= 0.0) ? 0.0
                        : (bubble_elapsed >= pop_us) ? 1.0
@@ -1741,14 +1840,14 @@ static void draw_content(App *app, cairo_t *cr, AnimType anim_type, gint64 elaps
     pango_layout_set_alignment(layout, PANGO_ALIGN_LEFT);
 
     if (anim_type == ANIM_SWITCH && app->prev_slots)
-        draw_bubbles(app, cr, layout, app->prev_slots, TRUE, FALSE, elapsed_us, -1, TRUE);
+        draw_bubbles(app, cr, layout, app->prev_slots, TRUE, FALSE, elapsed_us, -1, TRUE, app->origin_old);
 
     gboolean animate = (anim_type == ANIM_OPEN || anim_type == ANIM_CLOSE || anim_type == ANIM_SWITCH);
     gboolean growing = (anim_type == ANIM_OPEN || anim_type == ANIM_SWITCH);
     gboolean is_sw   = (anim_type == ANIM_SWITCH);
     /* Neue Bubbles starten erst, wenn die alten komplett rausgeschrumpft sind. */
     gint64 new_elapsed = is_sw ? elapsed_us - (gint64)ANIM_POP_US : elapsed_us;
-    draw_bubbles(app, cr, layout, app->slots, animate, growing, new_elapsed, app->selected, is_sw);
+    draw_bubbles(app, cr, layout, app->slots, animate, growing, new_elapsed, app->selected, is_sw, app->origin_new);
 
     if (!app->is_powermenu) {
         gboolean has_prev = app->state.page > 0;
@@ -1866,7 +1965,7 @@ static gboolean on_draw(GtkWidget *widget, cairo_t *cr, gpointer user_data) {
         return FALSE;
     }
 
-    gint64 elapsed = (gint64)((g_get_monotonic_time() - app->anim_start_us) * app->anim_speed);
+    gint64 elapsed = (gint64)((g_get_monotonic_time() - app->anim_start_us) * app->anim_speed * g_settings.speed_mult);
     draw_content(app, cr, app->anim_type, elapsed);
     return FALSE;
 }
@@ -1944,7 +2043,7 @@ static gboolean on_anim_tick(GtkWidget *widget, GdkFrameClock *frame_clock, gpoi
 
     /* Elapsed-Zeit mit Geschwindigkeitsfaktor skalieren (moderate
      * Spam-Beschleunigung, siehe request_page_switch). */
-    gint64 elapsed = (gint64)((g_get_monotonic_time() - app->anim_start_us) * app->anim_speed);
+    gint64 elapsed = (gint64)((g_get_monotonic_time() - app->anim_start_us) * app->anim_speed * g_settings.speed_mult);
     guint n_new = app->slots ? app->slots->len : 0;
     guint n_old = app->prev_slots ? app->prev_slots->len : 0;
     double duration;
@@ -1978,10 +2077,12 @@ static gboolean on_anim_tick(GtkWidget *widget, GdkFrameClock *frame_clock, gpoi
 
             if (app->prev_slots) { g_ptr_array_unref(app->prev_slots); app->prev_slots = NULL; }
             app->prev_slots = copy_slots(app->slots);
+            app->origin_old = app->selected;
 
             if (step > 0) { if (app->state.page < app->total_pages - 1) app->state.page++; }
             else           { if (app->state.page > 0) app->state.page--; }
             rebuild_slots(app);
+            app->origin_new = app->selected;
 
             app->anim_reversed = reversed;
             app->anim_start_us = g_get_monotonic_time();
@@ -2071,6 +2172,7 @@ static void mark_selection_bounce(App *app, int idx, int prev_idx) {
  * kein GTK-Init, kein PNG-Decode, kein Icon-Theme-Lookup mehr -> instant. */
 static void show_app(App *app, App *other) {
     if (other && other != app && gtk_widget_get_visible(other->window)) hide_app(other);
+    load_settings(); /* Settings.json frisch lesen - Änderungen der Settings-App greifen sofort */
     reset_app_state(app);
     save_active_window(); /* für close-prev-window/Action-Fokus-Poll - muss bei JEDEM Öffnen frisch sein */
     rebuild_slots(app);
@@ -2105,6 +2207,7 @@ static void rerender(App *app) {
 static void start_switch_anim(App *app, gboolean reversed) {
     app->anim_speed = 1.0;
     app->anim_type = ANIM_SWITCH;
+    app->origin_new = app->selected; /* neue Seite: Start bei der jetzt ausgewählten Bubble */
     app->anim_reversed = reversed;
     app->anim_start_us = g_get_monotonic_time();
     ensure_anim_tick(app);
@@ -2112,9 +2215,10 @@ static void start_switch_anim(App *app, gboolean reversed) {
 
 /* Für Seiten-/Ordner-/vmode-Wechsel statt rerender(): sichert den
  * aktuellen Stand als "Vorher"-Stand, baut neue Slots und startet Switch. */
-static void switch_content(App *app, gboolean reversed) {
+static void switch_content(App *app, gboolean reversed, int old_origin) {
     if (app->prev_slots) { g_ptr_array_unref(app->prev_slots); app->prev_slots = NULL; }
     app->prev_slots = copy_slots(app->slots);
+    app->origin_old = old_origin;
     rebuild_slots(app);
     start_switch_anim(app, reversed);
 }
@@ -2144,13 +2248,14 @@ static void request_page_switch(App *app, int delta) {
          * sich auch wirklich schneller anfühlt - Obergrenze 4x, damit noch
          * jeder Hop als Animation wahrnehmbar bleibt (nicht komplett
          * unsichtbar/instant). */
-        app->anim_speed = MIN(app->anim_speed + 0.6, 4.0);
+        /* Effektive Geschwindigkeit (anim_speed * speed_mult) bleibt wie bisher auf 4x gedeckelt. */
+        app->anim_speed = MIN(app->anim_speed + 0.6, MAX(4.0 / g_settings.speed_mult, 1.0));
         return;
     }
 
     if (delta > 0) { if (app->state.page < app->total_pages - 1) app->state.page++; }
     else            { if (app->state.page > 0) app->state.page--; }
-    switch_content(app, reversed);
+    switch_content(app, reversed, app->selected);
 }
 
 /* Setzt die Auswahl auf idx, falls dort ein selektierbarer Slot sitzt;
@@ -2183,6 +2288,7 @@ static void go_back_or_exit(App *app) {
         HistoryEntry *h = g_ptr_array_steal_index(app->history, app->history->len - 1);
         if (app->prev_slots) { g_ptr_array_unref(app->prev_slots); app->prev_slots = NULL; }
         app->prev_slots = copy_slots(app->slots); /* aktueller (alter) Stand, vor der Umschaltung */
+        app->origin_old = app->selected;
         g_free(app->state.path);
         g_free(app->state.vmode);
         app->state.path = h->path;
@@ -2239,10 +2345,11 @@ static void activate_slot(App *app, Slot *s) {
         g_free(app->state.path);
         app->state.path = new_path;
         app->state.page = 0;
+        int old_origin = app->selected; /* angeklickte Bubble = Startpunkt der Animation */
         app->selected = 0; /* Reingehen -> immer oben links starten (rebuild_slots weicht
                                automatisch aus, falls Platz 0 ein Platzhalter ist) */
         play_sound("FocusChange");
-        switch_content(app, FALSE); /* Reingehen = vorwärts */
+        switch_content(app, FALSE, old_origin); /* Reingehen = vorwärts */
         return;
     }
     if (g_strcmp0(type, "close-prev-window") == 0) {
@@ -2266,9 +2373,10 @@ static void activate_slot(App *app, Slot *s) {
         else if (g_strcmp0(type, "special-drun-filtered") == 0) app->state.vmode = g_strdup(VMODE_DRUN_FILTERED);
         else app->state.vmode = g_strdup(VMODE_RUN);
         app->state.page = 0;
+        int old_origin = app->selected;
         app->selected = 0; /* Reingehen -> immer oben links starten */
         play_sound("FocusChange");
-        switch_content(app, FALSE); /* Reingehen = vorwärts */
+        switch_content(app, FALSE, old_origin); /* Reingehen = vorwärts */
         return;
     }
     if (g_strcmp0(type, "special-window") == 0) {
@@ -2370,6 +2478,7 @@ static void move_selection(App *app, int dcol, int drow) {
             app->state.page++;
             if (app->prev_slots) { g_ptr_array_unref(app->prev_slots); app->prev_slots = NULL; }
             app->prev_slots = copy_slots(app->slots);
+            app->origin_old = app->selected;
             rebuild_slots(app);
             if (!try_select(app, row * app->columns))
                 for (int c = 0; c < app->columns && !try_select(app, row * app->columns + c); c++);
@@ -2384,6 +2493,7 @@ static void move_selection(App *app, int dcol, int drow) {
             app->state.page--;
             if (app->prev_slots) { g_ptr_array_unref(app->prev_slots); app->prev_slots = NULL; }
             app->prev_slots = copy_slots(app->slots);
+            app->origin_old = app->selected;
             rebuild_slots(app);
             if (!try_select(app, row * app->columns + (app->columns - 1)))
                 for (int c = app->columns - 1; c >= 0 && !try_select(app, row * app->columns + c); c--);
@@ -2938,6 +3048,7 @@ int main(int argc, char *argv[]) {
     }
 
     gtk_init(&argc, &argv);
+    load_settings(); /* Einzelstart-Modus: einmal beim Start (Daemon lädt bei jedem show_app neu) */
 
     if (daemon_flag) {
         int ret = run_daemon(x11);

@@ -14,7 +14,7 @@ from pathlib import Path
 gi.require_version("Gtk", "3.0")
 gi.require_version("Gdk", "3.0")
 gi.require_version("GdkPixbuf", "2.0")
-from gi.repository import Gtk, Gdk, GLib, Pango, GdkPixbuf, Gio
+from gi.repository import Gtk, Gdk, GLib, Pango, GdkPixbuf, Gio, GObject
 
 try:
     gi.require_version("GtkLayerShell", "0.1")
@@ -923,86 +923,12 @@ def _make_particles(n: int = _PARTICLE_N) -> list:
         })
     return parts
 
-def _draw_window(win: Gtk.Window, ctx) -> bool:
-    """Ein einziger Draw-Handler pro Fenster: die große Blase (manuell
-    per Cairo/GdkPixbuf gemalt, siehe _paint_bubble_bg) + die Scale/
-    Bounce-Animation beim Öffnen/Schließen + die frei fliegenden
-    Gold-Pünktchen.
-
-    ANIMATION: reines Skalieren + Verschieben, verankert an der
-    Fensterecke, an der das Fenster auch per GtkLayerShell hängt
-    (unten rechts) - der Inhalt wächst von winzig auf Endgröße, MIT
-    Überschwingen/Bounce (siehe _ease_out_elastic: schießt kurz über
-    100% hinaus und pendelt sich dann ein), statt einer separaten
-    Opacity-Überblendung ("kein einfaches Einblenden") - Sichtbarkeit
-    kommt allein aus der Größe, nicht aus Alpha. Schließen ist exakt
-    dieselbe Animation, nur mit rückwärts laufendem Fortschritt
-    (state["closing_since"] gesetzt -> p_pop zählt von 1.0 auf 0.0
-    statt von 0.0 auf 1.0) - identische Dauer (_POPUP_MS), identische
-    Easing-Funktion, wirklich nur zeitlich umgekehrt abgespielt.
-
-    WICHTIG zum Rendern: läuft NICHT über win.set_opacity() (das hat
-    sich als unzuverlässig auf GtkLayerShell-Overlay-Surfaces
-    herausgestellt - manche Wayland-Compositor ziehen Live-Änderungen
-    der Fenster-Opacity nicht sauber nach, das Fenster blieb dann
-    komplett unsichtbar). Stattdessen wird ALLES (Hintergrund-Blase +
-    Pünktchen + die eigentlichen Kind-Widgets) manuell in eine
-    transformierte Cairo-Gruppe gemalt (push_group/translate/scale/
-    propagate_draw/pop_group_to_source) - reines Cairo-Compositing,
-    hängt an gar nichts Wayland/Compositor-Spezifischem und
-    funktioniert daher überall gleich zuverlässig."""
-    state = _anim.get(win)
-    now = time.time()
-    alloc = win.get_allocation()
-    w, h = max(alloc.width, 1), max(alloc.height, 1)
-
-    if state is None:
-        # Kein Cairo-Zustand (z.B. HAS_CAIRO=False) - einfach normal
-        # zeichnen lassen, ohne jeden Effekt. Overlay (TrafkBubble1.png)
-        # bewusst NICHT hier mit gemalt: dieser Zweig gibt False zurück
-        # und lässt GTKs eigenen Default-Handler die Kinder NACH diesem
-        # Aufruf zeichnen - ein hier gemaltes Overlay würde also unter
-        # den Kindern landen statt darüber. Reiner Degraded-Fallback für
-        # den seltenen Fall ohne Cairo, daher nicht weiter optimiert.
-        ctx.set_source_rgba(0, 0, 0, 0)
-        ctx.paint()
-        _paint_bubble_bg(ctx, w, h)
-        return False
-
-    closing_since = state.get("closing_since")
-    if closing_since is not None:
-        t_close = (now - closing_since) / (_POPUP_MS / 1000.0)
-        p_pop = 1.0 - _ease_out_elastic(min(1.0, t_close))
-    else:
-        t_pop = (now - state["popup_start"]) / (_POPUP_MS / 1000.0)
-        p_pop = _ease_out_elastic(t_pop)
-
-    scale = max(0.0, p_pop)
-    # Statt einer künstlichen Mindestgröße (die den Rest der
-    # Schließen-Animation als ein stehenbleibendes kleines Pünktchen
-    # hätte "einfrieren" lassen, bis der Cleanup-Timer das Fenster
-    # irgendwann zerstört) hier bewusst GAR NICHTS mehr zeichnen, sobald
-    # die Blase praktisch unsichtbar ist - sowohl ganz am Anfang des
-    # Öffnens als auch ganz am Ende des Schließens. ctx.scale() mit
-    # einem Wert nahe 0 würde außerdem eine (fast) singuläre Matrix
-    # ergeben, was bei manchen Cairo-Operationen (z.B. Radial-Gradienten
-    # der Pünktchen weiter unten) zu Fehlern führen kann - dieses
-    # frühzeitige Return umgeht das gleich mit.
-    if scale < 0.02:
-        ctx.set_source_rgba(0, 0, 0, 0)
-        ctx.paint()
-        return True
-    tx = w * (1 - scale)
-    ty = h * (1 - scale)
-
-    ctx.push_group()
-    ctx.translate(tx, ty)
-    ctx.scale(scale, scale)
-
-    ctx.set_source_rgba(0, 0, 0, 0)
-    ctx.paint()
-    _paint_bubble_bg(ctx, w, h)
-
+def _draw_particles(ctx, state: dict, w: int, h: int, now: float) -> None:
+    """Physik-Update + Zeichnen der frei fliegenden Gold-Pünktchen.
+    Ausgelagert aus _draw_window(), damit der Ruhezustand-Pfad (siehe
+    dort, Analyse Punkt 6a) und der Animations-Pfad exakt denselben
+    Code nutzen - identische Gradienten/Größe/Geschwindigkeit/
+    Bewegungsmuster in beiden Fällen, keinerlei optische Änderung."""
     r_gold, g_gold, b_gold = _GOLD_RGB
     # Pünktchen bleiben innerhalb desselben Sicherheitsbereichs wie der
     # Content (nicht im vollen Fensterrechteck) - sonst fliegen sie
@@ -1058,6 +984,136 @@ def _draw_window(win: Gtk.Window, ctx) -> bool:
         ctx.set_source_rgba(r_gold, g_gold, b_gold, core_alpha)
         ctx.fill()
         ctx.restore()
+
+def _draw_window(win: Gtk.Window, ctx) -> bool:
+    """Ein einziger Draw-Handler pro Fenster: die große Blase (manuell
+    per Cairo/GdkPixbuf gemalt, siehe _paint_bubble_bg) + die Scale/
+    Bounce-Animation beim Öffnen/Schließen + die frei fliegenden
+    Gold-Pünktchen.
+
+    ANIMATION: reines Skalieren + Verschieben, verankert an der
+    Fensterecke, an der das Fenster auch per GtkLayerShell hängt
+    (unten rechts) - der Inhalt wächst von winzig auf Endgröße, MIT
+    Überschwingen/Bounce (siehe _ease_out_elastic: schießt kurz über
+    100% hinaus und pendelt sich dann ein), statt einer separaten
+    Opacity-Überblendung ("kein einfaches Einblenden") - Sichtbarkeit
+    kommt allein aus der Größe, nicht aus Alpha. Schließen ist exakt
+    dieselbe Animation, nur mit rückwärts laufendem Fortschritt
+    (state["closing_since"] gesetzt -> p_pop zählt von 1.0 auf 0.0
+    statt von 0.0 auf 1.0) - identische Dauer (_POPUP_MS), identische
+    Easing-Funktion, wirklich nur zeitlich umgekehrt abgespielt.
+
+    WICHTIG zum Rendern: läuft NICHT über win.set_opacity() (das hat
+    sich als unzuverlässig auf GtkLayerShell-Overlay-Surfaces
+    herausgestellt - manche Wayland-Compositor ziehen Live-Änderungen
+    der Fenster-Opacity nicht sauber nach, das Fenster blieb dann
+    komplett unsichtbar). Stattdessen wird ALLES (Hintergrund-Blase +
+    Pünktchen + die eigentlichen Kind-Widgets) manuell in eine
+    transformierte Cairo-Gruppe gemalt (push_group/translate/scale/
+    propagate_draw/pop_group_to_source) - reines Cairo-Compositing,
+    hängt an gar nichts Wayland/Compositor-Spezifischem und
+    funktioniert daher überall gleich zuverlässig."""
+    state = _anim.get(win)
+    now = time.time()
+    alloc = win.get_allocation()
+    w, h = max(alloc.width, 1), max(alloc.height, 1)
+
+    if state is None:
+        # Kein Cairo-Zustand (z.B. HAS_CAIRO=False) - einfach normal
+        # zeichnen lassen, ohne jeden Effekt. Overlay (TrafkBubble1.png)
+        # bewusst NICHT hier mit gemalt: dieser Zweig gibt False zurück
+        # und lässt GTKs eigenen Default-Handler die Kinder NACH diesem
+        # Aufruf zeichnen - ein hier gemaltes Overlay würde also unter
+        # den Kindern landen statt darüber. Reiner Degraded-Fallback für
+        # den seltenen Fall ohne Cairo, daher nicht weiter optimiert.
+        ctx.set_source_rgba(0, 0, 0, 0)
+        ctx.paint()
+        _paint_bubble_bg(ctx, w, h)
+        return False
+
+    closing_since = state.get("closing_since")
+    if closing_since is not None:
+        t_close = (now - closing_since) / (_POPUP_MS / 1000.0)
+        p_pop = 1.0 - _ease_out_elastic(min(1.0, t_close))
+        animating = t_close < 1.0
+    else:
+        t_pop = (now - state["popup_start"]) / (_POPUP_MS / 1000.0)
+        p_pop = _ease_out_elastic(t_pop)
+        # _ease_out_elastic() klemmt t intern auf [0,1] -> sobald
+        # t_pop >= 1 ist p_pop dauerhaft exakt 1.0 (kein Nachschwingen
+        # mehr danach). Für t_pop < 1 läuft noch die eigentliche
+        # Bounce-Animation (inkl. kurzem Überschwingen über 1.0).
+        animating = t_pop < 1.0
+
+    scale = max(0.0, p_pop)
+
+    # FIX (Analyse Punkt 6a - Performance ohne jede optische
+    # Änderung): im eingeschwungenen Ruhezustand (nicht am Öffnen/
+    # Schließen gerade beteiligt) ist scale hier IMMER exakt 1.0,
+    # tx/ty wären also 0 - push_group()/translate(0,0)/scale(1,1)/
+    # pop_group_to_source() ist in diesem Fall eine reine
+    # Identitätstransformation, die visuell exakt dasselbe Ergebnis
+    # liefert wie direktes Zeichnen in ctx, aber JEDEN der alle 33ms
+    # laufenden Frames (siehe _amb_tid in make_win()) eine komplette
+    # Offscreen-Surface anlegt und kompositiert, obendrein inklusive
+    # eines manuellen zweiten propagate_draw() des kompletten
+    # Kind-Baums. Hintergrund, Pünktchen (exakt dieselbe
+    # _draw_particles()-Funktion, identische Gradienten/Größe/
+    # Geschwindigkeit) und Overlay werden hier direkt in ctx gemalt,
+    # die Kind-Widgets überlässt GTK seiner eigenen, ohnehin
+    # effizienteren Draw-Pipeline (return False).
+    if not animating:
+        ctx.set_source_rgba(0, 0, 0, 0)
+        ctx.paint()
+        _paint_bubble_bg(ctx, w, h)
+        _draw_particles(ctx, state, w, h, now)
+        # WICHTIG (Reihenfolge): TrafkBubble1.png muss weiterhin ÜBER
+        # den Kind-Widgets liegen (siehe _paint_bubble_overlay()-
+        # Docstring) - dafür hier wie im Animations-Pfad die Kinder
+        # selbst per propagate_draw() VOR dem Overlay zeichnen, statt
+        # einfach False zurückzugeben (das würde GTKs Default-Handler
+        # die Kinder erst NACH diesem Aufruf malen lassen, also unter
+        # dem Overlay - sichtbarer Unterschied zum bisherigen
+        # Verhalten). push_group()/pop_group_to_source() ist dafür
+        # nicht nötig: ohne Skalierung/Verschiebung (scale ist hier
+        # ohnehin 1.0) reicht direktes Malen in ctx, um dasselbe
+        # Schichtbild zu erzeugen, nur ohne die teure Offscreen-Surface.
+        child = win.get_child()
+        if child is not None:
+            win.propagate_draw(child, ctx)
+        _paint_bubble_overlay(ctx, w, h)
+        return True
+
+    # Statt einer künstlichen Mindestgröße (die den Rest der
+    # Schließen-Animation als ein stehenbleibendes kleines Pünktchen
+    # hätte "einfrieren" lassen, bis der Cleanup-Timer das Fenster
+    # irgendwann zerstört) hier bewusst GAR NICHTS mehr zeichnen, sobald
+    # die Blase praktisch unsichtbar ist - sowohl ganz am Anfang des
+    # Öffnens als auch ganz am Ende des Schließens. ctx.scale() mit
+    # einem Wert nahe 0 würde außerdem eine (fast) singuläre Matrix
+    # ergeben, was bei manchen Cairo-Operationen (z.B. Radial-Gradienten
+    # der Pünktchen weiter unten) zu Fehlern führen kann - dieses
+    # frühzeitige Return umgeht das gleich mit.
+    if scale < 0.02:
+        ctx.set_source_rgba(0, 0, 0, 0)
+        ctx.paint()
+        return True
+    tx = w * (1 - scale)
+    ty = h * (1 - scale)
+
+    # Nur während der ~_POPUP_MS Popup-/Close-Animation der bisherige,
+    # teurere Pfad über eine transformierte Offscreen-Gruppe - hier
+    # IST die Transformation sichtbar (scale != 1.0), push_group() also
+    # tatsächlich nötig, um Hintergrund + Pünktchen + Kind-Widgets
+    # gemeinsam zu skalieren/verschieben.
+    ctx.push_group()
+    ctx.translate(tx, ty)
+    ctx.scale(scale, scale)
+
+    ctx.set_source_rgba(0, 0, 0, 0)
+    ctx.paint()
+    _paint_bubble_bg(ctx, w, h)
+    _draw_particles(ctx, state, w, h, now)
 
     # Die eigentlichen Kind-Widgets (Buttons, Labels, ...) manuell mit
     # in dieselbe transformierte Gruppe zeichnen, damit sie exakt
@@ -1594,6 +1650,118 @@ def scroll_box(max_h: int = 220) -> tuple[Gtk.ScrolledWindow, Gtk.Box]:
     b.set_margin_start(2); b.set_margin_end(2)
     sw.add(b)
     return sw, b
+
+
+class ScrollablePopoverCombo(GObject.GObject):
+    """Ersatz für Gtk.ComboBoxText bei potenziell langen Dropdown-
+    Listen (Analyse Punkt 1, zweiter Teil - "Scale-Liste... ist zu
+    lang"): Gtk.ComboBoxText rendert sein Popup als normale
+    GtkTreeView-Zeilen ohne zuverlässigen internen Scroll-Mechanismus,
+    sobald es über die Bildschirmhöhe hinauswächst (Popup kann dann
+    weder scrollen noch bleibt es auf dem Bildschirm). Hier stattdessen
+    Gtk.MenuButton + Gtk.Popover mit einem Gtk.ScrolledWindow
+    (set_max_content_height()/set_propagate_natural_height(True)) -
+    begrenzt die Popup-Höhe hart und scrollt danach zuverlässig,
+    unabhängig davon, wie viele Einträge tatsächlich drinstehen.
+
+    Bietet absichtlich nur die kleine Teilmenge der Gtk.ComboBoxText-
+    API, die im Display-Tab tatsächlich gebraucht wird (remove_all/
+    append_text/get_active_text/set_active/connect("changed", ...)/
+    handler_block/handler_unblock/get_style_context/set_can_focus/
+    set_tooltip_text) - der restliche Aufrufcode bleibt dadurch
+    unverändert, nur das eigentliche GTK-Widget zum Einhängen in ein
+    Layout ist `.widget` statt die Instanz selbst (siehe pack_start-
+    Aufrufstelle)."""
+    __gsignals__ = {"changed": (GObject.SignalFlags.RUN_FIRST, None, ())}
+
+    def __init__(self, max_popover_height: int = 320):
+        super().__init__()
+        self.widget = Gtk.MenuButton()
+        self.widget.set_direction(Gtk.ArrowType.DOWN)
+        self._label = Gtk.Label(label="")
+        self.widget.add(self._label)
+
+        self._popover = Gtk.Popover()
+        self._popover.set_relative_to(self.widget)
+        self.widget.set_popover(self._popover)
+
+        self._listbox = Gtk.ListBox()
+        self._listbox.set_selection_mode(Gtk.SelectionMode.SINGLE)
+
+        sw = Gtk.ScrolledWindow()
+        sw.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        sw.set_max_content_height(max_popover_height)
+        sw.set_propagate_natural_height(True)
+        sw.add(self._listbox)
+        sw.show_all()
+        self._popover.add(sw)
+
+        self._items: list[str] = []
+        self._active = -1
+
+        def _on_row_activated(_lb, row):
+            if row is None:
+                return
+            self._popover.popdown()
+            self.set_active(row.get_index())
+        self._listbox.connect("row-activated", _on_row_activated)
+
+    # -- kompatible Teilmenge der Gtk.ComboBoxText-API ---------------
+    def remove_all(self):
+        self._items = []
+        self._active = -1
+        for child in list(self._listbox.get_children()):
+            self._listbox.remove(child)
+        self._label.set_label("")
+
+    def append_text(self, text: str):
+        self._items.append(text)
+        row = Gtk.ListBoxRow()
+        lbl = Gtk.Label(label=text)
+        lbl.set_halign(Gtk.Align.START)
+        lbl.set_margin_top(4); lbl.set_margin_bottom(4)
+        lbl.set_margin_start(10); lbl.set_margin_end(10)
+        row.add(lbl)
+        row.show_all()
+        self._listbox.add(row)
+
+    def get_active_text(self) -> str | None:
+        if 0 <= self._active < len(self._items):
+            return self._items[self._active]
+        return None
+
+    def set_active(self, idx: int):
+        if idx is None or not (0 <= idx < len(self._items)):
+            return
+        self._active = idx
+        self._label.set_label(self._items[idx])
+        row = self._listbox.get_row_at_index(idx)
+        if row is not None:
+            self._listbox.select_row(row)
+        self.emit("changed")
+
+    def connect(self, signal, *a, **kw):
+        # "changed" ist unser eigenes GObject-Signal (s.o.) - alles
+        # andere (z.B. Tooltip-/Fokus-Events) betrifft das zugrunde
+        # liegende Gtk.MenuButton.
+        if signal == "changed":
+            return GObject.GObject.connect(self, signal, *a, **kw)
+        return self.widget.connect(signal, *a, **kw)
+
+    def handler_block(self, hid):
+        GObject.GObject.handler_block(self, hid)
+
+    def handler_unblock(self, hid):
+        GObject.GObject.handler_unblock(self, hid)
+
+    def get_style_context(self):
+        return self.widget.get_style_context()
+
+    def set_can_focus(self, v: bool):
+        self.widget.set_can_focus(v)
+
+    def set_tooltip_text(self, t: str):
+        self.widget.set_tooltip_text(t)
 
 
 # ════════════════════════════════════════════════════════════
@@ -4646,8 +4814,47 @@ def _processes_content(win: Gtk.Window) -> Gtk.Box:
         in_thread(_work)
         return True
 
+    def _prime_proc_cache():
+        """FIX (Analyse Punkt 5 - Processes-Tab zeigt beim Öffnen immer
+        0.0%): psutil.Process.cpu_percent(interval=None) liefert laut
+        Dokumentation beim ALLERERSTEN Aufruf für ein Process-Objekt
+        IMMER 0.0 zurück (kein vorheriger Referenzpunkt vorhanden). Die
+        bisherige Reihenfolge (add_timer(2000, _refresh); _refresh())
+        rief _refresh() sofort beim Tab-Öffnen auf - für JEDEN Prozess
+        war das garantiert der erste Aufruf, der Tab zeigte also
+        strukturell immer den leeren 0.0%-Frame, und da die meisten
+        Nutzer das Popup nur 1-2s lang anschauen (der nächste, echte
+        Wert käme erst 2s später über den Timer), sahen sie praktisch
+        nie etwas anderes. Die Cache-Logik selbst (_proc_cache über
+        Poll-Ticks hinweg) ist korrekt und bleibt unverändert - nur der
+        Zeitpunkt der ersten SICHTBAREN Anzeige verschiebt sich: hier
+        einmal "vorwärmen" (Referenzpunkt setzen, Ergebnis verwerfen),
+        dann kurz warten, dann erst den ersten echten _refresh()
+        anstoßen, der die Zeilen baut/anzeigt."""
+        import psutil
+        for p in psutil.process_iter(["pid"]):
+            pid = p.info["pid"]
+            if pid == 0:
+                continue
+            proc = _proc_cache.get(pid)
+            if proc is None:
+                proc = p
+                _proc_cache[pid] = proc
+            try:
+                proc.cpu_percent(interval=None)  # nur Referenzpunkt setzen
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+
+        def _first_real_refresh():
+            _refresh()
+            return False
+        # 400ms: lang genug für ein brauchbares Zeitfenster zwischen den
+        # beiden cpu_percent()-Messpunkten, kurz genug, dass die
+        # Verzögerung beim Öffnen nicht auffällt (siehe Analyse, 300-500ms).
+        GLib.timeout_add(400, _first_real_refresh)
+
     add_timer(2000, _refresh)
-    _refresh()
+    in_thread(_prime_proc_cache)
     return root
 
 def _akku_and_sysmon_content(win: Gtk.Window) -> Gtk.Box:
@@ -7010,12 +7217,23 @@ def _hypr_monitors_live() -> list:
     return jrun(["hyprctl", "monitors", "-j"]) or []
 
 def _parse_modes(modes: list) -> dict:
+    """FIX (Zusatzblock, Punkt c): Hz-Werte jetzt immer als float
+    normalisiert und einheitlich mit zwei Dezimalstellen zurückgegeben
+    (z.B. sowohl "165Hz" als auch "165.00Hz" werden zu "165.00"). Vorher
+    behielt hz.rstrip("Hz") den Rohtext bei - meldete Hyprland einen
+    Modus ohne Dezimalstellen ("...@165Hz"), während cur_hz (siehe
+    _fill_hz()-Aufrufstelle) als "165.00" gebildet wurde, stimmten die
+    Strings nicht überein, die Vorauswahl schlug fehl und _fill_hz()
+    fiel auf set_active(0) zurück - bei absteigend sortierter Liste
+    also den HÖCHSTEN verfügbaren Wert statt des tatsächlich aktiven."""
     out: dict = {}
     for m in modes:
         try:
             res, hz = m.split("@")
-            out.setdefault(res, []).append(hz.rstrip("Hz"))
-        except ValueError:
+            hz_clean = hz.rstrip("Hz").strip()
+            hz_val = float(hz_clean)
+            out.setdefault(res, []).append(f"{hz_val:.2f}")
+        except (ValueError, IndexError):
             continue
     return out
 
@@ -7061,11 +7279,26 @@ def _edid_extra_modes(name: str) -> dict:
     # "WIDTHxHEIGHT   FLOAT Hz", nur mit unterschiedlichen Zeilen-
     # Präfixen (IBM/DMT/GTF/Apple/VIC/DTD). Verifiziert gegen echten
     # edid-decode-Output eines realen Monitors (siehe Kommentar oben).
+    #
+    # FIX (Zusatzblock, Punkt b): die Regex war zu eng gefasst - sie
+    # verlangte zwingend Whitespace zwischen "WIDTHxHEIGHT" und dem
+    # Hz-Wert sowie 1-9999 Pixel ohne Breiten-Begrenzung. edid-decode
+    # gibt Timings aber auch als "1920x1080@165Hz" (ohne Leerzeichen,
+    # mit "@") aus, und reine Ziffernfolgen ohne Breitenbegrenzung
+    # können versehentlich auf Timing-fremden Text matchen. Jetzt:
+    # Auflösungswerte auf plausible 3-5-stellige Pixelzahlen begrenzt
+    # und ein optionales "@" (mit optionalem Whitespace drumherum)
+    # zwischen Auflösung und Hz-Zahl zugelassen - deckt sowohl
+    # "1920x1080  165.00 Hz" als auch "1920x1080@165Hz" ab.
     extra: dict = {}
-    for m in re.finditer(r'(\d+)x(\d+)\s+([\d.]+)\s*Hz', out):
+    for m in re.finditer(r'(\d{3,5})x(\d{3,5})\s*(?:@\s*)?([\d.]+)\s*Hz', out):
         w, h, hz = m.group(1), m.group(2), m.group(3)
         res = f"{w}x{h}"
-        hz_str = f"{float(hz):.2f}"
+        try:
+            hz_val = float(hz)
+        except ValueError:
+            continue
+        hz_str = f"{hz_val:.2f}"
         extra.setdefault(res, set()).add(hz_str)
     return extra
 
@@ -7426,22 +7659,31 @@ def _valid_scales_for_resolution(width: int, height: int) -> list[float]:
     """Gibt alle Scale-Werte zurück, bei denen sowohl width/scale als
     auch height/scale exakt ganzzahlig sind – nur diese Werte führen in
     Hyprland zu pixelgenauen, überlappungsfreien Monitor-Layouts.
-    Brute-Force über rationale Zahlen p/q (q ≤ 20), Bereich 0.5–3.0."""
+
+    FIX (Analyse Punkt 1): die alte Brute-Force über beliebige
+    rationale Zahlen p/q (q ≤ 20) ließ mathematisch gültige, aber für
+    Hyprland UNGÜLTIGE Brüche wie 12/13 ≈ 0.9231 durch - Hyprland
+    quantisiert Scales intern auf Vielfache von 1/120 und verlangt
+    exakte Teilbarkeit beider Dimensionen durch genau diesen
+    quantisierten Wert, nicht durch einen beliebigen anderen Bruch mit
+    (zufällig) kleinem Nenner. Jetzt wird nur noch über n/120 iteriert
+    (n von 60 bis 360, also exakt der von Hyprland tatsächlich
+    verwendete Wertebereich 0.5–3.0 in 1/120-Schritten) - dieselbe
+    Grundidee wie das externe PyPI-Paket `hyprland-monitors`
+    (compute_valid_scales()), nur ohne zusätzliche Abhängigkeit und
+    dafür selbst gepflegt."""
     seen: set[float] = set()
     valid: list[float] = []
-    for q in range(1, 21):
-        for p in range(max(1, q // 4), q * 4 + 1):
-            scale = p / q
-            if scale < 0.5 or scale > 3.0:
-                continue
-            key = round(scale, 4)
-            if key in seen:
-                continue
-            lw = width / scale
-            lh = height / scale
-            if abs(lw - round(lw)) < 0.01 and abs(lh - round(lh)) < 0.01:
-                seen.add(key)
-                valid.append(key)
+    for n in range(60, 361):
+        scale = n / 120
+        key = round(scale, 4)
+        if key in seen:
+            continue
+        lw = width / scale
+        lh = height / scale
+        if abs(lw - round(lw)) < 0.01 and abs(lh - round(lh)) < 0.01:
+            seen.add(key)
+            valid.append(key)
     # Auch die bounds prüfen
     lo, hi = _scale_bounds(height)
     valid = [s for s in valid if lo <= s <= hi]
@@ -7596,6 +7838,18 @@ def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.W
     hz_combo.get_style_context().add_class("bubble")
     hz_combo.get_style_context().add_class("dropdown")
     hz_combo.set_can_focus(False)
+    # FIX (Zusatzblock, Punkt a): ein stiller Fallback auf eine
+    # unvollständige Modusliste (weil edid-decode fehlt) ist keine
+    # akzeptable Lösung - der Nutzer soll sehen, WARUM hohe
+    # Bildwiederholraten evtl. fehlen, statt das für einen Bug zu
+    # halten. Tooltip statt Statuszeile, damit das Dropdown selbst
+    # nicht ständig eine zusätzliche Zeile Platz braucht.
+    if not shutil.which("edid-decode"):
+        hz_combo.set_tooltip_text(
+            "'edid-decode' not found (package v4l-utils) — refresh "
+            "rates reported only via Hyprland's own mode list are "
+            "shown; some high refresh rates your monitor actually "
+            "supports may be missing until v4l-utils is installed.")
 
     custom_state = {"res": cur_res, "hz": cur_hz}
 
@@ -7655,7 +7909,16 @@ def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.W
             return 0
         return min(range(len(vals)), key=lambda i: abs(vals[i] - target))
 
-    scale_combo = Gtk.ComboBoxText()
+    # FIX (Analyse Punkt 1): statt Gtk.ComboBoxText (Popup kann bei
+    # vielen Einträgen nicht zuverlässig scrollen und wächst über den
+    # Bildschirmrand hinaus) jetzt ScrollablePopoverCombo - ein
+    # Gtk.MenuButton+Popover+ScrolledWindow mit harter Höhenbegrenzung
+    # und zuverlässigem Scroll, siehe deren Docstring weiter oben. Die
+    # kleine API (append_text/get_active_text/set_active/…) ist
+    # absichtlich kompatibel, der restliche Code unten bleibt
+    # unverändert - nur der pack_start()-Aufruf weiter unten braucht
+    # jetzt .widget statt der Instanz selbst.
+    scale_combo = ScrollablePopoverCombo(max_popover_height=320)
     scale_combo.get_style_context().add_class("bubble")
     scale_combo.get_style_context().add_class("dropdown")
     scale_combo.set_can_focus(False)
@@ -7897,7 +8160,25 @@ def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.W
             if preselect in hzs:
                 hz_combo.set_active(hzs.index(preselect))
             elif hzs:
-                hz_combo.set_active(0)
+                # FIX (Zusatzblock, Punkt c): vorher hier blind
+                # set_active(0) bei fehlender EXAKTER Übereinstimmung -
+                # da hzs absteigend sortiert ist, landete das faktisch
+                # immer beim HÖCHSTEN verfügbaren Wert (z.B. 120 Hz
+                # statt der tatsächlich aktiven 165 Hz), sobald sich
+                # cur_hz/preselect und die geparsten Hz-Strings auch
+                # nur in der Nachkommastellen-Formatierung
+                # unterschieden. _parse_modes() normalisiert Hz-Werte
+                # mittlerweile zwar schon einheitlich (siehe dort), als
+                # zusätzliches Sicherheitsnetz hier trotzdem: bei
+                # fehlender exakter Übereinstimmung den NÄCHSTGELEGENEN
+                # Wert wählen statt stur den ersten/höchsten.
+                try:
+                    target = float(preselect)
+                    idx = min(range(len(hzs)),
+                              key=lambda i: abs(float(hzs[i]) - target))
+                    hz_combo.set_active(idx)
+                except (ValueError, TypeError):
+                    hz_combo.set_active(0)
         finally:
             if hz_handler_id[0] is not None:
                 hz_combo.handler_unblock(hz_handler_id[0])
@@ -8195,13 +8476,33 @@ def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.W
                 atomic_write_text(lua_path, txt)
 
                 # Nachbar-Positionen auch live per hyprctl setzen, damit
-                # Hyprland sofort reagiert und nicht erst beim nächsten Reload
+                # Hyprland sofort reagiert und nicht erst beim nächsten Reload.
+                #
+                # FIX (Analyse Punkt 2 - "Hyprland beschwert sich weiterhin"):
+                # vorher wurde hier für JEDEN Nachbarn einzeln _hypr_eval()
+                # aufgerufen - Hyprland führt nach JEDEM einzelnen
+                # "hyprctl eval"-Aufruf seinen Layout-Check durch und sah
+                # dabei zwischen zwei Nachbarn einen inkonsistenten
+                # Zwischenzustand (ein Nachbar schon an neuer Position, der
+                # nächste noch an der alten, jetzt dazu nicht mehr passenden
+                # Position). Die eigentliche Positions-MATHEMATIK in
+                # _repack_lua_positions() war bereits korrekt, nur die
+                # Anwendungs-Reihenfolge nicht. Jetzt: alle hl.monitor(...)-
+                # Aufrufe für die Nachbarn werden gesammelt und als EIN
+                # einziger Lua-Chunk in EINEM "hyprctl eval"-Aufruf
+                # geschickt - "hyprctl eval" nimmt einen ganzen Lua-
+                # Codeblock entgegen, mehrere hl.monitor()-Aufrufe lassen
+                # sich also zu einem String verketten. Dadurch validiert
+                # Hyprland das Layout genau einmal, gegen den bereits
+                # vollständig konsistenten Endzustand aller Nachbarn - nicht
+                # mehrfach gegen Zwischenzustände.
                 neighbor_block_re = re.compile(
                     r'hl\.monitor\(\{[^}]*\}\)', re.S)
                 out_name_re = re.compile(r'output\s*=\s*"([^"]*)"')
                 mode_re     = re.compile(r'mode\s*=\s*"([^"]*)"')
                 pos_re      = re.compile(r'position\s*=\s*"([^"]*)"')
                 sc_re       = re.compile(r'scale\s*=\s*([0-9.]+)')
+                nb_lua_statements: list[str] = []
                 for nb in neighbor_block_re.finditer(txt):
                     blk = nb.group(0)
                     nm_m = out_name_re.search(blk)
@@ -8219,13 +8520,16 @@ def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.W
                     # Gleicher Fix wie oben: "keyword" durch "eval" +
                     # hl.monitor({...}) ersetzt, siehe Kommentar beim
                     # primären monitor_lua-Aufruf weiter oben.
-                    nb_lua = (
+                    nb_lua_statements.append(
                         "hl.monitor({ output = \"" + nb_name + "\", "
                         "mode = \"" + nb_mode + "\", "
                         f"position = \"{nb_pos}\", "
                         f"scale = {nb_sc} }})"
                     )
-                    _hypr_eval(nb_lua)
+                if nb_lua_statements:
+                    # EIN Aufruf, EIN Lua-Chunk mit allen Nachbarn drin -
+                    # statt eines Aufrufs pro Monitor (siehe Kommentar oben).
+                    _hypr_eval("\n".join(nb_lua_statements))
 
             orig[0], orig[1] = res, hz
             orig[2] = scale
@@ -8290,7 +8594,7 @@ def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.W
     scale_row = hbox(8)
     scale_row.set_halign(Gtk.Align.CENTER)
     scale_row.pack_start(scale_row_lbl, False, False, 0)
-    scale_row.pack_start(scale_combo, False, False, 0)
+    scale_row.pack_start(scale_combo.widget, False, False, 0)
 
     combos_row = hrow(res_combo, hz_combo, sp=8)
     custom_row = hrow(res_val_lbl, hz_val_lbl, sp=8)
@@ -8659,8 +8963,13 @@ def _camera_set_blocked(blocked: bool) -> tuple[bool, str]:
     # /dev/video*-Nodes gehören root:video, chmod braucht den
     # Eigentümer oder root - reines Gruppen-Schreibrecht (auch wenn der
     # Nutzer selbst in "video" ist) reicht dafür nicht, der erste
-    # Versuch würde also ohnehin garantiert scheitern.
-    return _run_maybe_priv(["chmod", mode, *devs], timeout=15)
+    # Versuch würde also ohnehin garantiert scheitern. FIX: vorher wurde
+    # hier trotz dieses Kommentars noch die heuristik-basierte
+    # _run_maybe_priv() aufgerufen (Docstring/Code-Widerspruch) - jetzt
+    # wie _rfkill_set()/_freshclam_update() konsequent auf
+    # _run_maybe_priv_force() umgestellt, kein garantiert scheiternder
+    # erster Versuch mehr pro Kamera-Toggle.
+    return _run_maybe_priv_force(["chmod", mode, *devs], timeout=15)
 
 # ── Mikrofon: Standard-Eingabegerät stumm schalten ───────────────────
 # Kein echter Hardware-Killswitch (Software-Mute über wpctl/Pipewire,

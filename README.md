@@ -574,24 +574,20 @@ Change the scale (to a certain degree). Toggle HDR. Change where your other moni
 Still to be themed / done:
 - Calamares
 - Optional package installer
-- Waybar redesign aka TrafkTuxBar **– volloeko**
 - Editor for: Rofi folders/apps, Waybar widgets/shortcuts, autostart apps, default apps
-- TrafkTuxLauncher **– mailueberfall**
 - TrafkTux App Editor
-- Widgets **– wolke7**
-- fido key authentication
 
 ## Known Bugs
 
 - The ISO doesn't currently boot – since the distro is still in development, this is a minor issue that will be fixed soon. Some grub permission problem or something
 - guest wifi / captive /vsolutioncast not working
-- Since Avahi is masked duo a wifi bug where other devices do not get much bandwidth, you cannot connect printer automaticly
 
 ### Other Stuff
 - Finish System Sounds - tortenboxer
 - make sddm idle animations  – turboprinz
 - rerender plymouth bubble animation – turboprinz
 - Mouse cursor redesign
+- Widgets doc implementation - habmalnefrage
 
 ### The App Editor
 1. TrafkTux App Launcher – it has 9 folders where you can put apps in. In this menu you will be able to drag any app + custom commands into the folders, plus as many subfolders in subfolders as you want. You can sort by all packages, all apps, unordered apps, custom apps, ordered apps. This will be the main menu to sort all of your apps!

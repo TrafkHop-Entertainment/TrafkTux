@@ -73,17 +73,13 @@ bg_sprite = make_stretched_sprite("GrubLayer5.png", 0);
 vignette_sprite = make_stretched_sprite("GrubLayer2.png", 4);
 
 # ── Animierte Blase (Fortschrittsanzeige) ─────────────────────────────
-# 30 Frames (jeder 16. von urspruenglich 479 bei 60fps), damit die
-# tatsaechliche Umlaufzeit (~8s) gleich bleibt.
 frame_files = [
-    "0001.png", "0017.png", "0033.png", "0049.png", "0065.png",
-    "0081.png", "0097.png", "0113.png", "0129.png", "0145.png",
-    "0161.png", "0177.png", "0193.png", "0209.png", "0225.png",
-    "0241.png", "0257.png", "0273.png", "0289.png", "0305.png",
-    "0321.png", "0337.png", "0353.png", "0369.png", "0385.png",
-    "0401.png", "0417.png", "0433.png", "0449.png", "0465.png"
+    "0001.png", "0031.png", "0061.png", "0091.png",
+    "0121.png", "0151.png", "0181.png", "0211.png",
+    "0241.png", "0271.png", "0301.png", "0331.png",
+    "0361.png", "0391.png", "0421.png", "0451.png"
 ];
-frame_count = 60;
+frame_count = 16;
 
 # Referenz war 1920x1080, bubble_canvas_size=550px (≈50.9% der Hoehe),
 # bubble_center_y=950px (≈88.0% der Hoehe) - das ergab damals schon
@@ -120,9 +116,10 @@ bubble_sprite.SetY(bubble_y);
 bubble_sprite.SetX(start_x);
 
 spin_tick = 0;
-# 50Hz angenommen (wie im alten Theme) * ~8s Zieldauer / 30 Frames
-# ≈ 13 Ticks pro Frame. Bei Bedarf hier direkt tunen.
-ticks_per_frame = 13;
+# 50Hz angenommen (wie im alten Theme), 16 Frames = 1 volle Umdrehung,
+# Zieldauer 1s/Umdrehung -> 50/16 = 3.125, gerundet auf 3 Ticks pro Frame
+# (ergibt ~0.96s/Umdrehung, nah genug an 1s). Bei Bedarf hier direkt tunen.
+ticks_per_frame = 3;
 
 # Laeuft unabhaengig vom Boot-Fortschritt weiter, damit die Animation
 # auch bei Boot-Haengern nicht einfriert.

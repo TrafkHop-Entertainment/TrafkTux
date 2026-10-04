@@ -217,7 +217,7 @@ static MenuState default_state(void) {
  * Menü-JSON laden & Pfadauflösung - 1:1 übernommen
  * ========================================================================= */
 static JsonObject* load_menu_json(const char *menu_name) {
-    gchar *path = g_build_filename(g_get_home_dir(), ".config", "rofi", menu_name, "menu.json", NULL);
+    gchar *path = g_build_filename(g_get_home_dir(), ".config", "TrafkTuxLauncher", menu_name, "menu.json", NULL);
     JsonParser *parser = json_parser_new();
     GError *err = NULL;
     if (!json_parser_load_from_file(parser, path, &err)) {
@@ -1074,38 +1074,37 @@ static void load_bubble_assets(const char *menu_name, BubbleAssets *out) {
  * Right.png (nicht Last/Next - war meine Fehlannahme). Gleiche
  * /tmp-zuerst-dann-Config-Fallback-Logik wie bei den Trafk-Bubbles,
  * gleiche Debug-Ausgabe. */
+/* Es gibt bewusst KEINE separaten "Glow"-Bilddateien (LeftGlow.png/
+ * RightGlow.png existieren nicht und sollen auch nicht gesucht werden) -
+ * der Hover-"Glow"-Effekt ist rein eine Opacity-Änderung (siehe
+ * ARROW_ALPHA_HOVER vs. ARROW_ALPHA_ACTIVE/INACTIVE in draw_content), kein
+ * Bildwechsel. Die Felder *_glow existieren im Struct nur noch, damit der
+ * Zeichencode unten ("hover ? glow : normal") nicht extra verzweigen muss -
+ * sie zeigen immer auf dasselbe Pixbuf wie *_normal. */
 typedef struct {
     GdkPixbuf *arrow_left_normal;   /* Left.png */
-    GdkPixbuf *arrow_left_glow;     /* LeftGlow.png */
+    GdkPixbuf *arrow_left_glow;     /* == arrow_left_normal, kein eigenes Bild */
     GdkPixbuf *arrow_right_normal;  /* Right.png */
-    GdkPixbuf *arrow_right_glow;    /* RightGlow.png */
+    GdkPixbuf *arrow_right_glow;    /* == arrow_right_normal, kein eigenes Bild */
 } NavAssets;
 
 static void load_nav_assets(const char *menu_name, NavAssets *out) {
     gchar *cfg_dir = g_build_filename(g_get_home_dir(), ".config", "TrafkTuxLauncher", menu_name, "assets", NULL);
 
     gchar *p_left_n  = g_build_filename(cfg_dir, "Left.png", NULL);
-    gchar *p_left_g  = g_build_filename(cfg_dir, "LeftGlow.png", NULL);
     gchar *p_right_n = g_build_filename(cfg_dir, "Right.png", NULL);
-    gchar *p_right_g = g_build_filename(cfg_dir, "RightGlow.png", NULL);
 
     const char *c_left_n[]  = { "/tmp/Left.png",       p_left_n  };
-    const char *c_left_g[]  = { "/tmp/LeftGlow.png",   p_left_g  };
     const char *c_right_n[] = { "/tmp/Right.png",      p_right_n };
-    const char *c_right_g[] = { "/tmp/RightGlow.png",  p_right_g };
 
-    load_one("arrow-left",       c_left_n,  2, ARROW_PX, &out->arrow_left_normal);
-    load_one("arrow-left-glow",  c_left_g,  2, ARROW_PX, &out->arrow_left_glow);
-    load_one("arrow-right",      c_right_n, 2, ARROW_PX, &out->arrow_right_normal);
-    load_one("arrow-right-glow", c_right_g, 2, ARROW_PX, &out->arrow_right_glow);
+    load_one("arrow-left",  c_left_n,  2, ARROW_PX, &out->arrow_left_normal);
+    load_one("arrow-right", c_right_n, 2, ARROW_PX, &out->arrow_right_normal);
 
-    /* Fallback: wenn die Glow-Variante fehlt, lieber das normale Bild
-     * beim Hover weiter anzeigen als GAR NICHTS - sonst verschwindet der
-     * Pfeil beim Drüberfahren komplett (echter Bug, war so). */
-    if (!out->arrow_left_glow && out->arrow_left_normal) out->arrow_left_glow = g_object_ref(out->arrow_left_normal);
-    if (!out->arrow_right_glow && out->arrow_right_normal) out->arrow_right_glow = g_object_ref(out->arrow_right_normal);
+    /* Kein Dateisuch-Versuch für Glow mehr - direkt dieselbe Textur referenzieren. */
+    out->arrow_left_glow  = out->arrow_left_normal  ? g_object_ref(out->arrow_left_normal)  : NULL;
+    out->arrow_right_glow = out->arrow_right_normal ? g_object_ref(out->arrow_right_normal) : NULL;
 
-    g_free(p_left_n); g_free(p_left_g); g_free(p_right_n); g_free(p_right_g);
+    g_free(p_left_n); g_free(p_right_n);
     g_free(cfg_dir);
 }
 
@@ -1289,6 +1288,27 @@ typedef struct {
      * Seite. -1 = gerade kein Bounce aktiv. */
     int sel_bounce_slot;
     gint64 sel_bounce_start_us;
+    int prev_sel_slot;           /* gerade abgewählter Slot (für Iris-Wipe-raus), -1 = keiner */
+    /* Animations-Geschwindigkeitsfaktor der GERADE LAUFENDEN Animation.
+     * 1.0 = normal. Wird nur erhöht, wenn WÄHREND dieser Animation schon
+     * der nächste Wechsel angefordert wird (siehe request_page_switch) -
+     * damit die aktuelle Animation zügig fertig wird, BEVOR direkt im
+     * Anschluss (nahtlos, kein Schnitt) die nächste losläuft. */
+    double anim_speed;
+    /* Seitenwechsel-Warteschlange (Tiefe 1): wenn während einer laufenden
+     * ANIM_SWITCH-Animation erneut q/e/Pfeil/WASD-Rand gedrückt wird, wird
+     * NICHT sofort umgeschaltet (das würde abschneiden) - stattdessen wird
+     * der Wunsch hier vorgemerkt und direkt nach Fertigwerden der aktuellen
+     * Animation nahtlos nachgeholt (siehe on_anim_tick). Erneutes Drücken
+     * während bereits ein Wechsel vorgemerkt ist, aktualisiert nur die
+     * Richtung/das Ziel (letzter Wunsch gewinnt) statt eine eigene zweite
+     * Animation anzuhängen. */
+    /* Vorzeichenbehafteter Zähler noch offener Seitenwechsel: jeder Druck
+     * WÄHREND eine Switch-Animation läuft, erhöht/verringert diesen Wert
+     * um 1 (statt nur die Richtung zu überschreiben) - so wird bei
+     * Spam KEIN Tastendruck "verschluckt": jeder einzelne Druck löst am
+     * Ende seinen eigenen (ggf. schnellen) Hop aus, nicht nur der letzte. */
+    int pending_delta_sum;
 } App;
 
 static void rebuild_slots(App *app) {
@@ -1451,39 +1471,101 @@ static void fit_text_font(PangoLayout *layout, const char *text, int max_w_px, i
     }
 }
 
-static void draw_bubble_cell(App *app, cairo_t *cr, PangoLayout *layout, double x, double y,
-                              GdkPixbuf *icon_pb, const char *name, gboolean selected) {
-    /* 1) Back-Bubble */
-    draw_pixbuf_cover(cr, selected ? app->assets.back_selected : app->assets.back_normal,
+/* Hilfsfunktion: zeichnet die Bubble-Textur + Icon + Text für EINEN Zustand
+ * (from_sel=TRUE -> selected-Assets, FALSE -> normal-Assets). Wird von
+ * draw_bubble_cell zweimal aufgerufen (Basis + Iris-Zielzustand). */
+static void draw_bubble_layer(App *app, cairo_t *cr, PangoLayout *layout,
+                               double x, double y, GdkPixbuf *icon_pb,
+                               const char *name, gboolean sel) {
+    draw_pixbuf_cover(cr, sel ? app->assets.back_selected : app->assets.back_normal,
                       x, y, CELL_PX, CELL_PX);
-
-    /* 2) Icon */
     if (icon_pb) {
         double icon_x = x + (CELL_PX - ICON_PX) / 2.0;
         double icon_y = y + ELEMENT_PAD_PX + ICON_MARGIN_PX;
         gdk_cairo_set_source_pixbuf(cr, icon_pb, icon_x, icon_y);
         cairo_paint(cr);
     }
-
-    /* 3) Text - mehrzeilig (max 3 Zeilen), Schrift wird pro Zelle passend
-     * zu Länge UND verfügbarer Höhe skaliert (siehe fit_text_font).
-     * Feste Layout-Breite + ALIGN_CENTER übernimmt jetzt die Zentrierung
-     * selbst, kein manuelles Ausmessen mehr nötig. */
     if (name && *name) {
         int max_w = CELL_PX - 2 * ELEMENT_PAD_PX;
         int max_h = CELL_PX - (ELEMENT_PAD_PX + ICON_PX + 2 * ICON_MARGIN_PX) - 8;
         fit_text_font(layout, name, max_w, max_h);
         double text_x = x + ELEMENT_PAD_PX;
         double text_y = y + ELEMENT_PAD_PX + ICON_PX + 2 * ICON_MARGIN_PX;
-        cairo_set_source_rgba(cr, selected ? 1.0 : 0.86, selected ? 1.0 : 0.82,
-                               selected ? 1.0 : 1.0, 1.0);
+        cairo_set_source_rgba(cr, sel ? 1.0 : 0.86, sel ? 1.0 : 0.82, 1.0, 1.0);
         cairo_move_to(cr, text_x, text_y);
         pango_cairo_show_layout(cr, layout);
     }
-
-    /* 4) Front-Bubble - liegt jetzt WIRKLICH vor Icon und Text */
-    draw_pixbuf_cover(cr, selected ? app->assets.front_selected : app->assets.front_normal,
+    draw_pixbuf_cover(cr, sel ? app->assets.front_selected : app->assets.front_normal,
                       x, y, CELL_PX, CELL_PX);
+}
+
+/* Flacker-Hüllkurve, als Alpha-Blende zwischen den beiden PNGs (simpler
+ * Crossfade, kein Hard-Cut). Gesamtdauer 75ms (halbiert gegenüber der
+ * 150ms-Version, Verhältnis 72/11.5/11.5 der ursprünglichen 95ms-Fassung
+ * bleibt erhalten):
+ *   Phase 1 [0, FLICKER_HOLD_US)      : 0 -> 1
+ *   Phase 2 [HOLD, HOLD+BACK_US)      : 1 -> 0
+ *   Phase 3 [HOLD+BACK_US, FLICKER_US): 0 -> 1
+ * t wird intern geklemmt, daher sind auch Werte außerhalb [0,FLICKER_US]
+ * sicher (ergeben 0 bzw. 1). Wird auch für die Abkühlzeit beim
+ * Wegwechseln benutzt, dort aber mit umgedrehter Zeit aufgerufen (siehe
+ * draw_bubbles): (FLICKER_US - elapsed) statt elapsed. */
+#define FLICKER_US         75000.0   /* = halbe SEL_BOUNCE_US-Dauer */
+#define FLICKER_HOLD_US    56842.105  /* 72ms * (75/95) */
+#define FLICKER_BACK_US     9078.947  /* 11.5ms * (75/95) */
+
+/* Ease-Out-Kubik: schnell weg vom Start, pendelt sich zum Ziel ein -
+ * genau das "Schnapp-an/pendelt-sich-ein" einer Glühbirne statt eines
+ * gleichmäßigen Fades. Wird auf JEDE der drei Phasen einzeln angewendet. */
+static double flicker_ease(double t) {
+    if (t < 0.0) t = 0.0;
+    if (t > 1.0) t = 1.0;
+    double inv = 1.0 - t;
+    return 1.0 - inv * inv * inv;
+}
+
+static double flicker_envelope(double t_us) {
+    if (t_us <= 0.0) return 0.0;
+    if (t_us >= FLICKER_US) return 1.0;
+    double alpha;
+    if (t_us < FLICKER_HOLD_US) {
+        alpha = flicker_ease(t_us / FLICKER_HOLD_US);
+    } else if (t_us < FLICKER_HOLD_US + FLICKER_BACK_US) {
+        alpha = 1.0 - flicker_ease((t_us - FLICKER_HOLD_US) / FLICKER_BACK_US);
+    } else {
+        alpha = flicker_ease((t_us - FLICKER_HOLD_US - FLICKER_BACK_US) / FLICKER_BACK_US);
+    }
+    if (alpha < 0.0) alpha = 0.0;
+    if (alpha > 1.0) alpha = 1.0;
+    return alpha;
+}
+
+/* alpha_selected < 0  -> kein Flackern/Abkühlen, einfach "selected" direkt
+ *                        zeichnen.
+ * alpha_selected 0..1 -> fertiges Deckkraft-Gewicht des SELECTED-Bilds
+ *                        über dem normalen Bild (0 = ganz normal, 1 = ganz
+ *                        selected). Ob das vorwärts (neu ausgewählt) oder
+ *                        rückwärts (Abkühlzeit beim Wegwechseln) läuft,
+ *                        entscheidet der Aufrufer über das Vorzeichen der
+ *                        Zeit, die er in flicker_envelope() steckt - hier
+ *                        wird nur noch gezeichnet. */
+static void draw_bubble_cell(App *app, cairo_t *cr, PangoLayout *layout, double x, double y,
+                              GdkPixbuf *icon_pb, const char *name, gboolean selected,
+                              double alpha_selected) {
+    if (alpha_selected < 0.0) {
+        draw_bubble_layer(app, cr, layout, x, y, icon_pb, name, selected);
+        return;
+    }
+
+    /* normales Bild als Basis voll zeichnen, selected mit "alpha" drüberblenden */
+    draw_bubble_layer(app, cr, layout, x, y, icon_pb, name, FALSE);
+
+    if (alpha_selected > 0.001) {
+        cairo_push_group(cr);
+        draw_bubble_layer(app, cr, layout, x, y, icon_pb, name, TRUE);
+        cairo_pop_group_to_source(cr);
+        cairo_paint_with_alpha(cr, alpha_selected);
+    }
 }
 
 static void clear_transparent(cairo_t *cr) {
@@ -1502,15 +1584,21 @@ static void clear_transparent(cairo_t *cr) {
 #define ANIM_STAGGER_US   23000.0   /* Startzeit-Versatz pro Bubble in Lesereihenfolge */
 #define ARROW_PRESS_US    150000.0  /* Dauer des kleinen Press-Pulses auf einem Pfeil */
 #define ARROW_STATE_FADE_US 150000.0 /* Dauer des Ein-/Ausblendens aktiv<->inaktiv */
-#define ARROW_ALPHA_INACTIVE 0.4    /* etwas sichtbarer als vorher (war 0.25) */
-#define ARROW_ALPHA_ACTIVE   0.65   /* von Haus aus dezenter (war 1.0) */
+#define ARROW_ALPHA_INACTIVE 0.65   /* wie gewünscht */
+#define ARROW_ALPHA_ACTIVE   0.85   /* wie gewünscht */
 #define ARROW_ALPHA_HOVER    1.0    /* beim Draufzeigen voll sichtbar */
-#define SEL_BOUNCE_US        150000.0 /* kleiner Pop beim Auswahlwechsel (WASD/Hover) */
+#define SEL_BOUNCE_US        150000.0 /* kleiner Scale-Pop beim Auswahlwechsel (WASD/Hover) */
 #define SEL_BOUNCE_AMOUNT    0.12     /* wie stark - bewusst klein/dezent */
+/* FLICKER_US/FLICKER_HOLD_US/FLICKER_BACK_US sind oben bei draw_bubble_cell
+ * definiert (werden dort schon von flicker_envelope() gebraucht). */
 
-/* Gesamtdauer der Öffnen/Schließen-Animation für n_slots Bubbles: die
- * letzte Bubble startet erst nach (n-1)*STAGGER und braucht dann noch
- * einmal die volle POP-Dauer. */
+/* Seitenwechsel (q/e/Pfeil-Klick/WASD-Randüberschreitung) benutzt
+ * DIESELBE Basisdauer wie Öffnen/Schließen (ANIM_POP_US/ANIM_STAGGER_US) -
+ * nur die Kurve ist anders (Trampolin statt ease-out-back). Die
+ * Geschwindigkeit bei schnellem Spammen kommt NICHT aus kürzeren
+ * Konstanten, sondern aus der Pending-Queue weiter unten (anim_speed). */
+
+/* Gesamtdauer der Öffnen/Schließen-/Wechsel-Animation für n_slots Bubbles. */
 /* Klassische "Ease-Out-Back"-Kurve: startet bei 0, überschwingt kurz vor
  * dem Ziel leicht über 1.0, federt auf genau 1.0 zurück - exakt die
  * gewünschte kleine "Pop"-Bounce beim Öffnen. Für's Schließen wird sie
@@ -1522,6 +1610,15 @@ static double ease_out_back(double t) {
     const double c3 = c1 + 1.0;
     double tm1 = t - 1.0;
     return 1.0 + c3 * tm1 * tm1 * tm1 + c1 * tm1 * tm1;
+}
+
+/* "Trampolin"-Kurve für den Seitenwechsel: startet bei 0, schießt auf ~1.25
+ * über (Absprung), schwingt auf ~0.92 zurück, pendelt sich bei 1.0 ein -
+ * gedämpfte Sinusschwingung um den Endwert 1.0. */
+static double ease_trampoline(double t) {
+    if (t <= 0.0) return 0.0;
+    if (t >= 1.0) return 1.0;
+    return 1.0 - exp(-4.5 * t) * cos(10.0 * t);
 }
 
 static double anim_total_duration_us(guint n_slots) {
@@ -1544,9 +1641,17 @@ static GPtrArray* copy_slots(GPtrArray *src) {
  * i*STAGGER verzögerte Pop-Animation (Lesereihenfolge 1 2 3/4 5 6/...);
  * growing=TRUE lässt sie reinwachsen (Öffnen/neuer Inhalt beim Wechsel),
  * growing=FALSE rausschrumpfen (Schließen/alter Inhalt beim Wechsel). */
+/* is_switch=TRUE -> Trampolin-Kurve für wachsende Bubbles + Switch-Timing-Konstanten;
+ *                   Iris-Wipe wird bei Switch unterdrückt (ganzes Grid animiert ohnehin).
+ * is_switch=FALSE -> ease_out_back + OPEN/CLOSE-Timing + Iris-Wipe für Auswahl-Wechsel. */
 static void draw_bubbles(App *app, cairo_t *cr, PangoLayout *layout, GPtrArray *slots,
-                          gboolean animate, gboolean growing, gint64 elapsed_us, int selected_idx) {
+                          gboolean animate, gboolean growing, gint64 elapsed_us, int selected_idx,
+                          gboolean is_switch) {
     if (!slots) return;
+
+    double pop_us     = ANIM_POP_US;
+    double stagger_us = ANIM_STAGGER_US;
+    gint64 now = g_get_monotonic_time();
 
     for (guint i = 0; i < slots->len; i++) {
         Slot *s = g_ptr_array_index(slots, i);
@@ -1564,31 +1669,47 @@ static void draw_bubbles(App *app, cairo_t *cr, PangoLayout *layout, GPtrArray *
 
         double scale = 1.0;
         if (animate) {
-            /* Bei "rückwärts" (q/links/Zurück) läuft die Stagger-Reihenfolge
-             * umgedreht (letzte Bubble zuerst) statt in Lesereihenfolge. */
             guint stagger_idx = app->anim_reversed ? (slots->len - 1 - i) : i;
-            double bubble_elapsed = elapsed_us - (double)stagger_idx * ANIM_STAGGER_US;
+            double bubble_elapsed = elapsed_us - (double)stagger_idx * stagger_us;
             double bt = (bubble_elapsed <= 0.0) ? 0.0
-                       : (bubble_elapsed >= ANIM_POP_US) ? 1.0
-                       : bubble_elapsed / ANIM_POP_US;
-            scale = growing ? ease_out_back(bt) : ease_out_back(1.0 - bt);
-            /* cairo_scale(cr, 0, 0) erzeugt eine singuläre Matrix (nicht
-             * invertierbar) - das lässt Cairo/X11 mit "out of memory"
-             * abstürzen, sobald mehrere Bubbles gleichzeitig exakt bei
-             * Skalierung 0 stehen (z.B. Frame 1: alle noch nicht
-             * gestarteten Bubbles). Deshalb hartes Minimum statt echter 0. */
+                       : (bubble_elapsed >= pop_us) ? 1.0
+                       : bubble_elapsed / pop_us;
+            /* Trampolin nur für neue Bubbles beim Seitenwechsel. Beim Schrumpfen
+             * (alter Inhalt) und beim normalen Öffnen/Schließen ease_out_back. */
+            if (is_switch && growing)
+                scale = ease_trampoline(bt);
+            else
+                scale = growing ? ease_out_back(bt) : ease_out_back(1.0 - bt);
+            /* Keine echte 0 - singuläre Cairo-Matrix würde mit "out of memory" abstürzen. */
             if (scale < 0.001) scale = 0.001;
         }
 
-        /* Kleiner Auswahl-Pop (WASD/Hover) - unabhängig vom Öffnen/
-         * Schließen/Wechsel-System, nur auf der GERADE frisch
-         * ausgewählten Bubble, kurz und dezent. */
-        if ((int)i == app->sel_bounce_slot) {
-            gint64 be = g_get_monotonic_time() - app->sel_bounce_start_us;
+        /* Kleiner Auswahl-Pop (WASD/Hover) - nicht während Switch-Anim */
+        if (!is_switch && (int)i == app->sel_bounce_slot) {
+            gint64 be = now - app->sel_bounce_start_us;
             double bt = be / SEL_BOUNCE_US;
             if (bt < 0.0) bt = 0.0;
             if (bt > 1.0) bt = 1.0;
             scale *= 1.0 + SEL_BOUNCE_AMOUNT * sin(bt * G_PI);
+        }
+
+        /* Flackern/Abkühlen: nur bei Auswahl-Wechsel (nicht bei Switch-Anim).
+         * Neu ausgewählter Slot: normales Flackern vorwärts (elapsed direkt
+         * in die Hüllkurve). Verlassener Slot: Abkühlzeit - exakt dieselbe
+         * Hüllkurve, aber mit umgedrehter Zeit (FLICKER_US - elapsed), wie
+         * gewünscht "einfach die Flacker-Animation umdrehen". Beide dauern
+         * gleich lang (FLICKER_US) und laufen an derselben Uhr. */
+        double alpha_selected = -1.0;
+        if (!is_switch && (app->sel_bounce_slot >= 0 || app->prev_sel_slot >= 0)) {
+            gint64 be = now - app->sel_bounce_start_us;
+            double be_clamped = (double)be;
+            if (be_clamped < 0.0) be_clamped = 0.0;
+            if (be_clamped > FLICKER_US) be_clamped = FLICKER_US;
+            if ((int)i == app->sel_bounce_slot) {
+                alpha_selected = flicker_envelope(be_clamped);               /* vorwärts: 0 -> 1 */
+            } else if ((int)i == app->prev_sel_slot) {
+                alpha_selected = flicker_envelope(FLICKER_US - be_clamped);  /* rückwärts: 1 -> 0 (Abkühlzeit) */
+            }
         }
 
         gboolean scaling = (scale != 1.0);
@@ -1600,7 +1721,8 @@ static void draw_bubbles(App *app, cairo_t *cr, PangoLayout *layout, GPtrArray *
             cairo_translate(cr, -cx, -cy);
         }
         draw_bubble_cell(app, cr, layout, x, y, icon_pb,
-                          is_empty_placeholder ? NULL : s->name, selected);
+                          is_empty_placeholder ? NULL : s->name, selected,
+                          alpha_selected);
         if (scaling) cairo_restore(cr);
     }
 }
@@ -1619,22 +1741,26 @@ static void draw_content(App *app, cairo_t *cr, AnimType anim_type, gint64 elaps
     pango_layout_set_alignment(layout, PANGO_ALIGN_LEFT);
 
     if (anim_type == ANIM_SWITCH && app->prev_slots)
-        draw_bubbles(app, cr, layout, app->prev_slots, TRUE, FALSE, elapsed_us, -1);
+        draw_bubbles(app, cr, layout, app->prev_slots, TRUE, FALSE, elapsed_us, -1, TRUE);
 
     gboolean animate = (anim_type == ANIM_OPEN || anim_type == ANIM_CLOSE || anim_type == ANIM_SWITCH);
     gboolean growing = (anim_type == ANIM_OPEN || anim_type == ANIM_SWITCH);
-    /* Beim Wechsel soll die neue Bubble erst REINPOPPEN, wenn die alte an
-     * DERSELBEN Stelle komplett rausgeschrumpft ist - nicht gleichzeitig
-     * (siehe Feedback: "2 Blasen übereinander, sollten hintereinander
-     * sein"). Deshalb hier um eine volle POP-Dauer nach hinten verschoben. */
-    gint64 new_elapsed = (anim_type == ANIM_SWITCH) ? elapsed_us - (gint64)ANIM_POP_US : elapsed_us;
-    draw_bubbles(app, cr, layout, app->slots, animate, growing, new_elapsed, app->selected);
+    gboolean is_sw   = (anim_type == ANIM_SWITCH);
+    /* Neue Bubbles starten erst, wenn die alten komplett rausgeschrumpft sind. */
+    gint64 new_elapsed = is_sw ? elapsed_us - (gint64)ANIM_POP_US : elapsed_us;
+    draw_bubbles(app, cr, layout, app->slots, animate, growing, new_elapsed, app->selected, is_sw);
 
     if (!app->is_powermenu) {
         gboolean has_prev = app->state.page > 0;
         gboolean has_next = app->state.page < app->total_pages - 1;
-        gboolean hover_left = (app->hover_special == 1);
-        gboolean hover_right = (app->hover_special == 2);
+        /* q/e-Tastendruck soll optisch GENAUSO wie Maus-Hover wirken - voll
+         * sichtbar, solange der Press-Puls läuft (siehe trigger_arrow_press). */
+        gboolean key_press_left  = (app->arrow_press_which == 1) &&
+            ((g_get_monotonic_time() - app->arrow_press_start_us) < (gint64)ARROW_PRESS_US);
+        gboolean key_press_right = (app->arrow_press_which == 2) &&
+            ((g_get_monotonic_time() - app->arrow_press_start_us) < (gint64)ARROW_PRESS_US);
+        gboolean hover_left = (app->hover_special == 1) || key_press_left;
+        gboolean hover_right = (app->hover_special == 2) || key_press_right;
 
         /* Aktiv/inaktiv-Wechsel erkennen -> kurzes Ein-/Ausblenden starten
          * (Punkt: "Pfeil-Animation machen" - Zustandswechsel soll nicht
@@ -1740,7 +1866,7 @@ static gboolean on_draw(GtkWidget *widget, cairo_t *cr, gpointer user_data) {
         return FALSE;
     }
 
-    gint64 elapsed = g_get_monotonic_time() - app->anim_start_us;
+    gint64 elapsed = (gint64)((g_get_monotonic_time() - app->anim_start_us) * app->anim_speed);
     draw_content(app, cr, app->anim_type, elapsed);
     return FALSE;
 }
@@ -1794,10 +1920,14 @@ static void reset_app_state(App *app) {
     app->state.path = g_strdup("");
     app->state.vmode = NULL;
     app->state.page = 0;
-    app->selected = 0; /* Menü öffnen -> immer oben links (Punkt 4) */
+    app->selected = 0;
     app->hover_special = 0;
+    app->sel_bounce_slot = -1;
+    app->prev_sel_slot = -1;
+    app->anim_speed = 1.0;
+    app->pending_delta_sum = 0;
     if (app->history) { g_ptr_array_unref(app->history); app->history = NULL; }
-    app->history = g_ptr_array_new_with_free_func(history_entry_free); /* Historie weg - frischer Start */
+    app->history = g_ptr_array_new_with_free_func(history_entry_free);
 }
 
 static void hide_app(App *app) {
@@ -1812,14 +1942,13 @@ static gboolean on_anim_tick(GtkWidget *widget, GdkFrameClock *frame_clock, gpoi
     App *app = user_data;
     (void)widget; (void)frame_clock;
 
-    gint64 elapsed = g_get_monotonic_time() - app->anim_start_us;
+    /* Elapsed-Zeit mit Geschwindigkeitsfaktor skalieren (moderate
+     * Spam-Beschleunigung, siehe request_page_switch). */
+    gint64 elapsed = (gint64)((g_get_monotonic_time() - app->anim_start_us) * app->anim_speed);
     guint n_new = app->slots ? app->slots->len : 0;
     guint n_old = app->prev_slots ? app->prev_slots->len : 0;
     double duration;
     if (app->anim_type == ANIM_SWITCH) {
-        /* Alte Bubbles schrumpfen erst komplett raus, NEUE starten danach
-         * erst (siehe draw_content: new_elapsed = elapsed - ANIM_POP_US) -
-         * Gesamtdauer ist daher alt-fertig + neue-eigene-Gesamtdauer. */
         double old_done = anim_total_duration_us(n_old);
         double new_done = ANIM_POP_US + anim_total_duration_us(n_new);
         duration = (old_done > new_done) ? old_done : new_done;
@@ -1829,10 +1958,43 @@ static gboolean on_anim_tick(GtkWidget *widget, GdkFrameClock *frame_clock, gpoi
 
     gtk_widget_queue_draw(app->area);
 
-    if (elapsed >= duration) {
+    if (elapsed >= (gint64)duration) {
         AnimType finishing = app->anim_type;
+
+        /* Steht in der Warteschlange noch (mindestens) ein Seitenwechsel
+         * an (Spam während dieser Animation), jetzt EINEN Hop davon NAHTLOS
+         * nachholen: der gerade fertige Stand wird das neue "Vorher"-Bild,
+         * Seite wandert genau einen Schritt weiter, neue Slots gebaut,
+         * Animation läuft ab JETZT weiter - kein Tick-Stop, kein Schnitt.
+         * Die Geschwindigkeit wird NICHT auf 1.0 zurückgesetzt, sondern nur
+         * sanft gedämpft (*0.8) - so bleiben aufeinanderfolgende Hops beim
+         * Spammen spürbar schnell (jeder einzelne Tastendruck zieht gleich
+         * wieder nach, siehe request_page_switch) und pendeln sich erst
+         * nach einer Pause (kein neuer Druck mehr) wieder auf normal ein. */
+        if (finishing == ANIM_SWITCH && app->pending_delta_sum != 0) {
+            int step = (app->pending_delta_sum > 0) ? 1 : -1;
+            app->pending_delta_sum -= step;
+            gboolean reversed = (step < 0);
+
+            if (app->prev_slots) { g_ptr_array_unref(app->prev_slots); app->prev_slots = NULL; }
+            app->prev_slots = copy_slots(app->slots);
+
+            if (step > 0) { if (app->state.page < app->total_pages - 1) app->state.page++; }
+            else           { if (app->state.page > 0) app->state.page--; }
+            rebuild_slots(app);
+
+            app->anim_reversed = reversed;
+            app->anim_start_us = g_get_monotonic_time();
+            app->anim_speed = MAX(app->anim_speed * 0.8, 1.0); /* sanft abklingen, nie unter 1x */
+            /* app->anim_type bleibt ANIM_SWITCH, app->tick_id bleibt gültig */
+            gtk_widget_queue_draw(app->area);
+            return G_SOURCE_CONTINUE;
+        }
+
         app->anim_type = ANIM_NONE;
         app->tick_id = 0;
+        app->anim_speed = 1.0;
+        app->pending_delta_sum = 0;
         if (app->prev_slots) { g_ptr_array_unref(app->prev_slots); app->prev_slots = NULL; }
         if (finishing == ANIM_CLOSE) {
             if (g_daemon_mode) hide_app(app); else gtk_main_quit();
@@ -1864,9 +2026,9 @@ static gboolean on_arrow_tick(GtkWidget *widget, GdkFrameClock *frame_clock, gpo
     gboolean left_fade_active  = (now - app->arrow_left_fade_us)  < (gint64)ARROW_STATE_FADE_US;
     gboolean right_fade_active = (now - app->arrow_right_fade_us) < (gint64)ARROW_STATE_FADE_US;
 
-    gboolean bounce_active = (app->sel_bounce_slot >= 0) &&
+    gboolean bounce_active = (app->sel_bounce_slot >= 0 || app->prev_sel_slot >= 0) &&
         ((now - app->sel_bounce_start_us) < (gint64)SEL_BOUNCE_US);
-    if (app->sel_bounce_slot >= 0 && !bounce_active) app->sel_bounce_slot = -1;
+    if (!bounce_active) { app->sel_bounce_slot = -1; app->prev_sel_slot = -1; }
 
     if (press_active || left_fade_active || right_fade_active || bounce_active) return G_SOURCE_CONTINUE;
 
@@ -1891,9 +2053,13 @@ static void trigger_arrow_press(App *app, int which) {
 }
 
 /* Kleiner Pop auf der Bubble, die gerade per WASD/Hover neu ausgewählt
- * wurde - reiner Cursor-Wechsel auf derselben Seite, kein Seiten-/
- * Ordnerwechsel (der hat schon seine eigene Animation). */
-static void mark_selection_bounce(App *app, int idx) {
+ * wurde. prev_idx ist die Auswahl UNMITTELBAR VOR dieser Änderung (vom
+ * Aufrufer vor dem Mutieren von app->selected festgehalten - NICHT aus
+ * app->sel_bounce_slot abgeleitet, denn das wird nach 150ms wieder auf -1
+ * zurückgesetzt und wäre bei normalem Tastentempo längst weg). Die bekommt
+ * dann die Abkühl-Animation (selected->normal, umgedrehtes Flackern). */
+static void mark_selection_bounce(App *app, int idx, int prev_idx) {
+    app->prev_sel_slot = (prev_idx >= 0 && prev_idx != idx) ? prev_idx : -1;
     app->sel_bounce_slot = idx;
     app->sel_bounce_start_us = g_get_monotonic_time();
     ensure_arrow_tick(app);
@@ -1919,6 +2085,8 @@ static void show_app(App *app, App *other) {
 static void quit_app(App *app) {
     cleanup_files();
     if (app->anim_type == ANIM_CLOSE) return; /* schließt schon */
+    app->anim_speed = 1.0; /* Spam-Speed zurücksetzen, Schließen läuft normal */
+    app->pending_delta_sum = 0; /* keine vorgemerkten Wechsel mehr relevant */
     app->anim_type = ANIM_CLOSE;
     app->anim_reversed = FALSE;
     app->anim_start_us = g_get_monotonic_time();
@@ -1930,19 +2098,59 @@ static void rerender(App *app) {
     gtk_widget_queue_draw(app->area);
 }
 
-/* Für Seiten-/Ordner-/vmode-Wechsel statt rerender(): sichert den
- * aktuellen Stand (app->slots wie er JETZT noch ist, VOR dem Wechsel) als
- * Crossfade-"Vorher"-Bild, baut dann die neuen Slots und startet den
- * Crossfade. Kein Bounce hier - nur beim eigentlichen Öffnen/Schließen
- * des ganzen Menüs (siehe show_app/quit_app). */
-static void switch_content(App *app, gboolean reversed) {
-    if (app->prev_slots) { g_ptr_array_unref(app->prev_slots); app->prev_slots = NULL; }
-    app->prev_slots = copy_slots(app->slots);
-    rebuild_slots(app);
+/* Startet eine frische ANIM_SWITCH-Animation ab jetzt, immer mit normaler
+ * Geschwindigkeit. Wird NUR aufgerufen, wenn gerade keine andere
+ * ANIM_SWITCH-Animation läuft (Spam-Fall läuft über request_page_switch /
+ * das Nachholen in on_anim_tick - siehe dort). */
+static void start_switch_anim(App *app, gboolean reversed) {
+    app->anim_speed = 1.0;
     app->anim_type = ANIM_SWITCH;
     app->anim_reversed = reversed;
     app->anim_start_us = g_get_monotonic_time();
     ensure_anim_tick(app);
+}
+
+/* Für Seiten-/Ordner-/vmode-Wechsel statt rerender(): sichert den
+ * aktuellen Stand als "Vorher"-Stand, baut neue Slots und startet Switch. */
+static void switch_content(App *app, gboolean reversed) {
+    if (app->prev_slots) { g_ptr_array_unref(app->prev_slots); app->prev_slots = NULL; }
+    app->prev_slots = copy_slots(app->slots);
+    rebuild_slots(app);
+    start_switch_anim(app, reversed);
+}
+
+/* Einheitlicher Einstiegspunkt für Seitenwechsel (q/e, Pfeil-Klick, WASD-
+ * Randüberschreitung): delta = -1 (vorherige Seite) oder +1 (nächste Seite).
+ *
+ * - Läuft gerade KEINE Wechsel-Animation: sofort normal umschalten.
+ * - Läuft gerade EINE: nicht abschneiden - stattdessen in pending_delta_sum
+ *   vormerken (ADDIEREN, nicht überschreiben - JEDER Druck zählt, auch bei
+ *   Spam, nicht nur der letzte) und die laufende Animation beschleunigen.
+ *   Sobald sie fertig ist, holt on_anim_tick EINEN Hop aus der Warteschlange
+ *   NAHTLOS nach (kein Tick-Stop, kein Schnitt); ist danach noch was offen,
+ *   hängt direkt der nächste Hop dran - mit weiter erhöhter Geschwindigkeit,
+ *   solange weitergespammt wird. So fühlt sich schnelles Drücken auch
+ *   wirklich schneller an, nicht nur "ein Extra-Hop dann wieder normal". */
+static void request_page_switch(App *app, int delta) {
+    gboolean reversed = (delta < 0);
+
+    if (app->anim_type == ANIM_SWITCH && app->tick_id) {
+        /* Begrenzen, damit ein liegengebliebener/auto-repeat-Finger nicht
+         * endlos viele Hops aufstaut - mehr als eine Grid-Seiten-Spanne
+         * macht ohnehin keinen sichtbaren Sinn mehr. */
+        int next_sum = app->pending_delta_sum + delta;
+        app->pending_delta_sum = CLAMP(next_sum, -12, 12);
+        /* Deutlich spürbarer Zuwachs pro zusätzlichem Druck, damit Spammen
+         * sich auch wirklich schneller anfühlt - Obergrenze 4x, damit noch
+         * jeder Hop als Animation wahrnehmbar bleibt (nicht komplett
+         * unsichtbar/instant). */
+        app->anim_speed = MIN(app->anim_speed + 0.6, 4.0);
+        return;
+    }
+
+    if (delta > 0) { if (app->state.page < app->total_pages - 1) app->state.page++; }
+    else            { if (app->state.page > 0) app->state.page--; }
+    switch_content(app, reversed);
 }
 
 /* Setzt die Auswahl auf idx, falls dort ein selektierbarer Slot sitzt;
@@ -1985,10 +2193,7 @@ static void go_back_or_exit(App *app) {
         play_sound("FocusChange");
         rebuild_slots(app);
         try_select(app, restore_sel);
-        app->anim_type = ANIM_SWITCH;
-        app->anim_reversed = TRUE; /* Zurück = rückwärts */
-        app->anim_start_us = g_get_monotonic_time();
-        ensure_anim_tick(app);
+        start_switch_anim(app, TRUE); /* Zurück = rückwärts */
     } else {
         quit_app(app);
     }
@@ -2072,7 +2277,7 @@ static void activate_slot(App *app, Slot *s) {
          * Teil des "Bubble-Grid ohne rofi"-Auftrags. Nutzt weiterhin rofi
          * als Subprozess für DIESEN einen Punkt, exakt wie im Original. */
         char *mon = focused_monitor_name();
-        gchar *theme_path = g_build_filename(g_get_home_dir(), ".config", "rofi", app->menu_name, "theme.rasi", NULL);
+        gchar *theme_path = g_build_filename(g_get_home_dir(), ".config", "TrafkTuxLauncher", app->menu_name, "theme.rasi", NULL);
         GString *cmd = g_string_new("rofi -show window ");
         if (app->x11) g_string_append(cmd, "-x11 ");
         if (mon) {
@@ -2151,34 +2356,38 @@ static void move_selection(App *app, int dcol, int drow) {
      * hat keine Seiten, dort bleibt es beim normalen Wrap-Around. */
     if (!app->is_powermenu && dcol != 0 && drow == 0) {
         int new_col = col + dcol;
-        if (new_col >= app->columns && app->total_pages > 1) {
-            int old_page = app->state.page;
-            app->state.page = MIN(app->state.page + 1, app->total_pages - 1);
-            if (app->state.page != old_page) {
-                play_sound("FocusChange");
-                if (app->prev_slots) { g_ptr_array_unref(app->prev_slots); app->prev_slots = NULL; }
-                app->prev_slots = copy_slots(app->slots);
-                rebuild_slots(app);
-                if (!try_select(app, row * app->columns))
-                    for (int c = 0; c < app->columns && !try_select(app, row * app->columns + c); c++);
-                app->anim_type = ANIM_SWITCH;
-                app->anim_reversed = FALSE; /* nach rechts über den Rand = vorwärts */
-                app->anim_start_us = g_get_monotonic_time();
-                ensure_anim_tick(app);
+        gboolean mid_anim = (app->anim_type == ANIM_SWITCH && app->tick_id != 0);
+        if (new_col >= app->columns && app->total_pages > 1 && app->state.page < app->total_pages - 1) {
+            play_sound("FocusChange");
+            if (mid_anim) {
+                /* Läuft schon eine Wechsel-Animation - nicht abschneiden,
+                 * sauber nachholen lassen (siehe request_page_switch). Die
+                 * exakte Row-Beibehaltung fällt in diesem Spam-Fall weg -
+                 * nicht perfekt, aber funktional, siehe Feedback. */
+                request_page_switch(app, +1);
                 return;
             }
+            app->state.page++;
+            if (app->prev_slots) { g_ptr_array_unref(app->prev_slots); app->prev_slots = NULL; }
+            app->prev_slots = copy_slots(app->slots);
+            rebuild_slots(app);
+            if (!try_select(app, row * app->columns))
+                for (int c = 0; c < app->columns && !try_select(app, row * app->columns + c); c++);
+            start_switch_anim(app, FALSE); /* rechts = vorwärts */
+            return;
         } else if (new_col < 0 && app->state.page > 0) {
-            app->state.page--;
             play_sound("FocusChange");
+            if (mid_anim) {
+                request_page_switch(app, -1);
+                return;
+            }
+            app->state.page--;
             if (app->prev_slots) { g_ptr_array_unref(app->prev_slots); app->prev_slots = NULL; }
             app->prev_slots = copy_slots(app->slots);
             rebuild_slots(app);
             if (!try_select(app, row * app->columns + (app->columns - 1)))
                 for (int c = app->columns - 1; c >= 0 && !try_select(app, row * app->columns + c); c--);
-            app->anim_type = ANIM_SWITCH;
-            app->anim_reversed = TRUE; /* nach links über den Rand = rückwärts */
-            app->anim_start_us = g_get_monotonic_time();
-            ensure_anim_tick(app);
+            start_switch_anim(app, TRUE); /* links = rückwärts */
             return;
         }
     }
@@ -2193,8 +2402,9 @@ static void move_selection(App *app, int dcol, int drow) {
         if ((guint)idx < app->slots->len) {
             Slot *s = g_ptr_array_index(app->slots, idx);
             if (!s->nonselectable) {
+                int old_idx = app->selected;
                 app->selected = idx;
-                mark_selection_bounce(app, idx);
+                mark_selection_bounce(app, idx, old_idx);
                 gtk_widget_queue_draw(app->area);
                 return;
             }
@@ -2217,8 +2427,9 @@ static gboolean on_motion(GtkWidget *widget, GdkEventMotion *event, gpointer use
     if (idx >= 0) {
         Slot *s = g_ptr_array_index(app->slots, idx);
         if (!s->nonselectable && idx != app->selected) {
+            int old_idx = app->selected;
             app->selected = idx;
-            mark_selection_bounce(app, idx);
+            mark_selection_bounce(app, idx, old_idx);
             gtk_widget_queue_draw(app->area);
         }
     }
@@ -2234,18 +2445,16 @@ static gboolean on_button_press(GtkWidget *widget, GdkEventButton *event, gpoint
     if (special == 1) { /* linker Pfeil = vorherige Seite (nur falls vorhanden) */
         trigger_arrow_press(app, 1);
         if (app->state.page > 0) {
-            app->state.page--;
             play_sound("FocusChange");
-            switch_content(app, TRUE);
+            request_page_switch(app, -1);
         }
         return TRUE;
     }
     if (special == 2) { /* rechter Pfeil = nächste Seite (nur falls vorhanden) */
         trigger_arrow_press(app, 2);
         if (app->state.page < app->total_pages - 1) {
-            app->state.page++;
             play_sound("FocusChange");
-            switch_content(app, FALSE);
+            request_page_switch(app, +1);
         }
         return TRUE;
     }
@@ -2292,15 +2501,13 @@ static gboolean on_key_press(GtkWidget *widget, GdkEventKey *event, gpointer use
             return TRUE;
         case GDK_KEY_q: case GDK_KEY_Q: /* custom-1: vorherige Seite */
             trigger_arrow_press(app, 1);
-            app->state.page = MAX(0, app->state.page - 1);
             play_sound("FocusChange");
-            switch_content(app, TRUE);
+            request_page_switch(app, -1);
             return TRUE;
         case GDK_KEY_e: case GDK_KEY_E: /* custom-2: nächste Seite */
             trigger_arrow_press(app, 2);
-            app->state.page++;
             play_sound("FocusChange");
-            switch_content(app, FALSE);
+            request_page_switch(app, +1);
             return TRUE;
         case GDK_KEY_x: case GDK_KEY_X: /* custom-3: zurück/exit */
             go_back_or_exit(app);
@@ -2330,6 +2537,9 @@ static App* build_app(const char *menu_name, gboolean x11) {
     app->selected = 0;
     app->hover_special = 0;
     app->sel_bounce_slot = -1;
+    app->prev_sel_slot = -1;
+    app->anim_speed = 1.0;
+    app->pending_delta_sum = 0;
     app->history = g_ptr_array_new_with_free_func(history_entry_free);
     app->icon_cache = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_object_unref);
     load_bubble_assets(menu_name, &app->assets);

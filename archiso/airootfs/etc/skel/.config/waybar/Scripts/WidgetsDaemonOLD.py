@@ -3,11 +3,11 @@
 WidgetsDaemon.py — TrafkTux Waybar Widget System (Daemon)
 Invocation: python3 WidgetsDaemon.py
 Controlled via client: WidgetsClient.py <widget>
-Widgets: volume | network | bluetooth | brightness | akku | clock | settings
+Widgets: volume | network | bluetooth | brightness | akku | clock | settings | security
 """
 
 import gi, sys, os, re, signal, subprocess, json, threading, time, calendar, shutil, traceback
-import random, math
+import random, math, glob, stat
 from datetime import datetime, date
 from pathlib import Path
 
@@ -33,7 +33,14 @@ except ImportError:
 #  Paths & Colors
 # ════════════════════════════════════════════════════════════
 HOME   = os.path.expanduser("~")
-BUBBLE_PATH = "/tmp/bubble-normal.png"   # die eine große Blase, per Cairo gezeichnet (siehe _draw_window)
+# TrafkBubble2.png ersetzt das alte bubble-normal.png als Hintergrund-
+# Blase; TrafkBubble1.png ist NEU eine Overlay-Ebene, die über ALLEM
+# liegt (Hintergrund + Pünktchen + eigentlicher Widget-Inhalt), siehe
+# _paint_bubble_overlay() weiter unten - macht den Eindruck, als wäre
+# der ganze Widget-Inhalt wirklich INNERHALB der Blase (Glanzlichter/
+# Rand-Reflexion o.ä. je nachdem, was das Bild selbst zeigt).
+BUBBLE_PATH  = "/tmp/TrafkBubble2.png"
+OVERLAY_PATH = "/tmp/TrafkBubble1.png"
 B_NORM = f"file://{BUBBLE_PATH}"
 B_SEL  = "file:///tmp/bubble-selected.png"
 WALLPAPER_SCRIPT = f"{HOME}/.config/hypr/random_wallpaper.sh"
@@ -58,6 +65,30 @@ def _resolve_wallpaper_script() -> str:
         if os.path.isfile(candidate):
             return candidate
     return WALLPAPER_SCRIPT  # Fallback nur für die Tooltip-Fehlermeldung
+
+# Ordnerstruktur von Wallpapers.sh: ~/.config/hypr/Wallpapers/<ratio>/,
+# Ratio-Keys 11/1610/169/219/329/43 (siehe Wallpapers.sh-Kommentar) -
+# für den neuen Wallpapers-Tab (Appearance & Language) wird hier
+# derselbe Ordner rekursiv gescannt, damit dort exakt dieselben Bilder
+# auftauchen, die auch beim Zufalls-Wallpaper zur Auswahl stehen.
+WALLPAPER_DIR = f"{HOME}/.config/hypr/Wallpapers"
+_WALLPAPER_EXTS = (".jpg", ".jpeg", ".png", ".webp")
+
+def _scan_wallpaper_images() -> list[str]:
+    """Rein lesendes os.walk() über lokale Dateien - schnell genug für
+    einen synchronen Aufruf. Das eigentliche Preview-Rendering (siehe
+    _build_appearance_wallpapers_tab) läuft trotzdem in einem eigenen
+    Thread, da GdkPixbuf.Pixbuf.new_from_file_at_scale() bei vielen
+    bzw. großen Bildern durchaus spürbar dauern kann und den GTK-
+    Main-Thread sonst blockieren würde."""
+    if not os.path.isdir(WALLPAPER_DIR):
+        return []
+    out = []
+    for root, _dirs, files in os.walk(WALLPAPER_DIR):
+        for f in files:
+            if f.lower().endswith(_WALLPAPER_EXTS):
+                out.append(os.path.join(root, f))
+    return sorted(out)
 
 WEATHER_CONF     = Path(HOME) / ".config" / "wb-daemon" / "weather.json"
 _DEFAULT_WEATHER_LOC = {"lat": 47.8121, "lon": 16.2506, "name": "Wiener Neustadt"}
@@ -93,6 +124,82 @@ window {{
     border: none;
 }}
 
+/* FIX ("vieler Text ist noch immer schwarz statt weiß-gelb, wenn das
+   GTK-Theme auf Light steht"): jedes Label OHNE eigene color-Angabe
+   (z.B. reine .caption-only-Labels, oder sonstige bare Gtk.Label-
+   Instanzen ohne .bubble-Klasse) hatte bisher GAR KEINE eigene
+   color-Property und übernahm damit stillschweigend GTKs Theme-
+   Default-Textfarbe - unter einem hellen (Light) GTK-Theme ist das
+   naturgemäß schwarz/dunkelgrau statt der hier gewollten TEXT_NORMAL-
+   Farbe. Bewusst als simpler ELEMENT-Selektor (Spezifität 0,0,1) ganz
+   am Anfang des Stylesheets platziert: ".bubble" (color: GOLD),
+   "button.bubble"/".bubble.dropdown" (color: TEXT_NORMAL) und alle
+   anderen spezifischeren Klassen-Regeln weiter unten haben höhere
+   CSS-Spezifität (mind. 0,1,0) und überschreiben diese Basis-Regel
+   wie gehabt - hier wird NUR der bisher komplett ungesetzte Fall
+   (kein .bubble, keine andere color-Regel) auf TEXT_NORMAL gelegt. */
+label {{
+    color: {TEXT_NORMAL};
+}}
+
+/* GTK-Themes setzen auf "button" oft eine eigene Mindesthöhe für
+   Touch-Bedienbarkeit (z.B. 34px) - die hat bisher JEDEN button.bubble
+   im Programm unsichtbar aufgebläht, unabhängig vom eigenen
+   padding/margin. War der eigentliche Grund für den riesigen Abstand
+   zwischen Sektions-Buttons (z.B. "SCREEN: 100%") und dem Slider
+   direkt darunter - kein Layout-/Spacing-Problem, sondern schlicht ein
+   viel zu hoher, unsichtbarer Button selbst.
+
+   min-height: 0 auf "button" ALLEIN reicht aber nicht: das Theme setzt
+   ZUSÄTZLICH Padding auf den inneren Knoten (button-box/label/image
+   zwischen dem <button>-Rand und dem eigentlichen Text) - genau DAS
+   blieb bisher aktiv und blähte die Hitbox trotzdem weiter auf, auch
+   nachdem der äußere Button selbst schon auf 0 stand (das war der
+   eigentliche, bis zuletzt ungefundene Rest-Abstand zwischen Label und
+   Slider). Beides jetzt explizit zurückgesetzt - außen UND am inneren
+   Knoten -, alle spezifischeren Klassen weiter unten (.bubble.section,
+   .bubble.slider, button.bubble usw.) haben höhere Spezifität und
+   setzen ihr eigenes gewolltes Padding danach gezielt wieder. */
+button, button.text-button, button.image-button, button.toggle,
+button.flat {{
+    min-height: 0;
+    min-width: 0;
+    padding: 0;
+    margin: 0;
+    border: none;
+    outline: none;
+    box-shadow: none;
+    background: none;
+    background-image: none;
+}}
+button > box, button > label, button > image {{
+    min-height: 0;
+    min-width: 0;
+    padding: 0;
+    margin: 0;
+    border: none;
+}}
+button:hover, button:active, button:checked, button:focus,
+button:focus-visible {{
+    box-shadow: none;
+    outline: none;
+    border: none;
+}}
+
+/* Gleiches Prinzip für die Scale-Knoten (Slider) - trough/highlight/
+   slider/value könnten vom Theme ebenfalls eigenes Padding/Margin
+   bekommen, das den Regler unnötig aufbläht. scale{{}} unten (Zeile mit
+   min-height: 15px) setzt danach gezielt die gewollte Reglerhöhe. */
+scale, scale contents, scale trough, scale highlight, scale slider,
+scale value {{
+    padding: 0;
+    margin: 0;
+    border: none;
+    outline: none;
+    box-shadow: none;
+    background-image: none;
+}}
+
 /* Basis für JEDEN reinen, NICHT klickbaren Text/Icon (Titel,
    Section-Header, normale Listenzeilen, Slider-Icon-Label, Captions):
    KEIN eigener Hintergrund, KEIN Rand - der Text sitzt direkt auf der
@@ -123,14 +230,49 @@ window {{
 .bubble.title.compact-title {{
     padding: 2px 22px;
     margin: 0px 0px;
+    font-size: 19px;
+}}
+
+/* NUR für reine Ziffern-/Uhrzeit-Anzeigen (z.B. die Uhr im
+   Wetter-Widget) - manche gepatchten Builds von "JetBrainsMono Nerd
+   Font" rendern einzelne ASCII-Zeichen wie ':' fehlerhaft (sichtbar
+   z.B. als 'r' statt ':' bei "14:32"), vermutlich ein Patcher-Bug in
+   der cmap-Tabelle der Font-Datei selbst - kein Zeichenkette-Bug im
+   Python-Code (n.strftime("%H:%M") liefert garantiert einen echten
+   Doppelpunkt). Da für reine Ziffern/Doppelpunkt ohnehin keine
+   Nerd-Font-Icon-Glyphen gebraucht werden, hier einfach die Nerd-Font
+   ganz umgehen und direkt eine normale Systemschrift nehmen -
+   umgeht den Font-Bug zuverlässig, unabhängig von der genauen Ursache.
+   KEIN font-variant-numeric mehr hier drin - das ist zwar echtes CSS,
+   aber GTKs CSS-Provider (kennt nur eine Teilmenge von CSS) akzeptiert
+   die Property nicht und wirft dafür einen GError. Genau DAS war der
+   eigentliche Absturz: load_css() ist an dieser einen ungültigen
+   Property gescheitert, main() kam nie durch, der Daemon hat nie sein
+   Socket unter /tmp/wb-daemon.sock angelegt - deshalb "Datei nicht
+   gefunden" bei jedem Waybar-Klick, ganz unabhängig vom Rest. */
+.bubble.clock-digits {{
+    font-family: "Noto Sans", sans-serif;
+}}
+
+/* NEU: eigener, großer Font-Grad NUR für die Uhr-Anzeige im neuen
+   dedizierten "Clock"-Haupttab (Redesign-Liste: "Das groß mittig die
+   Uhr und direkt darunter das Datum") - der alte .clock-digits-Fund
+   oben bleibt unverändert (nutzt weiterhin die kleinere .bubble.title-
+   Größe), nur der neue Tab bekommt diese deutlich größere Variante. */
+.clock-digits-huge {{
+    font-family: "Noto Sans", sans-serif;
+    font-size: 52px;
+    font-weight: bold;
+    letter-spacing: 1px;
 }}
 
 .bubble.section {{
     padding: 3px 16px;
-    margin: 6px 0px 1px 0px;
+    margin: 6px 0px 0px 0px;
     font-size: 11px;
     font-weight: bold;
     letter-spacing: 2px;
+    min-height: 0;
 }}
 
 .bubble.item {{
@@ -153,6 +295,7 @@ window {{
 .icon-lg  {{ font-size: 22px; }}
 .icon-xl  {{ font-size: 34px; }}
 .value-md {{ font-size: 15px; font-weight: bold; }}
+.value-lg {{ font-size: 26px; font-weight: bold; }}
 .temp-xl  {{ font-size: 26px; font-weight: bold; }}
 .caption  {{ font-size: 11px; }}
 
@@ -174,8 +317,8 @@ window {{
    halbtransparenten Rechteck-Container. */
 .bubble.slider {{
     background: none;
-    padding: 6px 14px;
-    margin: 1px 0px;
+    padding: 0px 14px;
+    margin: 0px 0px;
 }}
 
 /* Echte Klick-Ziele (Buttons, Toggles, Kalendertage, Dropdowns, ...):
@@ -190,10 +333,12 @@ button.bubble, .bubble.dropdown {{
     box-shadow: none;
     padding: 5px 16px;
     margin: 1px 0px;
+    min-height: 0;
 }}
 button.bubble:hover, button.bubble:active, button.bubble:checked,
 .bubble.dropdown:hover, .bubble.dropdown:focus {{
     color: {GOLD};
+    text-shadow: 0 0 3px {GOLD};
 }}
 button.bubble:focus, .bubble.dropdown:focus {{
     box-shadow: none;
@@ -204,12 +349,26 @@ button.bubble.active {{
     font-weight: bold;
     text-shadow: 0 0 4px {GOLD}, 0 0 10px {GOLD};
 }}
+/* NUR für den "Dark Theme"-Umschalter in Appearance & Language (Look-
+   Tab): wenn Dark-Mode aktiv ist, ein eigener lila Glow statt des
+   normalen goldenen - Redesign-Vorgabe "wenn dark auf die Farbe
+   #9C81CF mit #7554B3 Glow, wenn light der normale Glow". 3 Klassen
+   ((0,3,0)) schlagen die 2 Klassen von button.bubble.active
+   ((0,2,0)) gezielt NUR hier, ohne jeden anderen aktiven Button in
+   der App zu beeinflussen. */
+button.bubble.active.theme-glow-dark {{
+    color: #9C81CF;
+    text-shadow: 0 0 4px #7554B3, 0 0 10px #7554B3;
+}}
 button.bubble.title {{
     padding: 8px 22px;
     font-size: 17px;
     font-weight: bold;
 }}
 
+scale {{
+    min-height: 15px;
+}}
 scale trough {{
     background-color: rgba(255,244,149,0.15);
     border-radius: 4px;
@@ -247,12 +406,152 @@ separator.tab-divider {{
     margin: 4px 10px 8px 10px;
 }}
 
-scrollbar {{ background-color: transparent; min-width: 3px; }}
+/* NUR für den Settings-Hub-Titel ("Settings"-Überschrift im Haupt-
+   Einstellungsmenü) - Redesign-Vorgabe: "kein dünner Strich mehr,
+   sondern ein fetterer als bei den Tabs, Abstand verringern, Über-
+   schrift soll fast auf dem Strich stehen". Bewusst NOCH kräftiger
+   als .tab-divider oben (3px statt 2px, mehr Deckkraft) und mit
+   deutlich knapperem Rand zur Überschrift hin. */
+separator.hub-divider {{
+    background-color: rgba(255,244,149,0.9);
+    min-height: 3px;
+    margin: 1px 10px 6px 10px;
+}}
+
+/* NUR für den "Connected as ..."-Link oben im Tailscale-Tab -
+   Redesign-Vorgabe: "sollte viel größer sein und leuchten". */
+.tailscale-conn-big {{
+    font-size: 20px;
+    font-weight: bold;
+    color: {GOLD};
+    text-shadow: 0 0 4px {GOLD}, 0 0 10px {GOLD};
+}}
+/* NUR für "Start on boot" im Tailscale-Tab - Redesign-Vorgabe "start
+   on boot bissl kleiner machen". */
+button.bubble.compact-btn {{
+    font-size: 12px;
+    padding: 4px 12px;
+}}
 scrollbar slider {{
     background-color: rgba(255,244,149,0.3);
     border-radius: 2px;
     min-width: 3px;
     min-height: 20px;
+}}
+
+/* ── Theme-unabhängige Overrides ────────────────────────────────────
+   Das Fenster hat immer denselben dunklen Cairo-Blob als Hintergrund,
+   egal ob GTK im Dark- oder Light-Mode ist. Alle Widgets, bei denen
+   GTK-Light-Mode sonst eigene helle Hintergründe / dunkle Texte
+   einschleust (GtkEntry, GtkComboBoxText-Popup, GtkNotebook-Tabs,
+   GtkTreeView) werden hier explizit in unserer Farb-Welt gehalten.
+   Das ist der Fix für „im Light-Mode sind viele Texte weiß/unleserlich"
+   – die Texte SOLLEN immer gold/cremefarben bleiben. */
+
+/* Entries (Custom-Res/Hz-Felder) */
+entry, entry text {{
+    background: rgba(255,244,149,0.07);
+    color: {GOLD};
+    caret-color: {GOLD};
+    border: 1px solid rgba(255,244,149,0.25);
+    border-radius: 6px;
+    padding: 2px 8px;
+    box-shadow: none;
+}}
+entry:focus, entry text:focus {{
+    border-color: rgba(255,244,149,0.6);
+    background: rgba(255,244,149,0.12);
+}}
+
+/* ComboBoxText – die ausklappbare Liste (GtkMenu/GtkTreeView drin) */
+combobox button {{
+    background: rgba(255,244,149,0.07);
+    color: {GOLD};
+    border: 1px solid rgba(255,244,149,0.25);
+    border-radius: 6px;
+    padding: 2px 8px;
+    min-height: 0;
+}}
+combobox button:hover, combobox button:active {{
+    background: rgba(255,244,149,0.15);
+    color: {GOLD};
+}}
+combobox button arrow {{
+    color: {GOLD};
+    min-width: 12px;
+    min-height: 12px;
+}}
+/* Popup-Menü des ComboBox */
+menu, menu menuitem {{
+    background-color: #1a1535;
+    color: {GOLD};
+    border: none;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.6);
+}}
+menu menuitem:hover, menu menuitem:selected {{
+    background-color: rgba(255,244,149,0.15);
+    color: {GOLD};
+}}
+
+/* Notebook-Tabs (Sub-Tabs innerhalb Settings) – damit Tab-Labels
+   im Light-Mode nicht plötzlich schwarz auf hellem Grund stehen */
+notebook > header {{
+    background: none;
+    border: none;
+    box-shadow: none;
+}}
+notebook > header tab {{
+    background: none;
+    color: {TEXT_NORMAL};
+    border: none;
+    padding: 4px 12px;
+    margin: 0;
+    min-height: 0;
+}}
+notebook > header tab:checked, notebook > header tab:hover {{
+    background: none;
+    color: {GOLD};
+    box-shadow: none;
+}}
+notebook > header tabs indicator {{
+    background-color: {GOLD};
+    min-height: 2px;
+}}
+
+/* TreeView / ListView (Prozessliste etc.) */
+treeview, treeview.view {{
+    background-color: transparent;
+    color: {GOLD};
+}}
+treeview:selected, treeview.view:selected {{
+    background-color: rgba(255,244,149,0.15);
+    color: {GOLD};
+}}
+treeview header button {{
+    background: none;
+    color: {TEXT_NORMAL};
+    border: none;
+    border-bottom: 1px solid rgba(255,244,149,0.2);
+    border-radius: 0;
+    padding: 3px 8px;
+    font-weight: bold;
+    letter-spacing: 1px;
+    font-size: 11px;
+}}
+treeview header button:hover {{
+    color: {GOLD};
+}}
+
+/* Tooltip immer dunkel */
+tooltip {{
+    background-color: #1a1535;
+    color: {GOLD};
+    border: 1px solid rgba(255,244,149,0.25);
+    border-radius: 6px;
+}}
+tooltip label {{
+    color: {GOLD};
+    padding: 2px 6px;
 }}
 """.encode()
 
@@ -291,6 +590,17 @@ def run_bg(cmd: list) -> None:
 # unverändert: "bash <pfad> <event>" bzw. "--status"/"--enable"/"--disable".)
 SOUNDCTL = os.path.join(HOME, ".config", "hypr", "SoundCenter.sh")
 
+# Muss mit EVENT_NAMES[] in SoundDaemon.c übereinstimmen (siehe dessen
+# eigener Kommentar dort für die Herleitung jedes einzelnen Namens) -
+# einzige Stelle hier, die bei einer Event-Änderung mit angepasst werden
+# muss, damit die Settings-Liste unten (SOUND EVENTS) synchron bleibt.
+SOUND_EVENTS = [
+    "Click", "RightClick", "MiddleClick",
+    "Open", "Close", "FocusChange",
+    "Pip", "Minimize", "LayoutSwitch", "Dunst",
+    "Error",
+]
+
 def _play_sound(event: str) -> None:
     run_bg(["bash", SOUNDCTL, event])
 
@@ -299,6 +609,12 @@ def _sounds_enabled() -> bool:
 
 def _set_sounds_enabled(enabled: bool) -> None:
     run_bg(["bash", SOUNDCTL, "--enable" if enabled else "--disable"])
+
+def _event_sound_enabled(event: str) -> bool:
+    return run(["bash", SOUNDCTL, "--status", event]) == "on"
+
+def _set_event_sound_enabled(event: str, enabled: bool) -> None:
+    run_bg(["bash", SOUNDCTL, "--enable" if enabled else "--disable", event])
 
 def jrun(cmd: list) -> object:
     raw = run(cmd)
@@ -350,8 +666,9 @@ _current_win: list = [None]
 # weil es nur Zeichnen ist, kein eigenes interaktives Widget.
 _anim: dict = {}
 
-_POPUP_MS   = 240   # Dauer der "wächst rein"-Animation beim Öffnen
-_FADE_MS    = 150   # Dauer des Ausblendens beim Schließen/Wechseln
+_POPUP_MS   = 350   # Dauer der Scale/Bounce-Animation - GLEICHE Dauer
+                     # für Öffnen UND Schließen, da Schließen exakt die
+                     # umgekehrte Animation ist (siehe _draw_window()).
 _PARTICLE_N = 15     # Anzahl der frei fliegenden Pünktchen pro Blase
 _TICK_MS    = 33     # ~30fps für die Pünktchen-Ambient-Animation
 
@@ -379,6 +696,25 @@ def _get_bubble_surface():
         print(f"⚠ Blasenbild konnte nicht geladen werden ({BUBBLE_PATH}): {e}", file=sys.stderr)
     return _bubble_surface
 
+_overlay_surface = None
+_overlay_load_failed = False
+
+def _get_overlay_surface():
+    """Wie _get_bubble_surface(), nur für TrafkBubble1.png - die Ebene,
+    die ganz am Ende über ALLES drüber gemalt wird (siehe
+    _paint_bubble_overlay() + deren Aufruf in _draw_window())."""
+    global _overlay_surface, _overlay_load_failed
+    if _overlay_surface is not None or _overlay_load_failed:
+        return _overlay_surface
+    try:
+        pixbuf = GdkPixbuf.Pixbuf.new_from_file(OVERLAY_PATH)
+        surf = Gdk.cairo_surface_create_from_pixbuf(pixbuf, 1, None)
+        _overlay_surface = surf
+    except Exception as e:
+        _overlay_load_failed = True
+        print(f"⚠ Overlay-Bild konnte nicht geladen werden ({OVERLAY_PATH}): {e}", file=sys.stderr)
+    return _overlay_surface
+
 def _paint_bubble_bg(ctx, w: int, h: int) -> None:
     """Malt die große Blase so, dass sie exakt die Fenstergröße w×h
     ausfüllt - läuft im bereits (per Popup-Animation) transformierten
@@ -395,6 +731,134 @@ def _paint_bubble_bg(ctx, w: int, h: int) -> None:
     ctx.paint()
     ctx.restore()
 
+def _paint_bubble_overlay(ctx, w: int, h: int) -> None:
+    """Malt TrafkBubble1.png GENAUSO wie _paint_bubble_bg() (identisches
+    Format/Größe, siehe dort), aber als eigener Aufruf GANZ AM ENDE von
+    _draw_window() - also über dem Hintergrund, den Pünktchen UND dem
+    eigentlichen Widget-Inhalt (Buttons/Text). Dadurch wirkt alles
+    andere wie INNERHALB der Blase liegend statt nur davor."""
+    surf = _get_overlay_surface()
+    if surf is None:
+        return
+    sw, sh = surf.get_width(), surf.get_height()
+    if sw <= 0 or sh <= 0:
+        return
+    ctx.save()
+    ctx.scale(w / sw, h / sh)
+    ctx.set_source_surface(surf, 0, 0)
+    ctx.paint()
+    ctx.restore()
+
+def _monitor_geometry_for_win(win: Gtk.Window):
+    """Ermittelt die Geometrie (in logischen Pixeln) des Monitors, auf
+    dem dieses Fenster erscheint - Grundlage für _clamp_window_to_screen()
+    weiter unten. Läuft bewusst über Gdk.Display/Monitor statt
+    win.get_window(): beim ERSTEN Öffnen (aus toggle_widget(), noch vor
+    win.show_all()) ist das Fenster noch nicht realisiert, hat also noch
+    kein Gdk.Window - display.get_monitor_at_window() würde dann
+    scheitern. Fallback-Kette: Monitor des (falls vorhandenen) Gdk.Window
+    -> "primärer" Monitor -> erster bekannter Monitor."""
+    display = win.get_display()
+    if display is None:
+        return None
+    monitor = None
+    gdk_win = win.get_window()
+    if gdk_win is not None:
+        try:
+            monitor = display.get_monitor_at_window(gdk_win)
+        except Exception:
+            monitor = None
+    if monitor is None:
+        try:
+            monitor = display.get_primary_monitor()
+        except Exception:
+            monitor = None
+    if monitor is None:
+        try:
+            if display.get_n_monitors() > 0:
+                monitor = display.get_monitor(0)
+        except Exception:
+            monitor = None
+    if monitor is None:
+        return None
+    try:
+        return monitor.get_geometry()
+    except Exception:
+        return None
+
+# Müssen zu den GtkLayerShell-Margins in make_win() passen (dort:
+# BOTTOM=85, RIGHT=85) - sonst würde hier ein Fenster als "passt noch"
+# durchgehen, das durch den Anchor-Offset trotzdem über den Bildschirm
+# hinausragt.
+# Müssen zu den GtkLayerShell-Margins in make_win() passen (dort:
+# BOTTOM=65, RIGHT=35) - sonst würde hier ein Fenster als "passt noch"
+# durchgehen, das durch den Anchor-Offset trotzdem über den Bildschirm
+# hinausragt.
+_SCREEN_MARGIN_BOTTOM = 65
+_SCREEN_MARGIN_RIGHT  = 35
+_SCREEN_EDGE_BUFFER   = 24   # Sicherheitsabstand zum oberen/linken Rand,
+                              # damit auch ein voll ausgewickeltes
+                              # Fenster nicht bis an Kante 0 heranreicht
+
+def _clamp_window_to_screen(win: Gtk.Window) -> None:
+    """Bugfix für "widgets can go over the screen if scale is too high"
+    (siehe README, Known Bugs): bisher wurde ein Widget-Fenster NIE
+    gegen die tatsächlich verfügbare Monitorfläche geprüft - bei hoher
+    Scale (= kleine logische Auflösung) konnte ein Fenster mit viel
+    Inhalt (z.B. Sound-Widget mit vielen offenen Audio-Apps, oder
+    Settings->Display mit mehreren Monitor-Zeilen) locker über den
+    sichtbaren Bereich hinauswachsen, mit dem unteren Teil dann
+    schlicht unerreichbar außerhalb des Screens.
+
+    Wickelt den Fensterinhalt bei Bedarf in ein Gtk.ScrolledWindow mit
+    fester Maximalgröße. Wird sowohl beim ersten Öffnen (toggle_widget())
+    als auch bei jedem Tab-/Kategoriewechsel (_shrink_to_fit(), da ein
+    anfangs passender Tab beim Wechsel auf einen größeren nachträglich
+    zu groß werden kann) aufgerufen - deshalb idempotent: ein bereits
+    gewickeltes Fenster wird beim zweiten Aufruf nur in seinen
+    Maximalwerten aktualisiert, nicht nochmal neu gewickelt."""
+    geo = _monitor_geometry_for_win(win)
+    if geo is None or geo.width <= 0 or geo.height <= 0:
+        return
+    max_h = max(120, geo.height - _SCREEN_MARGIN_BOTTOM - _SCREEN_EDGE_BUFFER)
+    max_w = max(200, geo.width - _SCREEN_MARGIN_RIGHT - _SCREEN_EDGE_BUFFER)
+
+    child = win.get_child()
+    if child is None:
+        return
+
+    if isinstance(child, Gtk.ScrolledWindow) and child.get_name() == "wb-daemon-clamp":
+        try:
+            child.set_max_content_height(max_h)
+            child.set_max_content_width(max_w)
+        except Exception:
+            child.set_size_request(-1, max_h)
+        return
+
+    natural_h = child.get_preferred_height()[1]
+    natural_w = child.get_preferred_width()[1]
+    if natural_h <= max_h and natural_w <= max_w:
+        return  # passt so wie es ist, kein Scroll-Wrapper nötig
+
+    win.remove(child)
+    sw = Gtk.ScrolledWindow()
+    sw.set_name("wb-daemon-clamp")
+    sw.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+    try:
+        sw.set_propagate_natural_height(True)
+        sw.set_propagate_natural_width(True)
+        sw.set_max_content_height(max_h)
+        sw.set_max_content_width(max_w)
+    except AttributeError:
+        # Ältere GTK-Versionen (<3.22) kennen propagate_natural_*/
+        # max_content_* noch nicht - fester size_request als Fallback,
+        # tut im Kern dasselbe (Fenster wird nicht größer als der
+        # Screen), nur ohne das "wächst mit bis zum Max" Verhalten.
+        sw.set_size_request(min(max_w, natural_w), max_h)
+    sw.add(child)
+    win.add(sw)
+    sw.show_all()
+
 def _shrink_to_fit(win: Gtk.Window) -> bool:
     """GTK-Fenster merken sich ihre zuletzt zugewiesene Größe und werden
     NIE von selbst wieder kleiner, auch wenn der aktuell sichtbare
@@ -409,6 +873,7 @@ def _shrink_to_fit(win: Gtk.Window) -> bool:
         win.resize(1, 1)
     except Exception:
         pass
+    _clamp_window_to_screen(win)
     return False
 
 def _switch_stack(stack: Gtk.Stack, win: Gtk.Window, name: str) -> None:
@@ -421,6 +886,23 @@ def _switch_stack(stack: Gtk.Stack, win: Gtk.Window, name: str) -> None:
 def _ease_out_cubic(t: float) -> float:
     t = max(0.0, min(1.0, t))
     return 1 - (1 - t) ** 3
+
+def _ease_out_elastic(t: float) -> float:
+    """Sanftes 'easeOutBack': wächst gleichmäßig über die GANZE Dauer
+    und schießt erst kurz vorm Ziel EIN einziges Mal leicht drüber
+    hinaus, statt wie klassisches Elastic mehrfach hin- und
+    herzuschwingen - letzteres wirkte zu hektisch/heftig und hatte
+    quasi seine gesamte sichtbare Bewegung schon in den ersten 30-40%
+    der Zeit verbraucht (fühlte sich dadurch auch "zu schnell" an,
+    obwohl die Gesamtdauer stimmte). AMPLITUDE klein halten (c1 statt
+    Standard-1.70158 nur 1.05) für ein spürbares, aber kein hartes
+    Überschwingen."""
+    t = max(0.0, min(1.0, t))
+    c1 = 1.05
+    c3 = c1 + 1
+    u = t - 1
+    return 1 + c3 * u ** 3 + c1 * u ** 2
+
 
 def _make_particles(n: int = _PARTICLE_N) -> list:
     parts = []
@@ -443,21 +925,32 @@ def _make_particles(n: int = _PARTICLE_N) -> list:
 
 def _draw_window(win: Gtk.Window, ctx) -> bool:
     """Ein einziger Draw-Handler pro Fenster: die große Blase (manuell
-    per Cairo/GdkPixbuf gemalt, siehe _paint_bubble_bg) + Popup-
-    Wachsen/Schweben + die frei fliegenden Gold-Pünktchen + das
-    Crossfade beim Öffnen/Schließen.
+    per Cairo/GdkPixbuf gemalt, siehe _paint_bubble_bg) + die Scale/
+    Bounce-Animation beim Öffnen/Schließen + die frei fliegenden
+    Gold-Pünktchen.
 
-    WICHTIG zum Crossfade: das läuft NICHT mehr über win.set_opacity()
-    (das hat sich als unzuverlässig auf GtkLayerShell-Overlay-Surfaces
+    ANIMATION: reines Skalieren + Verschieben, verankert an der
+    Fensterecke, an der das Fenster auch per GtkLayerShell hängt
+    (unten rechts) - der Inhalt wächst von winzig auf Endgröße, MIT
+    Überschwingen/Bounce (siehe _ease_out_elastic: schießt kurz über
+    100% hinaus und pendelt sich dann ein), statt einer separaten
+    Opacity-Überblendung ("kein einfaches Einblenden") - Sichtbarkeit
+    kommt allein aus der Größe, nicht aus Alpha. Schließen ist exakt
+    dieselbe Animation, nur mit rückwärts laufendem Fortschritt
+    (state["closing_since"] gesetzt -> p_pop zählt von 1.0 auf 0.0
+    statt von 0.0 auf 1.0) - identische Dauer (_POPUP_MS), identische
+    Easing-Funktion, wirklich nur zeitlich umgekehrt abgespielt.
+
+    WICHTIG zum Rendern: läuft NICHT über win.set_opacity() (das hat
+    sich als unzuverlässig auf GtkLayerShell-Overlay-Surfaces
     herausgestellt - manche Wayland-Compositor ziehen Live-Änderungen
     der Fenster-Opacity nicht sauber nach, das Fenster blieb dann
     komplett unsichtbar). Stattdessen wird ALLES (Hintergrund-Blase +
-    Pünktchen + die eigentlichen Kind-Widgets) manuell in eine Cairo-
-    Gruppe gemalt (push_group/propagate_draw/pop_group_to_source) und
-    die GANZE Gruppe am Ende mit paint_with_alpha() ein- bzw.
-    ausgeblendet - das ist reines Cairo-Compositing, hängt an gar
-    nichts Wayland/Compositor-Spezifischem und funktioniert daher
-    überall gleich zuverlässig."""
+    Pünktchen + die eigentlichen Kind-Widgets) manuell in eine
+    transformierte Cairo-Gruppe gemalt (push_group/translate/scale/
+    propagate_draw/pop_group_to_source) - reines Cairo-Compositing,
+    hängt an gar nichts Wayland/Compositor-Spezifischem und
+    funktioniert daher überall gleich zuverlässig."""
     state = _anim.get(win)
     now = time.time()
     alloc = win.get_allocation()
@@ -465,27 +958,42 @@ def _draw_window(win: Gtk.Window, ctx) -> bool:
 
     if state is None:
         # Kein Cairo-Zustand (z.B. HAS_CAIRO=False) - einfach normal
-        # zeichnen lassen, ohne jeden Effekt.
+        # zeichnen lassen, ohne jeden Effekt. Overlay (TrafkBubble1.png)
+        # bewusst NICHT hier mit gemalt: dieser Zweig gibt False zurück
+        # und lässt GTKs eigenen Default-Handler die Kinder NACH diesem
+        # Aufruf zeichnen - ein hier gemaltes Overlay würde also unter
+        # den Kindern landen statt darüber. Reiner Degraded-Fallback für
+        # den seltenen Fall ohne Cairo, daher nicht weiter optimiert.
         ctx.set_source_rgba(0, 0, 0, 0)
         ctx.paint()
         _paint_bubble_bg(ctx, w, h)
         return False
 
-    t_pop = (now - state["popup_start"]) / (_POPUP_MS / 1000.0)
-    p_grow = _ease_out_cubic(t_pop)
-
     closing_since = state.get("closing_since")
     if closing_since is not None:
-        t_close = (now - closing_since) / (_FADE_MS / 1000.0)
-        fade = max(0.0, 1.0 - t_close)
+        t_close = (now - closing_since) / (_POPUP_MS / 1000.0)
+        p_pop = 1.0 - _ease_out_elastic(min(1.0, t_close))
     else:
-        fade = p_grow   # Reinwachsen UND Reinblenden laufen zusammen
+        t_pop = (now - state["popup_start"]) / (_POPUP_MS / 1000.0)
+        p_pop = _ease_out_elastic(t_pop)
 
-    # Wächst von klein (nahe der Waybar, unten rechts verankert) träge
-    # nach oben/groß werdend rein, statt abrupt zu erscheinen.
-    scale = 0.35 + 0.65 * p_grow
-    ty = h * (1 - scale) + 10 * (1 - p_grow)   # kleiner "schwebt nach oben"-Versatz
+    scale = max(0.0, p_pop)
+    # Statt einer künstlichen Mindestgröße (die den Rest der
+    # Schließen-Animation als ein stehenbleibendes kleines Pünktchen
+    # hätte "einfrieren" lassen, bis der Cleanup-Timer das Fenster
+    # irgendwann zerstört) hier bewusst GAR NICHTS mehr zeichnen, sobald
+    # die Blase praktisch unsichtbar ist - sowohl ganz am Anfang des
+    # Öffnens als auch ganz am Ende des Schließens. ctx.scale() mit
+    # einem Wert nahe 0 würde außerdem eine (fast) singuläre Matrix
+    # ergeben, was bei manchen Cairo-Operationen (z.B. Radial-Gradienten
+    # der Pünktchen weiter unten) zu Fehlern führen kann - dieses
+    # frühzeitige Return umgeht das gleich mit.
+    if scale < 0.02:
+        ctx.set_source_rgba(0, 0, 0, 0)
+        ctx.paint()
+        return True
     tx = w * (1 - scale)
+    ty = h * (1 - scale)
 
     ctx.push_group()
     ctx.translate(tx, ty)
@@ -495,7 +1003,7 @@ def _draw_window(win: Gtk.Window, ctx) -> bool:
     ctx.paint()
     _paint_bubble_bg(ctx, w, h)
 
-    r, g, b = _GOLD_RGB
+    r_gold, g_gold, b_gold = _GOLD_RGB
     # Pünktchen bleiben innerhalb desselben Sicherheitsbereichs wie der
     # Content (nicht im vollen Fensterrechteck) - sonst fliegen sie
     # über den transparenten PNG-Rand hinweg, wo keine sichtbare Blase
@@ -538,49 +1046,62 @@ def _draw_window(win: Gtk.Window, ctx) -> bool:
         # Glow: echter Radial-Gradient, der bei der Kern-Deckkraft
         # (65%) startet und nach außen sanft auf 0 ausfadet - statt
         # einer flachen Halo-Scheibe mit hartem Rand.
-        core_alpha = 0.35 * p_grow
+        core_alpha = 0.35
         glow_r = pt["r"] * 3.4
         grad = cairo.RadialGradient(cx, cy, 0, cx, cy, glow_r)
-        grad.add_color_stop_rgba(0.0, r, g, b, core_alpha)
-        grad.add_color_stop_rgba(1.0, r, g, b, 0.0)
+        grad.add_color_stop_rgba(0.0, r_gold, g_gold, b_gold, core_alpha)
+        grad.add_color_stop_rgba(1.0, r_gold, g_gold, b_gold, 0.0)
         ctx.set_source(grad)
         ctx.arc(cx, cy, glow_r, 0, math.tau)
         ctx.fill()
         ctx.arc(cx, cy, pt["r"], 0, math.tau)
-        ctx.set_source_rgba(r, g, b, core_alpha)
+        ctx.set_source_rgba(r_gold, g_gold, b_gold, core_alpha)
         ctx.fill()
         ctx.restore()
 
     # Die eigentlichen Kind-Widgets (Buttons, Labels, ...) manuell mit
-    # in dieselbe Gruppe zeichnen, damit sie beim Ein-/Ausblenden mit
-    # verblassen statt abrupt stehen zu bleiben, während nur der
-    # Hintergrund faded.
+    # in dieselbe transformierte Gruppe zeichnen, damit sie exakt
+    # genauso mitwachsen/-schrumpfen und mitbouncen wie der
+    # Hintergrund, statt starr an fester Größe zu kleben.
     child = win.get_child()
     if child is not None:
         win.propagate_draw(child, ctx)
 
+    # TrafkBubble1.png GANZ ZULETZT, nach Hintergrund/Pünktchen/Inhalt -
+    # liegt dadurch optisch über allem anderen (siehe
+    # _paint_bubble_overlay()-Docstring).
+    _paint_bubble_overlay(ctx, w, h)
+
     ctx.pop_group_to_source()
-    ctx.paint_with_alpha(max(0.0, min(1.0, fade)))
+    ctx.paint()
     # True = Signal-Emission hier stoppen, DAMIT GTKs eigener
     # Default-Handler die Kinder nicht noch ein zweites Mal (diesmal
-    # ungefadet) obendrauf zeichnet - wir haben das oben schon über
-    # propagate_draw() selbst erledigt.
+    # untransformiert) obendrauf zeichnet - wir haben das oben schon
+    # über propagate_draw() selbst erledigt.
     return True
 
 def _start_popup_in(win: Gtk.Window) -> None:
-    """Öffnen-Animation anstoßen: braucht hier gar nichts weiter zu tun
-    - _draw_window() berechnet Wachsen UND Einblenden schon direkt aus
-    state["popup_start"] (in make_win() gesetzt). Nur einmal neu
-    zeichnen, damit der erste Frame nicht erst auf das nächste GTK-
-    Ereignis warten muss."""
+    """Öffnen-Animation anstoßen. WICHTIG: setzt popup_start hier NEU
+    (nicht mehr nur beim Erzeugen in make_win() belassen) - zwischen
+    make_win() und dem tatsächlichen win.show_all() liegt noch der
+    komplette Content-Aufbau (BUILDERS[name](win), bei größeren
+    Widgets durchaus spürbar), der sonst schon einen Teil der
+    Animationsdauer aufgefressen hätte, BEVOR überhaupt ein Frame
+    sichtbar war - die Animation wäre dadurch beim ersten sichtbaren
+    Frame schon halb "verbraucht" gewesen. Jetzt startet die Uhr erst
+    hier, exakt am Anfang der tatsächlich sichtbaren Zeit."""
+    state = _anim.get(win)
+    if state is not None:
+        state["popup_start"] = time.time()
     win.queue_draw()
 
 def _fade_out_and_close(name: str, win: Gtk.Window) -> None:
-    """Blendet ein Fenster per Cairo-Gruppen-Alpha aus (siehe
-    _draw_window(), state["closing_since"]) und räumt es danach über
-    dieselbe _cleanup()-Funktion auf, die auch make_win() registriert
-    hat. KEIN win.set_opacity() (siehe Kommentar in _draw_window()
-    dazu, warum das auf Layer-Shell-Surfaces unzuverlässig war)."""
+    """Schließt ein Fenster mit der GENAU UMGEKEHRTEN Reveal-Animation,
+    mit der es geöffnet wurde (siehe _draw_window(),
+    state["closing_since"]) und räumt es danach über dieselbe
+    _cleanup()-Funktion auf, die auch make_win() registriert hat. KEIN
+    win.set_opacity() (siehe Kommentar in _draw_window() dazu, warum
+    das auf Layer-Shell-Surfaces unzuverlässig war)."""
     def _finish():
         cleanup_fn = _cleanup_by_win.get(win)
         if cleanup_fn is not None:
@@ -602,7 +1123,10 @@ def _fade_out_and_close(name: str, win: Gtk.Window) -> None:
 
     state["closing_since"] = time.time()
     win.queue_draw()
-    GLib.timeout_add(_FADE_MS + _TICK_MS, lambda: (_finish(), False)[1])
+    # Gleiche Dauer wie das Öffnen (_POPUP_MS) - sonst wäre es keine
+    # wirklich "umgekehrte" Animation, sondern nur optisch ähnlich,
+    # aber unterschiedlich schnell.
+    GLib.timeout_add(_POPUP_MS + _TICK_MS, lambda: (_finish(), False)[1])
 
 def _destroy_widget(name: str) -> None:
     win = _open.pop(name, None)
@@ -654,7 +1178,7 @@ def toggle_widget(name: str) -> str:
         # abrupt verschwinden zu lassen.
         win = _open.pop(name)
         _fade_out_and_close(name, win)
-        _play_sound("close")
+        _play_sound("Close")
         return "closed"
 
     # Alle evtl. noch offenen Blasen sanft ausblenden, WÄHREND die neue
@@ -669,10 +1193,11 @@ def toggle_widget(name: str) -> str:
     _current_win[0] = win
     BUILDERS[name](win)
     _current_win[0] = None
+    _clamp_window_to_screen(win)
     win.show_all()
     _open[name] = win
     _start_popup_in(win)
-    _play_sound("open")
+    _play_sound("Open")
     return "opened"
 
 def add_timer(ms: int, fn) -> int:
@@ -697,8 +1222,8 @@ def make_win(name: str) -> Gtk.Window:
         GtkLayerShell.set_layer(win, GtkLayerShell.Layer.OVERLAY)
         GtkLayerShell.set_anchor(win, GtkLayerShell.Edge.BOTTOM, True)
         GtkLayerShell.set_anchor(win, GtkLayerShell.Edge.RIGHT,  True)
-        GtkLayerShell.set_margin(win, GtkLayerShell.Edge.BOTTOM, 110)
-        GtkLayerShell.set_margin(win, GtkLayerShell.Edge.RIGHT,  14)
+        GtkLayerShell.set_margin(win, GtkLayerShell.Edge.BOTTOM, 65)
+        GtkLayerShell.set_margin(win, GtkLayerShell.Edge.RIGHT,  35)
         GtkLayerShell.set_keyboard_mode(win, GtkLayerShell.KeyboardMode.NONE)
     else:
         win.set_type_hint(Gdk.WindowTypeHint.POPUP_MENU)
@@ -730,7 +1255,31 @@ def make_win(name: str) -> Gtk.Window:
         _timers_by_win.pop(win, None)
         _cleanup_by_win.pop(win, None)
         _anim.pop(win, None)
-        _open.pop(name, None)
+        # WICHTIG (Bugfix "Duplikat-Fenster bei schnellem Öffnen/
+        # Schließen/Öffnen", siehe Known Bugs in der README): NUR
+        # entfernen, wenn _open[name] GENAU DIESES Fenster ist - nicht
+        # blind nach Namen poppen. Ablauf des Bugs ohne diese Prüfung:
+        # 1) Fenster A wird geöffnet -> _open["volume"] = A
+        # 2) sofort wieder zugeklickt -> toggle_widget() poppt A schon
+        #    SELBST aus _open (siehe dort) und startet nur noch
+        #    _fade_out_and_close(A) - A ist ab jetzt nirgends mehr in
+        #    _open drin, blendet aber noch ein paar hundert ms lang aus.
+        # 3) sofort ein drittes Mal geklickt, WÄHREND A noch ausblendet
+        #    -> "volume" ist nicht mehr in _open -> toggle_widget() legt
+        #    ein KOMPLETT NEUES Fenster B an -> _open["volume"] = B.
+        # 4) A's Fade-Timer läuft ab, _cleanup() für A feuert. Ohne
+        #    Identitätsprüfung würde hier "_open.pop('volume', None)"
+        #    B einfach mit rausreißen, obwohl B nichts mit A's Teardown
+        #    zu tun hat und quicklebendig sichtbar bleibt. B ist danach
+        #    nirgends mehr in _open registriert - ein erneuter Klick
+        #    findet "volume" nicht in _open, versteht es also nicht als
+        #    "schließen", sondern legt gleich ein VIERTES Fenster C an.
+        #    B bleibt als nie mehr erreichbare, nie mehr schließbare
+        #    Geister-Blase permanent auf dem Screen stehen - exakt der
+        #    gemeldete Bug ("macht eine Duplikat, die immer auf dem
+        #    Screen bleibt und nichts tut").
+        if _open.get(name) is win:
+            _open.pop(name, None)
         try: win.destroy()
         except: pass
         return False
@@ -758,6 +1307,14 @@ def tab_sep() -> Gtk.Separator:
     (tab_row) sitzt - siehe separator.tab-divider in der CSS."""
     s = Gtk.Separator()
     s.get_style_context().add_class("tab-divider")
+    return s
+
+def hub_sep() -> Gtk.Separator:
+    """NOCH kräftigerer Trennstrich NUR für den Settings-Hub-Titel
+    (siehe separator.hub-divider in der CSS) - Redesign-Vorgabe "ein
+    fetterer als bei den Tabs"."""
+    s = Gtk.Separator()
+    s.get_style_context().add_class("hub-divider")
     return s
 
 def pad(w: Gtk.Widget, h: int = 10, v: int = 10) -> Gtk.Widget:
@@ -821,6 +1378,20 @@ def bsec(text: str) -> Gtk.Box:
     box.pack_start(l, False, False, 0)
     return box
 
+def bsec_btn(text: str, active: bool = False) -> Gtk.Button:
+    """Wie bsec(), aber als klickbarer Button statt reinem Label - für
+    Sektionsüberschriften, die selbst ein Schalter sind (z.B. "Volume:
+    45%" = Mute-Schalter, kein separates Icon/Symbol mehr daneben
+    nötig). Groß schreiben passiert hier genau wie bei bsec()."""
+    b = Gtk.Button(label=text.upper())
+    b.set_relief(Gtk.ReliefStyle.NONE)
+    b.get_style_context().add_class("bubble")
+    b.get_style_context().add_class("section")
+    b.set_halign(Gtk.Align.CENTER)
+    if active:
+        b.get_style_context().add_class("active")
+    return b
+
 def bitem(text: str, dim: bool = False) -> Gtk.Box:
     box = hbox(0)
     box.get_style_context().add_class("bubble")
@@ -854,18 +1425,118 @@ def btn(text: str, cb=None, tip: str = "",
         b.get_style_context().add_class("active")
     if tip: b.set_tooltip_text(tip)
     if cb:
-        # Sound zuerst (fire-and-forget, siehe _play_sound), dann der
-        # eigentliche Klick-Handler. btn() ist die zentrale Factory für
-        # praktisch JEDEN Button im gesamten Widget-System - ein Hook
-        # hier deckt also automatisch alle Fenster (volume, network,
-        # bluetooth, brightness, akku, clock, settings, ...) ab, ohne
-        # dass jede einzelne connect("clicked", ...)-Stelle im Rest der
-        # Datei angefasst werden müsste.
-        def _wrapped(_b, _cb=cb):
-            _play_sound("click")
-            return _cb(_b)
-        b.connect("clicked", _wrapped)
+        # KEIN Klick-Sound hier (mehr) - bewusst nicht verdrahtet: ein
+        # "Click"-Sound soll, wenn er kommt, wirklich systemweit sein
+        # (jeder Mausklick, nicht nur die eigenen Widgets) - das ist auf
+        # Wayland ohne rohen Input-Geräte-Zugriff nicht sauber lösbar
+        # (siehe SoundCenter-Notizen), deshalb hier erstmal NICHTS statt
+        # eines Widget-lokalen Behelfs. btn() bleibt trotzdem die
+        # zentrale Stelle - sobald es einen echten systemweiten Weg gibt,
+        # reicht ein Einzeiler genau hier für ALLE Widget-Buttons.
+        b.connect("clicked", cb)
     return b
+
+class _SegmentedControl:
+    """Ersatz für Gtk.ComboBoxText bei Dropdowns mit klar BEGRENZTER
+    Optionsanzahl (siehe README, Abschnitt "To Be Done": "some widgets
+    have dropdown menus with limits. those should be turned into
+    sliders. like the scale and rotation boxes/buttons"). Statt eines
+    aufklappbaren Menüs eine Reihe direkt sichtbarer, antippbarer
+    Knöpfe. Vorteil ggü. echtem Dropdown: alle Optionen sofort
+    sichtbar, kein Extra-Klick zum Aufklappen, besser für Touch.
+    (Rotation und Hz nutzen das mittlerweile beide NICHT mehr - Rotation
+    ist eine Gtk.ComboBoxText geworden (siehe rot_combo in
+    _build_monitor_row()), Hz ebenso (siehe hz_combo dort) - diese
+    Klasse wird aktuell für den Monitor-Ziel-Wähler im Wallpapers-Tab
+    genutzt, siehe target_ctrl in _build_appearance_wallpapers_tab().)
+
+    Bildet bewusst NUR die Teilmenge der Gtk.ComboBoxText-API ab, die
+    die aufrufenden Stellen tatsächlich nutzen (get_active_text,
+    set_active, remove_all, append_text, connect("changed", ...) inkl.
+    handler_block/unblock für programmatisches Umschalten ohne
+    Rückkopplung, plus n_items() statt des ComboBoxText-eigenen
+    get_model().iter_n_children(None)) - damit der Rest des
+    aufrufenden Codes so gut wie unverändert bleiben kann.
+    """
+    def __init__(self):
+        self.widget = hrow(sp=6)
+        self._labels: list[str] = []
+        self._buttons: list[Gtk.Button] = []
+        self._active = -1
+        self._handlers: dict[int, "callable"] = {}
+        self._next_handler_id = 1
+        self._blocked: set = set()
+
+    def append_text(self, text: str):
+        idx = len(self._labels)
+        self._labels.append(text)
+        b = btn(text, lambda _w, i=idx: self._on_click(i))
+        self._buttons.append(b)
+        self.widget.pack_start(b, False, False, 0)
+        b.show()
+
+    def remove_all(self):
+        for b in self._buttons:
+            self.widget.remove(b)
+        self._labels.clear()
+        self._buttons.clear()
+        self._active = -1
+
+    def _refresh(self):
+        for i, b in enumerate(self._buttons):
+            ctx = b.get_style_context()
+            if i == self._active:
+                ctx.add_class("active")
+            else:
+                ctx.remove_class("active")
+
+    def _on_click(self, idx: int):
+        if idx == self._active:
+            return
+        self._active = idx
+        self._refresh()
+        # Wie bei Gtk.ComboBoxText: "changed" feuert bei jedem
+        # Nutzerklick, aber (via handler_block/unblock, siehe oben)
+        # unterdrückbar bei rein programmatischen set_active()-Aufrufen.
+        for hid, cb in list(self._handlers.items()):
+            if hid not in self._blocked:
+                cb(self)
+
+    def set_active(self, idx: int):
+        self._active = idx if 0 <= idx < len(self._labels) else -1
+        self._refresh()
+
+    def get_active_text(self):
+        return self._labels[self._active] if 0 <= self._active < len(self._labels) else None
+
+    def n_items(self) -> int:
+        return len(self._labels)
+
+    def connect(self, signal: str, cb):
+        assert signal == "changed", f"_SegmentedControl unterstützt nur 'changed', nicht {signal!r}"
+        hid = self._next_handler_id
+        self._next_handler_id += 1
+        self._handlers[hid] = cb
+        return hid
+
+    def handler_block(self, hid):
+        self._blocked.add(hid)
+
+    def handler_unblock(self, hid):
+        self._blocked.discard(hid)
+
+    def set_can_focus(self, _v):
+        pass  # Knöpfe kommen schon fokus-los aus btn()
+
+    def set_sensitive(self, sensitive: bool):
+        self.widget.set_sensitive(sensitive)
+
+    def set_tooltip_text(self, text: str):
+        self.widget.set_tooltip_text(text)
+
+    def get_style_context(self):
+        return self.widget.get_style_context()
+
 
 def bslider(icon: str, lo: float, hi: float, step: float, val: float,
             cb=None, show_val: bool = True,
@@ -881,6 +1552,15 @@ def bslider(icon: str, lo: float, hi: float, step: float, val: float,
     s.set_hexpand(True)
     s.set_draw_value(show_val)
     s.set_can_focus(False)
+    # ALLGEMEIN: Slider sollen NICHT per Mausrad verstellbar sein.
+    # `lambda *_: True` reicht NICHT — GtkRange verarbeitet scroll-event
+    # im C-Level-Default-Handler, der trotz `return True` vom User-Handler
+    # weiter läuft. GLib.signal_stop_emission_by_name() bricht dagegen
+    # die komplette Signal-Emission inkl. Default-Handler ab.
+    def _block_scroll_on_slider(widget, _event):
+        widget.stop_emission_by_name("scroll-event")
+        return True
+    s.connect("scroll-event", _block_scroll_on_slider)
     if show_val:
         s.set_value_pos(Gtk.PositionType.RIGHT)
     if cb: s.connect("value-changed", cb)
@@ -934,15 +1614,35 @@ def _media_all() -> dict:
     if len(p) < 3: return {}
     return {"status": p[0], "title": p[1][:38], "artist": p[2][:32]}
 
+def _default_sink_name() -> str:
+    return run(["pactl", "get-default-sink"]).strip()
+
+def _default_source_name() -> str:
+    return run(["pactl", "get-default-source"]).strip()
+
 def _get_sinks() -> list:
     data = jrun(["pactl", "--format=json", "list", "sinks"]) or []
-    return [{"name": s.get("name",""), "desc": s.get("description","?")[:44]}
-            for s in data]
+    res = []
+    for s in data:
+        vols = s.get("volume", {})
+        pct  = int(list(vols.values())[0].get(
+                    "value_percent", "0%").rstrip("%")) if vols else 0
+        res.append({"name": s.get("name",""), "desc": s.get("description","?")[:44],
+                     "vol": pct, "muted": bool(s.get("mute", False))})
+    return res
 
 def _get_sources() -> list:
     data = jrun(["pactl", "--format=json", "list", "sources"]) or []
-    return [{"name": s.get("name",""), "desc": s.get("description","?")[:44]}
-            for s in data if "monitor" not in s.get("name","").lower()]
+    res = []
+    for s in data:
+        if "monitor" in s.get("name","").lower():
+            continue
+        vols = s.get("volume", {})
+        pct  = int(list(vols.values())[0].get(
+                    "value_percent", "0%").rstrip("%")) if vols else 0
+        res.append({"name": s.get("name",""), "desc": s.get("description","?")[:44],
+                     "vol": pct, "muted": bool(s.get("mute", False))})
+    return res
 
 def _get_inputs() -> list:
     data = jrun(["pactl", "--format=json", "list", "sink-inputs"]) or []
@@ -957,24 +1657,78 @@ def _get_inputs() -> list:
         res.append({"index": i.get("index",0), "name": name[:24], "vol": pct})
     return res
 
+def _build_device_row(dev: dict, kind: str, is_default: bool, refresh_fn) -> Gtk.Box:
+    """Eine Zeile pro Audio-Gerät im Devices-Tab: Name-Button (setzt
+    dieses Gerät als Default, zeigt jetzt auch gleich die Lautstärke im
+    Label mit an: "Name: 45%") + eigener Lautstärkeregler. KEIN Mute
+    mehr hier - das geht schon über den Regler selbst (auf 0% ziehen),
+    ein separater Mute-Schalter wäre nur Redundanz. Der Name-Button
+    leuchtet jetzt stattdessen, wenn dieses Gerät das aktuelle Default
+    ist. kind ist "sink" (Output) oder "source" (Input), steuert nur,
+    welche pactl-Unterbefehle (set-default-sink/-source, set-sink-/
+    -source-volume) benutzt werden."""
+    set_default_cmd = "set-default-sink" if kind == "sink" else "set-default-source"
+    set_volume_cmd  = "set-sink-volume"   if kind == "sink" else "set-source-volume"
+
+    row = vbox(1)
+    row.get_style_context().add_class("bubble")
+    pad(row, h=8, v=4)
+
+    vol_state = [dev["vol"]]
+
+    # Name + Lautstärke in EINEM zentrierten Label - leuchtet, wenn
+    # dieses Gerät das aktuelle Default ist.
+    def _label_text():
+        return f'{dev["desc"]}: {vol_state[0]}%'
+
+    name_btn = btn(_label_text(), active=is_default)
+    name_btn.set_halign(Gtk.Align.CENTER)
+
+    def _on_select(_w, n=dev["name"]):
+        in_thread(run, ["pactl", set_default_cmd, n])
+        GLib.timeout_add(300, refresh_fn)
+    name_btn.connect("clicked", _on_select)
+    row.pack_start(name_btn, False, False, 0)
+
+    def _on_vol(s, n=dev["name"]):
+        vol_state[0] = int(s.get_value())
+        name_btn.set_label(_label_text())
+        in_thread(run, ["pactl", set_volume_cmd, n, f"{vol_state[0]}%"])
+    # Kein Icon-Label mehr am Slider - Hitbox kommt global aus der CSS,
+    # bewusst NICHT visuell größer (siehe bslider()/CSS-Kommentar).
+    vol_box, _ = bslider("", 0, 150, 1, dev["vol"], cb=_on_vol, show_val=False)
+    for ch in vol_box.get_children():
+        if isinstance(ch, Gtk.Label):
+            vol_box.remove(ch)
+            break
+    vol_box.set_halign(Gtk.Align.CENTER)
+    vol_box.set_size_request(220, -1)
+    row.pack_start(vol_box, False, False, 0)
+
+    return row
+
 def _volume_content(win: Gtk.Window) -> Gtk.Box:
     stack = Gtk.Stack()
     stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
-    stack.set_transition_duration(120)
+    stack.set_transition_duration(200)
     stack.set_hhomogeneous(False)
     stack.set_vhomogeneous(False)
 
     # ── TAB 1: Media ────────────────────────────────────────
-    t1 = vbox(4); pad(t1, h=4, v=6)
+    t1 = vbox(3); pad(t1, h=4, v=10)
+    t1.set_margin_top(t1.get_margin_top() + 6)   # insgesamt etwas nach unten gerückt
 
+    # Titel+Artist enger zusammen als der Rest (eigene, engere vbox
+    # statt sich auf den generellen t1-Zeilenabstand zu verlassen).
+    ta_box = vbox(1)
     title_box, title_lbl   = bitem_ref("  No Media")
     for c in title_box.get_children():
         if isinstance(c, Gtk.Label):
             c.get_style_context().add_class("value-md")
     artist_box, artist_lbl = bitem_ref("", dim=True)
-
-    t1.pack_start(title_box,  False, False, 0)
-    t1.pack_start(artist_box, False, False, 0)
+    ta_box.pack_start(title_box,  False, False, 0)
+    ta_box.pack_start(artist_box, False, False, 0)
+    t1.pack_start(ta_box, False, False, 0)
 
     prev_b = btn("󰒮", tip="Previous")
     play_b = btn("󰐊", tip="Play/Pause")
@@ -982,37 +1736,41 @@ def _volume_content(win: Gtk.Window) -> Gtk.Box:
     prev_b.connect("clicked", lambda _: run_bg(["playerctl", "previous"]))
     play_b.connect("clicked", lambda _: run_bg(["playerctl", "play-pause"]))
     next_b.connect("clicked", lambda _: run_bg(["playerctl", "next"]))
-    t1.pack_start(hrow(prev_b, play_b, next_b), False, False, 4)
+    # Kein extra Padding mehr - der t1-Basisabstand (3) reicht jetzt
+    # als Lücke zum Artist darüber.
+    t1.pack_start(hrow(prev_b, play_b, next_b), False, False, 0)
 
-    t1.pack_start(sep(), False, False, 2)
+    # KEIN Trennstrich mehr vor VOLUME.
 
-    t1.pack_start(bsec("VOLUME"), False, False, 0)
+    # "Volume: 45%" ist jetzt EIN klickbarer Button = Mute-Schalter,
+    # kein separates Lautstärke-Icon/Mute-Knopf mehr am Slider selbst.
+    vol_sec_btn = bsec_btn(f"Volume: {_vol_pct()}%", active=_is_muted())
+    t1.pack_start(vol_sec_btn, False, False, 0)
 
-    muted = [_is_muted()]
-    mute_icon_lbl = Gtk.Label(label="󰖁" if muted[0] else "󰕾")
-    mute_icon_lbl.set_opacity(0.7)
+    def _on_mute(_w):
+        run(["wpctl", "set-mute", "@DEFAULT_AUDIO_SINK@", "toggle"])
+        ctx = vol_sec_btn.get_style_context()
+        if _is_muted(): ctx.add_class("active")
+        else:           ctx.remove_class("active")
+    vol_sec_btn.connect("clicked", _on_mute)
 
     def _on_vol(s):
+        val = int(s.get_value())
+        vol_sec_btn.set_label(f"VOLUME: {val}%")
         in_thread(run, ["wpctl", "set-volume",
-                        "@DEFAULT_AUDIO_SINK@", f"{int(s.get_value())}%"])
+                        "@DEFAULT_AUDIO_SINK@", f"{val}%"])
 
-    vol_box, vol_s = bslider("󰕾", 0, 150, 1, _vol_pct(), cb=_on_vol)
+    # Kein Icon-Label mehr am Slider (bslider() baut eins mit rein,
+    # wird hier gleich wieder rausgenommen) - größere Hitbox kommt
+    # global aus der CSS (siehe bslider()), hier zusätzlich zentriert
+    # und auf eine feste, nicht mehr volle Fensterbreite begrenzt.
+    vol_box, vol_s = bslider("", 0, 150, 1, _vol_pct(), cb=_on_vol, show_val=False)
     for ch in vol_box.get_children():
         if isinstance(ch, Gtk.Label):
             vol_box.remove(ch)
             break
-    mute_btn = Gtk.Button(label="󰖁" if muted[0] else "󰕾")
-    mute_btn.set_relief(Gtk.ReliefStyle.NONE)
-    mute_btn.get_style_context().add_class("flat")
-    mute_btn.set_opacity(0.7)
-
-    def _on_mute(_):
-        run(["wpctl", "set-mute", "@DEFAULT_AUDIO_SINK@", "toggle"])
-        muted[0] = _is_muted()
-        mute_btn.set_label("󰖁" if muted[0] else "󰕾")
-    mute_btn.connect("clicked", _on_mute)
-    vol_box.pack_start(mute_btn, False, False, 0)
-    vol_box.reorder_child(mute_btn, 0)
+    vol_box.set_halign(Gtk.Align.CENTER)
+    vol_box.set_size_request(230, -1)
     t1.pack_start(vol_box, False, False, 0)
 
     def _update_media():
@@ -1034,19 +1792,22 @@ def _volume_content(win: Gtk.Window) -> Gtk.Box:
 
     def _refresh_devices():
         for c in t2.get_children(): t2.remove(c)
+        default_sink = _default_sink_name()
         t2.pack_start(bsec("OUTPUT"), False, False, 0)
+        t2.pack_start(hub_sep(), False, False, 2)
         for s in _get_sinks():
-            t2.pack_start(btn(f"  {s['desc']}",
-                lambda _, n=s["name"]: (
-                    in_thread(run, ["pactl","set-default-sink", n]),
-                    GLib.timeout_add(300, _refresh_devices))), False, False, 0)
-        t2.pack_start(sep(), False, False, 4)
-        t2.pack_start(bsec("INPUT"), False, False, 0)
+            row = _build_device_row(s, "sink", s["name"] == default_sink,
+                                    _refresh_devices)
+            row.set_halign(Gtk.Align.CENTER)
+            t2.pack_start(row, False, False, 0)
+        default_source = _default_source_name()
+        t2.pack_start(bsec("INPUT"), False, False, 4)
+        t2.pack_start(hub_sep(), False, False, 2)
         for s in _get_sources():
-            t2.pack_start(btn(f"  {s['desc']}",
-                lambda _, n=s["name"]: (
-                    in_thread(run, ["pactl","set-default-source", n]),
-                    GLib.timeout_add(300, _refresh_devices))), False, False, 0)
+            row = _build_device_row(s, "source", s["name"] == default_source,
+                                    _refresh_devices)
+            row.set_halign(Gtk.Align.CENTER)
+            t2.pack_start(row, False, False, 0)
         t2.show_all()
 
     _refresh_devices()
@@ -1061,12 +1822,27 @@ def _volume_content(win: Gtk.Window) -> Gtk.Box:
             t3.pack_start(bitem("No active audio apps", dim=True),
                           False, False, 0)
         for inp in inputs:
-            t3.pack_start(bsec(inp["name"].upper()), False, False, 0)
-            def _mk(idx):
-                return lambda sc: in_thread(
-                    run, ["pactl","set-sink-input-volume",
-                          str(idx), f"{int(sc.get_value())}%"])
-            app_box, _ = bslider("󰎤", 0, 150, 1, inp["vol"], cb=_mk(inp["index"]))
+            app_sec = bsec(f'{inp["name"]}: {inp["vol"]}%')
+            sec_lbl = app_sec.get_children()[0]
+            t3.pack_start(app_sec, False, False, 0)
+            def _mk(idx, lbl=sec_lbl, name=inp["name"]):
+                def _cb(sc):
+                    val = int(sc.get_value())
+                    lbl.set_label(f"{name.upper()}: {val}%")
+                    in_thread(run, ["pactl", "set-sink-input-volume",
+                                    str(idx), f"{val}%"])
+                return _cb
+            # Kein Icon-Label mehr am Slider - Abstand zum Label darüber
+            # ist jetzt nur noch der normale, bereits enge t3-Zeilenabstand
+            # (2), da Label+Slider nichts mehr extra auseinanderhält.
+            app_box, _ = bslider("", 0, 150, 1, inp["vol"], cb=_mk(inp["index"]),
+                                  show_val=False)
+            for ch in app_box.get_children():
+                if isinstance(ch, Gtk.Label):
+                    app_box.remove(ch)
+                    break
+            app_box.set_halign(Gtk.Align.CENTER)
+            app_box.set_size_request(220, -1)
             t3.pack_start(app_box, False, False, 0)
         t3.pack_start(sep(), False, False, 4)
         t3.pack_start(btn("󰑐  Refresh",
@@ -1210,96 +1986,261 @@ def _set_dns(conn_name: str, servers: str) -> tuple[bool, str]:
         return False, err2 or out2
     return True, ""
 
-def _dns_dialog(parent: Gtk.Window) -> None:
-    """Kleiner Dialog zum DNS ändern - wirkt auf das gerade aktive
-    Verbindungsprofil (egal ob WLAN oder LAN)."""
+def _dns_over_tls_status() -> str:
+    """Liest DNSOverTLS= aus /etc/systemd/resolved.conf (unter
+    [Resolve]). Rückgabe: 'yes' | 'opportunistic' | 'no' | '' (Zeile
+    fehlt/Datei nicht lesbar - resolved's eigener Default ist dann
+    'no', aber README/System-Setup gehen von 'yes' als Ausgangszustand
+    aus, siehe _refresh_dot() im Aufrufer)."""
+    try:
+        text = Path("/etc/systemd/resolved.conf").read_text()
+    except Exception:
+        return ""
+    for line in text.splitlines():
+        s = line.strip()
+        if s.startswith("#") or "=" not in s:
+            continue
+        key, _, val = s.partition("=")
+        if key.strip().lower() == "dnsovertls":
+            return val.strip().lower()
+    return ""
+
+def _set_dns_over_tls(enforce: bool) -> tuple[bool, str]:
+    """enforce=True -> 'yes' (JEDE Anfrage MUSS über TLS, kein
+    Klartext-Fallback), enforce=False -> 'opportunistic' (versucht
+    TLS, fällt aber still auf Klartext zurück, falls der jeweilige
+    DNS-Server kein DoT kann - z.B. viele Router-eigene DNS-Server im
+    Hotel/Guest-WiFi-Modus weiter unten). Schreibt die Config-Zeile UND
+    lädt systemd-resolved in EINEM einzigen pkexec-Aufruf neu (bash -c
+    mit beidem drin), damit nur EIN Passwort-Prompt nötig ist statt
+    zwei separaten."""
+    value = "yes" if enforce else "opportunistic"
+    script = (
+        "set -e; f=/etc/systemd/resolved.conf; "
+        "if grep -qi '^DNSOverTLS=' \"$f\" 2>/dev/null; then "
+        f"sed -i 's/^DNSOverTLS=.*/DNSOverTLS={value}/I' \"$f\"; "
+        "elif grep -qi '^\\[Resolve\\]' \"$f\" 2>/dev/null; then "
+        f"sed -i '/^\\[Resolve\\]/a DNSOverTLS={value}' \"$f\"; "
+        "else "
+        f"printf '\\n[Resolve]\\nDNSOverTLS={value}\\n' >> \"$f\"; "
+        "fi; systemctl restart systemd-resolved"
+    )
+    out, err, ec = run_ec(["pkexec", "bash", "-c", script], timeout=20)
+    if ec != 0:
+        return False, err or out or f"exit code {ec}"
+    return True, ""
+
+def _guest_wifi_active(conn_name: str) -> bool:
+    """True = Hotel/Guest-WiFi-Modus für DIESES Verbindungsprofil aktiv
+    (ipv4/ipv6.ignore-auto-dns steht auf 'no', der vom Router per DHCP
+    gemeldete DNS darf also durch - nötig für Captive-Portal-
+    Login-Seiten). False = normal/enforced (ignore-auto-dns='yes',
+    Router-DNS wird ignoriert, es gilt weiter die global erzwungene
+    Quad9/Cloudflare-DoT-Konfiguration)."""
+    val = run(["nmcli", "-g", "ipv4.ignore-auto-dns",
+               "connection", "show", conn_name]).strip().lower()
+    return val in ("no", "0", "false")
+
+def _set_guest_wifi(conn_name: str, enable: bool) -> tuple[bool, str]:
+    """Setzt ipv4/ipv6.ignore-auto-dns NUR für DIESES eine
+    Verbindungsprofil (kein globaler Default, siehe README: "new
+    networks joined later still get encrypted DNS by default") und
+    verbindet neu, damit die Änderung sofort greift. Braucht KEIN
+    pkexec - NetworkManager erlaubt einem angemeldeten User per Polkit
+    standardmäßig, seine EIGENEN Verbindungsprofile zu ändern (exakt
+    dieselbe Berechtigungslage wie beim bestehenden _set_dns() oben)."""
+    val = "no" if enable else "yes"
+    out, err, ec = run_ec(["nmcli", "connection", "modify", conn_name,
+                            "ipv4.ignore-auto-dns", val,
+                            "ipv6.ignore-auto-dns", val], timeout=10)
+    if ec != 0:
+        return False, err or out
+    out2, err2, ec2 = run_ec(["nmcli", "connection", "up", conn_name], timeout=15)
+    if ec2 != 0:
+        return False, err2 or out2
+    return True, ""
+
+def _dns_content(win: Gtk.Window) -> Gtk.Box:
+    """DNS-Tab im Security-Widget (README, "DNS extensions"): der
+    Server-Auswahl-Dialog, der vorher im Internet-Widget als Popup
+    hing, ist HIERHER umgezogen - aber als richtig eingebetteter Tab
+    statt Dialog, passend zum Rest des Security-Widgets (Privacy/
+    Firewall zeigen auch alles inline). Dazu 2 neue Schalter: "Enforce
+    DNS over TLS" (global, systemweit über systemd-resolved) und
+    "Hotel/Guest WiFi mode" (nur fürs gerade aktive Verbindungsprofil).
+    Kein Lazy-Loading nötig wie beim Firewall-Tab - nichts hier drin
+    braucht beim ersten Anzeigen schon root/pkexec, nur der DoT-Toggle
+    beim tatsächlichen Umschalten."""
+    root = vbox(4); pad(root, h=4, v=2)
+    # Redesign-Liste: "Keine Überschrift. Nur den Trennstrich unter
+    # Encryption stehen lassen, den darüber nicht. Abstand oben
+    # entfernen/verringern." - btitle()+sep() oben sind weg, top-
+    # Padding von 6 auf 2 verringert; der sep() direkt unter der
+    # Encryption-Zeile (siehe "root.pack_start(sep(), ...)" nach
+    # dot_row weiter unten) bleibt unverändert stehen.
+
+    status_lbl = Gtk.Label(label="")
+    status_lbl.get_style_context().add_class("caption")
+    status_lbl.set_opacity(0.75)
+    status_lbl.set_line_wrap(True)
+    status_lbl.set_no_show_all(True)
+    status_lbl.hide()
+
+    def _flash(text: str, ms: int = 3500):
+        status_lbl.set_label(text)
+        status_lbl.show()
+        GLib.timeout_add(ms, lambda: (status_lbl.hide(), False)[1])
+
     conn = _active_connection_name()
-    dlg = Gtk.Dialog(title="Change DNS", transient_for=parent)
-    dlg.set_name("wb-daemon-popup")
-    dlg.set_modal(True)
-    dlg.set_keep_above(True)
-    dlg.set_type_hint(Gdk.WindowTypeHint.DIALOG)
-    dlg.add_buttons("Cancel", Gtk.ResponseType.CANCEL,
-                    "Apply", Gtk.ResponseType.OK)
-    box = dlg.get_content_area()
+
+    # DoT + Guest-WiFi jetzt in EINER Zeile/Sektion statt zwei getrennten
+    # mit je eigenem Header+Trennstrich (README-Feedback: "auch im
+    # Security Tab kann man viel Platz sparen") - DoT ist system-/
+    # global-weit und braucht KEINE aktive Verbindung, Guest-WiFi
+    # dagegen schon (wirkt pro Verbindung); die Zeile wird deshalb erst
+    # gebaut, wenn feststeht, ob `conn` überhaupt existiert.
+    root.pack_start(bsec("ENCRYPTION"), False, False, 0)
+    dot_row = hbox(10)
+    dot_toggle = btn("Enforce DoT")
+
+    def _refresh_dot(value: str):
+        enforced = value == "yes"
+        ctx = dot_toggle.get_style_context()
+        if enforced: ctx.add_class("active")
+        else:        ctx.remove_class("active")
+
+    _refresh_dot(_dns_over_tls_status() or "yes")
+
+    def _on_dot_toggle(_w):
+        cur = _dns_over_tls_status()
+        new_enforce = cur != "yes"
+        def _apply():
+            ok, err = _set_dns_over_tls(new_enforce)
+            if not ok:
+                raise RuntimeError(err)
+        def _reset():
+            _refresh_dot(_dns_over_tls_status() or "yes")
+        _refresh_dot("yes" if new_enforce else "opportunistic")
+        apply_change(
+            f"DNS over TLS: {'Enforced' if new_enforce else 'Opportunistic'}",
+            _apply, on_status=_flash, reset_fn=_reset)
+
+    dot_toggle.connect("clicked", _on_dot_toggle)
+    dot_toggle.set_tooltip_text(
+        "Enforced: every DNS query must use TLS, no fallback. "
+        "Opportunistic: tries TLS, silently falls back to plaintext "
+        "if the server doesn't support it.")
+    dot_row.pack_start(dot_toggle, False, False, 0)
+
+    if conn:
+        guest_toggle = btn("Guest WiFi", active=_guest_wifi_active(conn))
+
+        def _refresh_guest(enabled: bool):
+            ctx = guest_toggle.get_style_context()
+            if enabled: ctx.add_class("active")
+            else:       ctx.remove_class("active")
+
+        _refresh_guest(_guest_wifi_active(conn))
+
+        def _on_guest_toggle(_w):
+            new_val = not _guest_wifi_active(conn)
+            def _apply():
+                ok, err = _set_guest_wifi(conn, new_val)
+                if not ok:
+                    raise RuntimeError(err)
+            def _reset():
+                _refresh_guest(_guest_wifi_active(conn))
+            _refresh_guest(new_val)
+            apply_change(f"Guest WiFi mode: {'On' if new_val else 'Off'}",
+                         _apply, on_status=_flash, reset_fn=_reset)
+
+        guest_toggle.connect("clicked", _on_guest_toggle)
+        guest_toggle.set_tooltip_text(
+            "Temporarily allows this network's own DNS (needed for hotel/"
+            "airport/office captive portal login pages). Only affects this "
+            "connection - other networks keep enforced encrypted DNS, and "
+            "this one reverts as soon as you turn it back off.")
+        dot_row.pack_start(guest_toggle, False, False, 0)
+
+    dot_row.set_halign(Gtk.Align.CENTER)
+    root.pack_start(dot_row, False, False, 0)
 
     if not conn:
-        lbl = Gtk.Label(label="No active connection found.")
-        box.pack_start(lbl, True, True, 12)
-        dlg.show_all(); dlg.run(); dlg.destroy()
-        return
+        root.pack_start(sep(), False, False, 4)
+        root.pack_start(bitem(
+            "No active network connection - server picker and Guest "
+            "WiFi mode need one.", dim=True), False, False, 0)
+        root.pack_start(status_lbl, False, False, 4)
+        return root
 
-    info_lbl = Gtk.Label(label=f"Connection: {conn}")
-    info_lbl.get_style_context().add_class("caption")
-    box.pack_start(info_lbl, False, False, 6)
+    root.pack_start(sep(), False, False, 4)
 
-    e = Gtk.Entry()
-    e.set_text(_current_dns(conn))
-    e.set_placeholder_text("e.g. 1.1.1.1, 1.0.0.1 (empty = Auto/DHCP)")
-    box.pack_start(e, False, False, 6)
+    # ── DNS Server (umgezogen aus dem Internet-Widget) ───────────────
+    root.pack_start(bsec("DNS SERVER"), False, False, 0)
+    dns_entry = Gtk.Entry()
+    dns_entry.set_text(_current_dns(conn))
+    dns_entry.set_placeholder_text("e.g. 1.1.1.1, 1.0.0.1 (empty = Auto/DHCP)")
+    # "Connection: X" stand vorher als eigene Zeile drüber - jetzt nur
+    # noch als Tooltip, spart eine ganze Zeile.
+    dns_entry.set_tooltip_text(f"Connection: {conn}  ·  Press Enter to apply")
+    root.pack_start(dns_entry, False, False, 0)
+
+    def _apply_dns_value(value: str):
+        def _apply():
+            ok, err = _set_dns(conn, value)
+            if not ok:
+                raise RuntimeError(err)
+        apply_change("DNS servers", _apply, on_status=_flash)
+
+    # Kein eigener "Apply DNS"-Knopf mehr - Presets wenden sofort an,
+    # und Enter im Textfeld tut's auch (README-Feedback: "kein extra
+    # Button").
+    dns_entry.connect("activate", lambda _e: _apply_dns_value(dns_entry.get_text()))
 
     preset_row = hbox(6)
-    presets = [
-        ("Auto (DHCP)", ""),
-        ("Cloudflare", "1.1.1.1, 1.0.0.1"),
-        ("Google", "8.8.8.8, 8.8.4.4"),
-        ("Quad9", "9.9.9.9, 149.112.112.112"),
-    ]
-    for label, val in presets:
-        pb = btn(label)
-        pb.connect("clicked", lambda _b, v=val: e.set_text(v))
+    preset_row.set_halign(Gtk.Align.CENTER)
+    for plabel, pval in (("Auto (DHCP)", ""), ("Cloudflare", "1.1.1.1, 1.0.0.1"),
+                         ("Google", "8.8.8.8, 8.8.4.4"),
+                         ("Quad9", "9.9.9.9, 149.112.112.112")):
+        pb = btn(plabel)
+        def _on_preset(_b, v=pval):
+            dns_entry.set_text(v)
+            _apply_dns_value(v)
+        pb.connect("clicked", _on_preset)
         preset_row.pack_start(pb, False, False, 0)
-    box.pack_start(preset_row, False, False, 6)
+    root.pack_start(preset_row, False, False, 0)
 
-    dlg.show_all()
-    resp = dlg.run()
-    new_dns = e.get_text() if resp == Gtk.ResponseType.OK else None
-    dlg.destroy()
-    if new_dns is None:
-        return
-
-    def _worker():
-        ok, err = _set_dns(conn, new_dns)
-        if not ok:
-            GLib.idle_add(lambda: (_flash_dns_error(parent, err), False)[1])
-    in_thread(_worker)
-
-def _flash_dns_error(parent: Gtk.Window, msg: str) -> None:
-    d = Gtk.MessageDialog(transient_for=parent, modal=True,
-                           message_type=Gtk.MessageType.ERROR,
-                           buttons=Gtk.ButtonsType.OK, text="DNS change failed")
-    d.set_name("wb-daemon-popup")
-    d.set_keep_above(True)
-    d.format_secondary_text((msg or "Unknown error")[:200])
-    d.run(); d.destroy()
+    root.pack_start(status_lbl, False, False, 4)
+    return root
 
 def _network_content(win: Gtk.Window) -> Gtk.Box:
     stack = Gtk.Stack()
     stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
-    stack.set_transition_duration(120)
+    stack.set_transition_duration(200)
     stack.set_hhomogeneous(False)
     stack.set_vhomogeneous(False)
 
     # ── TAB 1: Networks ──────────────────────────────────────
-    t1 = vbox(4); pad(t1, h=4, v=6)
+    t1 = vbox(2); pad(t1, h=4, v=6)
 
-    scan_b = btn("󰑐  Scan")
-    dns_b  = btn("󰙲  DNS", tip="Change DNS servers for the active connection")
-    hdr = hbox(6)
-    hdr.pack_start(scan_b, False, False, 0)
-    hdr.pack_start(dns_b, False, False, 0)
-    hdr.set_halign(Gtk.Align.CENTER)
-    t1.pack_start(hdr, False, False, 0)
+    scan_b = Gtk.Button(label="󰑐")
+    scan_b.set_relief(Gtk.ReliefStyle.NONE)
+    scan_b.get_style_context().add_class("flat")
+    scan_b.set_halign(Gtk.Align.CENTER)
+    scan_b.set_tooltip_text("Scan for networks")
 
     note_lbl = Gtk.Label(label="")
     note_lbl.get_style_context().add_class("caption")
     note_lbl.set_opacity(0.7)
     t1.pack_start(note_lbl, False, False, 0)
 
-    t1.pack_start(sep(), False, False, 2)
-
     sw, net_box = scroll_box(240)
     t1.pack_start(sw, True, True, 0)
+
+    # Reines Symbol statt Text-Button, unten mittig unter der
+    # Netzwerkliste statt oben (README-Feedback: "Scanning entfernen -
+    # nur das Symbol unten in der Mitte unter den Netzwerken").
+    t1.pack_start(scan_b, False, False, 0)
 
     def _flash_note(text: str, ms: int = 3500):
         note_lbl.set_label(text)
@@ -1394,7 +2335,7 @@ def _network_content(win: Gtk.Window) -> Gtk.Box:
         in_thread(_fetch)
 
     def _do_scan(_):
-        scan_b.set_label("󰑎  Scanning…"); scan_b.set_sensitive(False)
+        scan_b.set_label("󰑎"); scan_b.set_sensitive(False)
         def _scan():
             dev = _wifi_dev_name()
             cmd = ["nmcli", "dev", "wifi", "rescan"]
@@ -1405,12 +2346,11 @@ def _network_content(win: Gtk.Window) -> Gtk.Box:
                 GLib.idle_add(_flash_note, "Scan cooldown active — showing current list")
             time.sleep(3)
             GLib.idle_add(_populate, _wifi_list(), _ethernet_devices())
-            GLib.idle_add(lambda: (scan_b.set_label("󰑐  Scan"),
+            GLib.idle_add(lambda: (scan_b.set_label("󰑐"),
                                    scan_b.set_sensitive(True), False)[2])
         in_thread(_scan)
 
     scan_b.connect("clicked", _do_scan)
-    dns_b.connect("clicked", lambda _b: _dns_dialog(win))
 
     # Beim Öffnen NICHT nur den (oft leeren/veralteten) NetworkManager-
     # Cache zeigen und auf einen manuellen Scan-Klick warten - sofort
@@ -1451,73 +2391,106 @@ def _network_content(win: Gtk.Window) -> Gtk.Box:
     # Alle drei nebeneinander statt untereinander.
     st_row = hbox(28)
     st_row.set_halign(Gtk.Align.CENTER)
+    st_row.set_valign(Gtk.Align.CENTER)
     st_row.pack_start(ping_row, False, False, 0)
     st_row.pack_start(down_row, False, False, 0)
     st_row.pack_start(up_row, False, False, 0)
+    # Oben/unten je ein dehnbarer Platzhalter statt fixer Ränder -
+    # zentriert die 3 Werte im FREIEN Bereich des Tabs (also unterhalb
+    # des Tab-Umschalters, der außerhalb von t2 liegt), egal wie viel
+    # Höhe der Stack diesem Tab gerade zugesteht.
+    t2.pack_start(Gtk.Box(), True, True, 0)
     t2.pack_start(st_row, False, False, 0)
+    t2.pack_start(Gtk.Box(), True, True, 0)
 
-    # Kleine "..." Animation statt jedem Text - einziges sichtbares
-    # Lebenszeichen dafür, dass gerade ein Lauf im Hintergrund läuft.
-    st_loading_lbl = Gtk.Label(label="")
-    st_loading_lbl.get_style_context().add_class("caption")
-    st_loading_lbl.set_halign(Gtk.Align.CENTER)
-    st_loading_lbl.set_no_show_all(True)
-    st_loading_lbl.hide()
-    t2.pack_start(st_loading_lbl, False, False, 0)
+    # KEINE "..." Punkte-Animation mehr - stattdessen bekommen die 3
+    # Messwerte selbst eine langsame, sanfte Wellenbewegung (leicht
+    # phasenversetzt rauf/runter) als Lebenszeichen, solange die
+    # Dauerschleife läuft (README-Feedback: "die 2 Messungen übernehmen
+    # das", "wie eine Welle leicht nach oben und unten animiert -
+    # langsam").
+    _st_wave_tid = [None]
+    _st_wave_t = [0.0]
+    _ST_WAVE_ROWS = (ping_row, down_row, up_row)
 
-    _st_dot_tid   = [None]
-    _st_dot_phase = [0]
-
-    def _st_dot_tick():
-        _st_dot_phase[0] = (_st_dot_phase[0] % 3) + 1
-        st_loading_lbl.set_label("." * _st_dot_phase[0])
+    def _st_wave_tick():
+        _st_wave_t[0] += 0.12   # bewusst langsam
+        for i, row in enumerate(_ST_WAVE_ROWS):
+            phase = i * (2 * math.pi / 3)
+            offset = math.sin(_st_wave_t[0] + phase) * 3.0   # ±3px, dezent
+            row.set_margin_top(max(0, int(round(4 + offset))))
+            row.set_margin_bottom(max(0, int(round(4 - offset))))
         return True
 
     def _st_dot_start():
-        if _st_dot_tid[0] is not None:
+        if _st_wave_tid[0] is not None:
             return
-        _st_dot_phase[0] = 0
-        st_loading_lbl.show()
-        _st_dot_tid[0] = GLib.timeout_add(450, _st_dot_tick)
-        _st_dot_tick()
+        _st_wave_tid[0] = GLib.timeout_add(60, _st_wave_tick)
 
     def _st_dot_stop():
-        if _st_dot_tid[0] is not None:
-            try: GLib.source_remove(_st_dot_tid[0])
+        if _st_wave_tid[0] is not None:
+            try: GLib.source_remove(_st_wave_tid[0])
             except Exception: pass
-            _st_dot_tid[0] = None
-        st_loading_lbl.hide()
+            _st_wave_tid[0] = None
+        for row in _ST_WAVE_ROWS:
+            row.set_margin_top(4)
+            row.set_margin_bottom(4)
 
     # Fehler/Hinweise (z.B. "speedtest-cli fehlt") landen NUR noch als
     # Tooltip auf der Zeile - kein sichtbarer Text mehr im Tab.
-    _ST_INTERVAL_MS = 45_000   # Pause zwischen zwei Läufen - bewusst
-                               # träge, das ist ein Dauerbetrieb im
-                               # Hintergrund, kein einmaliger Test.
+    #
+    # BUGFIX/Umbau (README-Feedback): lief vorher über EINEN
+    # blockierenden 'speedtest-cli --json'-Aufruf, der alle 3 Werte
+    # erst nach Abschluss des KOMPLETTEN Tests (Ping+Download+Upload,
+    # oft 20-40s) auf einmal zurückgab, und dazwischen 45s Pause. Zwei
+    # Probleme damit: 1) man sah 45+ Sekunden lang gar nichts, 2)
+    # gelegentlich kam ein offensichtlich kaputter Wert raus (z.B. ein
+    # 150000ms-Ping), der unkommentiert einfach so angezeigt wurde.
+    # Jetzt: 'speedtest-cli' OHNE --json, Ausgabe zeilenweise MITLAUFEND
+    # gelesen (wie bei _clamav_scan()/_tailscale_login_flow()) - Ping/
+    # Download/Upload erscheinen dadurch JEWEILS SOFORT, sobald ihre
+    # jeweilige Phase fertig ist, statt erst ganz am Ende alle
+    # zusammen. Kein Warten mehr zwischen zwei Läufen - läuft in einer
+    # Endlosschleife, solange der Tab offen ist (wie Ookla, nur ohne
+    # festgelegtes Ende, siehe README-Feedback). Offensichtlicher
+    # Messmüll (Ping über 2 Sekunden) wird verworfen statt angezeigt.
+    _ST_PING_RE = re.compile(r"\]:\s*([\d.]+)\s*ms")
+    _ST_DOWN_RE = re.compile(r"^Download:\s*([\d.]+)\s*Mbit/s", re.IGNORECASE)
+    _ST_UP_RE   = re.compile(r"^Upload:\s*([\d.]+)\s*Mbit/s", re.IGNORECASE)
+    _ST_MAX_SANE_PING_MS = 2000.0
+
     _st_active   = [False]
     _st_running  = [False]
-    _st_wait_tid = [None]
+    _st_gen      = [0]   # verhindert, dass ein überholter Lauf (z.B. nach schnellem Tab-Wechsel raus/rein) noch die UI eines neuen Laufs überschreibt
+    # Server-ID nach dem ERSTEN Lauf cachen (README-Feedback: "dauert
+    # immer noch sau lang bis er Zahlen zeigt") - der mit Abstand
+    # größte Zeitfresser, BEVOR überhaupt die erste Zahl (Ping)
+    # erscheint, ist NICHT die eigentliche Messung, sondern dass
+    # speedtest-cli bei JEDEM Aufruf erst die komplette Serverliste holt
+    # und mehrere Kandidaten anpingt, um den "besten" auszuwählen - das
+    # allein kann schon 5-15s dauern, ohne dass währenddessen IRGENDWAS
+    # angezeigt wird. Ab dem zweiten Lauf denselben Server per
+    # '--server <id>' direkt wiederverwenden statt die Auswahl jedes
+    # Mal neu zu wiederholen - in einer Dauerschleife (siehe unten,
+    # "kein festgelegtes Ende") macht das ab dem zweiten Durchlauf einen
+    # spürbaren Unterschied. Die Server-ID steht NUR im --json-Format
+    # drin (die normale Textausgabe zeigt sie nirgends an) - deshalb
+    # einmalig ein schneller --json-Probe-Aufruf MIT --no-download
+    # --no-upload (überspringt die eigentliche Bandbreitenmessung, tut
+    # nur Config+Serverauswahl+Ping), NICHT bei jeder Runde.
+    _st_server_id = [None]
 
-    def _st_apply_result(out, err, ec):
-        if ec == 0 and out.strip():
+    def _st_discover_server_id():
+        if _st_server_id[0]:
+            return
+        out, _err, ec = run_ec(
+            ["speedtest-cli", "--secure", "--no-download", "--no-upload", "--json"],
+            timeout=20)
+        if ec == 0:
             try:
-                data = json.loads(out)
-                ping = data.get("ping")
-                down = data.get("download")  # bit/s
-                up   = data.get("upload")    # bit/s
-                ping_val.set_label(f"{ping:.0f} ms" if ping is not None else "–")
-                down_val.set_label(f"{down/1_000_000:.1f} Mbit/s" if down else "–")
-                up_val.set_label(f"{up/1_000_000:.1f} Mbit/s" if up else "–")
-                st_row.set_tooltip_text(None)
-            except Exception as e:
-                st_row.set_tooltip_text(f"Could not read speed test response: {e}")
-        else:
-            msg = (err or out).strip()[:160] or "Unknown error"
-            st_row.set_tooltip_text(f"Speed test failed: {msg}")
-
-    def _st_tick():
-        _st_wait_tid[0] = None
-        _st_run_once()
-        return False
+                _st_server_id[0] = str(json.loads(out)["server"]["id"])
+            except Exception:
+                pass
 
     def _st_run_once():
         if not _st_active[0] or _st_running[0]:
@@ -1527,18 +2500,72 @@ def _network_content(win: Gtk.Window) -> Gtk.Box:
             return
         _st_running[0] = True
         _st_dot_start()
+        _st_gen[0] += 1
+        my_gen = _st_gen[0]
 
         def _worker():
-            out, err, ec = run_ec(["speedtest-cli", "--json", "--secure"], timeout=90)
-            def _apply():
-                _st_running[0] = False
-                _st_dot_stop()
-                if not _st_active[0]:
-                    return
-                _st_apply_result(out, err, ec)
-                _st_wait_tid[0] = GLib.timeout_add(_ST_INTERVAL_MS, _st_tick)
-            GLib.idle_add(_apply)
+            _st_discover_server_id()
+            cmd = ["speedtest-cli", "--secure"]
+            if _st_server_id[0]:
+                cmd += ["--server", _st_server_id[0]]
+            try:
+                proc = subprocess.Popen(
+                    cmd, stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT, text=True, bufsize=1)
+            except Exception as e:
+                GLib.idle_add(lambda msg=str(e): (_st_on_done(my_gen, msg), False)[1])
+                return
+            for line in proc.stdout:
+                line = line.strip()
+                if not line:
+                    continue
+                m = _ST_PING_RE.search(line)
+                if m:
+                    val = float(m.group(1))
+                    if val <= _ST_MAX_SANE_PING_MS:
+                        GLib.idle_add(lambda v=val: (_st_on_ping(my_gen, v), False)[1])
+                    continue
+                m = _ST_DOWN_RE.match(line)
+                if m:
+                    GLib.idle_add(lambda v=float(m.group(1)): (_st_on_download(my_gen, v), False)[1])
+                    continue
+                m = _ST_UP_RE.match(line)
+                if m:
+                    GLib.idle_add(lambda v=float(m.group(1)): (_st_on_upload(my_gen, v), False)[1])
+            ec = proc.wait()
+            err_txt = None if ec == 0 else f"exit code {ec}"
+            GLib.idle_add(lambda: (_st_on_done(my_gen, err_txt), False)[1])
+
         in_thread(_worker)
+
+    def _st_on_ping(gen: int, val: float):
+        if gen != _st_gen[0] or not _st_active[0]:
+            return
+        ping_val.set_label(f"{val:.0f} ms")
+
+    def _st_on_download(gen: int, val: float):
+        if gen != _st_gen[0] or not _st_active[0]:
+            return
+        down_val.set_label(f"{val:.1f} Mbit/s")
+
+    def _st_on_upload(gen: int, val: float):
+        if gen != _st_gen[0] or not _st_active[0]:
+            return
+        up_val.set_label(f"{val:.1f} Mbit/s")
+
+    def _st_on_done(gen: int, error):
+        if gen != _st_gen[0]:
+            return
+        _st_running[0] = False
+        _st_dot_stop()
+        st_row.set_tooltip_text(f"Speed test failed: {error}" if error else None)
+        if not _st_active[0]:
+            return
+        # Kein Timer-Delay mehr - direkt weiter zum nächsten Lauf.
+        # Trotzdem via idle_add statt eines direkten Aufrufs, damit
+        # ein pausenloser Fehlschlag-Loop (z.B. kein Internet) nicht
+        # den Python-Call-Stack immer tiefer verschachtelt.
+        GLib.idle_add(_st_run_once)
 
     def _start_speedtest_loop():
         if _st_active[0]:
@@ -1549,10 +2576,7 @@ def _network_content(win: Gtk.Window) -> Gtk.Box:
     def _stop_speedtest_loop():
         _st_active[0] = False
         _st_dot_stop()
-        if _st_wait_tid[0] is not None:
-            try: GLib.source_remove(_st_wait_tid[0])
-            except Exception: pass
-            _st_wait_tid[0] = None
+        _st_gen[0] += 1   # verwaist jeden noch laufenden Worker sofort - dessen idle_add-Callbacks erkennen die veraltete Generation und tun nichts mehr
 
     win.connect("destroy", lambda *_: _stop_speedtest_loop())
 
@@ -1615,18 +2639,21 @@ def _bluetooth_content() -> Gtk.Box:
     root = vbox(4); safe_pad(root, 380)
     powered = [_bt_powered()]
 
-    pwr_b  = btn("󰂯  On" if powered[0] else "󰂲  Off",
-                 active=powered[0])
-    scan_b = btn("󰑐  Scan")
+    root.pack_start(btitle("Bluetooth"), False, False, 0)
+    root.pack_start(hub_sep(), False, False, 0)
+
+    # Icon-only, oben links (Ein/Aus) / oben rechts (Scan) direkt unter
+    # dem fetten Trennstrich - kein Text mehr, nur noch das Symbol.
+    pwr_b  = btn("󰂯" if powered[0] else "󰂲", active=powered[0])
+    pwr_b.set_tooltip_text("Bluetooth on/off")
+    scan_b = btn("󰑐")
     scan_b.set_sensitive(powered[0])
+    scan_b.set_tooltip_text("Scan for devices")
 
     hdr = hbox(6)
-    hdr.set_halign(Gtk.Align.CENTER)
-    hdr.pack_start(btitle("󰂯  Bluetooth"), False, False, 0)
-    hdr.pack_start(pwr_b,  False, False, 0)
-    hdr.pack_start(scan_b, False, False, 0)
+    hdr.pack_start(pwr_b, False, False, 0)
+    hdr.pack_end(scan_b, False, False, 0)
     root.pack_start(hdr, False, False, 0)
-    root.pack_start(sep(), False, False, 2)
 
     sw, dev_box = scroll_box(280)
     root.pack_start(sw, True, True, 0)
@@ -1643,16 +2670,16 @@ def _bluetooth_content() -> Gtk.Box:
         paired      = [d for d in all_devs if d["mac"] in paired_macs]
         found       = [d for d in all_devs if d["mac"] not in paired_macs]
 
-        dev_box.pack_start(sep(), False, False, 2)
-        dev_box.pack_start(bsec("KNOWN DEVICES"), False, False, 0)
-        dev_box.pack_start(sep(), False, False, 2)
-
+        # KEIN "KNOWN DEVICES"-Header mehr - bekannte/gekoppelte Geräte
+        # stehen direkt oben in der Liste, ohne eigene Überschrift.
         for d in paired:
-            conn   = _bt_connected(d["mac"])
-            icon   = "󰂱" if conn else "󰂰"
-            name_b = bitem(f"{icon}  {d['name'][:26]}")
-            con_b  = btn("Disconnect" if conn else "Connect",
-                         active=conn)
+            conn = _bt_connected(d["mac"])
+            row = hrow(sp=6)
+            row.set_halign(Gtk.Align.CENTER)
+            # Voller Name, KEIN Bluetooth-Icon mehr links - der Name
+            # SELBST ist jetzt der Connect/Disconnect-Schalter (leuchtet
+            # bei aktiver Verbindung), kein separater Button mehr dafür.
+            name_b = btn(d["name"], active=conn)
             rm_b   = btn("󰆴", tip="Remove")
 
             def _mk_con(mac, c):
@@ -1664,24 +2691,29 @@ def _bluetooth_content() -> Gtk.Box:
             def _mk_rm(mac):
                 return lambda _: in_thread(lambda: (
                     _bt(f"remove {mac}"), GLib.idle_add(_refresh)))
-            con_b.connect("clicked", _mk_con(d["mac"], conn))
+            name_b.connect("clicked", _mk_con(d["mac"], conn))
             rm_b.connect("clicked",  _mk_rm(d["mac"]))
-            dev_box.pack_start(hrow(name_b, con_b, rm_b), False, False, 0)
+            row.pack_start(name_b, False, False, 0)
+            row.pack_start(rm_b, False, False, 0)
+            dev_box.pack_start(row, False, False, 0)
 
         if found:
-            dev_box.pack_start(sep(), False, False, 4)
-            dev_box.pack_start(bsec("DISCOVERED DEVICES"), False, False, 0)
-            dev_box.pack_start(sep(), False, False, 2)
+            # Unbekannte/nicht gekoppelte Geräte UNTER den bekannten,
+            # MIT eigener Überschrift (im selben Stil, den vorher
+            # "KNOWN DEVICES" hatte).
+            dev_box.pack_start(bsec("UNKNOWN DEVICES"), False, False, 0)
             for d in found:
+                pair_row = hrow(sp=6)
+                pair_row.set_halign(Gtk.Align.CENTER)
                 pair_b = btn("Pair")
                 def _mk_pair(mac):
                     return lambda _: in_thread(lambda: (
                         _bt(f"pair {mac}"), _bt(f"connect {mac}"),
                         GLib.idle_add(_refresh)))
                 pair_b.connect("clicked", _mk_pair(d["mac"]))
-                dev_box.pack_start(
-                    hrow(bitem(f"󰂰  {d['name'][:26]}"), pair_b),
-                    False, False, 0)
+                pair_row.pack_start(bitem(d["name"]), False, False, 0)
+                pair_row.pack_start(pair_b, False, False, 0)
+                dev_box.pack_start(pair_row, False, False, 0)
         dev_box.show_all()
 
     def _on_power(_):
@@ -1700,7 +2732,7 @@ def _bluetooth_content() -> Gtk.Box:
             # Aufrufen) erneut angestoßen hätte. Explizit False
             # zurückgeben, damit die Idle-Source sich selbst entfernt.
             def _apply_ui():
-                pwr_b.set_label("󰂯  On" if powered[0] else "󰂲  Off")
+                pwr_b.set_label("󰂯" if powered[0] else "󰂲")
                 if powered[0]:
                     pwr_b.get_style_context().add_class("active")
                 else:
@@ -1712,7 +2744,7 @@ def _bluetooth_content() -> Gtk.Box:
         in_thread(_do)
 
     def _on_scan(_):
-        scan_b.set_label("󰑎  Scanning…"); scan_b.set_sensitive(False)
+        scan_b.set_label("󰑎"); scan_b.set_sensitive(False)
         def _do():
             proc = subprocess.Popen(
                 ["bluetoothctl", "scan", "on"],
@@ -1724,7 +2756,7 @@ def _bluetooth_content() -> Gtk.Box:
             subprocess.Popen(["bluetoothctl", "scan", "off"],
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             GLib.idle_add(_refresh)
-            GLib.idle_add(lambda: (scan_b.set_label("󰑐  Scan"),
+            GLib.idle_add(lambda: (scan_b.set_label("󰑐"),
                                    scan_b.set_sensitive(True), False)[2])
         in_thread(_do)
 
@@ -1752,6 +2784,91 @@ def _bright_pct() -> int:
         mx  = int(run(["brightnessctl", "max"]))
         return max(5, int(cur / mx * 100))
     except: return 50
+
+def _internal_panel_available() -> bool:
+    """brightnessctl ohne -d steuert das Default-Gerät der Klasse
+    'backlight' - existiert keins (z.B. Desktop-PC ohne eingebautes
+    Panel), liefert 'brightnessctl max' 0 oder einen Fehler."""
+    try:
+        return int(run(["brightnessctl", "max"]) or 0) > 0
+    except Exception:
+        return False
+
+def _ddcutil_available() -> bool:
+    return shutil.which("ddcutil") is not None
+
+def _ddcutil_displays() -> list[dict]:
+    """Externe Monitore mit DDC/CI-Unterstützung, via 'ddcutil detect'.
+    NICHT jeder Monitor/jedes Kabel unterstützt DDC/CI (v.a. manche
+    USB-C-Docks/KVMs blockieren das) - taucht ein Monitor hier nicht
+    auf, findet ddcutil ihn schlicht nicht, kein Fehlerfall. ACHTUNG:
+    dieser Aufruf tastet den I2C-Bus ab und kann pro Anzeige gut eine
+    halbe bis mehrere Sekunden dauern - IMMER via in_thread() aufrufen,
+    NIE direkt im GTK-Main-Thread (siehe _load_monitor_brightness())."""
+    if not _ddcutil_available():
+        return []
+    out = run(["ddcutil", "detect", "--brief"], timeout=15)
+    displays: list[dict] = []
+    cur: dict | None = None
+    for line in (out or "").splitlines():
+        line = line.strip()
+        m = re.match(r'Display\s+(\d+)', line)
+        if m:
+            if cur:
+                displays.append(cur)
+            cur = {"display": int(m.group(1)), "model": ""}
+            continue
+        if cur is not None:
+            mm = re.match(r'Model:\s*(.+)', line)
+            if mm:
+                cur["model"] = mm.group(1).strip()
+    if cur:
+        displays.append(cur)
+    return displays
+
+def _ddcutil_get_brightness(display: int) -> int:
+    """VCP-Code 0x10 = Helligkeit (Standard-DDC/CI-Feature-Code, siehe
+    MCCS-Spezifikation) - '--brief' liefert eine einzeilige Ausgabe im
+    Format 'VCP 10 C <aktuell> <max>', dritter Wert ist der aktuelle
+    Rohwert (praktisch immer bereits 0-100 bei Helligkeit)."""
+    out = run(["ddcutil", "--display", str(display), "getvcp", "10",
+               "--brief"], timeout=8)
+    parts = (out or "").split()
+    try:
+        idx = parts.index("10")
+        return int(parts[idx + 2])
+    except (ValueError, IndexError):
+        return 50
+
+def _ddcutil_set_brightness(display: int, value: int) -> None:
+    run(["ddcutil", "--display", str(display), "setvcp", "10", str(value)],
+        timeout=8)
+
+def _brightness_devices() -> list[dict]:
+    """Alle steuerbaren Bildschirm-Helligkeiten in EINER Liste: das
+    interne Panel (immer über brightnessctl, DDC/CI gibt's dafür
+    nicht) + jeder per ddcutil erkannte externe Monitor. Rein lesende
+    Erkennung (ddcutil detect + brightnessctl max) - läuft im Aufrufer
+    IMMER per in_thread(), da ddcutil-Bus-Polling spürbar dauern kann
+    (siehe _ddcutil_displays()-Docstring). Analog zu _get_sinks() im
+    Audio-Widget: liefert eine einfache Liste von Dicts, die
+    _build_monitor_brightness_row() dann in Zeilen umsetzt (gleiches
+    Muster wie _build_device_row() für Audiogeräte)."""
+    devices: list[dict] = []
+    if _internal_panel_available():
+        devices.append({
+            "kind": "internal", "id": None,
+            "label": "Internal Display",
+            "min": 5, "cur": _bright_pct(),
+        })
+    for d in _ddcutil_displays():
+        disp = d["display"]
+        devices.append({
+            "kind": "ddcutil", "id": disp,
+            "label": d["model"] or f"Display {disp}",
+            "min": 0, "cur": _ddcutil_get_brightness(disp),
+        })
+    return devices
 
 def _nl_available() -> str | None:
     for cmd in ["gammastep", "hyprsunset", "wlsunset"]:
@@ -1946,65 +3063,208 @@ def _openrgb_set_color(dev_name: str, hex_color: str) -> None:
     except Exception:
         pass
 
+def _build_monitor_brightness_row(dev: dict) -> Gtk.Box:
+    """Eine Zeile PRO ERKANNTER ANZEIGE im Monitor-Tab des Brightness-
+    Widgets - exakt dasselbe Muster wie _build_device_row() im Audio-
+    Widget (Redesign-Vorgabe: "Pro Monitor Überschrift wie bei audio
+    devices"): Name+Wert in EINEM zentrierten Label, darunter ein
+    Regler ohne Icon, reduzierter Abstand. dev kommt aus
+    _brightness_devices() - "kind" entscheidet nur, welcher Backend-
+    Aufruf beim Ziehen läuft (brightnessctl fürs interne Panel,
+    ddcutil/DDC-CI für externe Monitore)."""
+    row = vbox(1)
+    row.get_style_context().add_class("bubble")
+    pad(row, h=8, v=4)
+
+    val_state = [dev["cur"]]
+
+    def _label_text():
+        return f'{dev["label"]}: {val_state[0]}%'
+
+    name_lbl = bsec(_label_text())
+    name_widget = name_lbl.get_children()[0]
+    row.pack_start(name_lbl, False, False, 0)
+
+    debounce_id = [0]
+
+    def _apply_value(v: int):
+        if dev["kind"] == "internal":
+            run(["brightnessctl", "set", f"{v}%"])
+        else:
+            _ddcutil_set_brightness(dev["id"], v)
+
+    def _on_change(s):
+        val_state[0] = int(s.get_value())
+        name_widget.set_label(_label_text())
+        # ddcutil ist deutlich langsamer pro Aufruf als brightnessctl
+        # (I2C-Bus statt sysfs) - Debounce verhindert, dass beim Ziehen
+        # ein Rattenschwanz an Hintergrund-Threads sich gegenseitig
+        # überholt und die Anzeige am Ende auf einem veralteten Wert
+        # hängen bleibt.
+        if debounce_id[0]:
+            GLib.source_remove(debounce_id[0])
+        def _fire():
+            debounce_id[0] = 0
+            in_thread(_apply_value, val_state[0])
+            return False
+        debounce_id[0] = GLib.timeout_add(150, _fire)
+
+    box, _ = bslider("", dev["min"], 100, 1, dev["cur"], cb=_on_change, show_val=False)
+    for ch in box.get_children():
+        if isinstance(ch, Gtk.Label):
+            box.remove(ch)
+            break
+    box.set_halign(Gtk.Align.CENTER)
+    box.set_size_request(220, -1)
+    row.pack_start(box, False, False, 0)
+
+    return row
+
 def _brightness_content(win: Gtk.Window) -> Gtk.Box:
-    # Etwas engere Grundspacing (3 statt 4) UND kleinere/wenigere
-    # Trennstriche weiter unten - der Tab hatte zwischen den Sektionen
-    # (Screen/Keyboard/RGB/Night Light) mehr Luft, als bei der eher
-    # großen Zahl an möglichen Sektionen (RGB ist pro Gerät!) gut war.
-    root = vbox(3); safe_pad(root, 360)
+    # Roadmap-Punkt "Brightness Rework": vorher eine einzige lange Liste
+    # (Screen/Keyboard/RGB/Night Light untereinander) - jetzt 2 Tabs:
+    # "Monitor" (Bildschirmhelligkeit + Night Light - beides betrifft
+    # den/die Monitor(e) selbst) und "Devices" (Keyboard-Backlight + ALLE
+    # RGB-Geräte inkl. evtl. RGB-Beleuchtung AN Monitoren - bewusst KEINE
+    # dritte, eigene RGB-Tab, siehe README: "no extra tab for that").
+    stack = Gtk.Stack()
+    stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
+    stack.set_transition_duration(200)
+    stack.set_hhomogeneous(False)
+    stack.set_vhomogeneous(False)
 
-    root.pack_start(btitle("󰃠  Brightness"), False, False, 0)
-    root.pack_start(sep(), False, False, 2)
+    # ── TAB 1: Monitor (Bildschirmhelligkeit + Night Light) ──────────
+    t1 = vbox(3); pad(t1, h=4, v=6)
+    # KEIN Titel/Icon mehr - der Tab-Button "Monitor" sagt schon alles,
+    # eine zusätzliche Überschrift wäre redundant.
 
-    # SCREEN-Header + Reroll-Button in EINER Zeile statt einer eigenen
-    # Titel-Zeile - spart eine ganze Zeile Höhe und folgt exakt dem
-    # Muster, das der Tab weiter unten für NIGHT LIGHT (bsec + Toggle
-    # im selben hbox) schon nutzt. Der Button selbst ist jetzt ein
-    # echter kleiner Icon-Button (Klasse "flat", kein "bubble" mit
-    # 16px Seiten-Padding) - genau wie mute_btn/loc_btn in den
-    # anderen Widgets.
-    wallpaper_script = _resolve_wallpaper_script()
+    # BUGFIX ("mehrere Monitore werden nicht angezeigt"): hier stand
+    # bisher GENAU EIN globaler brightnessctl-Regler ("Screen: X%"),
+    # unabhängig davon, wie viele Bildschirme tatsächlich angeschlossen
+    # sind - brightnessctl kennt naturgemäß nur das interne Panel, nie
+    # externe DP/HDMI-Monitore. Jetzt: eine Zeile PRO erkannter Anzeige
+    # (internes Panel via brightnessctl + jeder per DDC/CI erkannte
+    # externe Monitor via ddcutil, siehe _brightness_devices()), exakt
+    # nach demselben "Pro Monitor Überschrift wie bei audio devices"-
+    # Muster aus der Redesign-Liste. Erkennung läuft async (ddcutil ist
+    # I2C-Bus-Polling, spürbar langsam), Platzhalter bis dahin.
+    #
+    # Der Klick-zum-Wallpaper-neu-würfeln auf dem alten "Screen"-Label
+    # ist bewusst WEG (Redesign-Liste: "Screen Label triggert jetzt
+    # beim klicken das was vorher das Symbol rechts davon gemacht hätte
+    # - geben wir weg") - Wallpaper-Auswahl lebt jetzt vollständig im
+    # neuen Wallpapers-Tab unter Appearance & Language (manuelle Auswahl
+    # mit Preview statt nur Zufalls-Reroll).
+    mon_section = vbox(4)
+    t1.pack_start(mon_section, False, False, 0)
+    _loading_lbl = bitem("Loading displays…", dim=True)
+    mon_section.pack_start(_loading_lbl, False, False, 0)
 
-    def _on_wallpaper(_):
-        run_bg(["bash", wallpaper_script])
+    def _load_monitor_brightness():
+        try:
+            devices = _brightness_devices()
+        except Exception:
+            devices = []
+        def _apply():
+            if _loading_lbl.get_parent() is not None:
+                mon_section.remove(_loading_lbl)
+            if not devices:
+                mon_section.pack_start(
+                    bitem("No controllable displays found "
+                          "(internal panel, or ddcutil for external "
+                          "monitors)", dim=True),
+                    False, False, 0)
+            for i, dev in enumerate(devices):
+                mon_section.pack_start(
+                    _build_monitor_brightness_row(dev), False, False,
+                    0 if i == 0 else 4)
+            mon_section.show_all()
+            return False
+        GLib.idle_add(_apply)
 
-    wallpaper_b = Gtk.Button(label="󰑐")
-    wallpaper_b.set_relief(Gtk.ReliefStyle.NONE)
-    wallpaper_b.get_style_context().add_class("flat")
-    wallpaper_b.set_can_focus(False)
-    wallpaper_b.set_opacity(0.7)
-    wallpaper_b.set_tooltip_text("Reroll wallpaper")
-    if not os.path.isfile(wallpaper_script):
-        wallpaper_b.set_sensitive(False)
-        wallpaper_b.set_opacity(0.35)
-        wallpaper_b.set_tooltip_text(
-            f"Wallpaper script not found in ~/.config/hypr "
-            f"(looked for: {', '.join(_WALLPAPER_SCRIPT_CANDIDATES)})")
-    wallpaper_b.connect("clicked", _on_wallpaper)
+    in_thread(_load_monitor_brightness)
 
-    screen_hdr = hbox(4)
-    screen_hdr.set_halign(Gtk.Align.CENTER)
-    screen_hdr.pack_start(bsec("SCREEN"), False, False, 0)
-    screen_hdr.pack_start(wallpaper_b, False, False, 0)
-    root.pack_start(screen_hdr, False, False, 0)
+    # NIGHT LIGHT: das Label SELBST ist jetzt der An/Aus-Schalter -
+    # kein "On"/"Off"-Text mehr daneben, leuchtet stattdessen einfach,
+    # wenn aktiv. Zeigt die aktuelle Farbtemperatur gleich mit an.
+    nl_tool = _nl_available()
+    nl_btn = bsec_btn(f"Night Light: {_nl_temp[0]}K", active=_nl_active[0])
+    if not nl_tool:
+        nl_btn.set_sensitive(False)
+        nl_btn.set_tooltip_text(
+            "No night light tool found (gammastep/hyprsunset/wlsunset)")
+    t1.pack_start(nl_btn, False, False, 0)
 
-    def _on_bright(s):
-        in_thread(run, ["brightnessctl", "set", f"{int(s.get_value())}%"])
-    bright_box, _ = bslider("󰃟", 5, 100, 1, _bright_pct(), cb=_on_bright)
-    root.pack_start(bright_box, False, False, 0)
+    _nl_debounce_id = [0]
+
+    def _on_temp(s):
+        _nl_temp[0] = int(s.get_value())
+        nl_btn.set_label(f"NIGHT LIGHT: {_nl_temp[0]}K")
+        if not _nl_active[0]:
+            return
+        _nl_generation[0] += 1
+        gen = _nl_generation[0]
+        if _nl_debounce_id[0]:
+            GLib.source_remove(_nl_debounce_id[0])
+        def _fire():
+            _nl_debounce_id[0] = 0
+            in_thread(_nl_start, _nl_temp[0], gen)
+            return False
+        _nl_debounce_id[0] = GLib.timeout_add(150, _fire)
+
+    temp_box, temp_s = bslider(
+        "", 1000, 6500, 100, _nl_temp[0], cb=_on_temp, show_val=False)
+    for ch in temp_box.get_children():
+        if isinstance(ch, Gtk.Label):
+            temp_box.remove(ch)
+            break
+    temp_s.set_inverted(True)
+    temp_box.set_halign(Gtk.Align.CENTER)
+    temp_box.set_size_request(230, -1)
+    t1.pack_start(temp_box, False, False, 0)
+
+    def _on_nl(_w):
+        if not nl_tool: return
+        _nl_active[0] = not _nl_active[0]
+        ctx = nl_btn.get_style_context()
+        _nl_generation[0] += 1
+        gen = _nl_generation[0]
+        if _nl_active[0]:
+            ctx.add_class("active"); in_thread(_nl_start, _nl_temp[0], gen)
+        else:
+            ctx.remove_class("active"); in_thread(_nl_stop)
+
+    nl_btn.connect("clicked", _on_nl)
+
+    # ── TAB 2: Devices (Keyboard-Backlight + alle RGB-Geräte) ────────
+    t2 = vbox(3); pad(t2, h=4, v=6)
+    # KEIN Titel mehr - gleiche Begründung wie im Monitor-Tab.
 
     kbd_dev = _kbd_backlight_device()
+    kbd_section_shown = [False]
     if kbd_dev:
-        root.pack_start(sep(), False, False, 2)
-        root.pack_start(bsec("KEYBOARD BACKLIGHT"), False, False, 0)
+        kbd_hdr = bsec(f"Keyboard Backlight: {_kbd_bright_pct(kbd_dev)}%")
+        kbd_lbl = kbd_hdr.get_children()[0]
+        t2.pack_start(kbd_hdr, False, False, 0)
         def _on_kbd(s):
-            in_thread(run, ["brightnessctl", "-d", kbd_dev,
-                             "set", f"{int(s.get_value())}%"])
-        kbd_box, _ = bslider("⌨", 0, 100, 1,
-                              _kbd_bright_pct(kbd_dev), cb=_on_kbd)
-        root.pack_start(kbd_box, False, False, 0)
+            val = int(s.get_value())
+            kbd_lbl.set_label(f"KEYBOARD BACKLIGHT: {val}%")
+            in_thread(run, ["brightnessctl", "-d", kbd_dev, "set", f"{val}%"])
+        kbd_box, _ = bslider("", 0, 100, 1, _kbd_bright_pct(kbd_dev),
+                              cb=_on_kbd, show_val=False)
+        for ch in kbd_box.get_children():
+            if isinstance(ch, Gtk.Label):
+                kbd_box.remove(ch)
+                break
+        kbd_box.set_halign(Gtk.Align.CENTER)
+        kbd_box.set_size_request(220, -1)
+        t2.pack_start(kbd_box, False, False, 0)
+        kbd_section_shown[0] = True
 
-    # ── OpenRGB: ein Regler-Set PRO ERKANNTEM GERÄT ──────────────────
+    # ── OpenRGB: ein Regler-Set PRO ERKANNTEM GERÄT (Keyboards, RGB-
+    # Streifen, aber auch RGB-Beleuchtung AN Monitoren, falls über
+    # OpenRGB erkannt - alles landet hier im Devices-Tab, keine eigene
+    # RGB-Tab, siehe Docstring oben) ─────────────────────────────────
     # Jedes Gerät bekommt nur die Regler, die es laut seinem aktuell
     # aktiven Modus tatsächlich unterstützt - Farbe ist praktisch immer
     # verfügbar, Helligkeit nur wenn ModeFlags.HAS_BRIGHTNESS gesetzt
@@ -2012,15 +3272,22 @@ def _brightness_content(win: Gtk.Window) -> Gtk.Box:
     # openrgb-python macht synchrone Netzwerk-Aufrufe, ein direkter
     # Aufruf im GTK-Main-Thread würde das Fenster einfrieren.
     rgb_section = vbox(3)
-    root.pack_start(rgb_section, False, False, 0)
+    t2.pack_start(rgb_section, False, False, 0)
+
+    no_devices_lbl = bitem("No keyboard backlight or RGB devices found", dim=True)
+    if not kbd_dev:
+        t2.pack_start(no_devices_lbl, False, False, 0)
 
     def _build_rgb_device_row(info: dict) -> Gtk.Box:
         dev_name = info["name"]
-        box = vbox(3)
+        box = vbox(2)
         box.get_style_context().add_class("bubble")
         pad(box, h=8, v=6)
-        name_lbl = Gtk.Label(label=f'{info["name"]} ({info["type"].title()})')
-        name_lbl.set_halign(Gtk.Align.START)
+        name_text = f'{info["name"]} ({info["type"].title()})'
+        if info["has_brightness"]:
+            name_text += f': {info["brightness"] or 0}%'
+        name_lbl = Gtk.Label(label=name_text)
+        name_lbl.set_halign(Gtk.Align.CENTER)
         name_lbl.get_style_context().add_class("caption")
         box.pack_start(name_lbl, False, False, 0)
 
@@ -2037,10 +3304,19 @@ def _brightness_content(win: Gtk.Window) -> Gtk.Box:
 
         if info["has_brightness"]:
             def _on_bri(s, n=dev_name):
-                _debounced(_openrgb_set_brightness, n, int(s.get_value()))
+                val = int(s.get_value())
+                name_lbl.set_label(
+                    f'{info["name"]} ({info["type"].title()}): {val}%')
+                _debounced(_openrgb_set_brightness, n, val)
             bri_box, _ = bslider(
-                "󰃟", info["brightness_min"], info["brightness_max"], 1,
-                info["brightness"] or 0, cb=_on_bri)
+                "", info["brightness_min"], info["brightness_max"], 1,
+                info["brightness"] or 0, cb=_on_bri, show_val=False)
+            for ch in bri_box.get_children():
+                if isinstance(ch, Gtk.Label):
+                    bri_box.remove(ch)
+                    break
+            bri_box.set_halign(Gtk.Align.CENTER)
+            bri_box.set_size_request(200, -1)
             box.pack_start(bri_box, False, False, 0)
 
         swatch_css = Gtk.CssProvider()
@@ -2064,6 +3340,7 @@ def _brightness_content(win: Gtk.Window) -> Gtk.Box:
             dlg.destroy()
 
         color_row = hbox(6)
+        color_row.set_halign(Gtk.Align.CENTER)
         color_lbl = Gtk.Label(label="Color:")
         color_lbl.get_style_context().add_class("caption")
         color_btn = Gtk.Button()
@@ -2094,6 +3371,13 @@ def _brightness_content(win: Gtk.Window) -> Gtk.Box:
         def _apply():
             if not devices:
                 return
+            # Der "keine Geräte"-Platzhalter war nur für den Fall
+            # "weder Keyboard-Backlight noch (bisher unbekannt) RGB"
+            # gedacht - sobald hier tatsächlich RGB-Geräte eintrudeln,
+            # muss er weg, sonst steht er sinnlos über der jetzt doch
+            # nicht leeren Geräteliste.
+            if no_devices_lbl.get_parent() is not None:
+                t2.remove(no_devices_lbl)
             rgb_section.pack_start(sep(), False, False, 2)
             rgb_section.pack_start(bsec("RGB DEVICES"), False, False, 0)
             for info in devices:
@@ -2105,65 +3389,31 @@ def _brightness_content(win: Gtk.Window) -> Gtk.Box:
     if _openrgb_available():
         in_thread(_load_rgb_devices)
 
-    root.pack_start(sep(), False, False, 2)
+    stack.add_named(t1, "monitor")
+    stack.add_named(t2, "devices")
 
-    nl_tool = _nl_available()
-    nl_b = btn("  On" if _nl_active[0] else "  Off",
-               active=_nl_active[0])
-    if not nl_tool:
-        nl_b.set_sensitive(False)
-        nl_b.set_tooltip_text(
-            "No night light tool found (gammastep/hyprsunset/wlsunset)")
+    tab_row = hbox(6)
+    tab_row.set_halign(Gtk.Align.CENTER)
+    tab_btns: dict = {}
+    def _switch(name):
+        _switch_stack(stack, win, name)
+        for n, b in tab_btns.items():
+            ctx = b.get_style_context()
+            if n == name: ctx.add_class("active")
+            else:         ctx.remove_class("active")
+    for name, label in (("monitor", "󰍹  Monitor"),
+                         ("devices", "⌨  Devices")):
+        b = btn(label, active=(name == "monitor"))
+        b.connect("clicked", lambda _b, n=name: _switch(n))
+        tab_btns[name] = b
+        tab_row.pack_start(b, False, False, 0)
+    stack.set_visible_child_name("monitor")
 
-    nl_hdr = hbox(6)
-    nl_hdr.set_halign(Gtk.Align.CENTER)
-    nl_hdr.pack_start(bsec("NIGHT LIGHT"), False, False, 0)
-    nl_hdr.pack_start(nl_b, False, False, 0)
-    root.pack_start(nl_hdr, False, False, 0)
-
-    temp_lbl = Gtk.Label(label=f"{_nl_temp[0]} K")
-    temp_lbl.get_style_context().add_class("caption")
-    temp_lbl.set_opacity(0.65)
-    temp_lbl.set_size_request(52, -1)
-    temp_lbl.set_halign(Gtk.Align.END)
-
-    _nl_debounce_id = [0]
-
-    def _on_temp(s):
-        _nl_temp[0] = int(s.get_value())
-        temp_lbl.set_label(f"{_nl_temp[0]} K")
-        if not _nl_active[0]:
-            return
-        _nl_generation[0] += 1
-        gen = _nl_generation[0]
-        if _nl_debounce_id[0]:
-            GLib.source_remove(_nl_debounce_id[0])
-        def _fire():
-            _nl_debounce_id[0] = 0
-            in_thread(_nl_start, _nl_temp[0], gen)
-            return False
-        _nl_debounce_id[0] = GLib.timeout_add(150, _fire)
-
-    temp_box, temp_s = bslider(
-        "󱠃", 1000, 6500, 100, _nl_temp[0],
-        cb=_on_temp, show_val=False, suffix_lbl=temp_lbl)
-    temp_s.set_inverted(True)
-    root.pack_start(temp_box, False, False, 0)
-
-    def _on_nl(_):
-        if not nl_tool: return
-        _nl_active[0] = not _nl_active[0]
-        nl_b.set_label("  On" if _nl_active[0] else "  Off")
-        ctx = nl_b.get_style_context()
-        _nl_generation[0] += 1
-        gen = _nl_generation[0]
-        if _nl_active[0]:
-            ctx.add_class("active"); in_thread(_nl_start, _nl_temp[0], gen)
-        else:
-            ctx.remove_class("active"); in_thread(_nl_stop)
-
-    nl_b.connect("clicked", _on_nl)
-    return root
+    outer = vbox(4); safe_pad(outer, 360)
+    outer.pack_start(tab_row, True, False, 2)
+    outer.pack_start(tab_sep(), False, False, 0)
+    outer.pack_start(stack,   False, False, 0)
+    return outer
 
 def build_brightness(win: Gtk.Window):
     win.set_default_size(360, 1)
@@ -2648,6 +3898,61 @@ def _cpu_temp() -> float | None:
             return entries[0].current
     return None
 
+def _extra_disks() -> list:
+    """Alle gemounteten Dateisysteme AUSSER der Haupt-/-Partition (die
+    hat schon ihre eigene STORAGE-Zeile in _sysmon_content()) - externe
+    SSDs/USB-Sticks, eingehängte ISOs (Loop-Devices), Disketten,
+    zweite interne Laufwerke usw. (Roadmap: "System Monitor add
+    dynamic storage like external ssds, eingehängte ISOs, Floppy
+    Disks, etc")."""
+    import psutil
+    out = []
+    seen_mounts = set()
+    try:
+        partitions = psutil.disk_partitions(all=True)
+    except Exception:
+        return out
+    for p in partitions:
+        mnt = p.mountpoint
+        if not mnt or mnt == "/" or mnt in seen_mounts:
+            continue
+        # Pseudo-/virtuelle Dateisysteme rausfiltern (proc, sysfs,
+        # tmpfs für /run & co, cgroup, devtmpfs, ...) - technisch auch
+        # "gemountet", aber kein Storage im Sinne dieses Roadmap-
+        # Punkts, würden die Liste nur zumüllen.
+        if p.fstype in ("proc", "sysfs", "devtmpfs", "cgroup", "cgroup2",
+                        "tmpfs", "devpts", "securityfs", "pstore",
+                        "bpf", "tracefs", "mqueue", "hugetlbfs",
+                        "debugfs", "configfs", "fusectl", "autofs",
+                        "binfmt_misc", "efivarfs", "overlay", "squashfs"):
+            continue
+        # Mounts, die zur Hauptinstallation selbst gehören (/boot,
+        # /var, /home als eigene Partition, ...) sind kein
+        # "zusätzlicher/dynamischer" Storage im Sinne des Roadmap-
+        # Punkts - der interessiert sich für Dinge, die NACH dem Boot
+        # dazukommen/verschwinden (typischerweise unter /run/media,
+        # /media, /mnt).
+        if mnt.startswith(("/boot", "/var", "/home", "/usr", "/etc",
+                           "/opt", "/srv", "/snap", "/nix")):
+            continue
+        try:
+            usage = psutil.disk_usage(mnt)
+        except (PermissionError, OSError):
+            # Laufwerk ohne eingelegtes Medium (z.B. leeres Floppy-/
+            # CD-Laufwerk) wirft hier meist genau das - lieber
+            # überspringen als mit falschen Werten auflisten.
+            continue
+        seen_mounts.add(mnt)
+        out.append({
+            "mount": mnt,
+            "device": p.device,
+            "fstype": p.fstype,
+            "is_iso": p.fstype in ("iso9660", "udf"),
+            "removable": mnt.startswith(("/run/media", "/media", "/mnt")),
+            "total": usage.total, "used": usage.used, "percent": usage.percent,
+        })
+    return out
+
 def _sysmon_snapshot() -> dict:
     """Ein Aufruf, der ALLE System-Monitor-Metriken auf einmal liefert
     - wird IMMER aus einem Hintergrund-Thread aufgerufen. psutil.
@@ -2659,52 +3964,52 @@ def _sysmon_snapshot() -> dict:
         "ram":      psutil.virtual_memory(),
         "swap":     psutil.swap_memory(),
         "disk":     psutil.disk_usage("/"),
+        "disks_extra": _extra_disks(),
         "cpu_temp": _cpu_temp(),
         "cpu_watts": _cpu_watts(),
         "gpu":      _gpu_stats(),
     }
 
-def _akku_content() -> Gtk.Box:
-    root = vbox(4); pad(root, h=4, v=6)
+def _akku_content(win: Gtk.Window) -> Gtk.Box:
+    root = vbox(3); pad(root, h=4, v=6)
+    # KEIN Titel mehr - die 2 Sub-Tabs "Battery"/"Profile" sagen schon,
+    # was hier ist.
 
-    root.pack_start(btitle("󰁹  Battery"), False, False, 0)
-    root.pack_start(sep(), False, False, 2)
+    stack = Gtk.Stack()
+    stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
+    stack.set_transition_duration(200)
+    stack.set_hhomogeneous(False)
+    stack.set_vhomogeneous(False)
 
-    # Drei-Spalten-Zeile: Leistungsaufnahme (W) links, Icon+Prozent
-    # mittig, Lade-/Entladestatus rechts - per Gtk.Grid mit
-    # gleich breiten, expandierenden Spalten, damit die Mitte
-    # unabhängig von der Textlänge links/rechts wirklich mittig bleibt.
-    bat_box = Gtk.Grid()
-    bat_box.set_column_homogeneous(True)
-    bat_box.get_style_context().add_class("bubble")
-    bat_box.get_style_context().add_class("item")
+    t_bat  = vbox(1); pad(t_bat, h=4, v=4)
+    t_prof = vbox(4); pad(t_prof, h=4, v=4)
+
+    # ── Sub-Tab: Battery ─────────────────────────────────────────
+    # Icon+Prozent übereinander statt in einer 3-Spalten-Zeile, beides
+    # vergrößert - kein separater "Charging/Discharging"-Text mehr,
+    # das übernimmt jetzt das Icon selbst (_bat_icon() wählt je nach
+    # Status ohnehin schon ein anderes Symbol). Watt-Verbrauch steht
+    # direkt darunter statt seitlich daneben.
+    center_box = vbox(0)
+    center_box.set_halign(Gtk.Align.CENTER)
+
+    icon_pct_row = hbox(6)
+    icon_pct_row.set_halign(Gtk.Align.CENTER)
+    bat_icon_lbl = Gtk.Label(label="")
+    bat_icon_lbl.get_style_context().add_class("icon-xl")
+    bat_pct_lbl  = Gtk.Label(label="–")
+    bat_pct_lbl.get_style_context().add_class("value-lg")
+    icon_pct_row.pack_start(bat_icon_lbl, False, False, 0)
+    icon_pct_row.pack_start(bat_pct_lbl,  False, False, 0)
+    center_box.pack_start(icon_pct_row, False, False, 0)
 
     power_lbl = Gtk.Label(label="")
     power_lbl.get_style_context().add_class("caption")
-    power_lbl.set_halign(Gtk.Align.START)
-    power_lbl.set_hexpand(True)
+    power_lbl.set_halign(Gtk.Align.CENTER)
     power_lbl.set_no_show_all(True)
+    center_box.pack_start(power_lbl, False, False, 0)
 
-    center_box = hbox(6)
-    center_box.set_halign(Gtk.Align.CENTER)
-    center_box.set_hexpand(True)
-
-    bat_icon_lbl = Gtk.Label(label="")
-    bat_icon_lbl.get_style_context().add_class("icon-lg")
-    bat_pct_lbl  = Gtk.Label(label="–")
-    bat_pct_lbl.get_style_context().add_class("value-md")
-    center_box.pack_start(bat_icon_lbl, False, False, 0)
-    center_box.pack_start(bat_pct_lbl,  False, False, 0)
-
-    bat_status_lbl = Gtk.Label(label="")
-    bat_status_lbl.get_style_context().add_class("caption")
-    bat_status_lbl.set_halign(Gtk.Align.END)
-    bat_status_lbl.set_hexpand(True)
-
-    bat_box.attach(power_lbl,      0, 0, 1, 1)
-    bat_box.attach(center_box,     1, 0, 1, 1)
-    bat_box.attach(bat_status_lbl, 2, 0, 1, 1)
-    root.pack_start(bat_box, False, False, 0)
+    t_bat.pack_start(center_box, False, False, 0)
 
     _power_fetch_in_flight = [False]
 
@@ -2713,7 +4018,7 @@ def _akku_content() -> Gtk.Box:
         if info:
             bat_icon_lbl.set_label(_bat_icon(info["cap"], info["status"]))
             bat_pct_lbl.set_label(f'{info["cap"]} %')
-            bat_status_lbl.set_label(f'{info["status"]}')
+            bat_icon_lbl.set_tooltip_text(info["status"])
             if not _power_fetch_in_flight[0]:
                 _power_fetch_in_flight[0] = True
                 def _fetch_power():
@@ -2736,19 +4041,18 @@ def _akku_content() -> Gtk.Box:
         else:
             bat_icon_lbl.set_label("󰂑")
             bat_pct_lbl.set_label("No Battery")
-            bat_status_lbl.set_label("")
+            bat_icon_lbl.set_tooltip_text(None)
             power_lbl.hide()
         return True
 
     add_timer(10000, _refresh_bat)
     _refresh_bat()
 
-
-    root.pack_start(sep(), False, False, 4)
-
+    # ── Sub-Tab: Profile ──────────────────────────────────────────
+    # Einfach die 5 Profil-Buttons rein, ohne eigene Überschrift - der
+    # Sub-Tab-Reiter "Profile" sagt schon, was das ist.
     pp_section = vbox(4)
-    root.pack_start(bsec("ENERGY PROFILE"), False, False, 0)
-    root.pack_start(pp_section, False, False, 0)
+    t_prof.pack_start(pp_section, False, False, 0)
     pp_section.pack_start(bitem("Loading…", dim=True), False, False, 0)
     pp_section.show_all()
 
@@ -2790,7 +4094,7 @@ def _akku_content() -> Gtk.Box:
                  tip="Save power: turn off animations, blur, shadow, hyprglass & cursor effects")
     gm_fx_row.pack_start(gm_btn, False, False, 0)
     gm_fx_row.pack_start(fx_btn, False, False, 0)
-    root.pack_start(gm_fx_row, False, False, 0)
+    t_prof.pack_start(gm_fx_row, False, False, 0)
 
     if not _cpu_boost_supported():
         gm_btn.set_sensitive(False)
@@ -2849,17 +4153,58 @@ def _akku_content() -> Gtk.Box:
         GLib.idle_add(_build_pp_row, profiles, current)
 
     in_thread(_load_pp)
+
+    # ── 2 Sub-Tabs zusammensetzen: "Battery" (das Grad) / "Profile" ──
+    stack.add_named(t_bat, "battery")
+    stack.add_named(t_prof, "profile")
+
+    tab_row = hbox(6)
+    tab_row.set_halign(Gtk.Align.CENTER)
+    tab_btns: dict = {}
+    def _switch_akku_tab(name):
+        _switch_stack(stack, win, name)
+        for n, b in tab_btns.items():
+            ctx = b.get_style_context()
+            if n == name: ctx.add_class("active")
+            else:         ctx.remove_class("active")
+    for tname, tlabel in (("battery", "Battery"), ("profile", "Profile")):
+        tb = btn(tlabel, active=(tname == "battery"))
+        tb.connect("clicked", lambda _b, n=tname: _switch_akku_tab(n))
+        tab_btns[tname] = tb
+        tab_row.pack_start(tb, False, False, 0)
+    stack.set_visible_child_name("battery")
+
+    root.pack_start(tab_row, True, False, 2)
+    root.pack_start(tab_sep(), False, False, 0)
+    root.pack_start(stack, False, False, 0)
     return root
 
-def _sysmon_content() -> Gtk.Box:
+def _sysmon_content(win: Gtk.Window) -> Gtk.Box:
     """System-Monitor-Tab für Geräte OHNE Akku (Desktop-PCs) - zeigt
     CPU (Auslastung, Temperatur, Watt via SUID-Helper), RAM, Swap,
-    Disk, und AMD-GPU-Stats (falls erkannt). Ist aber KEIN exklusiver
-    Ersatz für den Akku-Tab - läuft als zweiter, immer vorhandener Tab
-    neben Battery, siehe _akku_and_sysmon_content()."""
-    root = vbox(4); pad(root, h=4, v=6)
-    root.pack_start(btitle("󰍹  System Monitor"), False, False, 0)
-    root.pack_start(sep(), False, False, 2)
+    Disk, und AMD-GPU-Stats (falls erkannt), als 4 Sub-Tabs (CPU/
+    Memory/Storage/GPU) statt einer langen, mit Trennstrichen
+    unterteilten Liste. Ist aber KEIN exklusiver Ersatz für den
+    Akku-Tab - läuft als zweiter, immer vorhandener Tab neben Battery,
+    siehe _akku_and_sysmon_content()."""
+    root = vbox(3); pad(root, h=4, v=6)
+    # KEIN Titel mehr - der Tab-Button "System" sagt schon, was das ist.
+
+    stack = Gtk.Stack()
+    stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
+    stack.set_transition_duration(200)
+    stack.set_hhomogeneous(False)
+    stack.set_vhomogeneous(False)
+
+    # KEINE Sub-Tab-Überschriften mehr (kein "CPU"/"MEMORY"/"STORAGE"/
+    # "GPU" bsec()) - der Sub-Tab-Reiter selbst sagt schon, was drin
+    # ist. KEINE Trennstriche mehr außer dem einen unter der Sub-Tab-
+    # Reihe selbst (tab_sep(), ganz normaler Bestandteil jeder
+    # Tab-Leiste im Programm).
+    t_cpu = vbox(3); pad(t_cpu, h=4, v=4)
+    t_mem = vbox(3); pad(t_mem, h=4, v=4)
+    t_sto = vbox(3); pad(t_sto, h=4, v=4)
+    t_gpu = vbox(3); pad(t_gpu, h=4, v=4)
 
     _stat_prefixes: dict = {}  # Label -> "icon  Name:  " Präfix, siehe _set_stat()
 
@@ -2877,29 +4222,33 @@ def _sysmon_content() -> Gtk.Box:
     def _set_stat(lbl: Gtk.Label, value: str):
         lbl.set_label(f"{_stat_prefixes[lbl]}{value}")
 
-    root.pack_start(bsec("CPU"), False, False, 0)
     cpu_row, cpu_val = _stat_row("󰻠", "Usage")
-    root.pack_start(cpu_row, False, False, 0)
+    t_cpu.pack_start(cpu_row, False, False, 0)
     temp_row, temp_val = _stat_row("󰔏", "Temperature")
-    root.pack_start(temp_row, False, False, 0)
+    t_cpu.pack_start(temp_row, False, False, 0)
     watt_row, watt_val = _stat_row("󱐋", "Power")
-    root.pack_start(watt_row, False, False, 0)
+    t_cpu.pack_start(watt_row, False, False, 0)
 
-    root.pack_start(sep(), False, False, 4)
-    root.pack_start(bsec("MEMORY"), False, False, 0)
     ram_row, ram_val = _stat_row("󰘚", "RAM")
-    root.pack_start(ram_row, False, False, 0)
+    t_mem.pack_start(ram_row, False, False, 0)
     swap_row, swap_val = _stat_row("󰋊", "Swap")
-    root.pack_start(swap_row, False, False, 0)
+    t_mem.pack_start(swap_row, False, False, 0)
 
-    root.pack_start(sep(), False, False, 4)
-    root.pack_start(bsec("STORAGE"), False, False, 0)
     disk_row, disk_val = _stat_row("󰆼", "Disk (/)")
-    root.pack_start(disk_row, False, False, 0)
+    t_sto.pack_start(disk_row, False, False, 0)
 
-    gpu_section = vbox(4)
-    root.pack_start(gpu_section, False, False, 0)
+    # Zusätzliche/dynamische Laufwerke (externe SSDs, eingehängte ISOs,
+    # Disketten, ...) - siehe _extra_disks(). Wird bei JEDEM Poll-Tick
+    # komplett neu aufgebaut statt wie die GPU-Sektion nur einmal, weil
+    # sich diese Liste im Gegensatz zur GPU jederzeit ändern kann
+    # (USB-Stick rein-/rausgezogen usw.).
+    extra_storage_section = vbox(3)
+    t_sto.pack_start(extra_storage_section, False, False, 0)
+
+    gpu_section = t_gpu
     gpu_widgets = {}  # wird bei erster erfolgreicher GPU-Erkennung befüllt
+    gpu_placeholder = bitem("No GPU stats available", dim=True)
+    gpu_section.pack_start(gpu_placeholder, False, False, 0)
 
     def _fmt_bytes(n: int) -> str:
         for unit in ("B", "KB", "MB", "GB", "TB"):
@@ -2933,10 +4282,19 @@ def _sysmon_content() -> Gtk.Box:
         d = snap["disk"]
         _set_stat(disk_val, f'{d.percent:.0f} %  ·  {_fmt_bytes(d.used)} / {_fmt_bytes(d.total)}')
 
+        for c in extra_storage_section.get_children():
+            extra_storage_section.remove(c)
+        for ed in snap.get("disks_extra", []):
+            icon = "󰗮" if ed["is_iso"] else ("󰐖" if ed["removable"] else "󰋊")
+            row = bitem(f'{icon}  {ed["mount"]}:  {ed["percent"]:.0f} %  ·  '
+                        f'{_fmt_bytes(ed["used"])} / {_fmt_bytes(ed["total"])}')
+            extra_storage_section.pack_start(row, False, False, 0)
+        extra_storage_section.show_all()
+
         gpu = snap["gpu"]
         if gpu and not gpu_widgets:
-            gpu_section.pack_start(sep(), False, False, 2)
-            gpu_section.pack_start(bsec("GPU"), False, False, 0)
+            if gpu_placeholder.get_parent() is not None:
+                gpu_section.remove(gpu_placeholder)
             if "busy_pct" in gpu:
                 r, v = _stat_row("󰢮", "Usage")
                 gpu_section.pack_start(r, False, False, 0)
@@ -2981,6 +4339,315 @@ def _sysmon_content() -> Gtk.Box:
 
     add_timer(2000, _refresh)
     _refresh()
+
+    stack.add_named(t_cpu, "cpu")
+    stack.add_named(t_mem, "memory")
+    stack.add_named(t_sto, "storage")
+    stack.add_named(t_gpu, "gpu")
+
+    tab_row = hbox(6)
+    tab_row.set_halign(Gtk.Align.CENTER)
+    tab_btns: dict = {}
+    def _switch_sysmon_tab(name):
+        _switch_stack(stack, win, name)
+        for n, b in tab_btns.items():
+            ctx = b.get_style_context()
+            if n == name: ctx.add_class("active")
+            else:         ctx.remove_class("active")
+    for tname, tlabel in (("cpu", "CPU"), ("memory", "Memory"),
+                          ("storage", "Storage"), ("gpu", "GPU")):
+        tb = btn(tlabel, active=(tname == "cpu"))
+        tb.connect("clicked", lambda _b, n=tname: _switch_sysmon_tab(n))
+        tab_btns[tname] = tb
+        tab_row.pack_start(tb, False, False, 0)
+    stack.set_visible_child_name("cpu")
+
+    root.pack_start(tab_row, True, False, 2)
+    root.pack_start(tab_sep(), False, False, 0)
+    root.pack_start(stack, False, False, 0)
+    return root
+
+def _confirm_kill_dialog(parent: Gtk.Window, proc_name: str, pid: int) -> bool:
+    """Bestätigungs-Dialog vorm Beenden eines Prozesses - Kill ist
+    destruktiv (ungespeicherte Arbeit in dem Programm ist weg), sowas
+    darf nicht an einem einzigen Fehlklick in einer Liste hängen."""
+    d = Gtk.MessageDialog(transient_for=parent, modal=True,
+                           message_type=Gtk.MessageType.WARNING,
+                           buttons=Gtk.ButtonsType.NONE,
+                           text=f"End “{proc_name}” (PID {pid})?")
+    d.set_name("wb-daemon-popup")
+    d.set_keep_above(True)
+    d.format_secondary_text("Unsaved work in this program will be lost.")
+    d.add_buttons("Cancel", Gtk.ResponseType.CANCEL,
+                  "End Process", Gtk.ResponseType.OK)
+    resp = d.run()
+    d.destroy()
+    return resp == Gtk.ResponseType.OK
+
+def _processes_content(win: Gtk.Window) -> Gtk.Box:
+    """3. Tab neben Battery/System: htop-artige Prozessliste mit Kill-
+    Möglichkeit (Roadmap: "add a 3rd tab wich shows all programs and
+    to kill them").
+
+    WICHTIG zur Sortierung/Stabilität (README-Feedback): Prozesse
+    dürfen ihre Listenposition NICHT bei jedem 2s-Poll-Tick ändern, nur
+    weil sich ihr CPU-Wert minimal verschoben hat - das machte die
+    Liste vorher ständig hin- und herspringend und schwer lesbar. Jetzt:
+    bestehende Zeilen werden nur noch in-place aktualisiert (Text
+    ändern, NICHT neu bauen/neu einsortieren), neue Prozesse werden
+    unten ANGEHÄNGT statt nach ihrem Rang eingefügt, und eine
+    tatsächliche Neusortierung passiert NUR noch, wenn man aktiv auf
+    einen der Spalten-Header (Name/CPU/Mem) klickt. Default-Sortierung
+    ist nach Name.
+
+    WICHTIG zur CPU%-Spalte: psutil braucht für sinnvolle Werte zwei
+    Messpunkte pro Prozess (Process.cpu_percent(interval=None) misst
+    die Zeit SEIT DEM LETZTEN Aufruf für genau dieses Process-Objekt) -
+    deshalb wird hier bewusst EINE persistente Process-Objekt-Map über
+    alle Poll-Ticks hinweg gepflegt, statt bei jedem Tick neue
+    psutil.Process()-Instanzen zu bauen (die würden immer 0.0% liefern,
+    weil sie beim ersten Aufruf noch keinen Referenzpunkt haben)."""
+    root = vbox(3); pad(root, h=4, v=6)
+    # KEIN Titel mehr - Konsistenz mit den anderen Sub-Tabs (CPU/Memory/
+    # Storage/GPU haben auch keinen mehr).
+
+    # Klickbare Spalten-Köpfe bestimmen NUR den Sortier-SCHLÜSSEL für
+    # die NÄCHSTE Neusortierung - sie lösen die Liste NICHT bei jedem
+    # Poll-Tick automatisch neu aus (siehe Docstring oben).
+    MAX_ROWS = 40
+    hdr_row = hbox(10)
+    hdr_row.set_halign(Gtk.Align.CENTER)
+    name_hdr = btn("Name", active=True)
+    cpu_hdr  = btn("CPU")
+    mem_hdr  = btn("Mem")
+    hdr_row.pack_start(name_hdr, False, False, 0)
+    hdr_row.pack_start(cpu_hdr, False, False, 0)
+    hdr_row.pack_start(mem_hdr, False, False, 0)
+    root.pack_start(hdr_row, False, False, 0)
+
+    sw, box = scroll_box(300)
+    root.pack_start(sw, True, True, 0)
+
+    # FIX ("processes monitor geht auch nicht gescheit"): ein Kill, der
+    # mit AccessDenied/NoSuchProcess fehlschlägt (z.B. Systemprozess,
+    # nicht der eigene Nutzer), wurde bisher im "except Exception: pass"
+    # unten KOMPLETT stillschweigend verschluckt - der Button tat dann
+    # buchstäblich nichts sichtbares, ohne jede Rückmeldung, was sich
+    # wie "geht nicht" anfühlt. Jetzt mit einer kleinen Statuszeile
+    # (gleiches Flash-Muster wie in den anderen Tabs, z.B. Privacy),
+    # die nach jedem Kill-Versuch Erfolg/Fehler meldet.
+    status_lbl = Gtk.Label(label="")
+    status_lbl.get_style_context().add_class("caption")
+    status_lbl.set_opacity(0.75)
+    status_lbl.set_no_show_all(True)
+    status_lbl.hide()
+    root.pack_start(status_lbl, False, False, 0)
+
+    def _flash(text: str, ms: int = 3000):
+        status_lbl.set_label(text)
+        status_lbl.show()
+        GLib.timeout_add(ms, lambda: (status_lbl.hide(), False)[1])
+
+    _proc_cache: dict = {}    # pid -> psutil.Process, siehe Docstring oben
+    _row_widgets: dict = {}   # pid -> (row_box, name_lbl, stat_lbl)
+    _order: list = []         # aktuelle, STABILE Anzeige-Reihenfolge (PIDs)
+    _last_data: dict = {}     # pid -> (name, cpu, mem), letzter bekannter Stand
+    _sort_state = {"key": "name"}
+
+    def _build_row(pid: int, name: str, cpu: float, mem: float):
+        row = hbox(6)
+        row.get_style_context().add_class("bubble")
+        row.get_style_context().add_class("item")
+        pad(row, h=8, v=4)
+
+        lbl = Gtk.Label(label=f"{name}  ·  PID {pid}")
+        lbl.set_halign(Gtk.Align.START)
+        # BEWUSST kein set_ellipsize()/set_max_width_chars() mehr -
+        # das hat lange Namen fest abgeschnitten, obwohl eigentlich
+        # noch Platz da gewesen wäre. Die Zeile darf jetzt ihre volle
+        # natürliche Breite anfordern; _refresh() unten lässt das
+        # Fenster danach per _shrink_to_fit() neu auf die dafür nötige
+        # Breite wachsen. _clamp_window_to_screen() (siehe Known-Bugs-
+        # Fix weiter oben in der Datei) fängt den Extremfall eines
+        # winzig-absurd langen Namens trotzdem sicher ab, indem es dann
+        # in ein scrollbares Fenster wechselt statt über den Bildschirm
+        # hinauszuwachsen.
+        lbl.set_hexpand(True)
+        row.pack_start(lbl, True, True, 0)
+
+        # Kein "·" mehr zwischen CPU und MEM - nur noch ein Leerraum.
+        stat_lbl = Gtk.Label(label=f"{cpu:4.1f}% CPU   {mem:4.1f}% MEM")
+        stat_lbl.get_style_context().add_class("caption")
+        stat_lbl.set_opacity(0.7)
+        row.pack_start(stat_lbl, False, False, 0)
+
+        kill_b = Gtk.Button(label="󰅖")
+        kill_b.set_relief(Gtk.ReliefStyle.NONE)
+        kill_b.get_style_context().add_class("flat")
+        kill_b.set_opacity(0.7)
+        kill_b.set_tooltip_text("End process")
+        def _on_kill(_w, p=pid, n=name):
+            if not _confirm_kill_dialog(win, n, p):
+                return
+            def _worker():
+                import psutil
+                err_msg = None
+                try:
+                    proc = _proc_cache.get(p)
+                    if proc is None:
+                        proc = psutil.Process(p)
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=3)
+                    except psutil.TimeoutExpired:
+                        proc.kill()  # nicht kooperativ -> hart nachlegen
+                except psutil.NoSuchProcess:
+                    pass  # Prozess war schon weg - kein Fehler, kein Hinweis nötig
+                except psutil.AccessDenied:
+                    # Vorher hier stillschweigend verschluckt (siehe FIX-
+                    # Kommentar oben) - das war vermutlich ein guter Teil
+                    # des "geht nicht gescheit": Klick auf Kill bei einem
+                    # fremden/Root-Prozess tat rein gar nichts sichtbares.
+                    err_msg = f"No permission to end “{n}” (PID {p})."
+                except Exception as e:
+                    err_msg = f"Failed to end “{n}”: {e}"
+                def _done():
+                    if err_msg:
+                        _flash(f"⚠ {err_msg}")
+                    _refresh()
+                    return False
+                GLib.idle_add(_done)
+            in_thread(_worker)
+        kill_b.connect("clicked", _on_kill)
+        row.pack_start(kill_b, False, False, 0)
+        return row, lbl, stat_lbl
+
+    def _fetch() -> dict:
+        import psutil
+        seen_pids = set()
+        data = {}
+        for p in psutil.process_iter(["pid", "name"]):
+            pid = p.info["pid"]
+            if pid == 0:
+                continue  # kernel/sched-Pseudoprozess, nicht killbar
+            seen_pids.add(pid)
+            proc = _proc_cache.get(pid)
+            if proc is None:
+                proc = p
+                _proc_cache[pid] = proc
+            try:
+                cpu = proc.cpu_percent(interval=None)
+                mem = proc.memory_percent()
+                name = proc.name()
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+            data[pid] = (name, cpu, mem)
+        # Verwaiste Cache-Einträge (Prozess seitdem beendet) raus, sonst
+        # wächst _proc_cache über die Laufzeit des offenen Fensters
+        # unbegrenzt weiter.
+        for pid in list(_proc_cache):
+            if pid not in seen_pids:
+                _proc_cache.pop(pid, None)
+        return data
+
+    def _apply_order():
+        """Sortiert NUR die Reihenfolge der PIDs (per box.reorder_child)
+        neu - baut dabei KEINE einzige Zeile neu, nur ihre Position
+        ändert sich. Wird ausschließlich beim Klick auf einen der 3
+        Spalten-Header (und einmalig beim allerersten Befüllen)
+        aufgerufen, NIE automatisch bei jedem Poll-Tick."""
+        key = _sort_state["key"]
+        if key == "name":
+            _order.sort(key=lambda p: (_last_data.get(p, ("", 0, 0))[0] or "").lower())
+        elif key == "cpu":
+            _order.sort(key=lambda p: _last_data.get(p, ("", 0, 0))[1], reverse=True)
+        else:
+            _order.sort(key=lambda p: _last_data.get(p, ("", 0, 0))[2], reverse=True)
+        for idx, pid in enumerate(_order):
+            box.reorder_child(_row_widgets[pid][0], idx)
+
+    def _resort(key: str):
+        _sort_state["key"] = key
+        for hdr, k in ((name_hdr, "name"), (cpu_hdr, "cpu"), (mem_hdr, "mem")):
+            ctx = hdr.get_style_context()
+            if k == key: ctx.add_class("active")
+            else:        ctx.remove_class("active")
+        _apply_order()
+
+    name_hdr.connect("clicked", lambda _w: _resort("name"))
+    cpu_hdr.connect("clicked",  lambda _w: _resort("cpu"))
+    mem_hdr.connect("clicked",  lambda _w: _resort("mem"))
+
+    _fetch_in_flight = [False]
+    _sorted_once = [False]
+
+    def _apply(data: dict):
+        _last_data.clear()
+        _last_data.update(data)
+
+        # Verschwundene Prozesse raus - einzige Fälle, in denen sich
+        # die Liste "von selbst" verkürzt.
+        for pid in [p for p in _order if p not in data]:
+            widgets = _row_widgets.pop(pid, None)
+            if widgets:
+                box.remove(widgets[0])
+            _order.remove(pid)
+
+        # Neue Prozesse werden UNTEN angehängt (README-Feedback), NICHT
+        # nach ihrem Sortier-Rang einsortiert - erst der nächste Klick
+        # auf einen Spalten-Header bringt sie an ihre "richtige"
+        # Position. Ein Cap verhindert, dass die Liste bei sehr vielen
+        # laufenden Prozessen unbegrenzt wächst; bereits verfolgte
+        # Prozesse bleiben davon unberührt (Positions-Stabilität geht
+        # vor striktem Cap).
+        new_pids = [p for p in data if p not in _row_widgets]
+        for pid in new_pids:
+            if len(_order) >= MAX_ROWS:
+                break
+            name, cpu, mem = data[pid]
+            row, lbl, stat_lbl = _build_row(pid, name, cpu, mem)
+            _row_widgets[pid] = (row, lbl, stat_lbl)
+            _order.append(pid)
+            box.pack_start(row, False, False, 0)
+
+        # Bestehende Zeilen NUR in-place aktualisieren (Text ändern),
+        # NIE neu bauen oder neu einfügen - das ist der Kern der
+        # geforderten Positions-Stabilität.
+        for pid in _order:
+            if pid in new_pids:
+                continue
+            name, cpu, mem = data[pid]
+            _, lbl, stat_lbl = _row_widgets[pid]
+            lbl.set_label(f"{name}  ·  PID {pid}")
+            stat_lbl.set_label(f"{cpu:4.1f}% CPU   {mem:4.1f}% MEM")
+
+        if not _sorted_once[0] and _order:
+            _sorted_once[0] = True
+            _apply_order()
+
+        box.show_all()
+        # Neu seit Entfernen des harten Zeichen-Limits oben: Namen
+        # können sich JEDEN Poll-Tick ändern (neue Prozesse) - ohne
+        # diesen Aufruf hätte das Fenster nur beim ERSTEN Öffnen die
+        # passende Breite bekommen und wäre danach nie wieder
+        # mitgewachsen/-geschrumpft.
+        GLib.idle_add(_shrink_to_fit, win)
+
+    def _refresh():
+        if _fetch_in_flight[0]:
+            return True
+        _fetch_in_flight[0] = True
+        def _work():
+            try:
+                data = _fetch()
+                GLib.idle_add(_apply, data)
+            finally:
+                _fetch_in_flight[0] = False
+        in_thread(_work)
+        return True
+
+    add_timer(2000, _refresh)
+    _refresh()
     return root
 
 def _akku_and_sysmon_content(win: Gtk.Window) -> Gtk.Box:
@@ -2991,14 +4658,14 @@ def _akku_and_sysmon_content(win: Gtk.Window) -> Gtk.Box:
     Button-Muster wie _volume_content() (Media/Devices/Apps-Tabs)."""
     stack = Gtk.Stack()
     stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
-    stack.set_transition_duration(120)
+    stack.set_transition_duration(200)
     stack.set_hhomogeneous(False)
     stack.set_vhomogeneous(False)
 
     has_bat = _battery_present()
     default_tab = "battery" if has_bat else "system"
     if has_bat:
-        stack.add_named(_akku_content(), "battery")
+        stack.add_named(_akku_content(win), "battery")
 
     # System-Tab wird LAZY gebaut - erst wenn tatsächlich draufgeklickt
     # wird, nicht sofort beim Öffnen des Fensters. Der System-Monitor
@@ -3009,7 +4676,7 @@ def _akku_and_sysmon_content(win: Gtk.Window) -> Gtk.Box:
     # er wird ja sofort angezeigt).
     system_built = [False]
     if not has_bat:
-        stack.add_named(_sysmon_content(), "system")
+        stack.add_named(_sysmon_content(win), "system")
         system_built[0] = True
 
     def _ensure_system_tab():
@@ -3024,7 +4691,24 @@ def _akku_and_sysmon_content(win: Gtk.Window) -> Gtk.Box:
         # wie zuvor bei den lazy geladenen Settings-Unterseiten.
         _current_win[0] = win
         try:
-            stack.add_named(_sysmon_content(), "system")
+            stack.add_named(_sysmon_content(win), "system")
+        finally:
+            _current_win[0] = None
+        stack.show_all()
+
+    # Processes-Tab (Roadmap: 3. Tab mit Prozessliste + Kill) - genau
+    # wie der System-Tab bewusst LAZY gebaut, aus demselben Grund
+    # (eigener 2s-Poll-Timer, soll nicht mitlaufen, wenn der Tab gar
+    # nicht offen ist) und aus demselben _current_win[0]-Grund.
+    processes_built = [False]
+
+    def _ensure_processes_tab():
+        if processes_built[0]:
+            return
+        processes_built[0] = True
+        _current_win[0] = win
+        try:
+            stack.add_named(_processes_content(win), "processes")
         finally:
             _current_win[0] = None
         stack.show_all()
@@ -3035,6 +4719,8 @@ def _akku_and_sysmon_content(win: Gtk.Window) -> Gtk.Box:
     def _switch(name):
         if name == "system":
             _ensure_system_tab()
+        elif name == "processes":
+            _ensure_processes_tab()
         _switch_stack(stack, win, name)
         for n, b in tab_btns.items():
             ctx = b.get_style_context()
@@ -3042,7 +4728,7 @@ def _akku_and_sysmon_content(win: Gtk.Window) -> Gtk.Box:
             else:         ctx.remove_class("active")
 
     tabs = ([("battery", "󰁹  Battery")] if has_bat else []) + \
-           [("system", "󰍹  System")]
+           [("system", "󰍹  System"), ("processes", "󰆧  Processes")]
     for name, label in tabs:
         b = btn(label, active=(name == default_tab))
         b.connect("clicked", lambda _b, n=name: _switch(n))
@@ -3050,7 +4736,7 @@ def _akku_and_sysmon_content(win: Gtk.Window) -> Gtk.Box:
         tab_row.pack_start(b, False, False, 0)
     stack.set_visible_child_name(default_tab)
 
-    outer = vbox(4); safe_pad(outer, 340)
+    outer = vbox(4); safe_pad(outer, 460)
     if len(tabs) > 1:
         outer.pack_start(tab_row, True, False, 2)
         outer.pack_start(tab_sep(), False, False, 0)
@@ -3058,7 +4744,7 @@ def _akku_and_sysmon_content(win: Gtk.Window) -> Gtk.Box:
     return outer
 
 def build_akku(win: Gtk.Window):
-    win.set_default_size(340, 1)
+    win.set_default_size(460, 1)
     win.add(_akku_and_sysmon_content(win))
 
 # ════════════════════════════════════════════════════════════
@@ -3145,7 +4831,7 @@ def _geocode(query: str) -> list:
 def _fetch_weather() -> dict:
     r = {"icon": "🌡️", "desc": "–", "temp": "–",
          "humidity": "–", "precip": "–",
-         "day1_icon": "–", "day2_icon": "–", "location": "–"}
+         "hourly": [], "daily": [], "location": "–"}
     loc = _load_weather_location()
     r["location"] = loc.get("name", "–")
     try:
@@ -3154,9 +4840,10 @@ def _fetch_weather() -> dict:
             "latitude": loc["lat"], "longitude": loc["lon"],
             "current": "temperature_2m,relative_humidity_2m,"
                        "precipitation,weather_code,is_day",
-            "daily": "weather_code",
+            "hourly": "temperature_2m,weather_code",
+            "daily": "weather_code,temperature_2m_max,temperature_2m_min",
             "timezone": "auto",
-            "forecast_days": 3,
+            "forecast_days": 7,
             "models": "best_match",
         }
         url = "https://api.open-meteo.com/v1/forecast?" + urllib.parse.urlencode(params)
@@ -3176,9 +4863,50 @@ def _fetch_weather() -> dict:
         precip = cur.get("precipitation")
         r["precip"] = f"{precip} mm" if precip is not None else "–"
 
-        daily_codes = data.get("daily", {}).get("weather_code", [])
-        if len(daily_codes) > 1: r["day1_icon"] = _wicon_wmo(daily_codes[1])
-        if len(daily_codes) > 2: r["day2_icon"] = _wicon_wmo(daily_codes[2])
+        # "Das Wetter in den nächsten paar Stunden" - die nächsten 6
+        # vollen Stunden AB JETZT (nicht ab Mitternacht, wie Open-Meteo
+        # die hourly-Liste sonst liefert) - daher hier per aktueller
+        # Systemzeit in die Liste reingesucht statt einfach Index 0.
+        hourly = data.get("hourly", {})
+        times = hourly.get("time", [])
+        temps = hourly.get("temperature_2m", [])
+        codes = hourly.get("weather_code", [])
+        now_iso = datetime.now().strftime("%Y-%m-%dT%H:00")
+        start_idx = 0
+        for i, t in enumerate(times):
+            if t >= now_iso:
+                start_idx = i
+                break
+        for i in range(start_idx, min(start_idx + 6, len(times))):
+            try:
+                hh = times[i].split("T")[1][:5]
+                r["hourly"].append({
+                    "label": hh,
+                    "icon": _wicon_wmo(codes[i]) if i < len(codes) else "–",
+                    "temp": f"{round(temps[i])}°" if i < len(temps) else "–",
+                })
+            except (IndexError, ValueError):
+                continue
+
+        # "Die 7 Tage Prognose" - Tagesname (Mo/Di/...) + Icon +
+        # Min/Max-Temperatur, inklusive heute als erster Eintrag.
+        daily = data.get("daily", {})
+        d_times = daily.get("time", [])
+        d_codes = daily.get("weather_code", [])
+        d_max = daily.get("temperature_2m_max", [])
+        d_min = daily.get("temperature_2m_min", [])
+        for i, dstr in enumerate(d_times[:7]):
+            try:
+                wd = date.fromisoformat(dstr)
+                label = "Today" if i == 0 else DAYS_EN[wd.weekday()]
+                r["daily"].append({
+                    "label": label,
+                    "icon": _wicon_wmo(d_codes[i]) if i < len(d_codes) else "–",
+                    "hi": f"{round(d_max[i])}°" if i < len(d_max) else "–",
+                    "lo": f"{round(d_min[i])}°" if i < len(d_min) else "–",
+                })
+            except (IndexError, ValueError):
+                continue
     except Exception:
         try:
             import urllib.request, json as _json
@@ -3195,15 +4923,46 @@ def _fetch_weather() -> dict:
             r["humidity"] = f'{cur.get("humidity", "–")}%'
             r["precip"] = f'{cur.get("precipMM", "0.0")} mm'
 
-            def _midday_code(day: dict) -> str:
-                hrs = day.get("hourly", [])
-                if len(hrs) > 4: return hrs[4].get("weatherCode", "")
-                if hrs: return hrs[len(hrs)//2].get("weatherCode", "")
-                return ""
-
             days = data.get("weather", [])
-            if len(days) > 1: r["day1_icon"] = _wicon(_midday_code(days[1]))
-            if len(days) > 2: r["day2_icon"] = _wicon(_midday_code(days[2]))
+            now_hour = datetime.now().hour
+            if days:
+                # wttr.in liefert pro Tag 8 Einträge im 3h-Raster
+                # ("time": "0","300",...,"2100") - die ab JETZT
+                # passenden aus heute + (falls nötig) morgen sammeln.
+                pool = []
+                for di, day in enumerate(days[:2]):
+                    for h in day.get("hourly", []):
+                        try:
+                            slot_hour = int(h.get("time", "0")) // 100
+                        except ValueError:
+                            continue
+                        abs_hour = slot_hour + di * 24
+                        pool.append((abs_hour, h))
+                for abs_hour, h in pool:
+                    if abs_hour < now_hour:
+                        continue
+                    if len(r["hourly"]) >= 6:
+                        break
+                    r["hourly"].append({
+                        "label": f"{abs_hour % 24:02d}:00",
+                        "icon": _wicon(h.get("weatherCode", "")),
+                        "temp": f'{h.get("tempC", "–")}°',
+                    })
+
+            for i, day in enumerate(days[:7]):
+                try:
+                    wd = date.fromisoformat(day.get("date", ""))
+                    label = "Today" if i == 0 else DAYS_EN[wd.weekday()]
+                except ValueError:
+                    label = f"D{i}"
+                hrs = day.get("hourly", [])
+                mid_code = hrs[4].get("weatherCode", "") if len(hrs) > 4 else ""
+                r["daily"].append({
+                    "label": label,
+                    "icon": _wicon(mid_code),
+                    "hi": f'{day.get("maxtempC", "–")}°',
+                    "lo": f'{day.get("mintempC", "–")}°',
+                })
         except Exception:
             pass
     return r
@@ -3408,18 +5167,21 @@ def _khal_default_calendar_name() -> str | None:
                 return m.group(1).strip()
     return None
 
-def _khal_change_storage_path(calendar_name: str, new_dir: Path) -> tuple[bool, str]:
+def _khal_change_storage_path(calendar_name: str, new_dir: Path, copy_old: bool) -> tuple[bool, str]:
     """Ändert den vdir-Speicherort eines Kalenders.
 
-    Verschiebt die bestehenden .ics-Dateien NUR dann in den neuen
-    Ordner, wenn dieser komplett leer ist (keine .ics drin). Liegen
-    dort bereits .ics-Dateien - z.B. weil es schon ein über Syncthing/
-    Nextcloud synchronisierter Ordner von einem anderen Gerät ist -
-    wird GAR NICHTS verschoben/kopiert/überschrieben, auch nicht
-    teilweise: dann bleiben die alten Dateien exakt da, wo sie sind,
-    und nur der Config-Pfad wird auf den neuen Ordner umgebogen (siehe
-    Chat - jedes Anfassen des Zielordners in dem Fall wäre ein
-    unnötiges Risiko, z.B. Konflikte mit dem Sync-Tool)."""
+    copy_old steuert, ob die bestehenden .ics-Dateien in den neuen
+    Ordner KOPIERT werden (Original bleibt unangetastet an der alten
+    Stelle liegen, kein Verschieben mehr) - wird jetzt VORHER explizit
+    per Dialog abgefragt (siehe _on_storage_btn()), statt automatisch
+    anhand von "ist der Zielordner gerade leer?" zu entscheiden.
+
+    Sicherheitsnetz bleibt unabhängig von copy_old bestehen: ist der
+    Zielordner NICHT leer (z.B. schon ein über Syncthing/Nextcloud
+    synchronisierter Ordner von einem anderen Gerät), wird dort NICHTS
+    kopiert/überschrieben - dann wird nur der Config-Pfad umgebogen,
+    jedes Anfassen des Zielordners in dem Fall wäre ein unnötiges
+    Risiko (z.B. Konflikte mit dem Sync-Tool)."""
     conf_path = Path(HOME) / ".config" / "khal" / "config"
     try:
         txt = conf_path.read_text()
@@ -3435,15 +5197,15 @@ def _khal_change_storage_path(calendar_name: str, new_dir: Path) -> tuple[bool, 
         return False, f"Could not create new folder: {e}"
 
     target_already_has_data = any(new_dir.glob("*.ics"))
-    moved = False
-    if (not target_already_has_data and old_dir and old_dir.is_dir()
+    copied = False
+    if (copy_old and not target_already_has_data and old_dir and old_dir.is_dir()
             and old_dir.resolve() != new_dir.resolve()):
         for f in old_dir.glob("*.ics"):
             try:
-                shutil.move(str(f), str(new_dir / f.name))
+                shutil.copy2(str(f), str(new_dir / f.name))
             except Exception as e:
-                return False, f"Failed to move {f.name}: {e}"
-        moved = True
+                return False, f"Failed to copy {f.name}: {e}"
+        copied = True
 
     # Pfad-Zeile NUR innerhalb der passenden [[calendar_name]]-Sektion
     # ersetzen (Handparsing analog zu _khal_calendar_paths(), diesmal
@@ -3491,11 +5253,11 @@ def _khal_change_storage_path(calendar_name: str, new_dir: Path) -> tuple[bool, 
             pass
 
     if target_already_has_data:
-        return True, (f"Target folder already had events - nothing moved, "
+        return True, (f"Target folder already had events - nothing copied, "
                        f"just switched over. Old data is still at {old_dir}.")
-    if moved:
-        return True, "Storage location changed, events moved."
-    return True, ""
+    if copied:
+        return True, f"Storage location changed, events copied (originals still at {old_dir})."
+    return True, "Storage location changed."
 
 def _clock_content(win: Gtk.Window) -> Gtk.Box:
     # Layout-Redesign: Wetter und Kalender waren vorher EIN langer,
@@ -3508,39 +5270,68 @@ def _clock_content(win: Gtk.Window) -> Gtk.Box:
     # deutlich kompakter und passt dadurch innerhalb des Blasenrands.
     stack = Gtk.Stack()
     stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
-    stack.set_transition_duration(120)
+    stack.set_transition_duration(200)
     # NICHT homogen: das Fenster soll sich auf die Höhe des jeweils
     # SICHTBAREN Tabs einpendeln (Wetter ist viel kürzer als Kalender)
     # statt immer auf die Höhe des größten Tabs aufgebläht zu bleiben.
     stack.set_hhomogeneous(False)
     stack.set_vhomogeneous(False)
 
+    # ── TAB 0: Clock (NEU - eigener Haupttab) ────────────────────────
+    # Redesign-Liste: "Vorher neuer Haupttab: Clock: Das groß mittig
+    # die Uhr und direkt darunter das Datum" - Uhrzeit/Datum standen
+    # bisher klein mit im Weather-Tab (dt_row unten) - jetzt eigener,
+    # eigenständiger Tab mit großer, zentrierter Anzeige.
+    t0 = vbox(6); pad(t0, h=4, v=18)
+    time_lbl = Gtk.Label(label="--:--")
+    time_lbl.get_style_context().add_class("clock-digits-huge")
+    time_lbl.set_halign(Gtk.Align.CENTER)
+    date_lbl = Gtk.Label(label="")
+    date_lbl.get_style_context().add_class("value-md")
+    date_lbl.set_halign(Gtk.Align.CENTER)
+    t0.pack_start(time_lbl, False, False, 0)
+    t0.pack_start(date_lbl, False, False, 0)
+
     # ── TAB 1: Weather ──────────────────────────────────────
+    # Redesign-Liste: "Oben Mittig Was grad ist. Oben links das
+    # Location Pin Icon. Oben rechts die 2 anderen Stats" + "Unten
+    # mitte: das Wetter in den nächsten paar Stunden" + "Unten unten
+    # Mitte: die 7 Tage Prognose".
     t1 = vbox(4); pad(t1, h=4, v=6)
 
-    today_card = hbox(12)
-    today_card.get_style_context().add_class("bubble")
-    today_card.get_style_context().add_class("item")
+    top_row = hbox(8)
+    top_row.set_halign(Gtk.Align.FILL)
 
-    icon_lbl = Gtk.Label(label="🌡️")
-    icon_lbl.get_style_context().add_class("icon-xl")
-    today_card.pack_start(icon_lbl, False, False, 0)
+    loc_btn = Gtk.Button(label="📍")
+    loc_btn.set_relief(Gtk.ReliefStyle.NONE)
+    loc_btn.get_style_context().add_class("flat")
+    loc_btn.set_can_focus(False)
+    loc_btn.set_halign(Gtk.Align.START)
+    loc_btn.set_valign(Gtk.Align.START)
+    loc_btn.set_tooltip_text("Change location")
+    top_row.pack_start(loc_btn, False, False, 0)
 
     mid_box = vbox(2)
     mid_box.set_valign(Gtk.Align.CENTER)
+    mid_box.set_halign(Gtk.Align.CENTER)
+    mid_box.set_hexpand(True)
+    icon_row = hbox(6)
+    icon_row.set_halign(Gtk.Align.CENTER)
+    icon_lbl = Gtk.Label(label="🌡️")
+    icon_lbl.get_style_context().add_class("icon-xl")
     temp_lbl = Gtk.Label(label="–")
     temp_lbl.get_style_context().add_class("temp-xl")
-    temp_lbl.set_halign(Gtk.Align.START)
+    icon_row.pack_start(icon_lbl, False, False, 0)
+    icon_row.pack_start(temp_lbl, False, False, 0)
     desc_lbl = Gtk.Label(label="Loading weather…")
     desc_lbl.get_style_context().add_class("value-md")
-    desc_lbl.set_halign(Gtk.Align.START)
-    mid_box.pack_start(temp_lbl, False, False, 0)
+    desc_lbl.set_halign(Gtk.Align.CENTER)
+    mid_box.pack_start(icon_row, False, False, 0)
     mid_box.pack_start(desc_lbl, False, False, 0)
-    mid_box.set_hexpand(True)
-    today_card.pack_start(mid_box, True, True, 0)
+    top_row.pack_start(mid_box, True, True, 0)
 
     stats_box = vbox(3)
-    stats_box.set_valign(Gtk.Align.CENTER)
+    stats_box.set_valign(Gtk.Align.START)
     hum_lbl = Gtk.Label(label="💧 –")
     hum_lbl.get_style_context().add_class("caption")
     hum_lbl.set_halign(Gtk.Align.END)
@@ -3549,18 +5340,11 @@ def _clock_content(win: Gtk.Window) -> Gtk.Box:
     rain_lbl.get_style_context().add_class("caption")
     rain_lbl.set_halign(Gtk.Align.END)
     rain_lbl.set_tooltip_text("Precipitation (mm)")
-    loc_btn = Gtk.Button(label="📍")
-    loc_btn.set_relief(Gtk.ReliefStyle.NONE)
-    loc_btn.get_style_context().add_class("flat")
-    loc_btn.set_can_focus(False)
-    loc_btn.set_halign(Gtk.Align.END)
-    loc_btn.set_tooltip_text("Change location")
     stats_box.pack_start(hum_lbl,  False, False, 0)
     stats_box.pack_start(rain_lbl, False, False, 0)
-    stats_box.pack_start(loc_btn,  False, False, 0)
-    today_card.pack_start(stats_box, False, False, 0)
+    top_row.pack_start(stats_box, False, False, 0)
 
-    t1.pack_start(today_card, False, False, 0)
+    t1.pack_start(top_row, False, False, 0)
 
     def _prompt_change_location(_w=None):
         """Standort-Such-Dialog - nutzt denselben _geocode()-Helper
@@ -3638,51 +5422,56 @@ def _clock_content(win: Gtk.Window) -> Gtk.Box:
 
     loc_btn.connect("clicked", _prompt_change_location)
 
-    fc_row = hbox(6)
-    fc_row.set_halign(Gtk.Align.CENTER)
+    t1.pack_start(sep(), False, False, 2)
 
-    d1_box = hbox(0)
-    d1_box.get_style_context().add_class("bubble")
-    d1_box.get_style_context().add_class("item")
-    d1_box.set_size_request(70, -1)
-    d1_box.set_halign(Gtk.Align.CENTER)
-    d1_lbl = Gtk.Label(label="–")
-    d1_lbl.get_style_context().add_class("icon-lg")
-    d1_box.pack_start(d1_lbl, True, True, 0)
-
-    d2_box = hbox(0)
-    d2_box.get_style_context().add_class("bubble")
-    d2_box.get_style_context().add_class("item")
-    d2_box.set_size_request(70, -1)
-    d2_box.set_halign(Gtk.Align.CENTER)
-    d2_lbl = Gtk.Label(label="–")
-    d2_lbl.get_style_context().add_class("icon-lg")
-    d2_box.pack_start(d2_lbl, True, True, 0)
-
-    fc_row.pack_start(d1_box, False, False, 0)
-    fc_row.pack_start(d2_box, False, False, 0)
-    t1.pack_start(fc_row, False, False, 0)
+    # ── "Unten mitte": Wetter in den nächsten paar Stunden ──────────
+    _N_HOURLY = 6
+    hourly_row = hbox(4)
+    hourly_row.set_halign(Gtk.Align.CENTER)
+    hourly_slots = []
+    for _ in range(_N_HOURLY):
+        cell = vbox(1)
+        cell.get_style_context().add_class("bubble")
+        cell.get_style_context().add_class("item")
+        cell.set_size_request(48, -1)
+        cell.set_halign(Gtk.Align.CENTER)
+        h_time = Gtk.Label(label="–")
+        h_time.get_style_context().add_class("caption")
+        h_icon = Gtk.Label(label="–")
+        h_icon.get_style_context().add_class("icon-lg")
+        h_temp = Gtk.Label(label="–")
+        h_temp.get_style_context().add_class("caption")
+        cell.pack_start(h_time, False, False, 0)
+        cell.pack_start(h_icon, False, False, 0)
+        cell.pack_start(h_temp, False, False, 0)
+        hourly_row.pack_start(cell, False, False, 0)
+        hourly_slots.append((cell, h_time, h_icon, h_temp))
+    t1.pack_start(hourly_row, False, False, 0)
 
     t1.pack_start(sep(), False, False, 2)
 
-    dt_row = hrow()
-    dt_row.set_halign(Gtk.Align.CENTER)
-
-    date_box = hbox(0)
-    date_box.get_style_context().add_class("bubble")
-    date_box.get_style_context().add_class("item")
-    date_lbl = Gtk.Label(label="")
-    date_box.pack_start(date_lbl, False, False, 0)
-
-    time_box = hbox(0)
-    time_box.get_style_context().add_class("bubble")
-    time_box.get_style_context().add_class("title")
-    time_lbl = Gtk.Label(label="--:--")
-    time_box.pack_start(time_lbl, False, False, 0)
-
-    dt_row.pack_start(date_box, False, False, 0)
-    dt_row.pack_start(time_box, False, False, 0)
-    t1.pack_start(dt_row, False, False, 0)
+    # ── "Unten unten Mitte": die 7-Tage-Prognose ─────────────────────
+    daily_row = hbox(4)
+    daily_row.set_halign(Gtk.Align.CENTER)
+    daily_slots = []
+    for _ in range(7):
+        cell = vbox(1)
+        cell.get_style_context().add_class("bubble")
+        cell.get_style_context().add_class("item")
+        cell.set_size_request(44, -1)
+        cell.set_halign(Gtk.Align.CENTER)
+        d_lbl = Gtk.Label(label="–")
+        d_lbl.get_style_context().add_class("caption")
+        d_icon = Gtk.Label(label="–")
+        d_icon.get_style_context().add_class("icon-lg")
+        d_temp = Gtk.Label(label="–")
+        d_temp.get_style_context().add_class("caption")
+        cell.pack_start(d_lbl, False, False, 0)
+        cell.pack_start(d_icon, False, False, 0)
+        cell.pack_start(d_temp, False, False, 0)
+        daily_row.pack_start(cell, False, False, 0)
+        daily_slots.append((cell, d_lbl, d_icon, d_temp))
+    t1.pack_start(daily_row, False, False, 0)
 
     # ── TAB 2: Calendar ─────────────────────────────────────
     t2 = vbox(2); pad(t2, h=6, v=4)
@@ -3690,17 +5479,31 @@ def _clock_content(win: Gtk.Window) -> Gtk.Box:
     now = datetime.now()
     cur = [now.year, now.month]
 
-    prev_b      = btn("󰅁", tip="Previous month")
-    next_b      = btn("󰅂", tip="Next month")
-    mth_box, mth_lbl = bitem_ref("")
-    storage_btn = btn("📁", tip="Change where calendar data is stored (e.g. for multi-device sync)")
-    nav_row = hrow(prev_b, mth_box, next_b, storage_btn, sp=4)
+    prev_b = btn("󰅁", tip="Previous month")
+    next_b = btn("󰅂", tip="Next month")
+    # Redesign: Monat/Jahr-Label als klickbarer Button (Hover-Glow zeigt
+    # Klickbarkeit). Klick öffnet den Kalender-Speicherort-Dialog, der
+    # früher am separaten storage_btn hing. Pfeilabstand reduziert (sp=2).
+    mth_btn = Gtk.Button()
+    mth_btn.set_relief(Gtk.ReliefStyle.NONE)
+    mth_btn.get_style_context().add_class("flat")
+    mth_btn.get_style_context().add_class("bubble")
+    mth_btn.set_can_focus(False)
+    mth_btn.set_tooltip_text("Click to change calendar storage location")
+    mth_lbl = Gtk.Label(label="")
+    mth_lbl.set_halign(Gtk.Align.CENTER)
+    mth_btn.add(mth_lbl)
+    nav_row = hbox(2)
+    nav_row.set_halign(Gtk.Align.CENTER)
+    nav_row.pack_start(prev_b,  False, False, 0)
+    nav_row.pack_start(mth_btn, False, False, 2)
+    nav_row.pack_start(next_b,  False, False, 0)
     t2.pack_start(nav_row, False, False, 0)
 
     def _on_storage_btn(_w):
         cal_name = _khal_default_calendar_name()
         if not cal_name:
-            storage_btn.set_tooltip_text("No default calendar found in khal's config.")
+            mth_btn.set_tooltip_text("No default calendar found in khal's config.")
             return
         current = _khal_calendar_paths().get(cal_name)
         dlg = Gtk.FileChooserDialog(
@@ -3716,10 +5519,35 @@ def _clock_content(win: Gtk.Window) -> Gtk.Box:
         if resp != Gtk.ResponseType.OK or not new_dir:
             return
 
+        # Explizit fragen statt (wie bisher) stillschweigend anhand von
+        # "ist der Zielordner gerade leer?" zu entscheiden, ob die
+        # bestehenden .ics-Dateien mitkopiert werden sollen.
+        has_old_files = bool(current and current.is_dir()
+                              and current.resolve() != new_dir.resolve()
+                              and any(current.glob("*.ics")))
+        copy_old = False
+        if has_old_files:
+            qdlg = Gtk.MessageDialog(
+                transient_for=win, modal=True,
+                message_type=Gtk.MessageType.QUESTION,
+                buttons=Gtk.ButtonsType.NONE,
+                text="Copy existing calendar files to the new folder?")
+            qdlg.set_name("wb-daemon-popup")
+            qdlg.set_keep_above(True)
+            qdlg.format_secondary_text(
+                f"Found existing events in {current}. The originals will "
+                f"stay there either way - this only controls whether copies "
+                f"go into the new folder too.")
+            qdlg.add_buttons("Don't copy", Gtk.ResponseType.NO,
+                             "Copy", Gtk.ResponseType.YES)
+            qresp = qdlg.run()
+            qdlg.destroy()
+            copy_old = (qresp == Gtk.ResponseType.YES)
+
         def _worker():
-            ok, msg = _khal_change_storage_path(cal_name, new_dir)
+            ok, msg = _khal_change_storage_path(cal_name, new_dir, copy_old)
             def _after():
-                storage_btn.set_tooltip_text(
+                mth_btn.set_tooltip_text(
                     msg if msg else "Storage location changed."
                     if ok else f"Failed: {msg}")
                 if ok:
@@ -3727,7 +5555,7 @@ def _clock_content(win: Gtk.Window) -> Gtk.Box:
             GLib.idle_add(_after)
         in_thread(_worker)
 
-    storage_btn.connect("clicked", _on_storage_btn)
+    mth_btn.connect("clicked", _on_storage_btn)
 
     CELL = 34   # kompakter (vorher 40) - jetzt, wo die Zellen die
                 # schlanke .cal-cell-Klasse statt .bubble.item nutzen,
@@ -4031,16 +5859,38 @@ def _clock_content(win: Gtk.Window) -> Gtk.Box:
             desc_lbl.set_label(w["desc"])
             hum_lbl.set_label(f'💧 {w["humidity"]}')
             rain_lbl.set_label(f'☔ {w["precip"]}')
-            d1_lbl.set_label(w["day1_icon"])
-            d2_lbl.set_label(w["day2_icon"])
+
+            for i, (cell, h_time, h_icon, h_temp) in enumerate(hourly_slots):
+                if i < len(w["hourly"]):
+                    h = w["hourly"][i]
+                    h_time.set_label(h["label"])
+                    h_icon.set_label(h["icon"])
+                    h_temp.set_label(h["temp"])
+                    cell.set_no_show_all(False)
+                    cell.show_all()
+                else:
+                    cell.hide()
+
+            for i, (cell, d_lbl, d_icon, d_temp) in enumerate(daily_slots):
+                if i < len(w["daily"]):
+                    d = w["daily"][i]
+                    d_lbl.set_label(d["label"])
+                    d_icon.set_label(d["icon"])
+                    d_temp.set_label(f'{d["hi"]}/{d["lo"]}')
+                    cell.set_no_show_all(False)
+                    cell.show_all()
+                else:
+                    cell.hide()
+
             loc_tip = f'Location: {w["location"]}\nClick 📍 to change'
-            today_card.set_tooltip_text(loc_tip)
+            mid_box.set_tooltip_text(loc_tip)
         GLib.idle_add(_apply)
 
     in_thread(_load_weather)
     add_timer(600_000, lambda: in_thread(_load_weather) or True)
 
     # ── Tabs zusammensetzen (gleiches Muster wie Media/Devices/Apps) ─
+    stack.add_named(t0, "clock")
     stack.add_named(t1, "weather")
     stack.add_named(t2, "calendar")
 
@@ -4053,12 +5903,14 @@ def _clock_content(win: Gtk.Window) -> Gtk.Box:
             ctx = b.get_style_context()
             if n == name: ctx.add_class("active")
             else:         ctx.remove_class("active")
-    for name, label in (("weather", "󰖐  Weather"),
+    for name, label in (("clock", "🕐  Clock"),
+                         ("weather", "󰖐  Weather"),
                          ("calendar", "󰃭  Calendar")):
-        b = btn(label, active=(name == "weather"))
+        b = btn(label, active=(name == "clock"))
         b.connect("clicked", lambda _b, n=name: _switch_tab(n))
         tab_btns[name] = b
         tab_row.pack_start(b, False, False, 0)
+    stack.set_visible_child_name("clock")
 
     outer = vbox(4); safe_pad(outer, 460)
     outer.pack_start(tab_row, True, False, 2)
@@ -4219,10 +6071,154 @@ def _build_settings_placeholder(page: Gtk.Box, key: str, label: str, win: Gtk.Wi
 def _build_settings_network(page: Gtk.Box, key: str, label: str, win: Gtk.Window) -> None:
     page.pack_start(_network_content(win), True, True, 0)
 
+def _build_appearance_wallpapers_tab(win: Gtk.Window) -> Gtk.Box:
+    """Neuer Wallpapers-Tab (Appearance & Language) - scannt beim
+    Öffnen automatisch den Wallpapers.sh-Ordner (~/.config/hypr/
+    Wallpapers/<ratio>/, siehe _scan_wallpaper_images()) und zeigt
+    JEDES gefundene Bild als Preview-Kachel. Klick auf eine Kachel
+    setzt sie sofort als Wallpaper über 'Wallpapers.sh --set' (neuer
+    Modus, siehe dortiger Kommentar) - entweder auf ALLE Monitore oder
+    nur auf den oben per Segmented-Control gewählten einzelnen.
+    Umsetzt den Wunsch aus dem Chat: "über das selbe skript wie bei den
+    zufalls sachen... beim skript was hinzufügen... die wallpaper
+    sollen automatisch geladen werden, einfach beim öffnen des widgets
+    den ordner scannen und alle anzeigen (mit preview gleich dazu)".
+    Behebt nebenbei den zweiten gemeldeten Bug ("wahrscheinlich kann
+    man deswegen auch nicht das wallpaper ändern") - vorher gab es
+    NUR den Zufalls-Reroll (siehe alter screen_btn in
+    _brightness_content), keine Möglichkeit, ein bestimmtes Bild
+    gezielt auszuwählen."""
+    outer = vbox(4)
+    wallpaper_script = _resolve_wallpaper_script()
+
+    if not os.path.isfile(wallpaper_script):
+        outer.pack_start(
+            bitem(f"Wallpaper script not found in ~/.config/hypr "
+                  f"(looked for: {', '.join(_WALLPAPER_SCRIPT_CANDIDATES)})",
+                  dim=True), False, False, 0)
+        return outer
+
+    # ── Zielauswahl: alle Monitore (Default) oder ein bestimmter ────
+    mon_names = [m.get("name") for m in _hypr_monitors_live() if m.get("name")]
+    target_ctrl = _SegmentedControl()
+    target_ctrl.get_style_context().add_class("bubble")
+    target_ctrl.get_style_context().add_class("segmented")
+    target_ctrl.set_can_focus(False)
+    target_ctrl.append_text("All Displays")
+    for n in mon_names:
+        target_ctrl.append_text(n)
+    target_ctrl.set_active(0)
+    if len(mon_names) <= 1:
+        target_ctrl.set_sensitive(False)
+        target_ctrl.set_tooltip_text("Only one display connected.")
+    target_row = hbox(6)
+    target_row.set_halign(Gtk.Align.CENTER)
+    target_row.pack_start(target_ctrl.widget, False, False, 0)
+    outer.pack_start(target_row, False, False, 0)
+
+    def _selected_monitor() -> str | None:
+        idx = target_ctrl._active
+        return mon_names[idx - 1] if idx > 0 else None
+
+    status_lbl = Gtk.Label(label="")
+    status_lbl.get_style_context().add_class("caption")
+    status_lbl.set_opacity(0.75)
+    status_lbl.set_no_show_all(True)
+    status_lbl.hide()
+
+    scroller, scroll_inner = scroll_box(max_h=260)
+    flow = Gtk.FlowBox()
+    flow.set_valign(Gtk.Align.START)
+    flow.set_selection_mode(Gtk.SelectionMode.NONE)
+    flow.set_homogeneous(True)
+    flow.set_max_children_per_line(4)
+    flow.set_min_children_per_line(2)
+    flow.set_row_spacing(6)
+    flow.set_column_spacing(6)
+    scroll_inner.pack_start(flow, True, True, 0)
+    outer.pack_start(scroller, False, False, 0)
+
+    loading_lbl = bitem("Scanning wallpapers…", dim=True)
+    outer.pack_start(loading_lbl, False, False, 0)
+    outer.pack_start(status_lbl, False, False, 4)
+
+    _THUMB = 96
+
+    def _on_pick(path: str):
+        mon = _selected_monitor()
+        cmd = ["bash", wallpaper_script, "--set", path] + ([mon] if mon else [])
+        in_thread(run, cmd)
+        status_lbl.set_label(
+            f"Applied: {os.path.basename(path)}"
+            + (f" → {mon}" if mon else " → all displays"))
+        status_lbl.show()
+        GLib.timeout_add(2500, lambda: (status_lbl.hide(), False)[1])
+
+    def _load_previews():
+        # GdkPixbuf.new_from_file_at_scale() ist synchrones Datei-I/O +
+        # Dekodierung - bei vielen/großen Bildern spürbar langsam, daher
+        # komplett im Hintergrund-Thread, nur der fertige Kachel-Aufbau
+        # läuft über GLib.idle_add() zurück im Main-Thread (gleiches
+        # Muster wie _load_rgb_devices() im Brightness-Widget).
+        tiles = []
+        for p in _scan_wallpaper_images():
+            try:
+                pix = GdkPixbuf.Pixbuf.new_from_file_at_scale(
+                    p, _THUMB, _THUMB, True)
+            except Exception:
+                continue
+            tiles.append((p, pix))
+
+        def _apply():
+            if loading_lbl.get_parent() is not None:
+                outer.remove(loading_lbl)
+            if not tiles:
+                outer.pack_start(
+                    bitem(f"No wallpapers found in {WALLPAPER_DIR}",
+                          dim=True), False, False, 0)
+                outer.show_all()
+                status_lbl.hide()
+                return False
+            for path, pix in tiles:
+                tile_btn = Gtk.Button()
+                tile_btn.get_style_context().add_class("bubble")
+                tile_btn.set_can_focus(False)
+                tile_btn.set_tooltip_text(os.path.basename(path))
+                tile_btn.add(Gtk.Image.new_from_pixbuf(pix))
+                tile_btn.connect("clicked", lambda _b, p=path: _on_pick(p))
+                flow.add(tile_btn)
+            flow.show_all()
+            outer.show_all()
+            status_lbl.hide()
+            return False
+        GLib.idle_add(_apply)
+
+    in_thread(_load_previews)
+    return outer
+
 def _build_settings_appearance(page: Gtk.Box, key: str, label: str, win: Gtk.Window) -> None:
-    # Gemeinsame Statuszeile für alle Einstellungen dieser Seite - jede
-    # Änderung wird sofort übernommen (siehe apply_change()), es gibt
-    # keine Apply/Discard-Leiste mehr. Zeigt kurz "Applying…" bzw. das
+    # 3 Unterreiter statt einer einzigen langen Liste (Sachen aus dem
+    # README, die sich alle auf "Appearance & Language" bezogen):
+    # SOUND (System Sounds + Sound Events), LOOK (Theme + Cursor),
+    # LANGUAGE (Systemsprache + Tastaturlayout). Titel "Appearance &
+    # Language" + Trennstrich packt der Aufrufer (_open_category() in
+    # build_settings()) schon VOR diesem Funktionsaufruf auf `page` -
+    # hier kommt nur noch der Tab-Umschalter + Gtk.Stack rein.
+    stack = Gtk.Stack()
+    stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
+    stack.set_transition_duration(200)
+    stack.set_hhomogeneous(False)
+    stack.set_vhomogeneous(False)
+
+    t_sound = vbox(4)
+    t_look  = vbox(4)
+    t_lang  = vbox(4)
+
+    # Gemeinsame Statuszeile für alle Einstellungen dieser Seite (über
+    # alle 3 Tabs hinweg EINE einzige, unterhalb des Stacks, damit sie
+    # beim Tab-Wechsel nicht mit verschwindet) - jede Änderung wird
+    # sofort übernommen (siehe apply_change()), es gibt keine
+    # Apply/Discard-Leiste mehr. Zeigt kurz "Applying…" bzw. das
     # Ergebnis, ähnlich der Statuszeile pro Monitor auf der Display-Seite.
     appearance_status_lbl = Gtk.Label(label="")
     appearance_status_lbl.get_style_context().add_class("caption")
@@ -4236,115 +6232,95 @@ def _build_settings_appearance(page: Gtk.Box, key: str, label: str, win: Gtk.Win
         appearance_status_lbl.show()
         GLib.timeout_add(ms, lambda: (appearance_status_lbl.hide(), False)[1])
 
-    # ── Appearance: EIN Light/Dark-Umschalter für Kvantum + GTK ──────
-    page.pack_start(bsec("APPEARANCE"), False, False, 0)
-    dark_row = hbox(8)
-    dark_lbl = Gtk.Label(label="Theme:")
-    dark_lbl.get_style_context().add_class("caption")
-    dark_toggle = btn("", active=_is_dark_mode())
-    def _refresh_dark_label():
+    # ══════════════════════════ TAB: LOOK ════════════════════════════
+    # Theme + Cursor effects + Shake-to-find jetzt EIN einziger,
+    # zentrierter Row - "Wiedermal die on off Sachen auf die Label
+    # verschieben": kein separates Label+Toggle-Paar mehr, der
+    # Button-Text SELBST ist die Beschreibung, leuchtet per aktiver
+    # Klasse (exakt dasselbe Muster wie bei Privacy/DNS/Tailscale,
+    # siehe "Enforce DoT"/"Guest WiFi"/"Start on boot").
+    t_look.pack_start(bsec("APPEARANCE & CURSOR"), False, False, 0)
+
+    # "Theme: wenn dark auf die Farbe #9C81CF mit #7554B3 Glow, wenn
+    # light der normale Glow - button entfernen und aufs Label geben":
+    # der Button ist IMMER "aktiv" (irgendein Theme ist ja immer
+    # gewählt) - nur die GLOW-FARBE zeigt an, welches: lila bei Dark
+    # (theme-glow-dark-Klasse, siehe CSS oben), normales Gold bei
+    # Light (Standard-.active-Look, keine Zusatzklasse nötig).
+    theme_toggle = btn("", active=True)
+    def _refresh_theme_toggle():
+        # Robuster: _is_dark_mode() liest aus Gtk.Settings (live im Prozess)
+        # UND fällt auf gsettings zurück, falls die In-Prozess-Property
+        # noch den alten Start-Zustand hat.
         is_dark = _is_dark_mode()
-        dark_toggle.set_label("🌙  Dark" if is_dark else "☀️  Light")
-        ctx = dark_toggle.get_style_context()
-        if is_dark: ctx.add_class("active")
-        else:       ctx.remove_class("active")
-    _refresh_dark_label()
+        try:
+            _gs_out = run(["gsettings", "get",
+                           "org.gnome.desktop.interface", "color-scheme"])
+            if _gs_out.strip():
+                is_dark = "dark" in _gs_out.lower()
+        except Exception:
+            pass
+        # Label: "🌙 Dark" wenn Dark-Mode aktiv, "☀️ Light" wenn Light aktiv.
+        # Eindeutiger als vorher (kein "Dark Theme" das im Light-Modus
+        # verwirrt) - das aktive Icon + Glow zeigt, was GERADE läuft.
+        theme_toggle.set_label("🌙 Dark" if is_dark else "☀️ Light")
+        ctx = theme_toggle.get_style_context()
+        if is_dark:
+            ctx.add_class("active")
+            ctx.add_class("theme-glow-dark")
+        else:
+            ctx.add_class("active")
+            ctx.remove_class("theme-glow-dark")
+    _refresh_theme_toggle()
 
     def _on_dark_toggle(_w):
         new_dark = not _is_dark_mode()
+        try:
+            _gs_out = run(["gsettings", "get",
+                           "org.gnome.desktop.interface", "color-scheme"])
+            if _gs_out.strip():
+                new_dark = not ("dark" in _gs_out.lower())
+        except Exception:
+            pass
+
         def _apply():
             ok, err = _set_dark_mode(new_dark)
             if not ok:
                 raise RuntimeError(err)
         def _reset():
-            _refresh_dark_label()
-        # Sofortiges visuelles Feedback am Button selbst, bevor
-        # apply_fn im Hintergrund fertig ist - _is_dark_mode() liest ja
-        # erst NACH dem Apply den neuen Zustand, bis dahin zeigt der
-        # Button sonst noch den alten Zustand. Schlägt der Apply doch
-        # fehl, macht _reset() das wieder rückgängig.
-        dark_toggle.set_label("🌙  Dark" if new_dark else "☀️  Light")
-        ctx = dark_toggle.get_style_context()
-        if new_dark: ctx.add_class("active")
-        else:        ctx.remove_class("active")
+            _refresh_theme_toggle()
+        # Sofortiges visuelles Feedback
+        theme_toggle.set_label("🌙 Dark" if new_dark else "☀️ Light")
+        ctx = theme_toggle.get_style_context()
+        if new_dark:
+            ctx.add_class("theme-glow-dark")
+        else:
+            ctx.remove_class("theme-glow-dark")
         apply_change(f"Theme: {'Dark' if new_dark else 'Light'}", _apply,
                      on_status=_flash_appearance_status, reset_fn=_reset)
 
-    dark_toggle.connect("clicked", _on_dark_toggle)
+    theme_toggle.connect("clicked", _on_dark_toggle)
     # Ehrlicher Hinweis statt eines leeren Versprechens: GTK/Firefox
     # ziehen i.d.R. live nach (gsettings + Portal-Neustart, siehe
     # _broadcast_theme_change), Qt/Kvantum-Apps können das laut
     # Kvantum-Upstream technisch NICHT ohne Neustart - kein Bug hier,
     # sondern eine Qt-Plattform-Grenze. Steht jetzt nur noch als
     # Tooltip da statt als eigener, klein gedruckter Textblock.
-    dark_toggle.set_tooltip_text(
+    theme_toggle.set_tooltip_text(
         "GTK & Firefox switch live. Qt/Kvantum apps need a restart to fully redraw.")
-    dark_row.pack_start(dark_lbl, False, False, 0)
-    dark_row.pack_start(dark_toggle, False, False, 0)
-    page.pack_start(dark_row, False, False, 0)
-
-    page.pack_start(sep(), False, False, 6)
-
-    # ── Systemsounds: globaler An/Aus-Schalter (SoundCenter.sh) ──────
-    # Steuert dieselbe State-Datei, die SoundCenter.sh selbst prüft - dieser
-    # Switch hier ist also nur EIN möglicher Ort, an dem man umschalten
-    # kann, kein eigener Zustand. Genau wie beim Dark-Toggle: sofortiges
-    # visuelles Feedback am Button, bevor die Datei tatsächlich geschrieben
-    # ist, mit _reset() als Fallback bei Fehlern.
-    page.pack_start(bsec("SYSTEM SOUNDS"), False, False, 0)
-    sound_row = hbox(8)
-    sound_lbl = Gtk.Label(label="Click/UI sounds:")
-    sound_lbl.get_style_context().add_class("caption")
-    sound_toggle = btn("", active=_sounds_enabled())
-
-    def _refresh_sound_toggle(enabled: bool):
-        sound_toggle.set_label("🔊  On" if enabled else "🔇  Off")
-        ctx = sound_toggle.get_style_context()
-        if enabled: ctx.add_class("active")
-        else:       ctx.remove_class("active")
-
-    _refresh_sound_toggle(_sounds_enabled())
-
-    def _on_sound_toggle(_w):
-        new_val = not _sounds_enabled()
-        def _apply():
-            _set_sounds_enabled(new_val)
-        def _reset():
-            _refresh_sound_toggle(_sounds_enabled())
-        _refresh_sound_toggle(new_val)  # sofortiges visuelles Feedback, siehe Dark-Mode-Toggle oben
-        apply_change(f"System sounds: {'On' if new_val else 'Off'}", _apply,
-                     on_status=_flash_appearance_status, reset_fn=_reset)
-
-    sound_toggle.connect("clicked", _on_sound_toggle)
-    sound_row.pack_start(sound_lbl, False, False, 0)
-    sound_row.pack_start(sound_toggle, False, False, 0)
-    page.pack_start(sound_row, False, False, 0)
-
-    page.pack_start(sep(), False, False, 6)
 
     # ── Cursor: dynamic_cursors Plugin (Tilt/Stretch-Effekte + Shake-to-Find) ──
-    page.pack_start(bsec("CURSOR"), False, False, 0)
-
-    cursor_row = hbox(8)
-    cursor_lbl = Gtk.Label(label="Cursor effects:")
-    cursor_lbl.get_style_context().add_class("caption")
-    cursor_toggle = btn("", active=_cursor_plugin_enabled())
-
-    shake_row = hbox(8)
-    shake_lbl = Gtk.Label(label="Shake-to-find:")
-    shake_lbl.get_style_context().add_class("caption")
-    shake_toggle = btn("", active=_cursor_shake_enabled())
+    cursor_toggle = btn("Cursor effects", active=_cursor_plugin_enabled())
+    shake_toggle = btn("Shake-to-find", active=_cursor_shake_enabled())
 
     def _refresh_cursor_toggle(enabled: bool):
-        cursor_toggle.set_label("🖱️  On" if enabled else "🖱️  Off")
         ctx = cursor_toggle.get_style_context()
         if enabled: ctx.add_class("active")
         else:       ctx.remove_class("active")
         # Shake ergibt nur Sinn, wenn das Plugin selbst überhaupt an ist
-        shake_row.set_sensitive(enabled)
+        shake_toggle.set_sensitive(enabled)
 
     def _refresh_shake_toggle(enabled: bool):
-        shake_toggle.set_label("🫨  On" if enabled else "🫨  Off")
         ctx = shake_toggle.get_style_context()
         if enabled: ctx.add_class("active")
         else:       ctx.remove_class("active")
@@ -4383,18 +6359,91 @@ def _build_settings_appearance(page: Gtk.Box, key: str, label: str, win: Gtk.Win
     cursor_toggle.set_tooltip_text(_cursor_reload_tip)
     shake_toggle.set_tooltip_text(_cursor_reload_tip)
 
-    cursor_row.pack_start(cursor_lbl, False, False, 0)
-    cursor_row.pack_start(cursor_toggle, False, False, 0)
-    page.pack_start(cursor_row, False, False, 0)
+    look_row = hbox(10)
+    look_row.set_halign(Gtk.Align.CENTER)
+    look_row.pack_start(theme_toggle, False, False, 0)
+    look_row.pack_start(cursor_toggle, False, False, 0)
+    look_row.pack_start(shake_toggle, False, False, 0)
+    t_look.pack_start(look_row, False, False, 0)
 
-    shake_row.pack_start(shake_lbl, False, False, 0)
-    shake_row.pack_start(shake_toggle, False, False, 0)
-    page.pack_start(shake_row, False, False, 0)
+    # ══════════════════════════ TAB: SOUND ═══════════════════════════
+    # Redesign-Liste: "eine Überschrift nur mehr: 'Sounds' kann man
+    # klicken um alle sounds zu aktivieren/deaktivieren - click/ui
+    # sounds Schalter entfernen". Die vorher separate "Click/UI
+    # sounds"-Zeile UND die separate "SOUND EVENTS"-Zwischenüberschrift
+    # sind beide weg - die einzige verbleibende Überschrift ("Sounds")
+    # ist selbst der globale An/Aus-Schalter (gleiches bsec_btn()-
+    # Muster wie "VOLUME: 45%" im Media-Tab), Events hängen direkt
+    # darunter, kein Trennstrich mehr dazwischen ("keine Striche").
+    sounds_hdr = bsec_btn("Sounds", active=_sounds_enabled())
 
-    page.pack_start(sep(), False, False, 6)
+    def _refresh_sounds_hdr(enabled: bool):
+        ctx = sounds_hdr.get_style_context()
+        if enabled: ctx.add_class("active")
+        else:       ctx.remove_class("active")
 
+    def _on_sounds_hdr_toggle(_w):
+        new_val = not _sounds_enabled()
+        def _apply():
+            _set_sounds_enabled(new_val)
+        def _reset():
+            _refresh_sounds_hdr(_sounds_enabled())
+        _refresh_sounds_hdr(new_val)  # sofortiges visuelles Feedback, siehe Dark-Mode-Toggle oben
+        apply_change(f"System sounds: {'On' if new_val else 'Off'}", _apply,
+                     on_status=_flash_appearance_status, reset_fn=_reset)
+
+    sounds_hdr.connect("clicked", _on_sounds_hdr_toggle)
+    sounds_hdr.set_tooltip_text("Click to toggle all system sounds on/off")
+    t_sound.pack_start(sounds_hdr, False, False, 0)
+
+    # ── Pro-Event-Schalter (SOUND_EVENTS) ─────────────────────────────
+    # Nutzt SoundControls --status/--enable/--disable MIT Event-Namen
+    # (siehe _event_sound_enabled/_set_event_sound_enabled oben), läuft
+    # also über dieselben Statusdateien, die SoundDaemon beim
+    # Abspielen sowieso schon prüft. Wirkt nur, wenn der globale
+    # Schalter oben an ist (Master UND Event müssen beide an sein).
+    # "die ganzen On/Off Dinger weg, das machen die Label" - der
+    # Event-Name selbst ist jetzt der Schalter, kein separates
+    # On/Off-Label mehr daneben.
+    def _make_sound_event_row(event: str) -> Gtk.Box:
+        row = hbox(0)
+        row.set_halign(Gtk.Align.CENTER)
+        toggle = btn(event, active=_event_sound_enabled(event))
+
+        def _refresh(enabled: bool, _toggle=toggle):
+            ctx = _toggle.get_style_context()
+            if enabled: ctx.add_class("active")
+            else:       ctx.remove_class("active")
+
+        def _on_event_toggle(_w, _event=event, _refresh=_refresh):
+            new_val = not _event_sound_enabled(_event)
+            def _apply():
+                _set_event_sound_enabled(_event, new_val)
+            def _reset():
+                _refresh(_event_sound_enabled(_event))
+            _refresh(new_val)  # sofortiges visuelles Feedback, siehe Dark-Mode-Toggle oben
+            apply_change(f"{_event} sound: {'On' if new_val else 'Off'}", _apply,
+                         on_status=_flash_appearance_status, reset_fn=_reset)
+
+        toggle.connect("clicked", _on_event_toggle)
+        row.pack_start(toggle, True, True, 0)
+        return row
+
+    # "weniger Abstand zwischen den 2 Spalten" (vorher 14px) - und die
+    # Events hängen jetzt ohne jeden Zusatzabstand/Trennstrich direkt
+    # unterm Sounds-Header ("die buttons alle den Abstand zu oben
+    # verringern").
+    _events_grid = Gtk.Grid()
+    _events_grid.set_column_homogeneous(True)
+    _events_grid.set_column_spacing(4)
+    _events_grid.set_row_spacing(0)
+    for idx, _event in enumerate(SOUND_EVENTS):
+        _events_grid.attach(_make_sound_event_row(_event), idx % 2, idx // 2, 1, 1)
+    t_sound.pack_start(_events_grid, False, False, 0)
+
+    # ═════════════════════════ TAB: LANGUAGE ═════════════════════════
     # ── Language: Systemsprache (locale) ─────────────────────────────
-    page.pack_start(bsec("LANGUAGE"), False, False, 0)
+    t_lang.pack_start(bsec("LANGUAGE"), False, False, 0)
     CUSTOM_LABEL = "Custom…"
     cur_locale = _current_locale()
     lang_combo = Gtk.ComboBoxText()
@@ -4458,12 +6507,12 @@ def _build_settings_appearance(page: Gtk.Box, key: str, label: str, win: Gtk.Win
     _update_lang_custom_visibility()
     lang_combo.set_tooltip_text("Usually applies after logging out and back in.")
     lang_row = hrow(lang_combo, lang_custom_btn, sp=8)
-    page.pack_start(lang_row, False, False, 0)
+    t_lang.pack_start(lang_row, False, False, 0)
 
-    page.pack_start(sep(), False, False, 6)
+    t_lang.pack_start(sep(), False, False, 3)
 
     # ── Keyboard Layout ───────────────────────────────────────────────
-    page.pack_start(bsec("KEYBOARD LAYOUT"), False, False, 0)
+    t_lang.pack_start(bsec("KEYBOARD LAYOUT"), False, False, 0)
     cur_kb = _current_kb_layout()
     kb_combo = Gtk.ComboBoxText()
     kb_combo.get_style_context().add_class("bubble")
@@ -4526,8 +6575,41 @@ def _build_settings_appearance(page: Gtk.Box, key: str, label: str, win: Gtk.Win
     _update_kb_custom_visibility()
     kb_combo.set_tooltip_text("Applies after 'hyprctl reload' or next Hyprland start.")
     kb_row = hrow(kb_combo, kb_custom_btn, sp=8)
-    page.pack_start(kb_row, False, False, 0)
+    t_lang.pack_start(kb_row, False, False, 0)
 
+    # NEU: Wallpapers-Tab (siehe _build_appearance_wallpapers_tab()) -
+    # eigene Funktion statt inline hier, da sie unabhängig vom Rest
+    # dieser Funktion (kein Zugriff auf appearance_status_lbl o.ä.
+    # nötig) und dadurch auch unabhängig testbar ist.
+    t_wall = _build_appearance_wallpapers_tab(win)
+
+    # ══════════════════════ Tabs zusammensetzen ══════════════════════
+    stack.add_named(t_sound, "sound")
+    stack.add_named(t_look,  "look")
+    stack.add_named(t_lang,  "language")
+    stack.add_named(t_wall,  "wallpapers")
+
+    tab_row = hbox(6)
+    tab_row.set_halign(Gtk.Align.CENTER)
+    tab_btns: dict = {}
+    def _switch(name):
+        _switch_stack(stack, win, name)
+        for n, b in tab_btns.items():
+            ctx = b.get_style_context()
+            if n == name: ctx.add_class("active")
+            else:         ctx.remove_class("active")
+    for name, tlabel in (("sound", "🔊  Sound"), ("look", "🎨  Look"),
+                          ("language", "🌐  Language"),
+                          ("wallpapers", "🖼  Wallpapers")):
+        b = btn(tlabel, active=(name == "sound"))
+        b.connect("clicked", lambda _b, n=name: _switch(n))
+        tab_btns[name] = b
+        tab_row.pack_start(b, False, False, 0)
+    stack.set_visible_child_name("sound")
+
+    page.pack_start(tab_row, True, False, 2)
+    page.pack_start(tab_sep(), False, False, 0)
+    page.pack_start(stack, False, False, 0)
     page.pack_start(appearance_status_lbl, False, False, 6)
 
 def _build_settings_battery(page: Gtk.Box, key: str, label: str, win: Gtk.Window) -> None:
@@ -4880,6 +6962,19 @@ def _set_cursor_plugin_enabled(enabled: bool) -> tuple[bool, str]:
         if n == 0:
             return False, "dynamic_cursors plugin block not found in hyprland.lua."
         path.write_text(new_txt)
+        # FIX: bisher wurde NUR die Datei geschrieben (wirkt erst nach
+        # 'hyprctl reload'/Neustart) - kein Live-Apply. Jetzt zusätzlich
+        # sofort per "hyprctl eval" gegen den laufenden Lua-State
+        # anwenden, exakt dasselbe Muster wie effects_battery_enable/
+        # disable() weiter oben (siehe _hypr_eval()-Kommentar). Fehler
+        # hier werden bewusst NICHT den Rückgabewert kippen - die Datei
+        # wurde korrekt geschrieben, das ist die "Quelle der Wahrheit";
+        # schlägt nur das Live-Apply fehl, greift der neue Wert spätestens
+        # beim nächsten Reload.
+        _hypr_eval(
+            "if hl.plugin.dynamic_cursors then hl.config({ plugin = "
+            "{ dynamic_cursors = { enabled = " +
+            ("true" if enabled else "false") + " } } }) end")
         return True, ""
     except Exception as e:
         return False, str(e)
@@ -4898,6 +6993,15 @@ def _set_cursor_shake_enabled(enabled: bool) -> tuple[bool, str]:
         if n == 0:
             return False, "shake block not found in hyprland.lua."
         path.write_text(new_txt)
+        # FIX ("Shake-to-find geht nicht mehr"): wie bei
+        # _set_cursor_plugin_enabled() oben fehlte das Live-Apply
+        # komplett - nur die Datei wurde geändert, Hyprland bekam davon
+        # erst nach einem Reload etwas mit. Jetzt zusätzlich sofort per
+        # "hyprctl eval" gesetzt.
+        _hypr_eval(
+            "if hl.plugin.dynamic_cursors then hl.config({ plugin = "
+            "{ dynamic_cursors = { shake = { enabled = " +
+            ("true" if enabled else "false") + " } } } }) end")
         return True, ""
     except Exception as e:
         return False, str(e)
@@ -4965,12 +7069,23 @@ def _edid_extra_modes(name: str) -> dict:
         extra.setdefault(res, set()).add(hz_str)
     return extra
 
-def _write_hdr_fields(block_text: str, hdr_on: bool) -> str:
+def _write_hdr_fields(block_text: str, hdr_on: bool,
+                       sdr_brightness: float = 1.0,
+                       sdr_saturation: float = 1.0) -> str:
     """Fügt bitdepth/cm-Felder in einen bestehenden hl.monitor({...})-
     Blocktext ein bzw. aktualisiert sie, oder setzt sie explizit auf
     die Nicht-HDR-Standardwerte zurück (statt die Felder einfach zu
     entfernen - explizit "bitdepth=8, cm=srgb" ist klarer beim
-    Nachlesen der Datei als ein stillschweigend fehlendes Feld)."""
+    Nachlesen der Datei als ein stillschweigend fehlendes Feld).
+
+    sdrbrightness/sdrsaturation (siehe Hyprland-Wiki "Colors and
+    colorspaces") werden nach demselben Muster IMMER explizit gesetzt,
+    nie weggelassen - dieselbe Begründung wie beim ursprünglichen
+    bitdepth/cm-Bugfix oben: ein "hyprctl keyword monitor"-Aufruf ist
+    ein Teil-Reconfigure, weggelassene Felder blieben sonst auf einem
+    evtl. veralteten Wert von einem früheren Apply hängen. Bei
+    ausgeschaltetem HDR werden sie auf 1.0 (= "unverändert", Hyprland-
+    Default) zurückgesetzt statt entfernt."""
     if hdr_on:
         if re.search(r'bitdepth\s*=', block_text):
             block_text = re.sub(r'bitdepth\s*=\s*[^,\n]+', 'bitdepth = 10', block_text)
@@ -4985,6 +7100,21 @@ def _write_hdr_fields(block_text: str, hdr_on: bool) -> str:
             block_text = re.sub(r'bitdepth\s*=\s*[^,\n]+', 'bitdepth = 8', block_text)
         if re.search(r'\bcm\s*=', block_text):
             block_text = re.sub(r'\bcm\s*=\s*"[^"]*"', 'cm       = "srgb"', block_text)
+
+    sdr_bri_val = round(sdr_brightness if hdr_on else 1.0, 3)
+    sdr_sat_val = round(sdr_saturation if hdr_on else 1.0, 3)
+    if re.search(r'\bsdrbrightness\s*=', block_text):
+        block_text = re.sub(r'sdrbrightness\s*=\s*[^,\n]+',
+                             f'sdrbrightness = {sdr_bri_val}', block_text)
+    else:
+        block_text = re.sub(r'(\}\)\s*$)',
+                             f'    sdrbrightness = {sdr_bri_val},\n\\1', block_text)
+    if re.search(r'\bsdrsaturation\s*=', block_text):
+        block_text = re.sub(r'sdrsaturation\s*=\s*[^,\n]+',
+                             f'sdrsaturation = {sdr_sat_val}', block_text)
+    else:
+        block_text = re.sub(r'(\}\)\s*$)',
+                             f'    sdrsaturation = {sdr_sat_val},\n\\1', block_text)
     return block_text
 
 # ════════════════════════════════════════════════════════════
@@ -5159,27 +7289,70 @@ def _build_settings_display(page: Gtk.Box, key: str, label: str, win: Gtk.Window
     # reachable" melden würden.
     rotation_up = _rotation_daemon_available()
     rotation_map = _rotation_list() if rotation_up else {}
+    # Redesign-Liste: "Unter Display eine fette Linie anstatt einer
+    # dünnen. Andere Linien entfernen." + "Unter einem Display keine
+    # Linie mehr - Bildschirm Label regelt das." - der einzige
+    # verbleibende Strich auf dieser Seite ist der fette hub_sep()
+    # direkt unter der Seiten-Überschrift (kommt vom generischen
+    # Settings-Seiten-Rahmen); alle sep()-Trennstriche, die hier vorher
+    # zwischen Auto-Rotate/den Monitor-Blöcken standen, sind weg - jeder
+    # Monitor-Block grenzt sich jetzt über seine eigene, deutlich
+    # sichtbare header_row (Icon+Name+HDR, siehe _build_monitor_row())
+    # selbst genug vom nächsten ab.
     if rotation_up:
-        page.pack_start(bsec("Auto-Rotate"), False, False, 0)
-        page.pack_start(_build_autorotate_row(), False, False, 0)
-        page.pack_start(sep(), False, False, 4)
+        page.pack_start(_build_autorotate_row(), False, False, 4)
 
-    # Gemeinsamer Debounce-Status für den Waybar/Autohide-Reload - siehe
-    # Kommentar bei waybar_restart_id in _build_monitor_row(). Ohne das
-    # würde bei kurz hintereinander geänderten Monitor-Einstellungen
-    # (jede wird sofort einzeln übernommen) der Reload einmal PRO
-    # Änderung feuern, was zu einem Race zwischen zwei fast
-    # gleichzeitigen "killall -SIGUSR2 waybar" +
-    # "systemctl restart wb-autohide.service" führen kann.
     waybar_restart_id = [0]
 
-    for mon in monitors:
-        mon_name = mon.get("name", "?")
-        page.pack_start(bsec(mon_name.upper()), False, False, 0)
-        row = _build_monitor_row(mon, monitors, lua_path, win, waybar_restart_id,
-                                  rotation_map.get(mon_name) if rotation_up else None)
+    if len(monitors) == 1:
+        # Einzelner Monitor: direkt ohne Tab-Bar anzeigen
+        mon = monitors[0]
+        header_row, row = _build_monitor_row(
+            mon, monitors, lua_path, win, waybar_restart_id,
+            rotation_map.get(mon.get("name", "?")) if rotation_up else None)
+        page.pack_start(header_row, False, False, 6)
         page.pack_start(row, False, False, 0)
-        page.pack_start(sep(), False, False, 4)
+    else:
+        # Mehrere Monitore: Standard-Tab-Pattern wie überall sonst im Programm
+        # (btn()-Buttons + tab_sep() + Gtk.Stack) statt Gtk.Notebook.
+        mon_stack = Gtk.Stack()
+        mon_stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
+        mon_stack.set_transition_duration(150)
+        mon_stack.set_hhomogeneous(False)
+        mon_stack.set_vhomogeneous(False)
+
+        mon_tab_row = hbox(6)
+        mon_tab_row.set_halign(Gtk.Align.CENTER)
+        mon_tab_btns: dict = {}
+
+        def _switch_mon(name):
+            mon_stack.set_visible_child_name(name)
+            for n, b in mon_tab_btns.items():
+                ctx = b.get_style_context()
+                if n == name: ctx.add_class("active")
+                else:         ctx.remove_class("active")
+
+        for i, mon in enumerate(monitors):
+            mon_name = mon.get("name", "?")
+            header_row, row = _build_monitor_row(
+                mon, monitors, lua_path, win, waybar_restart_id,
+                rotation_map.get(mon_name) if rotation_up else None)
+            mon_page = vbox(4)
+            mon_page.pack_start(header_row, False, False, 6)
+            mon_page.pack_start(row, False, False, 0)
+            mon_stack.add_named(mon_page, mon_name)
+
+            tab_b = btn(mon_name, active=(i == 0))
+            tab_b.connect("clicked", lambda _b, n=mon_name: _switch_mon(n))
+            mon_tab_btns[mon_name] = tab_b
+            mon_tab_row.pack_start(tab_b, False, False, 0)
+
+        if monitors:
+            mon_stack.set_visible_child_name(monitors[0].get("name", "?"))
+
+        page.pack_start(mon_tab_row, False, False, 2)
+        page.pack_start(tab_sep(), False, False, 0)
+        page.pack_start(mon_stack, False, False, 0)
 
 _HEIGHT_SCALE_TABLE = [
     (480,  0.5),
@@ -5212,15 +7385,28 @@ _DEFAULT_SCALE = 1.0
 _MIN_LOGICAL_H = 400    # darunter passt selbst dieses Settings-Fenster nicht mehr rein
 _MAX_LOGICAL_H = 2400   # darüber wird jede UI auf einem kleinen Panel de facto unsichtbar
 
+# Zusätzlicher, harter Deckel: ab dieser physischen Monitorhöhe bringt
+# ein Scale über 2.0x keinen echten Mehrwert mehr - die GTK-UI (dieses
+# Settings-Fenster inklusive) passt sich eh an, und mehr Platz durch
+# noch mehr Scale gibt's ab da schlicht nicht mehr zu holen. Für
+# KLEINERE Displays (< 1200px) gilt der Deckel bewusst NICHT - da kann
+# ein Scale deutlich über 2.0x nötig sein, um überhaupt lesbar zu sein.
+_MAX_SCALE_CAP = 2.0
+_MAX_SCALE_CAP_MIN_HEIGHT = 1200
+
 def _scale_bounds(height: int) -> tuple[float, float]:
     """Gibt (min_scale, max_scale) für eine gegebene physische
     Monitorhöhe zurück - innerhalb dieses Bereichs bleibt die daraus
     resultierende logische Höhe zwischen _MIN_LOGICAL_H und
-    _MAX_LOGICAL_H, siehe Kommentar oben."""
+    _MAX_LOGICAL_H, siehe Kommentar oben. Ab _MAX_SCALE_CAP_MIN_HEIGHT
+    physischer Höhe wird der obere Wert zusätzlich hart auf
+    _MAX_SCALE_CAP gedeckelt (siehe Kommentar dort)."""
     if height <= 0:
         return 0.1, 3.0
     lo = height / _MAX_LOGICAL_H
     hi = height / _MIN_LOGICAL_H
+    if height >= _MAX_SCALE_CAP_MIN_HEIGHT:
+        hi = min(hi, _MAX_SCALE_CAP)
     return round(lo, 3), round(hi, 3)
 
 def _auto_scale_for_height(h: int) -> float:
@@ -5236,8 +7422,133 @@ def _auto_scale_for_height(h: int) -> float:
     lo, hi = _scale_bounds(h)
     return max(lo, min(hi, scale))
 
+def _valid_scales_for_resolution(width: int, height: int) -> list[float]:
+    """Gibt alle Scale-Werte zurück, bei denen sowohl width/scale als
+    auch height/scale exakt ganzzahlig sind – nur diese Werte führen in
+    Hyprland zu pixelgenauen, überlappungsfreien Monitor-Layouts.
+    Brute-Force über rationale Zahlen p/q (q ≤ 20), Bereich 0.5–3.0."""
+    seen: set[float] = set()
+    valid: list[float] = []
+    for q in range(1, 21):
+        for p in range(max(1, q // 4), q * 4 + 1):
+            scale = p / q
+            if scale < 0.5 or scale > 3.0:
+                continue
+            key = round(scale, 4)
+            if key in seen:
+                continue
+            lw = width / scale
+            lh = height / scale
+            if abs(lw - round(lw)) < 0.01 and abs(lh - round(lh)) < 0.01:
+                seen.add(key)
+                valid.append(key)
+    # Auch die bounds prüfen
+    lo, hi = _scale_bounds(height)
+    valid = [s for s in valid if lo <= s <= hi]
+    return sorted(valid) or [1.0]
+
+def _repack_lua_positions(lua_txt: str,
+                          live_mons: list[dict],
+                          changed_name: str,
+                          new_phys_w: int, new_phys_h: int,
+                          new_scale: float) -> str:
+    """Schreibt nach einer Scale-/Auflösungsänderung die Positionen
+    ALLER Monitore im Lua-Text neu, damit keine Lücken oder Überlappungen
+    entstehen.
+
+    Hyprland-Positionskoordinaten sind logische Pixel (physical / scale).
+    Wenn Monitor A seine Scale ändert, verändert sich seine logische Breite
+    → alle Monitore die RECHTS/UNTER A sitzen, müssen verschoben werden.
+
+    Unterstützt rein horizontale und rein vertikale Arrangements sowie
+    Standard-Grid-Layouts. L-förmige Sonder-Setups werden nicht
+    vollständig re-packed; es wird aber sichergestellt dass direkte
+    Nachbarn des geänderten Monitors korrekt gesetzt werden.
+    """
+    import math as _math
+
+    # Alle Monitore: starte mit live-Daten von hyprctl
+    # (nach dem hyprctl-keyword-Apply schon aktuell).
+    mon_data: dict[str, dict] = {}
+    for m in live_mons:
+        n = m.get("name", "")
+        if not n:
+            continue
+        mon_data[n] = {
+            "x":     int(m.get("x", 0)),
+            "y":     int(m.get("y", 0)),
+            "phys_w": int(m.get("width", 0)),
+            "phys_h": int(m.get("height", 0)),
+            "scale": float(m.get("scale", 1.0) or 1.0),
+        }
+    # Überschreibe den gerade geänderten Monitor mit den NEUEN Werten
+    if changed_name in mon_data:
+        mon_data[changed_name]["phys_w"] = new_phys_w
+        mon_data[changed_name]["phys_h"] = new_phys_h
+        mon_data[changed_name]["scale"]  = new_scale
+    else:
+        return lua_txt  # Monitor unbekannt → nichts tun
+
+    def logical_size(n):
+        d = mon_data.get(n, {})
+        sc = d.get("scale", 1.0) or 1.0
+        return (int(round(d.get("phys_w", 0) / sc)),
+                int(round(d.get("phys_h", 0) / sc)))
+
+    names = list(mon_data.keys())
+    if len(names) <= 1:
+        return lua_txt  # Nur ein Monitor → nichts zu re-packen
+
+    # Bestimme ob Layout eher horizontal oder vertikal ist
+    # (Tipp: größte x-Differenz vs größte y-Differenz)
+    max_dx = max(mon_data[b]["x"] - mon_data[a]["x"]
+                 for a in names for b in names)
+    max_dy = max(mon_data[b]["y"] - mon_data[a]["y"]
+                 for a in names for b in names)
+
+    new_positions: dict[str, tuple[int, int]] = {}
+
+    if max_dx >= max_dy:
+        # ── Horizontales Layout (Monitors nebeneinander) ──────────────
+        # Anchor ist der Monitor mit dem kleinsten x
+        sorted_h = sorted(names, key=lambda n: mon_data[n]["x"])
+        # Anchor bleibt an seiner y-Position; ab x=0 aufaddieren
+        anchor_y = mon_data[sorted_h[0]]["y"]
+        cursor_x = mon_data[sorted_h[0]]["x"]  # normalerweise 0
+        for nm in sorted_h:
+            lw, lh = logical_size(nm)
+            new_positions[nm] = (cursor_x, mon_data[nm]["y"])
+            cursor_x += lw
+    else:
+        # ── Vertikales Layout (Monitors übereinander) ─────────────────
+        sorted_v = sorted(names, key=lambda n: mon_data[n]["y"])
+        cursor_y = mon_data[sorted_v[0]]["y"]  # normalerweise 0
+        for nm in sorted_v:
+            lw, lh = logical_size(nm)
+            new_positions[nm] = (mon_data[nm]["x"], cursor_y)
+            cursor_y += lh
+
+    # Lua-Text: für jeden Monitor dessen position-Zeile aktualisieren
+    block_re = re.compile(r'(hl\.monitor\(\{[^}]*\}\))', re.S)
+    def _patch_block(m):
+        block = m.group(1)
+        nm_m = re.search(r'output\s*=\s*"([^"]*)"', block)
+        if not nm_m:
+            return block
+        nm = nm_m.group(1)
+        if nm not in new_positions:
+            return block
+        px, py = new_positions[nm]
+        old_pos = (mon_data[nm]["x"], mon_data[nm]["y"])
+        if (px, py) == old_pos:
+            return block  # keine Änderung nötig
+        return re.sub(r'position\s*=\s*"[^"]*"',
+                      f'position = "{px}x{py}"', block)
+    return block_re.sub(_patch_block, lua_txt)
+
 def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.Window,
-                        waybar_restart_id: list, rotation_transform: int | None = None) -> Gtk.Box:
+                        waybar_restart_id: list,
+                        rotation_transform: int | None = None) -> tuple[Gtk.Box, Gtk.Box]:
     name    = mon.get("name", "?")
     cur_res = f'{mon.get("width")}x{mon.get("height")}'
     cur_hz  = f'{mon.get("refreshRate", 0):.2f}'
@@ -5269,6 +7580,18 @@ def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.W
         res_combo.append_text(r)
     res_combo.append_text(CUSTOM_LABEL)
 
+    # Hz ist jetzt ein ECHTES Dropdown, genau wie Res (Redesign-Wunsch:
+    # "die Hz soll wie Res ein Dropdown sein") - vorher eine Reihe
+    # einzelner Knöpfe (_SegmentedControl), die ursprünglich als
+    # Touch-freundlicherer Ersatz für ein Dropdown mit wenigen Optionen
+    # gedacht war (siehe _SegmentedControl-Docstring), das wird hier
+    # jetzt aber ausdrücklich nicht mehr gewollt. Gtk.ComboBoxText hat
+    # zufällig exakt dieselbe API, die _fill_hz() weiter unten schon
+    # benutzt hat (remove_all/append_text/set_active/handler_block/
+    # unblock/get_active_text) - _fill_hz() selbst bleibt dadurch
+    # unverändert. "Custom... entfernen, das kommt jetzt, wenn man auf
+    # die Hz drückt" ist damit auch automatisch erledigt: "Custom…" ist
+    # jetzt einfach der letzte Dropdown-Eintrag, exakt wie bei Res.
     hz_combo = Gtk.ComboBoxText()
     hz_combo.get_style_context().add_class("bubble")
     hz_combo.get_style_context().add_class("dropdown")
@@ -5320,52 +7643,62 @@ def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.W
         dlg.destroy()
         return val or None
 
-    scale_auto_check = Gtk.CheckButton(label="Auto")
-    scale_auto_check.set_active(True)
-    scale_auto_check.set_can_focus(False)
-    scale_auto_check.set_tooltip_text(
-        "Automatically derive scale from height. Uncheck to set manually.")
+    # Scale als Dropdown mit ausschließlich hyprland-sicheren Werten
+    # (ganzzahlige logische Auflösung → kein Monitor-Überlappen).
+    # Kein Slider + kein "Auto"-Haken mehr (Redesign + User-Feedback).
+    _scale_valid_vals: list[float] = _valid_scales_for_resolution(
+        int(cur_res.split("x")[0]), int(cur_res.split("x")[1]))
+    _scale_auto_default = _auto_scale_for_height(int(cur_res.split("x")[1]))
+    # Nächsten gültigen Wert zum aktuellen Scale vorauswählen
+    def _nearest_valid_scale(target: float, vals: list[float]) -> int:
+        if not vals:
+            return 0
+        return min(range(len(vals)), key=lambda i: abs(vals[i] - target))
 
-    scale_state = {"value": cur_scale}
-    scale_val_btn = btn(f"{cur_scale:g}")
-    scale_val_btn.set_sensitive(False)
+    scale_combo = Gtk.ComboBoxText()
+    scale_combo.get_style_context().add_class("bubble")
+    scale_combo.get_style_context().add_class("dropdown")
+    scale_combo.set_can_focus(False)
+    scale_combo.set_tooltip_text(
+        "Only integer-logical-resolution scales are listed — "
+        "these are guaranteed not to cause monitor overlap in Hyprland.")
 
-    def _on_scale_btn_clicked(_w):
-        val = _prompt_text("Scale", "e.g. 1.0",
-                            initial=f"{scale_state['value']:g}")
-        if val is None:
-            return
+    scale_handler_id = [None]
+
+    def _fill_scale_combo(res_str: str, preselect: float = None):
+        w_str, h_str = res_str.split("x")
+        vals = _valid_scales_for_resolution(int(w_str), int(h_str))
+        _scale_valid_vals[:] = vals
+        if scale_handler_id[0] is not None:
+            scale_combo.handler_block(scale_handler_id[0])
         try:
-            parsed = float(val.replace(",", "."))
-            if parsed <= 0:
-                raise ValueError
+            scale_combo.remove_all()
+            for v in vals:
+                scale_combo.append_text(f"{v:g}×")
+            target = preselect if preselect is not None else _auto_scale_for_height(int(h_str))
+            idx = _nearest_valid_scale(target, vals)
+            scale_combo.set_active(idx)
+        finally:
+            if scale_handler_id[0] is not None:
+                scale_combo.handler_unblock(scale_handler_id[0])
+
+    def _sync_scale_slider_range():
+        """Beim Auflösungswechsel Scale-Dropdown neu befüllen."""
+        target_res, _ = _resolve_res_hz()
+        res = target_res or cur_res
+        cur_txt = scale_combo.get_active_text() or ""
+        try:
+            cur_val = float(cur_txt.replace("×", "").strip())
         except ValueError:
-            _flash_status(f"Invalid scale: '{val}'")
-            return
-        # Failsafe: gegen die Auflösung prüfen, die gerade ausgewählt
-        # ist (nicht mehr die ursprüngliche cur_res) - sonst könnte man
-        # sich z.B. bei 360p mit einem viel zu kleinen Scale-Wert
-        # aussperren, siehe Kommentar bei _scale_bounds().
-        target_res, _target_hz = _resolve_res_hz()
-        target_h_str = (target_res or cur_res).split("x")[1]
-        lo, hi = _scale_bounds(int(target_h_str))
-        if not (lo <= parsed <= hi):
-            _flash_status(
-                f"Scale {parsed:g} unsafe for this resolution "
-                f"(allowed {lo:g}–{hi:g}) — could lock you out of Settings. Not applied.",
-                ms=5000)
-            return
-        scale_state["value"] = parsed
-        scale_val_btn.set_label(f"{parsed:g}")
+            cur_val = cur_scale
+        _fill_scale_combo(res, preselect=cur_val)
+
+    _fill_scale_combo(cur_res, preselect=cur_scale)
+
+    def _on_scale_combo(_w):
         _apply_now()
 
-    scale_val_btn.connect("clicked", _on_scale_btn_clicked)
-
-    def _on_scale_auto_toggle(_w):
-        scale_val_btn.set_sensitive(not scale_auto_check.get_active())
-        _apply_now()
-
-    scale_auto_check.connect("toggled", _on_scale_auto_toggle)
+    scale_handler_id[0] = scale_combo.connect("changed", _on_scale_combo)
 
     # ── HDR ──────────────────────────────────────────────────────────
     # Hyprlands eigene hl.monitor({...})-Lua-DSL unterstützt HDR über
@@ -5373,13 +7706,106 @@ def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.W
     # Wiki-Doku zu Color Management). Startzustand wird aus
     # colorManagementPreset gelesen (liefert hyprctl bereits fertig -
     # "hdr"/"hdredid" heißt an, alles andere (z.B. "srgb") heißt aus).
-    hdr_check = Gtk.CheckButton(label="HDR")
-    hdr_check.set_active(mon.get("colorManagementPreset") in ("hdr", "hdredid"))
-    hdr_check.set_can_focus(False)
-    hdr_check.set_tooltip_text(
+    #
+    # Redesign-Liste: "HDR ist nun einfach 'HDR' neben dem Label" - kein
+    # Checkbox+Text-Paar mehr in einer eigenen Zeile, sondern ein
+    # einzelnes klickbares Wort "HDR", das in der Kopfzeile direkt neben
+    # dem (jetzt vergrößerten) Monitornamen sitzt - siehe header_row
+    # ganz am Ende dieser Funktion, wo hdr_toggle tatsächlich platziert
+    # wird. Zustand jetzt in hdr_state (statt Gtk.CheckButton.get_active()),
+    # damit ein einfacher btn() genügt statt eines Checkbox-Widgets mit
+    # eigenem Kästchen.
+    hdr_state = {"on": mon.get("colorManagementPreset") in ("hdr", "hdredid")}
+    hdr_toggle = btn("HDR", active=hdr_state["on"])
+    hdr_toggle.set_tooltip_text(
         "10-bit color + HDR color management (bitdepth=10, cm=hdr). "
         "Needs display/cable support, otherwise no effect or worse image.")
-    hdr_check.connect("toggled", lambda _w: _apply_now())
+    # BUGFIX ("keine richtigen HDR-Settings pro Monitor"): bisher war
+    # HDR nur ein reiner An/Aus-Schalter (bitdepth+cm). Die Hyprland-
+    # Wiki-Doku (Colors & Colorspaces) nennt sdrbrightness/
+    # sdrsaturation als die eigentlichen PRO-MONITOR-Stellschrauben, um
+    # SDR-Inhalte innerhalb eines aktiven HDR-Modus nutzbar hell/
+    # gesättigt zu halten (Wiki-Beispiel: sdrbrightness=1.2,
+    # sdrsaturation=0.98 - Default für beide ist 1.0 = unverändert).
+    # Bewusst NUR diese beiden zusätzlich zu bitdepth/cm - andere HDR-
+    # Felder wie sdr_max_luminance/sdr_min_luminance werden laut
+    # bestätigtem Hyprland-Bug von "hyprctl keyword monitor" mit
+    # "invalid syntax" abgelehnt und funktionieren nur über einen
+    # kompletten Hyprland-Neustart mit der reinen Lua-Config - für ein
+    # Live-Regler-UI hier also ungeeignet.
+    #
+    # Immer noch "nicht wirklich gut zum einstellen" (Feedback) - jetzt
+    # mit eigenen, beschrifteten Zeilen statt zweier namenloser Slider
+    # nebeneinander, damit klar ist, welcher Regler was tut, plus
+    # Live-Prozentanzeige im Label selbst statt nur der reinen Zahl auf
+    # dem Slider.
+    sdr_bri_state = {"value": float(mon.get("sdrBrightness", 1.0) or 1.0)}
+    sdr_sat_state = {"value": float(mon.get("sdrSaturation", 1.0) or 1.0)}
+
+    sdr_bri_lbl = bsec(f'SDR brightness: {round(sdr_bri_state["value"] * 100)}%')
+    sdr_bri_val_widget = sdr_bri_lbl.get_children()[0]
+    sdr_bri_box, sdr_bri_slider = bslider(
+        "", 0.5, 2.0, 0.05, sdr_bri_state["value"], cb=None, show_val=False)
+    for ch in sdr_bri_box.get_children():
+        if isinstance(ch, Gtk.Label):
+            sdr_bri_box.remove(ch); break
+    sdr_bri_box.set_halign(Gtk.Align.CENTER)
+    sdr_bri_box.set_size_request(180, -1)
+
+    sdr_sat_lbl = bsec(f'SDR saturation: {round(sdr_sat_state["value"] * 100)}%')
+    sdr_sat_val_widget = sdr_sat_lbl.get_children()[0]
+    sdr_sat_box, sdr_sat_slider = bslider(
+        "", 0.5, 1.5, 0.05, sdr_sat_state["value"], cb=None, show_val=False)
+    for ch in sdr_sat_box.get_children():
+        if isinstance(ch, Gtk.Label):
+            sdr_sat_box.remove(ch); break
+    sdr_sat_box.set_halign(Gtk.Align.CENTER)
+    sdr_sat_box.set_size_request(180, -1)
+
+    sdr_col = vbox(1)
+    sdr_col.pack_start(sdr_bri_lbl, False, False, 0)
+    sdr_col.pack_start(sdr_bri_box, False, False, 0)
+    sdr_col.pack_start(sdr_sat_lbl, False, False, 0)
+    sdr_col.pack_start(sdr_sat_box, False, False, 0)
+
+    _sdr_debounce_id = [0]
+
+    def _on_sdr_change(_s=None):
+        sdr_bri_state["value"] = round(sdr_bri_slider.get_value(), 3)
+        sdr_sat_state["value"] = round(sdr_sat_slider.get_value(), 3)
+        sdr_bri_val_widget.set_label(f'SDR BRIGHTNESS: {round(sdr_bri_state["value"] * 100)}%')
+        sdr_sat_val_widget.set_label(f'SDR SATURATION: {round(sdr_sat_state["value"] * 100)}%')
+        if _sdr_debounce_id[0]:
+            GLib.source_remove(_sdr_debounce_id[0])
+        def _fire():
+            _sdr_debounce_id[0] = 0
+            _apply_now()
+            return False
+        _sdr_debounce_id[0] = GLib.timeout_add(200, _fire)
+
+    sdr_bri_slider.connect("value-changed", _on_sdr_change)
+    sdr_sat_slider.connect("value-changed", _on_sdr_change)
+    sdr_bri_slider.set_tooltip_text(
+        "SDR brightness while HDR is active on this monitor (default 100%).")
+    sdr_sat_slider.set_tooltip_text(
+        "SDR saturation while HDR is active on this monitor (default 100%).")
+
+    def _sync_sdr_sensitivity():
+        sdr_col.set_sensitive(hdr_state["on"])
+
+    def _set_hdr_ui(on: bool):
+        hdr_state["on"] = on
+        ctx = hdr_toggle.get_style_context()
+        if on: ctx.add_class("active")
+        else:  ctx.remove_class("active")
+        _sync_sdr_sensitivity()
+
+    def _on_hdr_toggle(_w):
+        _set_hdr_ui(not hdr_state["on"])
+        _apply_now()
+
+    hdr_toggle.connect("clicked", _on_hdr_toggle)
+    _sync_sdr_sensitivity()
 
     # ── Position / Anordnung relativ zu anderen Monitoren ────────────
     # Hyprland nutzt ein invertiertes Y-Koordinatensystem (negativeres
@@ -5391,11 +7817,11 @@ def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.W
     # muss.
     other_monitors = [m for m in all_monitors if m.get("name") != name]
     POS_OPTIONS: list[tuple[str, str | None, str | None]] = [
-        ("Manual / keep current position", None, None)]
+        ("Manual", None, None)]
     for om in other_monitors:
         om_name = om.get("name", "?")
-        for direction, dir_label in (("right", "Right of"), ("left", "Left of"),
-                                       ("above", "Above"), ("below", "Below")):
+        for direction, dir_label in (("right", "→"), ("left", "←"),
+                                       ("above", "↑"), ("below", "↓")):
             POS_OPTIONS.append((f"{dir_label} {om_name}", om_name, direction))
 
     pos_combo = Gtk.ComboBoxText()
@@ -5519,7 +7945,8 @@ def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.W
              else (res_list[0] if res_list else ""), preselect=cur_hz)
     _update_custom_visibility()
 
-    orig = [cur_res, cur_hz, cur_scale, True, hdr_check.get_active(), 0]
+    orig = [cur_res, cur_hz, cur_scale, None, hdr_state["on"], 0,
+            sdr_bri_state["value"], sdr_sat_state["value"]]
 
     def _resolve_res_hz() -> tuple[str, str] | tuple[None, None]:
         if res_combo.get_active_text() == CUSTOM_LABEL:
@@ -5544,9 +7971,12 @@ def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.W
         return res, hz
 
     def _resolve_scale(height_for_auto: int) -> float | None:
-        if scale_auto_check.get_active():
-            return _auto_scale_for_height(height_for_auto)
-        return scale_state["value"] if scale_state["value"] > 0 else None
+        txt = (scale_combo.get_active_text() or "").replace("×", "").strip()
+        try:
+            val = float(txt)
+            return val if val > 0 else None
+        except ValueError:
+            return None
 
     def _apply():
         res, hz = _resolve_res_hz()
@@ -5569,7 +7999,7 @@ def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.W
                 f"Scale {scale:g} unsafe for {res} (allowed {lo:g}–{hi:g}) — "
                 f"would risk locking you out of this Settings window. Not applied.")
         pos_x, pos_y = _resolve_position(res, scale)
-        hdr_on = hdr_check.get_active()
+        hdr_on = hdr_state["on"]
 
         # Ab hier: alles, was hyprctl aufruft und/oder hyprland.lua
         # liest+verändert+schreibt, läuft SERIALISIERT unter
@@ -5583,16 +8013,78 @@ def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.W
             # dieselbe kommagetrennte Syntax wie die statische Config-Zeile
             # akzeptiert auch optionale zusätzliche Schlüssel-Wert-Paare
             # nach den ersten 4 (name,mode,position,scale).
-            monitor_arg = f"{name},{mode},{pos_x}x{pos_y},{scale}"
+            #
+            # BUGFIX ("Bildschirm wird beim Scale-Ändern manchmal dunkler,
+            # Farben leicht anders"): bitdepth/cm wurden bisher NUR gesetzt,
+            # wenn HDR an war - war HDR aus, wurden sie einfach GAR NICHT
+            # mit übergeben, in der Annahme, Hyprland würde sie dann schon
+            # von selbst auf Standard zurücksetzen. Tut es aber nicht
+            # zuverlässig: ein "hyprctl keyword monitor"-Aufruf ist ein
+            # TEIL-Reconfigure, nicht angegebene Eigenschaften bleiben auf
+            # ihrem vorherigen Wert stehen. Wurde HDR also IRGENDWANN mal an
+            # war (bitdepth=10, cm=hdr gesetzt) und man ändert danach nur
+            # noch Scale/Auflösung mit ausgeschaltetem HDR-Haken, blieb der
+            # Monitor intern im 10-Bit-HDR-Farbmodus hängen, während SDR-
+            # Inhalte weiter normal (SDR-Kurve) gerendert werden - exakt das
+            # beobachtete "dunkler, Farben leicht komisch", und warum es sich
+            # so unberechenbar anfühlte (kam drauf an, ob und wann zuletzt
+            # überhaupt einmal explizit ETWAS an bitdepth/cm gesetzt wurde).
+            # Fix: bitdepth/cm werden jetzt bei JEDEM Apply explizit gesetzt,
+            # nie mehr weggelassen - "aus" heißt jetzt aktiv "bitdepth,8,
+            # cm,auto" statt einer Auslassung, auf deren Nebenwirkungen man
+            # sich nicht verlassen kann.
+            # sdrbrightness/sdrsaturation sind laut bestätigtem Hyprland-
+            # Verhalten (anders als sdr_max_luminance/sdr_min_luminance,
+            # die "hyprctl keyword monitor" mit "invalid syntax"
+            # ablehnt) auch über die kommagetrennte Keyword-Syntax
+            # akzeptiert - werden also, genau wie bitdepth/cm, bei JEDEM
+            # Apply explizit mitgeschickt (aus = 1.0/1.0, siehe
+            # _write_hdr_fields()-Docstring für die Begründung).
+            sdr_bri = round(sdr_bri_state["value"] if hdr_on else 1.0, 3)
+            sdr_sat = round(sdr_sat_state["value"] if hdr_on else 1.0, 3)
+            # FIX (Display-Tab "applied nix"): "hyprctl keyword monitor" ist
+            # der ALTE hyprlang-Kompatibilitäts-Shim. Gegen eine Lua-Config
+            # (hyprland.lua, hl.*-API) ist das laut Hyprland-Wiki
+            # ("Configuring/Advanced-and-Cool/Using-hyprctl") kein
+            # zuverlässiger Weg mehr, live etwas zu setzen - das Keyword
+            # schreibt oft klaglos "ok" obwohl de facto nichts angewendet
+            # wird, weil die Lua-Config beim nächsten internen Reload den
+            # alten Lua-Zustand wiederherstellt. Der korrekte Weg unter
+            # Hyprland 0.65.2+ mit Lua-Config ist "hyprctl eval <lua>", das
+            # GEGEN DENSELBEN persistenten Lua-State läuft wie die Config
+            # selbst (siehe _hypr_eval()-Docstring/Kommentar oben, bereits
+            # so für effects_battery_enable/disable() verwendet) - hier also
+            # dieselbe hl.monitor({...})-Tabellen-Syntax wie in hyprland.lua.
             if hdr_on:
-                monitor_arg += ",bitdepth,10,cm,hdr"
-            out, err, rc = run_ec(["hyprctl", "keyword", "monitor", monitor_arg])
-            if rc != 0 or "err" in (out or "").lower() or err:
+                monitor_lua = (
+                    "hl.monitor({ output = \"" + name + "\", "
+                    "mode = \"" + mode + "\", "
+                    f"position = \"{pos_x}x{pos_y}\", "
+                    f"scale = {scale}, "
+                    "bitdepth = 10, cm = \"hdr\", "
+                    f"sdrbrightness = {sdr_bri}, sdrsaturation = {sdr_sat} }})"
+                )
+            else:
+                monitor_lua = (
+                    "hl.monitor({ output = \"" + name + "\", "
+                    "mode = \"" + mode + "\", "
+                    f"position = \"{pos_x}x{pos_y}\", "
+                    f"scale = {scale}, "
+                    "bitdepth = 8, cm = \"srgb\", "
+                    f"sdrbrightness = {sdr_bri}, sdrsaturation = {sdr_sat} }})"
+                )
+            out, err, rc = _hypr_eval(monitor_lua)
+            if rc != 0 or err or "error" in (out or "").lower():
                 raise RuntimeError(
-                    f"hyprctl rejected monitor command: {(err or out or 'unknown error')[:120]}")
+                    f"hyprctl eval rejected monitor command: {(err or out or 'unknown error')[:160]}")
 
+            # Zweiter Eval-Aufruf wie zuvor beim "keyword"-Pfad: manche
+            # Treiber/Monitore brauchen laut bestätigtem Hyprland-Verhalten
+            # einen kurzen Moment + einen zweiten Reconfigure-Stoß, bis
+            # Scale/Mode tatsächlich greifen (siehe time.sleep(0.2) unten -
+            # unverändert aus dem alten Code übernommen).
             time.sleep(0.2)
-            run(["hyprctl", "keyword", "monitor", monitor_arg])
+            _hypr_eval(monitor_lua)
 
             actual = jrun(["hyprctl", "monitors", "-j"]) or []
             for m2 in actual:
@@ -5636,7 +8128,9 @@ def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.W
                                         f'scale    = {scale}', new_block)
                     new_block = re.sub(r'position\s*=\s*"[^"]*"',
                                         f'position = "{pos_x}x{pos_y}"', new_block)
-                    new_block = _write_hdr_fields(new_block, hdr_on)
+                    new_block = _write_hdr_fields(new_block, hdr_on,
+                                                   sdr_bri_state["value"],
+                                                   sdr_sat_state["value"])
                     txt = txt[:m.start()] + new_block + txt[m.end():]
                 else:
                     # WICHTIG: kein Block für diesen Monitor gefunden - das
@@ -5662,6 +8156,10 @@ def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.W
                     if hdr_on:
                         new_block_lines.append('    bitdepth = 10,')
                         new_block_lines.append('    cm       = "hdr",')
+                        new_block_lines.append(
+                            f'    sdrbrightness = {round(sdr_bri_state["value"], 3)},')
+                        new_block_lines.append(
+                            f'    sdrsaturation = {round(sdr_sat_state["value"], 3)},')
                     new_block_lines.append("})")
                     new_block = "\n".join(new_block_lines)
 
@@ -5685,11 +8183,54 @@ def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.W
                             txt = txt[:insert_at] + "\n\n" + new_block + txt[insert_at:]
                         else:
                             txt = txt.rstrip() + "\n\n" + new_block + "\n"
+                # ── Positions aller Monitore neu berechnen ─────────────
+                # Jetzt wo der geänderte Monitor in Lua + live korrekt ist,
+                # sicherstellen dass NACHBAR-Monitore nicht mehr überlappen.
+                # _repack_lua_positions() liest die aktuellen hyprctl-Daten
+                # (actual) und schreibt alle position-Zeilen im Lua-Text neu.
+                new_w_str, new_h_str = res.split("x")
+                txt = _repack_lua_positions(
+                    txt, actual,
+                    name, int(new_w_str), int(new_h_str), scale)
                 atomic_write_text(lua_path, txt)
 
+                # Nachbar-Positionen auch live per hyprctl setzen, damit
+                # Hyprland sofort reagiert und nicht erst beim nächsten Reload
+                neighbor_block_re = re.compile(
+                    r'hl\.monitor\(\{[^}]*\}\)', re.S)
+                out_name_re = re.compile(r'output\s*=\s*"([^"]*)"')
+                mode_re     = re.compile(r'mode\s*=\s*"([^"]*)"')
+                pos_re      = re.compile(r'position\s*=\s*"([^"]*)"')
+                sc_re       = re.compile(r'scale\s*=\s*([0-9.]+)')
+                for nb in neighbor_block_re.finditer(txt):
+                    blk = nb.group(0)
+                    nm_m = out_name_re.search(blk)
+                    if not nm_m or nm_m.group(1) == name:
+                        continue  # skip the monitor we just did
+                    nb_name = nm_m.group(1)
+                    _mm = mode_re.search(blk)
+                    _pm = pos_re.search(blk)
+                    _sm = sc_re.search(blk)
+                    nb_mode = _mm.group(1) if _mm else ""
+                    nb_pos  = _pm.group(1) if _pm else "0x0"
+                    nb_sc   = _sm.group(1) if _sm else "1"
+                    if not nb_mode:
+                        continue
+                    # Gleicher Fix wie oben: "keyword" durch "eval" +
+                    # hl.monitor({...}) ersetzt, siehe Kommentar beim
+                    # primären monitor_lua-Aufruf weiter oben.
+                    nb_lua = (
+                        "hl.monitor({ output = \"" + nb_name + "\", "
+                        "mode = \"" + nb_mode + "\", "
+                        f"position = \"{nb_pos}\", "
+                        f"scale = {nb_sc} }})"
+                    )
+                    _hypr_eval(nb_lua)
+
             orig[0], orig[1] = res, hz
-            orig[2], orig[3] = scale, scale_auto_check.get_active()
+            orig[2] = scale
             orig[4], orig[5] = hdr_on, pos_combo.get_active()
+            orig[6], orig[7] = sdr_bri_state["value"], sdr_sat_state["value"]
 
     def _reset():
         if orig[0] in res_list:
@@ -5701,20 +8242,21 @@ def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.W
         if orig[0] not in res_list or orig[1] not in modes.get(orig[0], []):
             hz_combo.set_active(hz_combo.get_model().iter_n_children(None) - 1)
             custom_state["hz"] = orig[1]
-        scale_auto_check.set_active(orig[3])
-        if not orig[3]:
-            scale_state["value"] = orig[2]
-            scale_val_btn.set_label(f"{orig[2]:g}")
-        hdr_check.set_active(orig[4])
+        _fill_scale_combo(orig[0], preselect=orig[2])
+        _set_hdr_ui(orig[4])
         pos_combo.set_active(orig[5])
+        sdr_bri_state["value"], sdr_sat_state["value"] = orig[6], orig[7]
+        sdr_bri_slider.set_value(orig[6])
+        sdr_sat_slider.set_value(orig[7])
+        _sync_sdr_sensitivity()
         _update_custom_visibility()
 
     def _apply_now():
         _update_custom_visibility()
         res, hz = _resolve_res_hz()
-        scale_txt = "auto" if scale_auto_check.get_active() else f"{scale_state['value']:g}"
+        scale_txt = (scale_combo.get_active_text() or "?").replace("×", "").strip()
         extras = []
-        if hdr_check.get_active():
+        if hdr_state["on"]:
             extras.append("HDR")
         if pos_combo.get_active() > 0:
             extras.append(pos_combo.get_active_text())
@@ -5726,6 +8268,7 @@ def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.W
         if res_combo.get_active_text() != CUSTOM_LABEL:
             _fill_hz(res_combo.get_active_text())
             _update_custom_visibility()
+            _sync_scale_slider_range()
             _apply_now()
         else:
             _on_res_custom_selected()
@@ -5740,89 +8283,123 @@ def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.W
     res_combo.connect("changed", _on_res_change)
     hz_handler_id[0] = hz_combo.connect("changed", _on_hz_change)
 
+    # Scale-Zeile: Icon-Label + Dropdown nebeneinander, zentriert
+    scale_row_lbl = Gtk.Label(label="⛶")
+    scale_row_lbl.get_style_context().add_class("bubble")
+    scale_row_lbl.set_opacity(0.7)
+    scale_row = hbox(8)
+    scale_row.set_halign(Gtk.Align.CENTER)
+    scale_row.pack_start(scale_row_lbl, False, False, 0)
+    scale_row.pack_start(scale_combo, False, False, 0)
+
     combos_row = hrow(res_combo, hz_combo, sp=8)
     custom_row = hrow(res_val_lbl, hz_val_lbl, sp=8)
-    scale_row  = hrow(Gtk.Label(label="Scale:"), scale_val_btn,
-                       scale_auto_check, sp=8)
-    hdr_row    = hrow(hdr_check, sp=8)
-    pos_row    = hrow(Gtk.Label(label="Position:"), pos_combo, sp=8)
+    # Redesign-Liste: "Position: kein Label mehr, nur die Box - die
+    # etwas verkürzt wird" + "Rotation: nun wieder eine Box wie
+    # Position - wird rechts neben Position hingepackt, 2 Boxen in der
+    # selben Zeile" - pos_combo wird hier bewusst NOCH NICHT in eine
+    # Zeile gepackt, das passiert erst weiter unten zusammen mit
+    # rot_combo (falls der Rotation-Daemon für diesen Monitor
+    # verfügbar ist), siehe pos_rot_row.
+    pos_combo.set_size_request(150, -1)
     wrap = vbox(6)
     wrap.pack_start(combos_row, False, False, 0)
     wrap.pack_start(custom_row, False, False, 0)
     wrap.pack_start(scale_row, False, False, 0)
-    wrap.pack_start(hdr_row, False, False, 0)
-    wrap.pack_start(pos_row, False, False, 0)
+    wrap.pack_start(sdr_col, False, False, 0)
     wrap.pack_start(status_lbl, False, False, 0)
 
-    # ── Rotation (ScreenRotationDaemon, nur wenn Daemon diesen Monitor
-    #    kennt - siehe rotation_transform-Übergabe in
-    #    _build_settings_display()) ─────────────────────────────────
-    # Bewusst getrennt von _apply()/_apply_now() oben: Rotation läuft
-    # NICHT über "hyprctl keyword monitor" + hyprland.lua-Textersetzung
-    # wie Auflösung/Scale/HDR/Position, sondern über den eigenen
-    # ScreenRotationDaemon-Socket (siehe Kommentar bei
-    # _rotation_socket_cmd()). Wird hier also absichtlich nicht in
-    # _apply() mit reingezogen, sondern eigenständig behandelt - auch
-    # damit ein Rotations-Fehler nie eine Resolution/Scale-Änderung
-    # blockiert oder umgekehrt.
-    if rotation_transform is not None:
-        rot_status_lbl = Gtk.Label(label="")
-        rot_status_lbl.get_style_context().add_class("caption")
-        rot_status_lbl.set_opacity(0.75)
-        rot_status_lbl.set_no_show_all(True)
-        rot_status_lbl.hide()
+    # ── Position + Rotation ───────────────────────────────────────────
+    # Redesign-Liste: "Rotation: nun wieder eine Box wie Position - wird
+    # rechts neben Position hingepackt, 2 Boxen in der selben Zeile."
+    # Rotation läuft NICHT über "hyprctl keyword monitor" + hyprland.
+    # lua-Textersetzung wie Auflösung/Scale/HDR/Position, sondern über
+    # den eigenen ScreenRotationDaemon-Socket (siehe Kommentar bei
+    # _rotation_socket_cmd()) - bewusst NICHT in _apply() mit reinge-
+    # zogen, sondern eigenständig behandelt, auch damit ein Rotations-
+    # Fehler nie eine Resolution/Scale-Änderung blockiert oder
+    # umgekehrt. Nur angeboten, wenn der Rotation-Daemon diesen Monitor
+    # tatsächlich kennt - sonst bleibt Position allein in der Zeile,
+    # keine leere zweite Box.
+    pos_rot_row = hrow(pos_combo, sp=8)
+    rot_status_lbl = Gtk.Label(label="")
+    rot_status_lbl.get_style_context().add_class("caption")
+    rot_status_lbl.set_opacity(0.75)
+    rot_status_lbl.set_no_show_all(True)
+    rot_status_lbl.hide()
 
+    if rotation_transform is not None:
         def _flash_rot(text: str, ms: int = 2500):
             rot_status_lbl.set_label(text)
             rot_status_lbl.show()
             GLib.timeout_add(ms, lambda: (rot_status_lbl.hide(), False)[1])
 
-        rot_buttons: dict = {}
         rot_state = {"current": rotation_transform}
 
-        def _refresh_rot_buttons():
-            for val, b in rot_buttons.items():
-                ctx = b.get_style_context()
-                if val == rot_state["current"]:
-                    ctx.add_class("active")
-                else:
-                    ctx.remove_class("active")
+        # "nun wieder eine Box wie Position" - echtes Dropdown statt des
+        # vorherigen Zieh-Reglers (der Slider war selbst schon eine
+        # frühere Abkehr von genau so einer Box, siehe README-Verweis
+        # oben bei _SegmentedControl - jetzt per explizitem Wunsch
+        # wieder zurück).
+        rot_combo = Gtk.ComboBoxText()
+        rot_combo.get_style_context().add_class("bubble")
+        rot_combo.get_style_context().add_class("dropdown")
+        rot_combo.set_can_focus(False)
+        rot_combo.set_size_request(110, -1)
+        for _val, _lbl in _ROTATIONS:
+            rot_combo.append_text(_lbl)
+        rot_combo.set_active(rotation_transform)
+        rot_combo.set_tooltip_text("Rotate this monitor in 90° steps.")
 
-        def _make_rot_handler(value: int):
-            def _handler(_b):
-                if rot_state["current"] == value:
-                    return
-                prev = rot_state["current"]
-                # Optisch sofort umschalten (siehe apply_change()-
-                # Docstring: "Aufrufer gibt beim Klick i.d.R. schon
-                # sofortiges Feedback"), reset_fn macht's bei einem
-                # Fehler wieder rückgängig.
-                rot_state["current"] = value
-                _refresh_rot_buttons()
+        def _apply_rotation(value: int, prev: int):
+            def _apply():
+                ok, msg = _rotation_set(name, value)
+                if not ok:
+                    raise RuntimeError(msg)
 
-                def _apply():
-                    ok, msg = _rotation_set(name, value)
-                    if not ok:
-                        raise RuntimeError(msg)
+            def _reset():
+                rot_state["current"] = prev
+                rot_combo.handler_block(rot_handler_id)
+                rot_combo.set_active(prev)
+                rot_combo.handler_unblock(rot_handler_id)
 
-                def _reset():
-                    rot_state["current"] = prev
-                    _refresh_rot_buttons()
+            apply_change(f"{name}: rotate {value * 90}°",
+                         _apply, on_status=_flash_rot, reset_fn=_reset)
 
-                apply_change(f"{name}: rotate {value * 90}°",
-                             _apply, on_status=_flash_rot, reset_fn=_reset)
-            return _handler
+        def _on_rot_change(_w):
+            new_val = rot_combo.get_active()
+            if new_val < 0 or new_val == rot_state["current"]:
+                return
+            prev = rot_state["current"]
+            rot_state["current"] = new_val
+            _apply_rotation(new_val, prev)
 
-        rot_widgets = [Gtk.Label(label="Rotation:")]
-        for val, lbl in _ROTATIONS:
-            b = btn(lbl, _make_rot_handler(val), active=(val == rotation_transform))
-            rot_buttons[val] = b
-            rot_widgets.append(b)
+        rot_handler_id = rot_combo.connect("changed", _on_rot_change)
+        pos_rot_row.pack_start(rot_combo, False, False, 0)
 
-        wrap.pack_start(hrow(*rot_widgets, sp=8), False, False, 0)
-        wrap.pack_start(rot_status_lbl, False, False, 0)
+    wrap.pack_start(pos_rot_row, False, False, 0)
+    wrap.pack_start(rot_status_lbl, False, False, 0)
 
-    return wrap
+    # ── Kopfzeile: Icon + Monitorname (vergrößert) + HDR-Toggle ──────
+    # Redesign-Liste: "Ein einzelnes Icon neben dem Label des Monitors.
+    # Label des Monitors vergrößern." + "HDR ist nun einfach 'HDR'
+    # neben dem Label." Ersetzt das simple bsec(mon_name.upper()) aus
+    # _build_settings_display() komplett - "Bildschirm Label regelt
+    # das" (Redesign-Liste, zum Wegfall der Trennstriche zwischen den
+    # Monitor-Blöcken): diese Kopfzeile übernimmt jetzt selbst die
+    # optische Abgrenzung zum nächsten Monitor-Block, kein sep() mehr
+    # nötig.
+    header_row = hbox(8)
+    header_row.set_halign(Gtk.Align.CENTER)
+    mon_icon_lbl = Gtk.Label(label="󰍹")
+    mon_icon_lbl.get_style_context().add_class("icon-lg")
+    mon_name_lbl = Gtk.Label(label=name)
+    mon_name_lbl.get_style_context().add_class("value-lg")
+    header_row.pack_start(mon_icon_lbl, False, False, 0)
+    header_row.pack_start(mon_name_lbl, False, False, 0)
+    header_row.pack_start(hdr_toggle, False, False, 0)
+
+    return header_row, wrap
 
 def _waybar_config_paths() -> list:
     """Findet die Waybar-Config-Datei(en). Normalerweise genau eine
@@ -5912,6 +8489,7 @@ _CATEGORY_WAYBAR_WIDGET = {
     "brightness": "brightness",
     "battery":    "akku",
     "calendar":   "clock",
+    "security":   "security",
 }
 
 def _category_in_waybar(cat_key: str, active_names) -> bool:
@@ -5934,6 +8512,7 @@ SETTINGS_CATEGORIES = [
     ("bluetooth",  "󰂯", "Bluetooth",     "Pair & connect devices"),
     ("battery",    "󰁹", "Battery",       "Advanced power options"),
     ("calendar",   "󰃭", "Calendar",      "Weather, Time, Events"),
+    ("security",   "󰦝", "Security",      "Privacy, Kill-Switches"),
     ("apps",       "󱁤", "Apps & Editor", "Launcher editor, Config files"),
 ]
 
@@ -5949,6 +8528,2344 @@ def _build_settings_bluetooth(page: Gtk.Box, key: str, label: str, win: Gtk.Wind
 def _build_settings_calendar(page: Gtk.Box, key: str, label: str, win: Gtk.Window) -> None:
     page.pack_start(_clock_content(win), True, True, 0)
 
+# ════════════════════════════════════════════════════════════
+#  Security-Widget: Privileged-Run-Helper
+# ════════════════════════════════════════════════════════════
+# Absprache mit dem Nutzer: KEINE eigene Polkit-.policy-Datei - pkexec
+# fragt für die generische Standard-Aktion
+# "org.freedesktop.policykit.exec" ohnehin bei JEDEM Aufruf nach dem
+# Passwort, exakt das gewünschte Verhalten ("Nutzer soll jedes Mal das
+# Passwort eingeben"), und ist damit auch sicherer als ein dauerhaft
+# als root laufender Helfer-Daemon.
+def _run_maybe_priv(cmd: list, timeout: int = 10) -> tuple[bool, str]:
+    """Führt cmd zuerst ganz normal (unprivilegiert) aus - viele
+    rfkill-Aktionen erlauben das auf den meisten Distros sowieso schon
+    per udev-/Gruppenregel. NUR wenn das mit einem typischen
+    Permission-Fehler scheitert, wird automatisch mit pkexec eskaliert
+    (grafischer Polkit-Passwort-Dialog, timeout hier bewusst höher, da
+    der Nutzer ja erst noch das Passwort eintippen muss)."""
+    out, err, ec = run_ec(cmd, timeout=timeout)
+    if ec == 0:
+        return True, out
+    # War bisher zu eng gefasst: ufw meldet bei fehlenden Rechten
+    # WEDER "Permission denied" NOCH "must be root" NOCH EACCES,
+    # sondern wörtlich "ERROR: You need to be root to run this
+    # script." - passte auf keins der bisherigen Muster, needs_root
+    # blieb also False, es wurde NIE auf pkexec eskaliert und der
+    # Passwort-Dialog kam dementsprechend nie (genau der gemeldete Bug:
+    # "es kommt kein Passwortfeld"). Jetzt eine deutlich breitere,
+    # klein geschriebene Prüfung gegen mehrere gängige Formulierungen
+    # verschiedener Tools statt nur exakter Wortlaute EINES Tools.
+    err_l = err.lower()
+    needs_root = any(s in err_l for s in (
+        "permission denied", "operation not permitted", "eacces",
+        "must be root", "need to be root", "needs to be root",
+        "requires root", "requires superuser", "must be superuser",
+        "run as root", "run this as root", "root privileges",
+        "root to run", "not permitted", "not authorized",
+        "authentication is required", "access denied"))
+    if needs_root:
+        out, err, ec = run_ec(["pkexec"] + cmd, timeout=max(timeout, 60))
+        if ec == 0:
+            return True, out
+    return False, (err or f"exit code {ec}")
+
+def _run_maybe_priv_force(cmd: list, timeout: int = 10) -> tuple[bool, str]:
+    """Wie _run_maybe_priv(), aber OHNE die stderr-Text-Heuristik: wird
+    nur für Kommandos benutzt, bei denen bereits der unprivilegierte
+    Versuch gelaufen und fehlgeschlagen ist (der Aufrufer prüft das
+    selbst) - eskaliert dann bedingungslos mit pkexec, statt sich
+    darauf zu verlassen, dass die Fehlermeldung zu einem der bekannten
+    "Permission denied"-artigen Muster passt. Siehe _rfkill_set()-
+    Kommentar für den konkreten Bug, den das behebt."""
+    out, err, ec = run_ec(["pkexec"] + cmd, timeout=max(timeout, 60))
+    if ec == 0:
+        return True, out
+    return False, (err or f"exit code {ec}")
+
+# ── Wifi/Bluetooth: rfkill (echter Kernel-Funk-Killswitch) ───────────
+def _rfkill_devices() -> list:
+    data = jrun(["rfkill", "--json"]) or {}
+    if isinstance(data, dict):
+        return data.get("rfkilldevices", [])
+    return []
+
+def _rfkill_state(rf_type: str) -> str:
+    """"missing" (kein passendes Gerät), "hard-blocked" (physischer
+    Schalter/Flugmodus-Taste - lässt sich NICHT per Software wieder
+    freigeben, siehe rfkill(8)), "soft-blocked" oder "unblocked"."""
+    devs = [d for d in _rfkill_devices() if d.get("type") == rf_type]
+    if not devs:
+        return "missing"
+    if any(d.get("hard") == "blocked" for d in devs):
+        return "hard-blocked"
+    if any(d.get("soft") == "blocked" for d in devs):
+        return "soft-blocked"
+    return "unblocked"
+
+def _rfkill_set(rf_type: str, blocked: bool) -> tuple[bool, str]:
+    # rfkill akzeptiert Typnamen direkt (z.B. "wlan"/"bluetooth") statt
+    # nur einzelner IDs - blockiert/entblockt damit in EINEM Aufruf
+    # gleich alle Adapter dieses Typs (z.B. beide Wifi-Karten bei einem
+    # Dual-Radio-Laptop).
+    cmd = ["rfkill", "block" if blocked else "unblock", rf_type]
+    out, err, ec = run_ec(cmd)
+    if ec == 0:
+        return True, out
+    # FIX ("es kommt kein sudo-Popup, weswegen man so oder so nix
+    # blockieren kann"): _run_maybe_priv() eskaliert nur auf pkexec,
+    # wenn die stderr-Meldung gegen eine feste Liste bekannter
+    # Permission-Formulierungen passt - rfkill meldet auf manchen
+    # Systemen/Versionen aber gar KEINEN Text, der da reinpasst (z.B.
+    # einfach einen stillen Fehlschlag ohne "permission"/"root"/etc. im
+    # Wortlaut), wodurch needs_root nie True wurde und pkexec NIE
+    # aufgerufen wurde - der Passwort-Dialog kam folglich nie,
+    # unabhängig vom UI-Zustand. Genau wie bei der Kamera
+    # (_camera_set_blocked(), siehe deren Kommentar) wird jetzt bei
+    # JEDEM Fehlschlag bedingungslos mit pkexec eskaliert, statt sich
+    # auf eine Text-Heuristik zu verlassen.
+    return _run_maybe_priv_force(cmd)
+
+# ── Kamera: Device-Node-Zugriff komplett sperren ─────────────────────
+# Bewusst KEIN Kernel-Modul-Unbind (uvcvideo etc.) - das ist je nach
+# Treiber unterschiedlich robust/reversibel und kann bei manchen
+# Laptops (Kamera + andere Funktion am selben USB-Controller) mehr als
+# nur die Kamera lahmlegen. chmod auf die Device-Nodes selbst ist
+# treiberunabhängig, sofort wirksam für JEDEN Prozess (auch schon
+# laufende Videochat-Apps verlieren den Zugriff beim nächsten Frame)
+# und genauso sofort wieder rückgängig zu machen.
+def _camera_devices() -> list:
+    return sorted(glob.glob("/dev/video*"))
+
+def _camera_blocked() -> bool | None:
+    devs = _camera_devices()
+    if not devs:
+        return None
+    try:
+        for d in devs:
+            mode = os.stat(d).st_mode
+            if mode & (stat.S_IRWXU | stat.S_IRWXG | stat.S_IRWXO):
+                return False   # mindestens ein Node noch zugreifbar -> nicht blockiert
+        return True
+    except OSError:
+        return None
+
+def _camera_set_blocked(blocked: bool) -> tuple[bool, str]:
+    devs = _camera_devices()
+    if not devs:
+        return False, "No camera device found"
+    mode = "000" if blocked else "660"
+    # IMMER direkt mit pkexec statt erst unprivilegiert zu versuchen:
+    # /dev/video*-Nodes gehören root:video, chmod braucht den
+    # Eigentümer oder root - reines Gruppen-Schreibrecht (auch wenn der
+    # Nutzer selbst in "video" ist) reicht dafür nicht, der erste
+    # Versuch würde also ohnehin garantiert scheitern.
+    return _run_maybe_priv(["chmod", mode, *devs], timeout=15)
+
+# ── Mikrofon: Standard-Eingabegerät stumm schalten ───────────────────
+# Kein echter Hardware-Killswitch (Software-Mute über wpctl/Pipewire,
+# genau wie im Sound-Widget), aber hier trotzdem mit drin - gehört zum
+# "alles auf einen Blick sperren"-Zweck dieses Privacy-Panels dazu,
+# auch wenn es technisch reversibler ist als Wifi/Bluetooth/Kamera.
+def _mic_muted() -> bool:
+    return "[MUTED]" in run(["wpctl", "get-volume", "@DEFAULT_AUDIO_SOURCE@"])
+
+def _mic_set_muted(muted: bool) -> tuple[bool, str]:
+    out, err, ec = run_ec(["wpctl", "set-mute", "@DEFAULT_AUDIO_SOURCE@",
+                            "1" if muted else "0"])
+    return ec == 0, err
+
+# ── Touchpad & Touchscreen: über Hyprlands eigene Geräteverwaltung ──
+# 'hyprctl keyword device:<name>:enabled 0/1' schaltet ein einzelnes
+# Input-Gerät zur Laufzeit komplett ab/an - funktioniert für Touchpads
+# UND Touchscreens gleichermaßen, beide tauchen in 'hyprctl devices -j'
+# als eigene Geräte auf. Das genaue Geräte-Objekt muss aber jedes Mal
+# frisch gesucht werden (Name kann sich zwischen Boots leicht ändern,
+# z.B. USB-Touchscreens), nicht einmalig gecacht werden.
+def _hypr_devices() -> list:
+    data = jrun(["hyprctl", "devices", "-j"]) or {}
+    devices = []
+    for items in data.values():
+        if isinstance(items, list):
+            devices.extend(items)
+    return devices
+
+def _find_hypr_device(keywords: tuple) -> dict | None:
+    for d in _hypr_devices():
+        name = (d.get("name") or "").lower()
+        if any(k in name for k in keywords):
+            return d
+    return None
+
+# Fallback-Merker: nicht jede Hyprland-Version liefert ein "enabled"-
+# Feld im devices-JSON zuverlässig mit zurück - fehlt es, auf den
+# zuletzt SELBST gesetzten Zustand zurückfallen statt fälschlich immer
+# "an" anzuzeigen, nachdem man's gerade erst blockiert hat.
+_touchpad_last_set = {"enabled": True}
+_touchscreen_last_set = {"enabled": True}
+
+def _touchpad_blocked() -> bool | None:
+    dev = _find_hypr_device(("touchpad",))
+    if dev is None:
+        return None
+    return not dev.get("enabled", _touchpad_last_set["enabled"])
+
+def _touchpad_set_blocked(blocked: bool) -> tuple[bool, str]:
+    dev = _find_hypr_device(("touchpad",))
+    if dev is None:
+        return False, "No touchpad found"
+    out, err, ec = run_ec(
+        ["hyprctl", "keyword", f"device:{dev.get('name','')}:enabled",
+         "0" if blocked else "1"], timeout=10)
+    if ec != 0:
+        return False, err or out
+    _touchpad_last_set["enabled"] = not blocked
+    return True, ""
+
+def _touchscreen_blocked() -> bool | None:
+    dev = _find_hypr_device(("touchscreen", "touch screen", "finger"))
+    if dev is None:
+        return None
+    return not dev.get("enabled", _touchscreen_last_set["enabled"])
+
+def _touchscreen_set_blocked(blocked: bool) -> tuple[bool, str]:
+    dev = _find_hypr_device(("touchscreen", "touch screen", "finger"))
+    if dev is None:
+        return False, "No touchscreen found"
+    out, err, ec = run_ec(
+        ["hyprctl", "keyword", f"device:{dev.get('name','')}:enabled",
+         "0" if blocked else "1"], timeout=10)
+    if ec != 0:
+        return False, err or out
+    _touchscreen_last_set["enabled"] = not blocked
+    return True, ""
+
+def _privacy_content(win: Gtk.Window) -> Gtk.Box:
+    """Privacy/Hardware-Kill-Switches-Tab: Wifi, Bluetooth, Kamera,
+    Mikrofon jeweils mit einem Tap komplett sperren. Kleinster/
+    einfachster der 5 Security-Unterbereiche aus der README (UFW, DNS,
+    Tailscale, Privacy/Kill-Switches, ClamAV) - deshalb hier zuerst
+    umgesetzt, die anderen 4 folgen als weitere Tabs in
+    _security_content() unten."""
+    root = vbox(4); pad(root, h=4, v=6)
+
+    status_lbl = Gtk.Label(label="")
+    status_lbl.get_style_context().add_class("caption")
+    status_lbl.set_opacity(0.75)
+    status_lbl.set_line_wrap(True)
+    status_lbl.set_no_show_all(True)
+    status_lbl.hide()
+
+    def _flash(text: str, ms: int = 3000):
+        status_lbl.set_label(text)
+        status_lbl.show()
+        GLib.timeout_add(ms, lambda: (status_lbl.hide(), False)[1])
+
+    # Sammelt aus JEDER einzelnen Zeile unten eine "block jetzt,
+    # synchron, ohne eigenes apply_change()"-Funktion + eine "UI neu
+    # einlesen"-Funktion - der Panic-Button weiter unten ruft dann
+    # EINMAL alle Block-Funktionen in einem gemeinsamen apply_change()
+    # auf (ein Hintergrund-Thread, EIN Status-Text, kein Spam aus 4-5
+    # einzelnen Flash-Meldungen hintereinander) und danach alle
+    # Refresh-Funktionen, damit jede Zeile ihren tatsächlichen
+    # Endzustand zeigt.
+    _force_block_fns: list = []
+    _refresh_fns: list = []
+
+    panic_btn = btn("🚨  Everything")
+    panic_btn.set_hexpand(True)
+    panic_btn.set_tooltip_text(
+        "Immediately blocks Wi-Fi, Bluetooth, WWAN/GPS, Camera and "
+        "Microphone all at once (meeting-mode style).")
+
+    # Jede Zeile ist jetzt EIN EINZIGER Button (Text = Schalter, kein
+    # separates Toggle-Element daneben mehr) - klick auf den Text selbst
+    # schaltet um, "leuchtet" (aktive Klasse) wenn blockiert, sonst
+    # nicht. Zwei pro Zeile nebeneinander über ein normales hbox-Paar
+    # (bewusst KEIN Gtk.Grid mehr - das war zuvor im Verdacht, an der
+    # Nicht-Reaktion der Buttons beteiligt gewesen zu sein).
+    def _make_rfkill_row(rf_type: str, icon: str, label_text: str) -> Gtk.Button:
+        b = btn(f"{icon}  {label_text}")
+        b.set_hexpand(True)
+
+        def _refresh():
+            # FIX ("die sachen die nicht blockiert sind, sollten
+            # leuchten, nicht die blockierten"): "active"-Klasse (Glow)
+            # wird jetzt für NICHT-blockierte/erlaubte Zustände gesetzt,
+            # nicht mehr für blockierte - vorher exakt umgekehrt.
+            state = _rfkill_state(rf_type)
+            ctx = b.get_style_context()
+            if state == "missing":
+                b.set_sensitive(False)
+                ctx.remove_class("active")
+                b.set_tooltip_text("No adapter found")
+            elif state == "hard-blocked":
+                b.set_sensitive(False)
+                ctx.remove_class("active")
+                b.set_tooltip_text(
+                    "Blocked by a physical switch/airplane-mode key - "
+                    "can't be re-enabled from software.")
+            else:
+                b.set_sensitive(True)
+                blocked = state == "soft-blocked"
+                if blocked: ctx.remove_class("active")
+                else:       ctx.add_class("active")
+                b.set_tooltip_text("Tap to " + ("allow" if blocked else "block"))
+
+        def _on_click(_w):
+            state = _rfkill_state(rf_type)
+            if state in ("missing", "hard-blocked"):
+                return
+            new_blocked = state != "soft-blocked"
+            ctx = b.get_style_context()
+            # Optimistisches UI-Update spiegelt dieselbe Umkehr wie
+            # _refresh() oben: glow = erlaubt, nicht blockiert.
+            if new_blocked: ctx.remove_class("active")
+            else:           ctx.add_class("active")
+            def _apply():
+                ok, err = _rfkill_set(rf_type, new_blocked)
+                if not ok:
+                    raise RuntimeError(err)
+            apply_change(f"{label_text}: {'Blocked' if new_blocked else 'Allowed'}",
+                         _apply, on_status=_flash, reset_fn=_refresh)
+
+        b.connect("clicked", _on_click)
+        _refresh()
+        _force_block_fns.append(lambda t=rf_type: _rfkill_set(t, True))
+        _refresh_fns.append(_refresh)
+        return b
+
+    _privacy_rows = [
+        _make_rfkill_row("wlan", "󰤨", "Wi-Fi"),
+        _make_rfkill_row("bluetooth", "󰂯", "Bluetooth"),
+        # WWAN/GPS: nur auf Laptops mit eingebautem Mobilfunk-Modem
+        # vorhanden - _rfkill_state() gibt für alle anderen Systeme
+        # "missing" zurück, der Button zeigt sich dann selbst als
+        # deaktiviert (siehe _make_rfkill_row()), kein Sonderfall hier nötig.
+        _make_rfkill_row("wwan", "󰤩", "WWAN / GPS"),
+    ]
+
+    # ── Kamera & Mikrofon: einfaches Bool-Muster (kein Hard/Soft-
+    #    Unterschied wie bei rfkill) ──────────────────────────────────
+    def _make_bool_row(icon: str, label_text: str, get_blocked, set_blocked,
+                        missing_tip: str = "Not found") -> Gtk.Button:
+        b = btn(f"{icon}  {label_text}")
+        b.set_hexpand(True)
+
+        def _refresh():
+            # FIX: siehe _make_rfkill_row() oben - glow ("active") zeigt
+            # jetzt "nicht blockiert/erlaubt" statt "blockiert" an.
+            blocked = get_blocked()
+            ctx = b.get_style_context()
+            if blocked is None:
+                b.set_sensitive(False)
+                ctx.remove_class("active")
+                b.set_tooltip_text(missing_tip)
+                return
+            b.set_sensitive(True)
+            if blocked: ctx.remove_class("active")
+            else:       ctx.add_class("active")
+            b.set_tooltip_text("Tap to " + ("allow" if blocked else "block"))
+
+        def _on_click(_w):
+            cur = get_blocked()
+            if cur is None:
+                return
+            new_val = not cur
+            ctx = b.get_style_context()
+            if new_val: ctx.remove_class("active")
+            else:       ctx.add_class("active")
+            def _apply():
+                ok, err = set_blocked(new_val)
+                if not ok:
+                    raise RuntimeError(err)
+            apply_change(f"{label_text}: {'Blocked' if new_val else 'Allowed'}",
+                         _apply, on_status=_flash, reset_fn=_refresh)
+
+        b.connect("clicked", _on_click)
+        _refresh()
+        _force_block_fns.append(lambda sb=set_blocked: sb(True))
+        _refresh_fns.append(_refresh)
+        return b
+
+    _privacy_rows.append(_make_bool_row(
+        "󰄀", "Camera", _camera_blocked, _camera_set_blocked,
+        missing_tip="No /dev/video* device found"))
+    _privacy_rows.append(_make_bool_row(
+        "󰍬", "Microphone", _mic_muted, _mic_set_muted,
+        missing_tip="No default input device"))
+    _privacy_rows.append(_make_bool_row(
+        "🖱️", "Touchpad", _touchpad_blocked, _touchpad_set_blocked,
+        missing_tip="No touchpad found"))
+    _privacy_rows.append(_make_bool_row(
+        "👆", "Touchscreen", _touchscreen_blocked, _touchscreen_set_blocked,
+        missing_tip="No touchscreen found"))
+    # "Der Lock everything Button ist noch 'Everything' mit Emoji und
+    # kommt rechts von Touchscreen hin" - Touchscreen ist der 7. (also
+    # ungerade) Eintrag in _privacy_rows, hätte in der 2er-Paarung
+    # unten sonst keinen Partner in seiner Zeile; panic_btn füllt genau
+    # diese Lücke, statt wie vorher als eigene Zeile ganz oben zu
+    # stehen.
+    _privacy_rows.append(panic_btn)
+
+    # 2 pro Zeile via normalem hbox-Paar (kein Gtk.Grid).
+    for i in range(0, len(_privacy_rows), 2):
+        prow = hbox(6)
+        prow.pack_start(_privacy_rows[i], True, True, 0)
+        if i + 1 < len(_privacy_rows):
+            prow.pack_start(_privacy_rows[i + 1], True, True, 0)
+        root.pack_start(prow, False, False, 0)
+
+    def _on_panic(_w):
+        def _apply():
+            errors = []
+            for fn in _force_block_fns:
+                ok, err = fn()
+                if not ok and err:
+                    errors.append(err)
+            if errors:
+                raise RuntimeError("; ".join(errors[:3]))
+        def _refresh_all():
+            for r in _refresh_fns:
+                r()
+        apply_change("Lock everything", _apply, on_status=_flash,
+                     reset_fn=_refresh_all)
+        GLib.timeout_add(600, lambda: (_refresh_all(), False)[1])
+    panic_btn.connect("clicked", _on_panic)
+
+    root.pack_start(status_lbl, False, False, 6)
+    return root
+
+# ════════════════════════════════════════════════════════════
+#  Security-Widget: UFW (Uncomplicated Firewall)
+# ════════════════════════════════════════════════════════════
+# WICHTIG: praktisch JEDER ufw-Aufruf braucht Root - auch nur der
+# Status! ("ERROR: You need to be root to run this script" bei einem
+# normalen User). Deshalb wird hier NICHT wie beim System-Monitor alle
+# paar Sekunden automatisch neu abgefragt (das würde bei JEDEM
+# Auto-Refresh einen neuen Polkit-Passwort-Dialog aufreißen) - Status
+# wird nur EINMAL beim Öffnen des Tabs UND nach jeder eigenen Aktion
+# (enable/disable/Regel hinzufügen/löschen) neu geholt, plus ein
+# manueller Refresh-Button für alle Fälle, in denen sich ufw von
+# außerhalb dieses Panels geändert hat (z.B. per Terminal).
+def _ufw_available() -> bool:
+    return shutil.which("ufw") is not None
+
+def _ufw_status() -> dict:
+    """{"active": bool, "rules": [{"num":int,"to":str,"action":str,"from":str}]}
+    Geparst aus 'ufw status numbered', z.B.:
+        Status: active
+        [ 1] 22/tcp                     ALLOW IN    Anywhere
+    ok=False falls der Aufruf selbst fehlschlägt (z.B. root-Prompt vom
+    Nutzer abgebrochen) - dann bleiben active/rules auf Default-Werten,
+    der Aufrufer erkennt das am zusätzlichen "error"-Feld."""
+    ok, out = _run_maybe_priv(["ufw", "status", "numbered"], timeout=15)
+    if not ok:
+        return {"active": False, "rules": [], "error": out}
+    active = "Status: active" in out
+    rules = []
+    for line in out.splitlines():
+        line = line.strip()
+        if not line.startswith("["):
+            continue
+        m = re.match(r"^\[\s*(\d+)\]\s+(.*)$", line)
+        if not m:
+            continue
+        num = int(m.group(1))
+        # ufw richtet die 3 Spalten (To/Action/From) mit variabel
+        # vielen Leerzeichen aus - mind. 2 Leerzeichen am Stück trennen
+        # sie zuverlässig genug, ohne eine feste Spaltenbreite
+        # anzunehmen (die je nach längstem Eintrag variiert).
+        parts = re.split(r"\s{2,}", m.group(2).strip())
+        rules.append({
+            "num": num,
+            "to":     parts[0] if len(parts) > 0 else "?",
+            "action": parts[1] if len(parts) > 1 else "?",
+            "from":   parts[2] if len(parts) > 2 else "?",
+        })
+    return {"active": active, "rules": rules}
+
+def _ufw_set_enabled(enabled: bool) -> tuple[bool, str]:
+    # --force: ufw fragt bei "enable" sonst interaktiv auf stdin nach
+    # ("Command may disrupt existing ssh connections. Proceed?"), was
+    # hier (kein TTY) sonst einfach nur hängen würde.
+    cmd = ["ufw", "--force", "enable"] if enabled else ["ufw", "--force", "disable"]
+    return _run_maybe_priv(cmd, timeout=20)
+
+def _ufw_delete_rule(num: int) -> tuple[bool, str]:
+    return _run_maybe_priv(["ufw", "--force", "delete", str(num)], timeout=15)
+
+def _ufw_add_rule(action: str, port_spec: str) -> tuple[bool, str]:
+    return _run_maybe_priv(["ufw", action, port_spec], timeout=15)
+
+_PORT_SPEC_RE = re.compile(
+    r"^\d{1,5}(:\d{1,5})?(/(tcp|udp))?$", re.IGNORECASE)
+
+_UFW_PRESETS = [
+    ("Steam LAN",   [("allow", "27031:27036/udp")]),
+    ("KDE Connect", [("allow", "1714:1764/tcp"), ("allow", "1714:1764/udp")]),
+    ("Samba",       [("allow", "samba")]),
+]
+
+def _ufw_preset_active(specs: list, rules: list) -> bool:
+    """Ein Preset gilt als 'an', wenn für JEDEN seiner Teil-Specs (KDE
+    Connect braucht z.B. TCP UND UDP zugleich) eine passende ALLOW-
+    Regel existiert. Vergleich ist bewusst simpel/case-insensitive und
+    auf Teilstring-Ebene - ufw normalisiert Anzeige-Strings leicht
+    anders als die Eingabe (z.B. bei App-Profilen wie "samba" ->
+    "Samba"), ein exakter Vergleich wäre hier zu zerbrechlich."""
+    for _action, spec in specs:
+        spec_l = spec.lower()
+        spec_base = spec_l.split("/")[0]
+        found = any(
+            r["action"].upper().startswith("ALLOW") and
+            (spec_l in r["to"].lower() or spec_base in r["to"].lower())
+            for r in rules)
+        if not found:
+            return False
+    return True
+
+def _ufw_apply_preset(specs: list, enable: bool) -> tuple[bool, str]:
+    """Fügt (enable=True) oder entfernt (enable=False) ALLE Teil-Regeln
+    eines Presets. 'ufw delete allow <spec>' funktioniert bei ufw auch
+    ohne die Regelnummer zu kennen, solange die Regel exakt so
+    spezifiziert wird, wie sie angelegt wurde."""
+    for action, spec in specs:
+        cmd = (["ufw", action, spec] if enable else
+               ["ufw", "--force", "delete", action, spec])
+        ok, err = _run_maybe_priv(cmd, timeout=15)
+        if not ok:
+            return False, err
+    return True, ""
+
+_UFW_LOG_FIELD_RE = re.compile(r"\b(SRC|DST|SPT|DPT|PROTO)=(\S+)")
+_UFW_LOG_TIME_RE  = re.compile(r"^(\w{3}\s+\d+\s[\d:]+)")
+
+def _ufw_log_lines(n: int = 300) -> list:
+    """Letzte N Zeilen aus /var/log/ufw.log, gefiltert auf
+    '[UFW BLOCK]' - die Datei gehört üblicherweise root:adm mit Modus
+    640, ein normaler User kann sie meist nicht lesen, deshalb über
+    _run_maybe_priv() (pkexec bei Bedarf)."""
+    ok, out = _run_maybe_priv(["tail", "-n", str(n), "/var/log/ufw.log"], timeout=10)
+    if not ok:
+        return []
+    lines = [l for l in out.splitlines() if "[UFW BLOCK]" in l]
+    lines.reverse()  # neueste zuerst
+    return lines
+
+def _parse_ufw_log_line(line: str) -> dict:
+    fields = dict(_UFW_LOG_FIELD_RE.findall(line))
+    m = _UFW_LOG_TIME_RE.match(line)
+    return {
+        "when":  m.group(1) if m else "",
+        "src":   fields.get("SRC", "?"),
+        "dst":   fields.get("DST", "?"),
+        "spt":   fields.get("SPT", ""),
+        "dpt":   fields.get("DPT", ""),
+        "proto": fields.get("PROTO", "?"),
+    }
+
+def _ufw_content(win: Gtk.Window) -> Gtk.Box:
+    # Redesign-Liste: "Keine Überschrift – keine Trennstriche" - die
+    # vorherige btitle()+sep()-Kopfzeile UND der separate On/Off-Block
+    # darüber sind beide weg. Status/Schalter lebt jetzt als eigener
+    # Sub-Tab ("Firewall") neben Rules/Log (3 Sub-Tabs statt 2).
+    root = vbox(4); pad(root, h=4, v=6)
+
+    if not _ufw_available():
+        root.pack_start(bitem("ufw is not installed", dim=True), False, False, 0)
+        return root
+
+    status_lbl = Gtk.Label(label="")
+    status_lbl.get_style_context().add_class("caption")
+    status_lbl.set_opacity(0.75)
+    status_lbl.set_line_wrap(True)
+    status_lbl.set_no_show_all(True)
+    status_lbl.hide()
+
+    def _flash(text: str, ms: int = 3500):
+        status_lbl.set_label(text)
+        status_lbl.show()
+        GLib.timeout_add(ms, lambda: (status_lbl.hide(), False)[1])
+
+    # ── 3 Sub-Tabs: Firewall (neu) / Rules / Log ──────────────────────
+    stack = Gtk.Stack()
+    stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
+    stack.set_transition_duration(200)
+    stack.set_hhomogeneous(False)
+    stack.set_vhomogeneous(False)
+
+    # ── Sub-Tab: Firewall - "Label: 'Firewall' mit dem grünen/roten
+    # Symbol dazu - label button zum ein-aus schalten". Ein einziger
+    # klickbarer Button trägt Name+Status-Punkt zusammen, kein
+    # separates Label+Toggle-Paar mehr (gleiches Muster wie überall
+    # sonst in diesem Redesign-Durchgang).
+    t_fw = vbox(4); pad(t_fw, h=4, v=10)
+    fw_row = hbox(8)
+    fw_row.set_halign(Gtk.Align.CENTER)
+    onoff_toggle = btn("🔴  Firewall")
+    refresh_b = Gtk.Button(label="󰑐")
+    refresh_b.set_relief(Gtk.ReliefStyle.NONE)
+    refresh_b.get_style_context().add_class("flat")
+    refresh_b.set_opacity(0.7)
+    refresh_b.set_tooltip_text("Refresh status")
+    fw_row.pack_start(onoff_toggle, False, False, 0)
+    fw_row.pack_start(refresh_b, False, False, 0)
+    t_fw.pack_start(fw_row, False, False, 0)
+
+    t_rules = vbox(3)
+    rules_sw, rules_box = scroll_box(200)
+    t_rules.pack_start(rules_sw, False, False, 0)
+    add_row_btn = btn("➕  Add rule")
+    t_rules.pack_start(add_row_btn, False, False, 0)
+
+    t_log = vbox(3)
+    log_sw, log_box = scroll_box(240)
+    t_log.pack_start(log_sw, False, False, 0)
+    refresh_log_btn = btn("󰑐  Refresh log")
+    t_log.pack_start(refresh_log_btn, False, False, 0)
+
+    stack.add_named(t_fw,    "firewall")
+    stack.add_named(t_rules, "rules")
+    stack.add_named(t_log,   "log")
+
+    tab_row = hbox(6)
+    tab_row.set_halign(Gtk.Align.CENTER)
+    tab_btns: dict = {}
+    _log_loaded = [False]
+
+    def _switch_ufw_tab(name):
+        if name == "log" and not _log_loaded[0]:
+            _log_loaded[0] = True
+            _load_log()
+        _switch_stack(stack, win, name)
+        for n, b in tab_btns.items():
+            ctx = b.get_style_context()
+            if n == name: ctx.add_class("active")
+            else:         ctx.remove_class("active")
+
+    for tname, tlabel in (("firewall", "Firewall"), ("rules", "Rules"),
+                           ("log", "Log")):
+        tb = btn(tlabel, active=(tname == "firewall"))
+        tb.connect("clicked", lambda _b, n=tname: _switch_ufw_tab(n))
+        tab_btns[tname] = tb
+        tab_row.pack_start(tb, False, False, 0)
+    stack.set_visible_child_name("firewall")
+
+    root.pack_start(tab_row, True, False, 2)
+    root.pack_start(tab_sep(), False, False, 0)
+    root.pack_start(stack, False, False, 0)
+    root.pack_start(status_lbl, False, False, 4)
+
+    _state = {"active": False, "rules": []}
+
+    def _rebuild_log_ui(lines: list):
+        for c in log_box.get_children():
+            log_box.remove(c)
+        if not lines:
+            log_box.pack_start(
+                bitem("No blocked connections logged (yet)", dim=True), False, False, 0)
+        for line in lines[:150]:
+            info = _parse_ufw_log_line(line)
+            txt = (f'{info["when"]}  ·  {info["src"]}:{info["spt"]} → '
+                   f'{info["dst"]}:{info["dpt"]}  ({info["proto"]})')
+            log_box.pack_start(bitem(txt), False, False, 0)
+        log_box.show_all()
+        GLib.idle_add(_shrink_to_fit, win)
+
+    def _load_log():
+        refresh_log_btn.set_sensitive(False)
+        def _work():
+            lines = _ufw_log_lines()
+            def _apply():
+                refresh_log_btn.set_sensitive(True)
+                _rebuild_log_ui(lines)
+            GLib.idle_add(_apply)
+        in_thread(_work)
+
+    refresh_log_btn.connect("clicked", lambda _w: _load_log())
+
+    def _rebuild_rules_ui():
+        for c in rules_box.get_children():
+            rules_box.remove(c)
+        if not _state["rules"]:
+            rules_box.pack_start(
+                bitem("No rules" if _state["active"] else
+                      "Firewall is off - existing rules stay saved but inactive",
+                      dim=True), False, False, 0)
+        for r in _state["rules"]:
+            row = hbox(8)
+            row.get_style_context().add_class("bubble")
+            row.get_style_context().add_class("item")
+            pad(row, h=8, v=4)
+            action_icon = "🟢" if r["action"].upper().startswith("ALLOW") else \
+                          ("🟡" if r["action"].upper().startswith("LIMIT") else "🔴")
+            lbl = Gtk.Label(
+                label=f'{action_icon} {r["to"]}  ·  {r["action"]}  ·  from {r["from"]}')
+            lbl.set_halign(Gtk.Align.START)
+            # KEIN set_ellipsize() mehr - gleicher Fix wie beim Task-
+            # Manager: Regel sollte NIE abgeschnitten werden, egal wie
+            # lang Ports/Adressen sind. _shrink_to_fit() weiter unten
+            # lässt die Blase auf die dafür nötige Breite wachsen,
+            # _clamp_window_to_screen() greift trotzdem als
+            # Sicherheitsnetz gegen den Bildschirmrand.
+            lbl.set_hexpand(True)
+            row.pack_start(lbl, True, True, 0)
+            del_b = Gtk.Button(label="󰅖")
+            del_b.set_relief(Gtk.ReliefStyle.NONE)
+            del_b.get_style_context().add_class("flat")
+            del_b.set_opacity(0.7)
+            del_b.set_tooltip_text("Delete rule")
+            def _on_del(_w, num=r["num"], desc=r["to"]):
+                def _apply():
+                    ok, err = _ufw_delete_rule(num)
+                    if not ok:
+                        raise RuntimeError(err)
+                def _after():
+                    _load_status()
+                apply_change(f"Delete rule: {desc}", _apply,
+                             on_status=_flash, reset_fn=_after)
+                GLib.timeout_add(400, lambda: (_load_status(), False)[1])
+            del_b.connect("clicked", _on_del)
+            row.pack_start(del_b, False, False, 0)
+            rules_box.pack_start(row, False, False, 0)
+        rules_box.show_all()
+        GLib.idle_add(_shrink_to_fit, win)
+
+    def _refresh_onoff_ui():
+        onoff_toggle.set_label("🟢  Firewall" if _state["active"] else "🔴  Firewall")
+        ctx = onoff_toggle.get_style_context()
+        if _state["active"]: ctx.add_class("active")
+        else:                ctx.remove_class("active")
+
+    def _load_status():
+        def _work():
+            data = _ufw_status()
+            def _apply():
+                if data.get("error"):
+                    _flash(f"Could not read firewall status: {data['error']}", ms=5000)
+                    return
+                _state["active"] = data["active"]
+                _state["rules"] = data["rules"]
+                _refresh_onoff_ui()
+                _rebuild_rules_ui()
+            GLib.idle_add(_apply)
+        in_thread(_work)
+
+    def _on_onoff_toggle(_w):
+        new_val = not _state["active"]
+        _state["active"] = new_val
+        _refresh_onoff_ui()
+        def _apply():
+            ok, err = _ufw_set_enabled(new_val)
+            if not ok:
+                raise RuntimeError(err)
+        def _reset():
+            _load_status()
+        apply_change(f"Firewall: {'On' if new_val else 'Off'}", _apply,
+                     on_status=_flash, reset_fn=_reset)
+        GLib.timeout_add(600, lambda: (_load_status(), False)[1])
+
+    onoff_toggle.connect("clicked", _on_onoff_toggle)
+    refresh_b.connect("clicked", lambda _w: _load_status())
+
+    def _on_add_rule(_w):
+        dlg = Gtk.Dialog(title="Add firewall rule", transient_for=win)
+        dlg.set_name("wb-daemon-popup")
+        dlg.set_modal(True)
+        dlg.set_keep_above(True)
+        dlg.set_type_hint(Gdk.WindowTypeHint.DIALOG)
+        dlg.add_buttons("Cancel", Gtk.ResponseType.CANCEL,
+                        "Add", Gtk.ResponseType.OK)
+        content = dlg.get_content_area()
+        content.set_spacing(8)
+        pad(content, h=14, v=10)
+        dlg.set_default_size(320, 1)
+
+        port_e = Gtk.Entry()
+        port_e.set_placeholder_text("Port, e.g. 22, 8080/tcp, 60000:61000/udp")
+        port_e.set_activates_default(True)
+        content.pack_start(port_e, False, False, 0)
+
+        action_row = hbox(8)
+        allow_toggle = btn("✅  Allow", active=True)
+        deny_toggle  = btn("⛔  Deny")
+        action_state = {"action": "allow"}
+        def _pick_allow(_w=None):
+            action_state["action"] = "allow"
+            allow_toggle.get_style_context().add_class("active")
+            deny_toggle.get_style_context().remove_class("active")
+        def _pick_deny(_w=None):
+            action_state["action"] = "deny"
+            deny_toggle.get_style_context().add_class("active")
+            allow_toggle.get_style_context().remove_class("active")
+        allow_toggle.connect("clicked", _pick_allow)
+        deny_toggle.connect("clicked", _pick_deny)
+        action_row.pack_start(allow_toggle, False, False, 0)
+        action_row.pack_start(deny_toggle, False, False, 0)
+        content.pack_start(action_row, False, False, 0)
+
+        err_lbl = Gtk.Label(label="")
+        err_lbl.get_style_context().add_class("caption")
+        err_lbl.set_no_show_all(True)
+        err_lbl.hide()
+        content.pack_start(err_lbl, False, False, 0)
+
+        ok_btn = dlg.get_widget_for_response(Gtk.ResponseType.OK)
+        if ok_btn: ok_btn.set_can_default(True); ok_btn.grab_default()
+
+        dlg.show_all()
+        err_lbl.hide()
+        port_e.grab_focus()
+        dlg_destroyed = [False]
+        dlg.connect("destroy", lambda _d: dlg_destroyed.__setitem__(0, True))
+
+        while True:
+            resp = dlg.run()
+            if resp != Gtk.ResponseType.OK:
+                break
+            spec = port_e.get_text().strip()
+            if not _PORT_SPEC_RE.match(spec):
+                err_lbl.set_label(
+                    "Invalid format - use a port, port range, or port/protocol "
+                    "(e.g. 22, 6000:6010, 8080/tcp)")
+                err_lbl.show()
+                continue
+            action = action_state["action"]
+            def _apply(spec=spec, action=action):
+                ok, err = _ufw_add_rule(action, spec)
+                if not ok:
+                    raise RuntimeError(err)
+            apply_change(f"{action.title()} {spec}", _apply, on_status=_flash)
+            GLib.timeout_add(600, lambda: (_load_status(), False)[1])
+            break
+        if not dlg_destroyed[0]:
+            dlg.destroy()
+
+    add_row_btn.connect("clicked", _on_add_rule)
+
+    _load_status()
+    return root
+
+
+def _tailscale_available() -> bool:
+    return shutil.which("tailscale") is not None
+
+def _local_username() -> str:
+    """Lokaler System-Username für die 'user@hostname'-Anzeige beim
+    Tailscale-Tab (siehe README-Feedback: bei mehreren gleichnamigen
+    trafktux-Systemen reicht der Tailscale-Hostname allein nicht zur
+    Unterscheidung - genau wie im Terminal-Prompt soll auch hier
+    User@Host stehen). os.getlogin() kann in manchen Kontexten ohne
+    Controlling-TTY (z.B. als systemd-Service) fehlschlagen - deshalb
+    mit Fallback auf $USER/$LOGNAME und zuletzt pwd.getpwuid()."""
+    try:
+        return os.getlogin()
+    except Exception:
+        pass
+    for var in ("USER", "LOGNAME"):
+        val = os.environ.get(var)
+        if val:
+            return val
+    try:
+        import pwd
+        return pwd.getpwuid(os.getuid()).pw_name
+    except Exception:
+        return "?"
+
+def _tailscale_status() -> dict:
+    """Robuster Status-Parser über 'tailscale status --json'. Liefert
+    bei Erfolg {"logged_in": bool, "hostname": str, "self_ip": str,
+    "peers": [{"name","online","ip"}, ...]}, bei jedem Fehler
+    (tailscaled nicht erreichbar, kaputtes JSON, Tool fehlt) stattdessen
+    {"error": "..."} - der Aufrufer unterscheidet nur "error vorhanden"
+    vs. nicht, muss also nicht zwischen den einzelnen Fehlerursachen
+    unterscheiden."""
+    out, err, ec = run_ec(["tailscale", "status", "--json"], timeout=5)
+    if ec != 0:
+        return {"error": err or out or "tailscale status failed"}
+    try:
+        data = json.loads(out)
+    except Exception as e:
+        return {"error": f"Could not parse tailscale status: {e}"}
+    self_info = data.get("Self", {}) or {}
+    peers_raw = data.get("Peer", {}) or {}
+    peers = []
+    for p in peers_raw.values():
+        peers.append({
+            "name": p.get("HostName", "?"),
+            "online": bool(p.get("Online", False)),
+            "ip": (p.get("TailscaleIPs") or [""])[0],
+        })
+    # Online zuerst, dann alphabetisch - genau wie bei den
+    # Bluetooth-/WLAN-Listen anderswo im Daemon.
+    peers.sort(key=lambda p: (not p["online"], p["name"].lower()))
+    return {
+        "logged_in": data.get("BackendState", "") == "Running",
+        "hostname": self_info.get("HostName", ""),
+        "self_ip": (self_info.get("TailscaleIPs") or [""])[0],
+        "peers": peers,
+    }
+
+def _tailscale_login_flow(on_url, on_finished, _via_pkexec: bool = False) -> None:
+    """Startet 'tailscale up' im Hintergrund. Der Befehl selbst
+    BLOCKIERT, bis der Login im Browser abgeschlossen ist (oder er
+    timeoutet/abbricht) - läuft deshalb komplett in einem eigenen
+    Thread, damit die GTK-Mainloop responsive bleibt. Liest stdout+
+    stderr zeilenweise MITLAUFEND (kein run_ec(), das würde erst nach
+    Prozessende überhaupt etwas zurückgeben) und reagiert SOFORT, wenn
+    die Login-URL erscheint: öffnet sie per xdg-open UND gibt sie über
+    on_url() an die UI weiter (falls kein Standardbrowser konfiguriert
+    ist, kann man sie wenigstens ablesen/kopieren). on_finished(error)
+    wird aufgerufen, sobald der Prozess durch ist - error ist None bei
+    Erfolg (schon eingeloggt ODER frisch authentifiziert).
+
+    WICHTIG (Bugfix): meldete bei einem Fehlschlag bisher nur "exit
+    code 1" ohne jeden Hinweis, WAS eigentlich schiefging - auf vielen
+    Distros ist der tailscaled-Lokal-Socket nämlich nur für root lesbar/
+    beschreibbar, 'tailscale up' scheitert dann SOFORT (es wird nie
+    überhaupt eine Login-URL angezeigt) mit einer Permission-Meldung.
+    Jetzt wird a) die tatsächliche Ausgabe als Fehlertext durchgereicht
+    statt nur des Exit-Codes, und b) bei einer klar permission-artigen
+    Meldung EINMALIG automatisch per pkexec erneut versucht -
+    _via_pkexec verhindert dabei eine Endlosschleife (kein zweiter
+    Auto-Retry mehr, falls auch DAS fehlschlägt)."""
+    url_re = re.compile(r"https://login\.tailscale\.com/\S+")
+
+    def _worker():
+        cmd = (["pkexec"] if _via_pkexec else []) + ["tailscale", "up"]
+        try:
+            proc = subprocess.Popen(
+                cmd, stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT, text=True, bufsize=1)
+        except Exception as e:
+            msg = str(e)
+            GLib.idle_add(lambda: (on_finished(msg), False)[1])
+            return
+        url_found = False
+        output_lines = []
+        for line in proc.stdout:
+            output_lines.append(line.rstrip("\n"))
+            m = url_re.search(line)
+            if m and not url_found:
+                url_found = True
+                url = m.group(0)
+                GLib.idle_add(lambda u=url: (on_url(u), False)[1])
+                subprocess.Popen(["xdg-open", url], stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL)
+        ec = proc.wait()
+        if ec == 0:
+            GLib.idle_add(lambda: (on_finished(None), False)[1])
+            return
+
+        full_output = "\n".join(l for l in output_lines if l.strip()).strip()
+        err_l = full_output.lower()
+        needs_root = (not _via_pkexec) and any(s in err_l for s in (
+            "permission denied", "operation not permitted", "eacces",
+            "access denied", "must be root", "need to be root"))
+        if needs_root:
+            GLib.idle_add(lambda: (_tailscale_login_flow(on_url, on_finished, True), False)[1])
+            return
+        GLib.idle_add(lambda: (on_finished(full_output or f"exit code {ec}"), False)[1])
+
+    in_thread(_worker)
+
+def _tailscale_logout() -> tuple[bool, str]:
+    """Kompletter Logout (im Gegensatz zu 'tailscale down' weiter oben,
+    das nur trennt): entfernt die Anmeldedaten dieses Geräts, ein
+    erneutes 'Enable Tailscale' braucht danach wieder den kompletten
+    Browser-Login-Flow (siehe _tailscale_login_flow())."""
+    out, err, ec = run_ec(["tailscale", "logout"], timeout=15)
+    if ec != 0:
+        return False, err or out
+    return True, ""
+
+def _tailscale_prefs() -> dict:
+    """Aktuelle Verbindungs-Präferenzen (accept-routes/accept-dns/ssh/
+    shields-up) - stehen NICHT in 'tailscale status --json' drin (das
+    zeigt nur Verbindungs-/Peer-Status), sondern in 'tailscale debug
+    prefs'. Die Feldnamen darin sind interne Tailscale-Struct-Namen und
+    könnten sich zwischen Versionen ändern - deshalb überall mit
+    .get()-Fallback statt hartem Zugriff, und ein leeres Dict bei jedem
+    Fehler (Aufrufer behandelt ein leeres Dict wie "alles unbekannt/
+    aus", die eigentlichen Set-Aufrufe unten funktionieren davon
+    unabhängig trotzdem, da sie idempotent sind)."""
+    out, _err, ec = run_ec(["tailscale", "debug", "prefs"], timeout=5)
+    if ec != 0:
+        return {}
+    try:
+        data = json.loads(out)
+    except Exception:
+        return {}
+    return {
+        "accept_routes": bool(data.get("RouteAll", False)),
+        "accept_dns":    bool(data.get("CorpDNS", True)),
+        "ssh":           bool(data.get("RunSSH", False)),
+        "shields_up":    bool(data.get("ShieldsUp", False)),
+    }
+
+def _tailscale_set_pref(flag: str, value: bool) -> tuple[bool, str]:
+    """Setzt GENAU EIN Preference-Flag über 'tailscale set --flag=...'
+    - anders als 'tailscale up' braucht das keinen erneuten Login/keine
+    Browser-URL, wirkt sofort auf die laufende Verbindung."""
+    out, err, ec = run_ec(
+        ["tailscale", "set", f"--{flag}={'true' if value else 'false'}"], timeout=15)
+    if ec != 0:
+        return False, err or out
+    return True, ""
+
+def _tailscaled_autostart_enabled() -> bool:
+    out, _err, _ec = run_ec(["systemctl", "is-enabled", "tailscaled"], timeout=5)
+    return out.strip() == "enabled"
+
+def _set_tailscaled_autostart(enable: bool) -> tuple[bool, str]:
+    """Schaltet NUR den Boot-Autostart um (enable/disable), fasst NICHT
+    den aktuellen Lauf-/Login-Zustand an (siehe README: "separate from
+    the login state") - wer's aus dem Bootvorgang raushaben will, aber
+    gerade eingeloggt ist, bleibt eingeloggt, bis er Tailscale manuell
+    trennt."""
+    return _run_maybe_priv(
+        ["systemctl", "enable" if enable else "disable", "tailscaled"], timeout=15)
+
+def _tailscale_content(win: Gtk.Window) -> Gtk.Box:
+    """Tailscale-Tab im Security-Widget. Exit-Node-Auswahl ABSICHTLICH
+    NICHT enthalten (README: "later, needs explicit opt-in per the
+    Tailscale docs" - das ist ein Sicherheits-relevantes Feature, das
+    erst noch sein eigenes bewusstes Opt-in-UI braucht, kein einfacher
+    Toggle nebenbei)."""
+    root = vbox(4); pad(root, h=4, v=6)
+    # Redesign-Liste: "Keine Überschrift - kein Strich."
+
+    if not _tailscale_available():
+        root.pack_start(bitem("tailscale is not installed", dim=True), False, False, 0)
+        return root
+
+    status_lbl = Gtk.Label(label="")
+    status_lbl.get_style_context().add_class("caption")
+    status_lbl.set_opacity(0.75)
+    status_lbl.set_line_wrap(True)
+    status_lbl.set_no_show_all(True)
+    status_lbl.hide()
+
+    def _flash(text: str, ms: int = 3500):
+        status_lbl.set_label(text)
+        status_lbl.show()
+        GLib.timeout_add(ms, lambda: (status_lbl.hide(), False)[1])
+
+    # "Connected as ... sollte viel größer sein und leuchten - wenn man
+    # da drauf klickt, dann soll man auf die Tailscale-Seite kommen, wo
+    # man sich auch abmelden kann und alles konfigurieren kann" - jetzt
+    # ein klickbarer Button statt eines reinen Labels, öffnet die
+    # Tailscale-Admin-Konsole im Standardbrowser (login.tailscale.com/
+    # admin/machines - von dort aus lassen sich Geräte abmelden,
+    # umbenennen, Exit-Nodes/ACLs konfigurieren usw., alles was
+    # Tailscale selbst an Verwaltung anbietet).
+    conn_lbl = Gtk.Button(label="Checking…")
+    conn_lbl.set_relief(Gtk.ReliefStyle.NONE)
+    conn_lbl.get_style_context().add_class("flat")
+    conn_lbl.get_style_context().add_class("tailscale-conn-big")
+    conn_lbl.set_can_focus(False)
+    conn_lbl.set_halign(Gtk.Align.CENTER)
+    conn_lbl.set_tooltip_text("Open the Tailscale admin console")
+    conn_lbl.connect("clicked", lambda _w: subprocess.Popen(
+        ["xdg-open", "https://login.tailscale.com/admin/machines"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
+    root.pack_start(conn_lbl, False, False, 0)
+
+    ip_row = hbox(6)
+    ip_row.set_halign(Gtk.Align.CENTER)
+    ip_lbl = Gtk.Label(label="")
+    ip_lbl.get_style_context().add_class("caption")
+    ip_lbl.set_opacity(0.7)
+    ip_row.pack_start(ip_lbl, False, False, 0)
+    copy_ip_btn = Gtk.Button(label="󰆏")
+    copy_ip_btn.set_relief(Gtk.ReliefStyle.NONE)
+    copy_ip_btn.get_style_context().add_class("flat")
+    copy_ip_btn.set_opacity(0.7)
+    copy_ip_btn.set_tooltip_text("Copy IP to clipboard")
+    ip_row.pack_start(copy_ip_btn, False, False, 0)
+    ip_row.set_no_show_all(True)
+    ip_row.hide()
+    root.pack_start(ip_row, False, False, 0)
+
+    login_link_lbl = Gtk.Label(label="")
+    login_link_lbl.get_style_context().add_class("caption")
+    login_link_lbl.set_selectable(True)
+    login_link_lbl.set_line_wrap(True)
+    login_link_lbl.set_halign(Gtk.Align.CENTER)
+    login_link_lbl.set_justify(Gtk.Justification.CENTER)
+    login_link_lbl.set_no_show_all(True)
+    login_link_lbl.hide()
+    root.pack_start(login_link_lbl, False, False, 0)
+
+    main_btn = btn("Enable Tailscale")
+    main_btn.set_halign(Gtk.Align.CENTER)
+    root.pack_start(main_btn, False, False, 0)
+
+    disconnect_row = hbox(6)
+    disconnect_row.set_halign(Gtk.Align.CENTER)
+    disconnect_btn = btn("Disconnect")
+    logout_btn = btn("Log out")
+    disconnect_row.pack_start(disconnect_btn, False, False, 0)
+    disconnect_row.pack_start(logout_btn, False, False, 0)
+    disconnect_row.set_no_show_all(True)
+    disconnect_row.hide()
+    root.pack_start(disconnect_row, False, False, 0)
+
+    # KEIN Trennstrich mehr zwischen Überschrift und "Start on boot" -
+    # der einzige, der bleibt, ist der direkt über DEVICES weiter unten
+    # (README-Feedback: "die Trennstriche zwischen der Überschrift und
+    # Start on boot alle weg, nur den einen über Devices kann da
+    # bleiben"). Ein einziger Button (Text = Schalter), zentriert -
+    # gleiches Muster wie Privacy/DNS, kein separates Label mehr daneben.
+    autostart_row = hbox(8)
+    autostart_row.set_halign(Gtk.Align.CENTER)
+    autostart_toggle = btn("Start on boot")
+    autostart_toggle.get_style_context().add_class("compact-btn")
+    autostart_row.pack_start(autostart_toggle, False, False, 0)
+    root.pack_start(autostart_row, False, False, 0)
+
+    # ── Optionen (nur sinnvoll/schaltbar, solange eingeloggt) ────────
+    options_section = vbox(3)
+    options_section.set_no_show_all(True)
+    options_section.hide()
+    root.pack_start(options_section, False, False, 0)
+
+    options_section.pack_start(bsec("OPTIONS"), False, False, 0)
+    opt_toggles: dict = {}
+    _opt_rows = []
+    for flag, opt_label, tip in (
+        ("accept-routes", "Accept routes",
+         "Use routes/subnets that other tailnet devices advertise (e.g. a home NAS or router)."),
+        ("accept-dns", "Accept MagicDNS",
+         "Use the tailnet's own DNS settings (MagicDNS) instead of this device's normal DNS."),
+        ("ssh", "Tailscale SSH",
+         "Let other tailnet devices (with permission) SSH into this device over Tailscale."),
+        ("shields-up", "Shields up",
+         "Block ALL incoming connections from tailnet peers - useful on untrusted networks."),
+    ):
+        row = hbox(6)
+        lbl = Gtk.Label(label=opt_label + ":")
+        lbl.get_style_context().add_class("caption")
+        lbl.set_halign(Gtk.Align.START)
+        lbl.set_hexpand(True)
+        toggle = btn("…")
+        toggle.set_tooltip_text(tip)
+        row.pack_start(lbl, True, True, 0)
+        row.pack_start(toggle, False, False, 0)
+        opt_toggles[flag] = toggle
+        _opt_rows.append(row)
+
+    # 2x2 statt 4 Zeilen untereinander (README-Feedback: "auch im
+    # Security Tab kann man viel Platz sparen").
+    _opt_grid = Gtk.Grid()
+    _opt_grid.set_column_homogeneous(True)
+    _opt_grid.set_column_spacing(14)
+    _opt_grid.set_row_spacing(2)
+    for idx, orow in enumerate(_opt_rows):
+        _opt_grid.attach(orow, idx % 2, idx // 2, 1, 1)
+    options_section.pack_start(_opt_grid, False, False, 0)
+
+    root.pack_start(sep(), False, False, 4)
+    root.pack_start(bsec("DEVICES"), False, False, 0)
+    devices_box = vbox(3)
+    root.pack_start(devices_box, False, False, 0)
+
+    root.pack_start(status_lbl, False, False, 4)
+
+    _state = {"connecting": False, "self_ip": ""}
+
+    def _refresh_autostart():
+        def _work():
+            enabled = _tailscaled_autostart_enabled()
+            def _apply():
+                ctx = autostart_toggle.get_style_context()
+                if enabled: ctx.add_class("active")
+                else:       ctx.remove_class("active")
+            GLib.idle_add(_apply)
+        in_thread(_work)
+
+    def _rebuild_devices(peers: list):
+        for c in devices_box.get_children():
+            devices_box.remove(c)
+        if not peers:
+            devices_box.pack_start(
+                bitem("No other devices in this tailnet", dim=True), False, False, 0)
+        for p in peers:
+            row = hbox(8)
+            row.get_style_context().add_class("bubble")
+            row.get_style_context().add_class("item")
+            pad(row, h=8, v=4)
+            dot = "🟢" if p["online"] else "⚪"
+            txt = f'{dot} {p["name"]}' + (f'  ·  {p["ip"]}' if p["ip"] else "")
+            lbl = Gtk.Label(label=txt)
+            lbl.set_halign(Gtk.Align.START)
+            # Kein Ellipsize/Namenslimit - gleicher Fix wie Task-Manager
+            # und Firewall-Regeln, aus demselben Grund.
+            lbl.set_hexpand(True)
+            row.pack_start(lbl, True, True, 0)
+            devices_box.pack_start(row, False, False, 0)
+        devices_box.show_all()
+        GLib.idle_add(_shrink_to_fit, win)
+
+    def _refresh_status():
+        def _work():
+            data = _tailscale_status()
+            def _apply():
+                if data.get("error"):
+                    conn_lbl.set_label("Not connected")
+                    ip_row.hide()
+                    login_link_lbl.hide()
+                    main_btn.show()
+                    main_btn.set_sensitive(not _state["connecting"])
+                    disconnect_row.hide()
+                    options_section.hide()
+                    _rebuild_devices([])
+                    return
+                if data["logged_in"]:
+                    who = f'{_local_username()}@{data["hostname"]}' if data["hostname"] else "?"
+                    conn_lbl.set_label(f'Connected as {who}')
+                    if data["self_ip"]:
+                        _state["self_ip"] = data["self_ip"]
+                        ip_lbl.set_label(f'Your IP: {data["self_ip"]}')
+                        ip_row.show()
+                    else:
+                        ip_row.hide()
+                    login_link_lbl.hide()
+                    main_btn.hide()
+                    disconnect_row.show()
+                    options_section.show()
+                    _refresh_prefs()
+                else:
+                    conn_lbl.set_label("Not connected")
+                    ip_row.hide()
+                    main_btn.show()
+                    main_btn.set_sensitive(not _state["connecting"])
+                    disconnect_row.hide()
+                    options_section.hide()
+                _rebuild_devices(data.get("peers", []))
+                GLib.idle_add(_shrink_to_fit, win)
+            GLib.idle_add(_apply)
+        in_thread(_work)
+
+    def _on_url(url: str):
+        login_link_lbl.set_label(f"Opening browser to sign in:\n{url}")
+        login_link_lbl.show()
+        GLib.idle_add(_shrink_to_fit, win)
+
+    def _on_login_finished(error):
+        _state["connecting"] = False
+        main_btn.set_label("Enable Tailscale")
+        login_link_lbl.hide()
+        if error:
+            short = error if len(error) <= 300 else error[:300] + "…"
+            _flash(f"Tailscale login failed: {short}", ms=8000)
+        _refresh_status()
+
+    def _on_enable(_w):
+        if _state["connecting"]:
+            return
+        _state["connecting"] = True
+        main_btn.set_label("Connecting…")
+        main_btn.set_sensitive(False)
+        _tailscale_login_flow(_on_url, _on_login_finished)
+
+    def _refresh_prefs():
+        def _work():
+            prefs = _tailscale_prefs()
+            def _apply():
+                for flag, toggle in opt_toggles.items():
+                    key = flag.replace("-", "_")
+                    on = bool(prefs.get(key))
+                    toggle.set_label("🟢  On" if on else "⚪  Off")
+                    ctx = toggle.get_style_context()
+                    if on: ctx.add_class("active")
+                    else:  ctx.remove_class("active")
+            GLib.idle_add(_apply)
+        in_thread(_work)
+
+    def _on_copy_ip(_w):
+        if not _state["self_ip"]:
+            return
+        clip = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
+        clip.set_text(_state["self_ip"], -1)
+        clip.store()
+        _flash("IP copied to clipboard", ms=1500)
+
+    def _on_logout(_w):
+        def _apply():
+            ok, err = _tailscale_logout()
+            if not ok:
+                raise RuntimeError(err)
+        apply_change("Tailscale: log out", _apply, on_status=_flash)
+        GLib.timeout_add(700, lambda: (_refresh_status(), False)[1])
+
+    def _make_option_handler(flag: str, toggle: Gtk.Button):
+        def _handler(_w):
+            key = flag.replace("-", "_")
+            cur = _tailscale_prefs().get(key, False)
+            new_val = not cur
+            def _apply():
+                ok, err = _tailscale_set_pref(flag, new_val)
+                if not ok:
+                    raise RuntimeError(err)
+            def _reset():
+                _refresh_prefs()
+            toggle.set_label("🟢  On" if new_val else "⚪  Off")
+            ctx = toggle.get_style_context()
+            if new_val: ctx.add_class("active")
+            else:       ctx.remove_class("active")
+            apply_change(f"Tailscale: {flag} {'on' if new_val else 'off'}",
+                         _apply, on_status=_flash, reset_fn=_reset)
+        return _handler
+
+    def _on_disconnect(_w):
+        def _apply():
+            out, err, ec = run_ec(["tailscale", "down"], timeout=15)
+            if ec != 0:
+                raise RuntimeError(err or out)
+        apply_change("Tailscale: disconnect", _apply, on_status=_flash)
+        GLib.timeout_add(700, lambda: (_refresh_status(), False)[1])
+
+    def _on_autostart_toggle(_w):
+        def _apply():
+            ok, err = _set_tailscaled_autostart(not _tailscaled_autostart_enabled())
+            if not ok:
+                raise RuntimeError(err)
+        apply_change("Tailscale autostart", _apply, on_status=_flash,
+                     reset_fn=_refresh_autostart)
+        GLib.timeout_add(500, lambda: (_refresh_autostart(), False)[1])
+
+    main_btn.connect("clicked", _on_enable)
+    disconnect_btn.connect("clicked", _on_disconnect)
+    logout_btn.connect("clicked", _on_logout)
+    copy_ip_btn.connect("clicked", _on_copy_ip)
+    autostart_toggle.connect("clicked", _on_autostart_toggle)
+    for flag, toggle in opt_toggles.items():
+        toggle.connect("clicked", _make_option_handler(flag, toggle))
+
+    _refresh_status()
+    _refresh_autostart()
+    # Peers/Online-Status können sich jederzeit von außen ändern (ein
+    # anderes Gerät geht on-/offline) - deshalb ein eigener Poll-Timer,
+    # nicht nur einmalig beim Öffnen.
+    add_timer(4000, lambda: (_refresh_status(), True)[1])
+
+    return root
+
+def _clamav_available() -> bool:
+    return shutil.which("clamscan") is not None
+
+_CLAMAV_DB_DIR = Path("/var/lib/clamav")
+# Alle Endungen, die ClamAV als Signatur-Datenbank lädt - NICHT nur
+# main.cvd/daily.cvd. clamav-unofficial-sigs legt zusätzlich dutzende
+# .hdb/.ndb/.yara-Dateien (SecuriteInfo, Sanesecurity, ...) im selben
+# Ordner ab, die genauso mitgeladen und mitgezählt werden.
+_CLAMAV_DB_EXTENSIONS = (
+    ".cvd", ".cld", ".hdb", ".hsb", ".hdu", ".ndb", ".ndu",
+    ".ldb", ".ldu", ".yar", ".yara", ".fp", ".pdb", ".gdb",
+    ".cbc", ".cdb", ".idb", ".wdb", ".crb",
+)
+
+def _clamav_db_status() -> dict:
+    """BUGFIX: hat vorher NUR main.cvd/main.cld/daily.cvd/daily.cld
+    betrachtet und davon auch nur die EINE zuletzt geänderte Datei -
+    'sigtool --info' gibt aber die Signaturzahl NUR für genau die eine
+    übergebene Datei zurück, nicht die Gesamtsumme über alle geladenen
+    Datenbanken. Je nachdem, welche der 4 Dateien beim letzten
+    Freshclam-Lauf zufällig zuletzt angefasst wurde, kam so mal die
+    Zahl von daily.cvd (Millionen) und mal die von main.cvd (nur ein
+    Bruchteil davon) raus - exakt das beobachtete wilde Schwanken
+    zwischen 3,3 Mio. und ~500.000. Zusätzliche Signaturen aus
+    clamav-unofficial-sigs (eigene .hdb/.ndb/.yara-Dateien im selben
+    Ordner) wurden dabei komplett ignoriert.
+
+    Jetzt: JEDE Datenbankdatei im Ordner einzeln über sigtool abfragen
+    und die Signaturzahlen AUFSUMMIEREN - das entspricht dem, was
+    clamscan/clamd beim Start tatsächlich alles zusammen lädt.
+    "Last updated" ist die neueste mtime über ALLE gefundenen
+    Dateien, nicht mehr nur der ursprünglichen 4."""
+    if not _CLAMAV_DB_DIR.is_dir():
+        return {"last_update": None, "sig_count": None}
+    have_sigtool = bool(shutil.which("sigtool"))
+    newest_mtime = None
+    total_sigs = 0
+    got_any_count = False
+    try:
+        entries = list(_CLAMAV_DB_DIR.iterdir())
+    except OSError:
+        return {"last_update": None, "sig_count": None}
+    for p in entries:
+        if p.suffix.lower() not in _CLAMAV_DB_EXTENSIONS:
+            continue
+        try:
+            mtime = p.stat().st_mtime
+        except OSError:
+            continue
+        if newest_mtime is None or mtime > newest_mtime:
+            newest_mtime = mtime
+        if not have_sigtool:
+            continue
+        out, _err, ec = run_ec(["sigtool", "--info", str(p)], timeout=10)
+        if ec == 0:
+            m = re.search(r"Signatures:\s*(\d+)", out)
+            if m:
+                total_sigs += int(m.group(1))
+                got_any_count = True
+    return {
+        "last_update": datetime.fromtimestamp(newest_mtime) if newest_mtime else None,
+        "sig_count": total_sigs if got_any_count else None,
+    }
+
+def _freshclam_update() -> tuple[bool, str]:
+    """'freshclam' braucht so gut wie immer Root (schreibt nach
+    /var/lib/clamav und /var/log/clamav) - Timeout bewusst hoch, ein
+    volles Signatur-Update UND ein voller clamav-unofficial-sigs-Lauf
+    (siehe unten) können bei langsamer Verbindung zusammen mehrere
+    Minuten dauern.
+
+    BUGFIX: lief bisher über _run_maybe_priv(), das erst UNPRIVILEGIERT
+    versucht und nur anhand der Fehlermeldung entscheidet, ob auf
+    pkexec eskaliert wird ("Permission denied", "must be root", ...).
+    freshclams eigene Fehlermeldung bei fehlenden Rechten ("Problem
+    with internal logger ... libfreshclam init failed") erwähnt aber
+    nirgends root/Rechte - die Heuristik hat das NIE als "braucht root"
+    erkannt und NIE eskaliert. Das mkdir -p von vorhin lief die ganze
+    Zeit nur als normaler User, der in /var/log/ grundsätzlich nichts
+    anlegen darf - der Ordner wurde also nie tatsächlich erstellt, der
+    Button hat immer nur unprivilegiert probiert und ist immer mit
+    exakt derselben Meldung gescheitert. Deshalb hier jetzt bewusst
+    DIREKT über pkexec, ganz ohne den unprivilegierten Versuch davor -
+    mkdir läuft dann tatsächlich als root und kann den Ordner wirklich
+    anlegen.
+
+    NEU: läuft danach zusätzlich 'clamav-unofficial-sigs.sh' (falls
+    installiert - siehe README: "extended with community signatures
+    (clamav-unofficial-sigs) for even better detection") IM SELBEN
+    pkexec-Aufruf, damit nur EIN Passwort-Prompt für beides nötig ist.
+    Mit ';' statt '&&' verkettet, damit ein für ClamAV harmloser,
+    nicht-null Exit-Code von freshclam (manche Versionen geben sowas
+    zurück, wenn eh schon alles aktuell ist) den unofficial-sigs-Lauf
+    nicht verhindert."""
+    unofficial_bin = (shutil.which("clamav-unofficial-sigs.sh") or
+                       shutil.which("clamav-unofficial-sigs"))
+    script = "mkdir -p /var/log/clamav; freshclam"
+    if unofficial_bin:
+        script += f"; {unofficial_bin}"
+    out, err, ec = run_ec(["pkexec", "bash", "-c", script], timeout=600)
+    if ec != 0:
+        return False, err or out or f"exit code {ec}"
+    return True, ""
+
+def _clamav_scan(path: str, on_line, on_done) -> None:
+    """Startet 'clamscan -r --bell -i <path>' (GENAU der Befehl aus der
+    README) im Hintergrund-Thread, reicht jede Ausgabezeile live über
+    on_line() durch und ruft am Ende on_done(threats, error) auf.
+    threats ist eine Liste von (dateipfad, signaturname)-Tupeln,
+    geparst aus Zeilen der Form '<pfad>: <Signaturname> FOUND'.
+    WICHTIG: clamscans Exit-Code 1 bedeutet "Bedrohung(en) gefunden",
+    NICHT "Fehler" - nur Exit-Code 2 ist ein echter Scan-Fehler
+    (z.B. Pfad nicht lesbar, keine/kaputte Signatur-Datenbank).
+
+    Bugfix: meldete bei Exit-Code 2 bisher nur den nichtssagenden
+    Exit-Code selbst ("clamscan exited with code 2"), OBWOHL die
+    tatsächliche Fehlerursache die ganze Zeit live über on_line()
+    durchlief - die wurde nur nirgends für den Fehlerfall aufgehoben.
+    Jetzt werden alle Zeilen mitgeschnitten und die letzten davon (die
+    eigentliche Fehlermeldung steht bei clamscan i.d.R. ganz am Ende)
+    im Fehlerfall mit durchgereicht, exakt derselbe Fix wie vorhin
+    beim Tailscale-Login."""
+    found_re = re.compile(r"^(.*): (.+) FOUND$")
+
+    def _worker():
+        cmd = ["clamscan", "-r", "--bell", "-i"]
+        if os.path.abspath(path) == "/":
+            # Voller System-Scan: Pseudo-Dateisysteme raus - die haben
+            # keine echten Dateien zum Scannen und würden clamscan nur
+            # unnötig lange hängen lassen bzw. mit Permission-Fehlern
+            # volllaufen lassen. --exclude-dir nimmt eine PCRE-Regex
+            # gegen den vollen Pfad. BEWUSST NICHT /run mit ausschließen
+            # (war vorher ein Fehler von mir) - /run/media ist genau da,
+            # wo eingehängte externe Laufwerke/USB-Sticks landen, die
+            # will man bei einem "vollen System-Scan" ja gerade MIT
+            # erfasst haben.
+            cmd.append("--exclude-dir=^/(proc|sys|dev)(/|$)")
+        cmd.append(path)
+        try:
+            proc = subprocess.Popen(
+                cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                text=True, bufsize=1)
+        except Exception as e:
+            msg = str(e)
+            GLib.idle_add(lambda: (on_done([], msg), False)[1])
+            return
+        threats = []
+        output_lines = []
+        for line in proc.stdout:
+            line = line.rstrip("\n")
+            output_lines.append(line)
+            if line:
+                GLib.idle_add(lambda l=line: (on_line(l), False)[1])
+            m = found_re.match(line)
+            if m:
+                threats.append((m.group(1).strip(), m.group(2).strip()))
+        ec = proc.wait()
+        if ec in (0, 1):
+            error = None
+        else:
+            tail = "\n".join(l for l in output_lines if l.strip())[-400:]
+            error = f"exit code {ec}" + (f": {tail}" if tail else "")
+        GLib.idle_add(lambda: (on_done(threats, error), False)[1])
+
+    in_thread(_worker)
+
+# Modul-weiter State (NICHT innerhalb von _clamav_content(), das würde
+# bei jedem Fenster-Neubau verloren gehen) - überlebt bewusst das
+# Schließen/Neu-Öffnen des Security-Widgets: ein einmal gestarteter
+# Scan soll im Hintergrund weiterlaufen, auch wenn niemand gerade
+# hinschaut (README-Feedback: "sollte man das Widget schließen können
+# und es sollte im Hintergrund weiterlaufen"). "listeners" ist ein
+# dict {id(win): (on_line, on_done)} - jedes gerade offene ClamAV-Tab-
+# Fenster trägt sich hier ein/aus (siehe _clamav_content()), damit
+# Live-Updates NUR an tatsächlich noch existierende Fenster gehen,
+# nie an ein inzwischen zerstörtes.
+_clamav_scan_state = {
+    "running": False, "path": None, "last_line": "",
+    "threats": [], "error": None, "listeners": {},
+    # Dauerhafter Klartext-Status (im Gegensatz zu status_lbl/_flash(),
+    # der nach ein paar Sekunden wieder verschwindet) - README-Feedback:
+    # "würd ne permanente Schrift hinpacken, was immer sagt was der
+    # letzte Scan ergeben hat ... damit mans nachlesen kann, wenn man
+    # nicht aufpasst". Bleibt stehen, bis der NÄCHSTE Scan beginnt oder
+    # endet - kein Timer, kein automatisches Verschwinden.
+    "summary": "No scan has been run yet.",
+}
+
+def _clamav_start_scan(path: str) -> bool:
+    """Startet einen neuen Scan, FALLS nicht schon einer läuft (liefert
+    in dem Fall False - der Aufrufer soll dann einfach an den bereits
+    laufenden andocken statt einen zweiten parallel zu starten,
+    _clamav_content() macht das beim Öffnen automatisch über die
+    aktuellen _clamav_scan_state-Werte)."""
+    if _clamav_scan_state["running"]:
+        return False
+    _clamav_scan_state.update(
+        running=True, path=path, last_line="", threats=[], error=None,
+        summary=f"Scan active: {path}")
+
+    def _on_line(line: str):
+        _clamav_scan_state["last_line"] = line
+        for on_line, _on_done in list(_clamav_scan_state["listeners"].values()):
+            try: on_line(line)
+            except Exception: pass
+
+    def _on_done(threats: list, error):
+        when = datetime.now().strftime("%Y-%m-%d %H:%M")
+        if error:
+            summary = f"[{when}] Scan of {path} FAILED: {error[:250]}"
+        elif threats:
+            names = "; ".join(f"{fp} ({sig})" for fp, sig in threats[:5])
+            more = f"  (+{len(threats) - 5} more)" if len(threats) > 5 else ""
+            summary = (f"[{when}] Scan of {path}: {len(threats)} threat(s) "
+                       f"found - {names}{more}")
+        else:
+            summary = f"[{when}] Scan of {path}: no threats found."
+        _clamav_scan_state.update(
+            running=False, threats=threats, error=error, summary=summary)
+        for _on_line, on_done in list(_clamav_scan_state["listeners"].values()):
+            try: on_done(threats, error)
+            except Exception: pass
+
+    _clamav_scan(path, _on_line, _on_done)
+    return True
+
+def _clamav_register_listener(win: Gtk.Window, on_line, on_done) -> None:
+    """Trägt DIESES Fensters Callbacks als Zuhörer für den aktuellen
+    (ggf. schon laufenden) Scan ein und meldet sie automatisch wieder
+    ab, sobald das Fenster zerstört wird - verhindert, dass ein
+    Callback später versucht, ein längst nicht mehr existierendes
+    GTK-Widget zu aktualisieren."""
+    key = id(win)
+    _clamav_scan_state["listeners"][key] = (on_line, on_done)
+    win.connect("destroy", lambda *_a: _clamav_scan_state["listeners"].pop(key, None))
+
+# Gleiches Muster wie _clamav_scan_state, nur fürs Signatur-Update
+# (README-Feedback: "wenn man updated ... und das Widget schließt,
+# bricht's ab - das wäre besser, wenn das auch im Hintergrund rennen
+# würde") - freshclam + clamav-unofficial-sigs laufen zusammen locker
+# mehrere Minuten, das darf nicht an ein offenes Fenster gekoppelt sein.
+_clamav_update_state = {
+    "running": False, "listeners": {},
+    "summary": "No update has been run yet.",
+}
+
+def _clamav_start_update() -> bool:
+    """Startet 'Update now' modul-weit statt an ein Fenster gebunden -
+    läuft weiter, auch wenn das Security-Widget inzwischen zu ist.
+    Liefert False, wenn schon eins läuft (Aufrufer dockt dann einfach
+    an, siehe _sync_update_ui() in _clamav_content())."""
+    if _clamav_update_state["running"]:
+        return False
+    _clamav_update_state.update(running=True, summary="Update active…")
+
+    def _worker():
+        ok, err = _freshclam_update()
+        when = datetime.now().strftime("%Y-%m-%d %H:%M")
+        summary = (f"[{when}] Update failed: {err[:250]}" if not ok else
+                   f"[{when}] Update finished.")
+        def _finish():
+            _clamav_update_state.update(running=False, summary=summary)
+            for on_done in list(_clamav_update_state["listeners"].values()):
+                try: on_done(ok, None if ok else err)
+                except Exception: pass
+        GLib.idle_add(_finish)
+
+    in_thread(_worker)
+    return True
+
+def _clamav_register_update_listener(win: Gtk.Window, on_done) -> None:
+    key = id(win)
+    _clamav_update_state["listeners"][key] = on_done
+    win.connect("destroy", lambda *_a: _clamav_update_state["listeners"].pop(key, None))
+
+_CLAMAV_UNIT_DIR = Path.home() / ".config" / "systemd" / "user"
+_CLAMAV_PATH_UNIT = "wb-clamav-downloads.path"
+_CLAMAV_SERVICE_UNIT = "wb-clamav-downloads.service"
+
+def _clamav_autoscan_enabled() -> bool:
+    out, _err, _ec = run_ec(
+        ["systemctl", "--user", "is-enabled", _CLAMAV_PATH_UNIT], timeout=5)
+    return out.strip() == "enabled"
+
+def _set_clamav_autoscan(enable: bool, watch_dir: str) -> tuple[bool, str]:
+    """Legt bei Aktivierung 2 systemd --user Unit-Dateien an (Path- +
+    Service-Unit unter ~/.config/systemd/user/) und (de)aktiviert sie -
+    KEIN root nötig, --user-Units leben im eigenen Home-Verzeichnis,
+    genau wie jeder andere --user-Dienst.
+
+    VEREINFACHUNG ggü. "echter" Datei-für-Datei-Erkennung (die README
+    nennt genau das selbst als 'more work'): die Path-Unit feuert bei
+    JEDER Änderung im Ordner (neue Datei, gelöschte Datei, Umbenennung,
+    ...) und scannt dann den KOMPLETTEN Ordner neu, nicht nur die eine
+    neue Datei - für einen normal gefüllten Downloads-Ordner in der
+    Praxis unproblematisch, bei einem SEHR vollen Ordner aber spürbar
+    ineffizienter, als ein echter inotify-Watcher pro einzelner neuer
+    Datei es wäre (der bräuchte einen eigenen kleinen Python-Daemon
+    statt nur zweier Unit-Dateien - deutlich mehr Aufwand für einen
+    Nice-to-have)."""
+    if not enable:
+        run_ec(["systemctl", "--user", "disable", "--now", _CLAMAV_PATH_UNIT], timeout=10)
+        return True, ""
+    clamscan_bin = shutil.which("clamscan") or "/usr/bin/clamscan"
+    try:
+        _CLAMAV_UNIT_DIR.mkdir(parents=True, exist_ok=True)
+        (_CLAMAV_UNIT_DIR / _CLAMAV_SERVICE_UNIT).write_text(
+            "[Unit]\n"
+            "Description=ClamAV scan of newly modified files in Downloads\n\n"
+            "[Service]\n"
+            "Type=oneshot\n"
+            f'ExecStart={clamscan_bin} -r --bell -i "{watch_dir}"\n')
+        (_CLAMAV_UNIT_DIR / _CLAMAV_PATH_UNIT).write_text(
+            "[Unit]\n"
+            "Description=Watch Downloads for new files (auto ClamAV scan)\n\n"
+            "[Path]\n"
+            f"PathModified={watch_dir}\n"
+            f"Unit={_CLAMAV_SERVICE_UNIT}\n\n"
+            "[Install]\n"
+            "WantedBy=default.target\n")
+    except Exception as e:
+        return False, str(e)
+    out, err, ec = run_ec(["systemctl", "--user", "daemon-reload"], timeout=10)
+    if ec != 0:
+        return False, err or out
+    out, err, ec = run_ec(
+        ["systemctl", "--user", "enable", "--now", _CLAMAV_PATH_UNIT], timeout=10)
+    if ec != 0:
+        return False, err or out
+    return True, ""
+
+_CLAMAV_QUARANTINE_DIR = Path.home() / ".local" / "share" / "wb-daemon" / "clamav-quarantine"
+# Trennzeichen zwischen Original-Pfad und laufender Nummer im
+# Quarantäne-Dateinamen - ein Zeichen, das in echten Dateipfaden so gut
+# wie nie vorkommt, damit sich der Original-Pfad beim Restore wieder
+# zuverlässig zurückgewinnen lässt (siehe _clamav_quarantine_list()).
+_CLAMAV_Q_SEP = "␟"
+
+def _clamav_quarantine_file(filepath: str) -> tuple[bool, str]:
+    """Verschiebt eine als infiziert gemeldete Datei in einen lokalen
+    Quarantäne-Ordner statt sie sofort zu löschen - der Name kodiert
+    den kompletten Original-Pfad (URL-encoded, damit Slashes nicht mit
+    denen im Quarantäne-Ordner selbst kollidieren), damit "Restore"
+    später weiß, wohin die Datei zurück soll. shutil.move() statt
+    os.rename(), da Original und Quarantäne-Ordner auf unterschiedlichen
+    Dateisystemen/Partitionen liegen könnten (os.rename() scheitert
+    dann mit "Invalid cross-device link", shutil.move() fängt das ab
+    und kopiert+löscht stattdessen)."""
+    import urllib.parse
+    try:
+        _CLAMAV_QUARANTINE_DIR.mkdir(parents=True, exist_ok=True)
+        encoded = urllib.parse.quote(filepath, safe="")
+        dest = _CLAMAV_QUARANTINE_DIR / f"{encoded}{_CLAMAV_Q_SEP}{os.path.basename(filepath)}"
+        shutil.move(filepath, dest)
+    except Exception as e:
+        return False, str(e)
+    return True, ""
+
+def _clamav_quarantine_list() -> list:
+    """Liste aller aktuell in Quarantäne liegenden Dateien:
+    [{"quarantine_path": str, "original_path": str}, ...]."""
+    import urllib.parse
+    out = []
+    if not _CLAMAV_QUARANTINE_DIR.is_dir():
+        return out
+    for p in _CLAMAV_QUARANTINE_DIR.iterdir():
+        if _CLAMAV_Q_SEP not in p.name:
+            continue
+        encoded = p.name.split(_CLAMAV_Q_SEP, 1)[0]
+        try:
+            original = urllib.parse.unquote(encoded)
+        except Exception:
+            original = "?"
+        out.append({"quarantine_path": str(p), "original_path": original})
+    out.sort(key=lambda d: d["original_path"].lower())
+    return out
+
+def _clamav_quarantine_restore(quarantine_path: str, original_path: str) -> tuple[bool, str]:
+    """Verschiebt eine quarantänisierte Datei zurück an ihren
+    ursprünglichen Ort - schlägt bewusst fehl (statt zu überschreiben),
+    falls dort inzwischen schon wieder eine Datei mit demselben Namen
+    liegt, um niemals stillschweigend etwas zu überschreiben."""
+    try:
+        if os.path.exists(original_path):
+            return False, f"A file already exists at {original_path} - move or rename it first."
+        os.makedirs(os.path.dirname(original_path), exist_ok=True)
+        shutil.move(quarantine_path, original_path)
+    except Exception as e:
+        return False, str(e)
+    return True, ""
+
+def _clamav_quarantine_delete(quarantine_path: str) -> tuple[bool, str]:
+    try:
+        os.remove(quarantine_path)
+    except Exception as e:
+        return False, str(e)
+    return True, ""
+
+def _confirm_delete_dialog(parent: Gtk.Window, filepath: str) -> bool:
+    """Bestätigungs-Dialog vorm endgültigen Löschen einer als infiziert
+    gemeldeten Datei - gleiche Begründung wie bei _confirm_kill_dialog:
+    destruktiv, darf nicht an einem einzigen Fehlklick hängen."""
+    d = Gtk.MessageDialog(transient_for=parent, modal=True,
+                           message_type=Gtk.MessageType.WARNING,
+                           buttons=Gtk.ButtonsType.NONE,
+                           text="Delete this file?")
+    d.set_name("wb-daemon-popup")
+    d.set_keep_above(True)
+    d.format_secondary_text(filepath)
+    d.add_buttons("Cancel", Gtk.ResponseType.CANCEL,
+                  "Delete", Gtk.ResponseType.OK)
+    resp = d.run()
+    d.destroy()
+    return resp == Gtk.ResponseType.OK
+
+def _clamav_content(win: Gtk.Window) -> Gtk.Box:
+    """ClamAV-Tab im Security-Widget - letztes von der README
+    geforderte Sub-Panel. Kein Lazy-Loading nötig: der Status-Abruf
+    (Datei-mtime + sigtool) und der Auto-Scan-Toggle (systemctl --user)
+    brauchen beide KEIN root - nur "Update now" (freshclam) und
+    tatsächliches Scannen lösen ggf. einen pkexec-Dialog bzw. echte
+    Scan-Arbeit aus, und das jeweils erst auf Knopfdruck, nie beim
+    bloßen Öffnen des Tabs."""
+    root = vbox(4); pad(root, h=4, v=6)
+    root.pack_start(btitle("🛡️  ClamAV"), False, False, 0)
+    root.pack_start(sep(), False, False, 2)
+
+    if not _clamav_available():
+        root.pack_start(bitem("clamscan is not installed", dim=True), False, False, 0)
+        return root
+
+    status_lbl = Gtk.Label(label="")
+    status_lbl.get_style_context().add_class("caption")
+    status_lbl.set_opacity(0.75)
+    status_lbl.set_line_wrap(True)
+    status_lbl.set_no_show_all(True)
+    status_lbl.hide()
+
+    def _flash(text: str, ms: int = 3500):
+        status_lbl.set_label(text)
+        status_lbl.show()
+        GLib.timeout_add(ms, lambda: (status_lbl.hide(), False)[1])
+
+    # 4 Sub-Tabs statt 4 mit Trennstrichen getrennter Abschnitte
+    # (README-Feedback: "unter ClamAV 4 Tabs ... dann brauchts auch
+    # keine Trennstriche mehr") - Database/Scan/Auto-scan/Quarantine.
+    stack = Gtk.Stack()
+    stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
+    stack.set_transition_duration(200)
+    stack.set_hhomogeneous(False)
+    stack.set_vhomogeneous(False)
+
+    t_db   = vbox(4)
+    t_scan = vbox(4)
+    t_auto = vbox(4)
+    t_quar = vbox(4)
+
+    # ── TAB: Database ─────────────────────────────────────────────
+    db_lbl = Gtk.Label(label="Checking…")
+    db_lbl.get_style_context().add_class("caption")
+    db_lbl.set_halign(Gtk.Align.CENTER)
+    db_lbl.set_justify(Gtk.Justification.CENTER)
+    db_lbl.set_line_wrap(True)
+    t_db.pack_start(db_lbl, False, False, 0)
+
+    update_btn = btn("Update now")
+    update_btn.set_halign(Gtk.Align.CENTER)
+    update_btn.set_tooltip_text(
+        "Runs freshclam, plus clamav-unofficial-sigs if installed "
+        "(community signature sources).")
+    t_db.pack_start(update_btn, False, False, 0)
+
+    # Dauerhafte Zusammenfassung, übersteht Schließen/Wiederöffnen -
+    # gleiches Prinzip wie scan_summary_lbl weiter unten.
+    update_summary_lbl = Gtk.Label(label=_clamav_update_state["summary"])
+    update_summary_lbl.get_style_context().add_class("caption")
+    update_summary_lbl.set_opacity(0.8)
+    update_summary_lbl.set_line_wrap(True)
+    update_summary_lbl.set_halign(Gtk.Align.CENTER)
+    update_summary_lbl.set_justify(Gtk.Justification.CENTER)
+    t_db.pack_start(update_summary_lbl, False, False, 0)
+
+    def _refresh_db_status():
+        def _work():
+            info = _clamav_db_status()
+            def _apply():
+                when = (info["last_update"].strftime("%Y-%m-%d %H:%M")
+                        if info["last_update"] else "unknown")
+                sigs = f'{info["sig_count"]:,}' if info["sig_count"] else "unknown"
+                db_lbl.set_label(f"Last updated: {when}  ·  Signatures: {sigs}")
+            GLib.idle_add(_apply)
+        in_thread(_work)
+
+    def _on_update_done(ok: bool, err):
+        update_btn.set_sensitive(True)
+        update_btn.set_label("Update now")
+        update_summary_lbl.set_label(_clamav_update_state["summary"])
+        if ok:
+            _flash("Update finished.", ms=3500)
+            _refresh_db_status()
+        else:
+            _flash(f"Error: {err}", ms=8000)
+
+    # BUGFIX (README-Feedback: "wenn man updated ... und das Widget
+    # schließt, bricht's ab"): lief bisher über apply_change() direkt
+    # in DIESEM Fenster - freshclam+unofficial-sigs zusammen können
+    # locker mehrere Minuten brauchen, ein geschlossenes Fenster hätte
+    # den Hintergrund-Thread zwar technisch weiterlaufen lassen, aber
+    # dessen Callback hätte versucht, längst zerstörte Widgets (diesen
+    # Button, dieses Label) zu aktualisieren. Läuft jetzt über den
+    # MODUL-WEITEN _clamav_update_state (identisches Muster wie beim
+    # Scan) - übersteht ein Schließen des Widgets tatsächlich.
+    _clamav_register_update_listener(win, _on_update_done)
+
+    def _on_update(_w):
+        if _clamav_update_state["running"]:
+            return
+        update_btn.set_sensitive(False)
+        update_btn.set_label("Updating…")
+        update_summary_lbl.set_label(_clamav_update_state["summary"])
+        _clamav_start_update()
+    update_btn.connect("clicked", _on_update)
+
+    def _sync_update_ui():
+        update_summary_lbl.set_label(_clamav_update_state["summary"])
+        if _clamav_update_state["running"]:
+            update_btn.set_sensitive(False)
+            update_btn.set_label("Updating…")
+    _sync_update_ui()
+
+
+
+    # ── TAB: Scan ─────────────────────────────────────────────────
+    default_dir = str(Path.home() / "Downloads")
+    scan_state = {"path": default_dir}
+
+    path_row = hbox(6)
+    path_row.set_halign(Gtk.Align.CENTER)
+    path_lbl = Gtk.Label(label=default_dir)
+    path_lbl.get_style_context().add_class("caption")
+    path_lbl.set_ellipsize(Pango.EllipsizeMode.START)
+    browse_btn = Gtk.Button(label="󰉖")
+    browse_btn.set_relief(Gtk.ReliefStyle.NONE)
+    browse_btn.get_style_context().add_class("flat")
+    browse_btn.set_tooltip_text("Choose folder")
+    browse_file_btn = Gtk.Button(label="󰈔")
+    browse_file_btn.set_relief(Gtk.ReliefStyle.NONE)
+    browse_file_btn.get_style_context().add_class("flat")
+    browse_file_btn.set_tooltip_text("Choose a single file")
+    path_row.pack_start(path_lbl, False, False, 0)
+    path_row.pack_start(browse_file_btn, False, False, 0)
+    path_row.pack_start(browse_btn, False, False, 0)
+    t_scan.pack_start(path_row, False, False, 0)
+
+    def _on_browse(_w):
+        dlg = Gtk.FileChooserDialog(
+            title="Choose folder to scan", transient_for=win,
+            action=Gtk.FileChooserAction.SELECT_FOLDER)
+        dlg.add_buttons(Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
+                        "Select", Gtk.ResponseType.OK)
+        if os.path.isdir(scan_state["path"]):
+            dlg.set_current_folder(scan_state["path"])
+        resp = dlg.run()
+        new_path = dlg.get_filename()
+        dlg.destroy()
+        if resp == Gtk.ResponseType.OK and new_path:
+            scan_state["path"] = new_path
+            path_lbl.set_label(new_path)
+    browse_btn.connect("clicked", _on_browse)
+
+    def _on_browse_file(_w):
+        # Einzelne Datei scannen (wie ein einzelner VirusTotal-Upload) -
+        # clamscan nimmt genauso gut eine einzelne Datei als Argument
+        # wie einen Ordner, "-r" ist für eine einzelne Datei einfach
+        # ein wirkungsloses No-Op-Flag, kein Sonderfall in
+        # _clamav_scan() nötig.
+        dlg = Gtk.FileChooserDialog(
+            title="Choose a file to scan", transient_for=win,
+            action=Gtk.FileChooserAction.OPEN)
+        dlg.add_buttons(Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
+                        "Select", Gtk.ResponseType.OK)
+        start_dir = (scan_state["path"] if os.path.isdir(scan_state["path"])
+                     else str(Path.home() / "Downloads"))
+        dlg.set_current_folder(start_dir)
+        resp = dlg.run()
+        new_path = dlg.get_filename()
+        dlg.destroy()
+        if resp == Gtk.ResponseType.OK and new_path:
+            scan_state["path"] = new_path
+            path_lbl.set_label(new_path)
+    browse_file_btn.connect("clicked", _on_browse_file)
+
+    # Presets - beantwortet u.a. "kann man das auch wie einen kompletten
+    # System-Scanner nutzen": ja, jeder beliebige Ordner geht über
+    # "Choose folder", "/" (voller System-Scan) ist hier als Kurzwahl
+    # mit dabei (automatischer Ausschluss von /proc,/sys,/dev,/run,
+    # siehe _clamav_scan()) - ein voller Scan dauert je nach
+    # Datenmenge aber ordentlich, ist also bewusst NICHT der Default.
+    preset_row = hbox(6)
+    preset_row.set_halign(Gtk.Align.CENTER)
+    for plabel, ppath in (("Downloads", str(Path.home() / "Downloads")),
+                         ("Home", str(Path.home())),
+                         ("Full System (/)", "/")):
+        pb = btn(plabel)
+        def _on_preset(_w, p=ppath):
+            scan_state["path"] = p
+            path_lbl.set_label(p)
+        pb.connect("clicked", _on_preset)
+        preset_row.pack_start(pb, False, False, 0)
+    t_scan.pack_start(preset_row, False, False, 0)
+
+    scan_btn = btn("Start scan")
+    scan_btn.set_halign(Gtk.Align.CENTER)
+    t_scan.pack_start(scan_btn, False, False, 0)
+
+    progress = Gtk.ProgressBar()
+    progress.set_halign(Gtk.Align.CENTER)
+    progress.set_size_request(220, -1)
+    progress.set_no_show_all(True)
+    progress.hide()
+    t_scan.pack_start(progress, False, False, 0)
+
+    scan_log_lbl = Gtk.Label(label="")
+    scan_log_lbl.get_style_context().add_class("caption")
+    scan_log_lbl.set_opacity(0.55)
+    scan_log_lbl.set_ellipsize(Pango.EllipsizeMode.START)
+    scan_log_lbl.set_halign(Gtk.Align.CENTER)
+    scan_log_lbl.set_no_show_all(True)
+    scan_log_lbl.hide()
+    t_scan.pack_start(scan_log_lbl, False, False, 0)
+
+    # Dauerhafte Klartext-Zusammenfassung - bleibt IMMER sichtbar (kein
+    # _flash()-Timer), zeigt "Scan active: <pfad>" während des Scans und
+    # danach das Ergebnis inkl. eventueller Fehler, bis der nächste Scan
+    # das überschreibt. Genau dafür da, dass man z.B. nach einem vollen
+    # System-Scan später nachlesen kann, was passiert ist, ohne
+    # daneben gesessen zu haben.
+    scan_summary_lbl = Gtk.Label(label=_clamav_scan_state["summary"])
+    scan_summary_lbl.get_style_context().add_class("caption")
+    scan_summary_lbl.set_opacity(0.8)
+    scan_summary_lbl.set_line_wrap(True)
+    scan_summary_lbl.set_halign(Gtk.Align.CENTER)
+    scan_summary_lbl.set_justify(Gtk.Justification.CENTER)
+    t_scan.pack_start(scan_summary_lbl, False, False, 0)
+
+    results_box = vbox(3)
+    t_scan.pack_start(results_box, False, False, 0)
+
+    _scan_state = {"running": False}
+
+    def _pulse():
+        if not _scan_state["running"]:
+            return False
+        progress.pulse()
+        return True
+
+    def _rebuild_results(threats: list):
+        for c in results_box.get_children():
+            results_box.remove(c)
+        if not threats:
+            GLib.idle_add(_shrink_to_fit, win)
+            return
+        results_box.pack_start(bsec("THREATS FOUND"), False, False, 0)
+        for filepath, sig in threats:
+            row = vbox(4)
+            row.get_style_context().add_class("bubble")
+            pad(row, h=8, v=6)
+            lbl = Gtk.Label(label=f"{filepath}\n{sig}")
+            lbl.set_halign(Gtk.Align.START)
+            lbl.set_line_wrap(True)
+            row.pack_start(lbl, False, False, 0)
+            btn_row = hbox(6)
+            # "Quarantine" statt "Delete": verschiebt die Datei nur in
+            # einen lokalen Ordner (siehe QUARANTINE-Sektion weiter
+            # unten), NICHT sofort weg - ein falsch-positiver Fund oder
+            # ein Fehlklick ist damit über "Restore" wieder rückgängig
+            # zu machen, ein direktes os.remove() wäre das nicht.
+            quarantine_btn = btn("Quarantine")
+            ignore_btn = btn("Ignore")
+            btn_row.pack_start(quarantine_btn, False, False, 0)
+            btn_row.pack_start(ignore_btn, False, False, 0)
+            row.pack_start(btn_row, False, False, 0)
+            results_box.pack_start(row, False, False, 0)
+
+            def _forget_threat(fp=filepath, sig=sig):
+                # Muss den GLOBALEN State mitpflegen, nicht nur die
+                # lokale UI - sonst würde ein schon ignorierter/
+                # quarantänisierter Fund beim nächsten Öffnen des
+                # Widgets über _sync_scan_ui() wieder auftauchen, weil
+                # _clamav_scan_state["threats"] noch den alten,
+                # vollständigen Stand hätte.
+                _clamav_scan_state["threats"] = [
+                    t for t in _clamav_scan_state["threats"] if t != (fp, sig)]
+
+            def _on_ignore(_w, r=row):
+                _forget_threat()
+                results_box.remove(r)
+                GLib.idle_add(_shrink_to_fit, win)
+            def _on_quarantine(_w, r=row, fp=filepath):
+                def _apply():
+                    ok, err = _clamav_quarantine_file(fp)
+                    if not ok:
+                        raise RuntimeError(err)
+                apply_change(f"Quarantine {fp}", _apply, on_status=_flash)
+                def _finish():
+                    _forget_threat()
+                    if r.get_parent() is not None:
+                        results_box.remove(r)
+                    _refresh_quarantine()
+                    GLib.idle_add(_shrink_to_fit, win)
+                GLib.timeout_add(400, lambda: (_finish(), False)[1])
+            ignore_btn.connect("clicked", _on_ignore)
+            quarantine_btn.connect("clicked", _on_quarantine)
+        results_box.show_all()
+        GLib.idle_add(_shrink_to_fit, win)
+
+    def _on_scan_line(line: str):
+        scan_log_lbl.set_label(line[-90:])
+        scan_log_lbl.show()
+
+    def _on_scan_done(threats: list, error):
+        _scan_state["running"] = False
+        progress.hide()
+        scan_log_lbl.hide()
+        scan_btn.set_sensitive(True)
+        scan_btn.set_label("Start scan")
+        scan_summary_lbl.set_label(_clamav_scan_state["summary"])
+        if error:
+            _flash(f"Scan error: {error}", ms=9000)
+        elif not threats:
+            _flash("Scan complete - no threats found.")
+        else:
+            _flash(f"Scan complete - {len(threats)} threat(s) found.", ms=6000)
+        _rebuild_results(threats)
+
+    # Bei DIESEM Fenster als Zuhörer eintragen, BEVOR irgendwas
+    # gestartet wird - falls schon ein Scan aus einer früheren, seitdem
+    # geschlossenen Öffnung des Widgets läuft, bekommt dieses Fenster
+    # dessen Live-Updates dann automatisch mit.
+    _clamav_register_listener(win, _on_scan_line, _on_scan_done)
+
+    def _sync_scan_ui():
+        """Direkt beim Bauen des Tabs mit dem AKTUELLEN globalen Scan-
+        Status abgleichen (siehe README-Feedback: Scan soll weiterlaufen
+        UND sichtbar bleiben, auch wenn das Widget zwischendurch zu
+        war) - deckt 3 Fälle ab: 1) läuft gerade (auch wenn VOR diesem
+        Fenster gestartet) -> sofort "Scanning…" zeigen; 2) ist fertig,
+        während das Fenster zu war -> Ergebnisse sofort zeigen, keine
+        Wartezeit; 3) nichts los -> normaler Ausgangszustand, nichts zu
+        tun. scan_summary_lbl wird IMMER auf den aktuellen globalen
+        Text gesetzt, unabhängig vom Fall."""
+        scan_summary_lbl.set_label(_clamav_scan_state["summary"])
+        if _clamav_scan_state["running"]:
+            _scan_state["running"] = True
+            scan_btn.set_sensitive(False)
+            scan_btn.set_label("Scanning…")
+            progress.set_fraction(0)
+            progress.show()
+            GLib.timeout_add(120, _pulse)
+            if _clamav_scan_state["path"]:
+                scan_state["path"] = _clamav_scan_state["path"]
+                path_lbl.set_label(_clamav_scan_state["path"])
+            if _clamav_scan_state["last_line"]:
+                _on_scan_line(_clamav_scan_state["last_line"])
+        elif _clamav_scan_state["threats"] or _clamav_scan_state["error"]:
+            _rebuild_results(_clamav_scan_state["threats"])
+
+    def _on_scan(_w):
+        if _scan_state["running"] or _clamav_scan_state["running"]:
+            return
+        path = scan_state["path"]
+        if not (os.path.isdir(path) or os.path.isfile(path)):
+            _flash(f"'{path}' does not exist.", ms=4000)
+            return
+        _scan_state["running"] = True
+        scan_btn.set_sensitive(False)
+        scan_btn.set_label("Scanning…")
+        progress.set_fraction(0)
+        progress.show()
+        # Unbestimmter Fortschritt: clamscan gibt (mit -i) vor dem
+        # Abschluss keine verlässliche "X von Y Dateien"-Info her, ohne
+        # vorher selbst den ganzen Baum durchzuzählen - ein pulsierender
+        # Balken ist hier ehrlicher als eine erfundene Prozentzahl.
+        GLib.timeout_add(120, _pulse)
+        # _clamav_start_scan() statt direkt _clamav_scan(): läuft über
+        # den MODUL-WEITEN State, überlebt also ein Schließen dieses
+        # Fensters (siehe _clamav_scan_state weiter oben) - die
+        # eigentliche Warnung "läuft schon" wird oben schon per return
+        # abgefangen, das False hier kann höchstens durch eine Race
+        # Condition zwischen zwei Fenstern gleichzeitig auftreten.
+        _clamav_start_scan(path)
+        scan_summary_lbl.set_label(_clamav_scan_state["summary"])
+    scan_btn.connect("clicked", _on_scan)
+
+    _sync_scan_ui()
+
+    # ── TAB: Auto-scan ────────────────────────────────────────────
+    autoscan_row = hbox(8)
+    autoscan_row.set_halign(Gtk.Align.CENTER)
+    autoscan_lbl = Gtk.Label(label="Auto-scan Downloads:")
+    autoscan_lbl.get_style_context().add_class("caption")
+    autoscan_toggle = btn("…")
+    autoscan_row.pack_start(autoscan_lbl, False, False, 0)
+    autoscan_row.pack_start(autoscan_toggle, False, False, 0)
+    t_auto.pack_start(autoscan_row, False, False, 0)
+
+    autoscan_note = Gtk.Label(
+        label="Re-scans ~/Downloads on any change (not per-file).")
+    autoscan_note.get_style_context().add_class("caption")
+    autoscan_note.set_opacity(0.5)
+    autoscan_note.set_line_wrap(True)
+    autoscan_note.set_halign(Gtk.Align.CENTER)
+    autoscan_note.set_justify(Gtk.Justification.CENTER)
+    t_auto.pack_start(autoscan_note, False, False, 0)
+
+    def _refresh_autoscan():
+        def _work():
+            enabled = _clamav_autoscan_enabled()
+            def _apply():
+                autoscan_toggle.set_label("🟢  On" if enabled else "⚪  Off")
+                ctx = autoscan_toggle.get_style_context()
+                if enabled: ctx.add_class("active")
+                else:       ctx.remove_class("active")
+            GLib.idle_add(_apply)
+        in_thread(_work)
+
+    def _on_autoscan_toggle(_w):
+        new_val = not _clamav_autoscan_enabled()
+        def _apply():
+            ok, err = _set_clamav_autoscan(new_val, str(Path.home() / "Downloads"))
+            if not ok:
+                raise RuntimeError(err)
+        apply_change(f"Auto-scan Downloads: {'On' if new_val else 'Off'}",
+                     _apply, on_status=_flash, reset_fn=_refresh_autoscan)
+        GLib.timeout_add(500, lambda: (_refresh_autoscan(), False)[1])
+    autoscan_toggle.connect("clicked", _on_autoscan_toggle)
+
+    # ── TAB: Quarantine ───────────────────────────────────────────
+    quarantine_box = vbox(3)
+    t_quar.pack_start(quarantine_box, False, False, 0)
+
+    def _refresh_quarantine():
+        def _work():
+            items = _clamav_quarantine_list()
+            def _apply():
+                for c in quarantine_box.get_children():
+                    quarantine_box.remove(c)
+                if not items:
+                    quarantine_box.pack_start(
+                        bitem("Nothing in quarantine", dim=True), False, False, 0)
+                for item in items:
+                    row = vbox(2)
+                    row.get_style_context().add_class("bubble")
+                    pad(row, h=8, v=6)
+                    lbl = Gtk.Label(label=item["original_path"])
+                    lbl.set_halign(Gtk.Align.CENTER)
+                    lbl.set_justify(Gtk.Justification.CENTER)
+                    lbl.set_line_wrap(True)
+                    row.pack_start(lbl, False, False, 0)
+                    btn_row = hbox(6)
+                    btn_row.set_halign(Gtk.Align.CENTER)
+                    restore_btn = btn("Restore")
+                    delete_btn = btn("Delete permanently")
+                    btn_row.pack_start(restore_btn, False, False, 0)
+                    btn_row.pack_start(delete_btn, False, False, 0)
+                    row.pack_start(btn_row, False, False, 0)
+                    quarantine_box.pack_start(row, False, False, 0)
+
+                    def _on_restore(_w, qp=item["quarantine_path"],
+                                     op=item["original_path"]):
+                        def _apply2():
+                            ok, err = _clamav_quarantine_restore(qp, op)
+                            if not ok:
+                                raise RuntimeError(err)
+                        apply_change(f"Restore {op}", _apply2, on_status=_flash)
+                        GLib.timeout_add(400, lambda: (_refresh_quarantine(), False)[1])
+                    def _on_delete_perm(_w, qp=item["quarantine_path"],
+                                         op=item["original_path"]):
+                        if not _confirm_delete_dialog(win, op):
+                            return
+                        def _apply2():
+                            ok, err = _clamav_quarantine_delete(qp)
+                            if not ok:
+                                raise RuntimeError(err)
+                        apply_change(f"Delete {op}", _apply2, on_status=_flash)
+                        GLib.timeout_add(400, lambda: (_refresh_quarantine(), False)[1])
+                    restore_btn.connect("clicked", _on_restore)
+                    delete_btn.connect("clicked", _on_delete_perm)
+                quarantine_box.show_all()
+                GLib.idle_add(_shrink_to_fit, win)
+            GLib.idle_add(_apply)
+        in_thread(_work)
+
+    # ── 4 Tabs zusammensetzen ─────────────────────────────────────
+    stack.add_named(t_db, "database")
+    stack.add_named(t_scan, "scan")
+    stack.add_named(t_auto, "autoscan")
+    stack.add_named(t_quar, "quarantine")
+
+    tab_row = hbox(6)
+    tab_row.set_halign(Gtk.Align.CENTER)
+    tab_btns: dict = {}
+    def _switch_clamav_tab(name):
+        _switch_stack(stack, win, name)
+        for n, b in tab_btns.items():
+            ctx = b.get_style_context()
+            if n == name: ctx.add_class("active")
+            else:         ctx.remove_class("active")
+    for tname, tlabel in (("database", "Database"), ("scan", "Scan"),
+                          ("autoscan", "Auto-scan"), ("quarantine", "Quarantine")):
+        tb = btn(tlabel, active=(tname == "database"))
+        tb.connect("clicked", lambda _b, n=tname: _switch_clamav_tab(n))
+        tab_btns[tname] = tb
+        tab_row.pack_start(tb, False, False, 0)
+    stack.set_visible_child_name("database")
+
+    root.pack_start(tab_row, True, False, 2)
+    root.pack_start(tab_sep(), False, False, 0)
+    root.pack_start(stack, False, False, 0)
+    root.pack_start(status_lbl, False, False, 4)
+
+    _refresh_db_status()
+    _refresh_autoscan()
+    _refresh_quarantine()
+
+    return root
+
+def _security_content(win: Gtk.Window) -> Gtk.Box:
+    """Tab-Hülle fürs Security-Widget - alle 5 README-Sub-Panels: 
+    "Privacy" (Kill-Switches) + "DNS" (Server-Auswahl + Enforce-DoT +
+    Guest-WiFi) + "Tailscale" + "Firewall" (UFW) + "ClamAV" (Signatur-
+    Update, On-Demand-Scan, Auto-Scan-Toggle), als Gtk.Stack wie bei
+    Volume/Battery/Appearance.
+
+    UFW-Tab ist LAZY (wie der Processes-Tab beim Battery-Widget) -
+    NICHT weil er einen eigenen Poll-Timer bräuchte (hat er nicht,
+    siehe _ufw_content()-Docstring), sondern weil sein allererster
+    Status-Abruf selbst schon einen Polkit-Passwort-Dialog auslösen
+    kann (ufw braucht für praktisch alles Root) - der soll nicht
+    einfach beim Öffnen des Widgets ungefragt aufpoppen, nur weil der
+    Privacy-Tab (der KEINE Root-Rechte braucht) initial sichtbar ist.
+    ClamAV braucht dasselbe NICHT (Status-Lesen + Auto-Scan-Toggle sind
+    root-frei, siehe _clamav_content()-Docstring), ist also wie DNS/
+    Tailscale eager gebaut."""
+    stack = Gtk.Stack()
+    stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
+    stack.set_transition_duration(200)
+    stack.set_hhomogeneous(False)
+    stack.set_vhomogeneous(False)
+    stack.add_named(_privacy_content(win), "privacy")
+    stack.add_named(_dns_content(win), "dns")
+    stack.add_named(_tailscale_content(win), "tailscale")
+    stack.add_named(_clamav_content(win), "clamav")
+
+    ufw_built = [False]
+
+    def _ensure_ufw_tab():
+        if ufw_built[0]:
+            return
+        ufw_built[0] = True
+        # Gleicher Grund wie beim Processes-Tab: add_timer() (falls ein
+        # künftiger UFW-Refresh mal einen Timer braucht) registriert
+        # nur gegen _current_win[0].
+        _current_win[0] = win
+        try:
+            stack.add_named(_ufw_content(win), "ufw")
+        finally:
+            _current_win[0] = None
+        stack.show_all()
+
+    # 2 Zeilen statt 1 lange (README-Feedback: "die ersten 2 Tabs über
+    # den anderen 3, damit Platz gespart wird") - eine durchgehend lange
+    # Tab-Reihe mit 5 Einträgen hätte entweder das Fenster unnötig
+    # breit gemacht oder wäre auf schmaleren Bildschirmen umgebrochen.
+    tab_row_top = hbox(6)
+    tab_row_top.set_halign(Gtk.Align.CENTER)
+    tab_row_bottom = hbox(6)
+    tab_row_bottom.set_halign(Gtk.Align.CENTER)
+    tab_btns: dict = {}
+    def _switch(name):
+        if name == "ufw":
+            _ensure_ufw_tab()
+        _switch_stack(stack, win, name)
+        for n, b in tab_btns.items():
+            ctx = b.get_style_context()
+            if n == name: ctx.add_class("active")
+            else:         ctx.remove_class("active")
+    for name, tlabel, target_row in (
+            ("privacy", "󰦝  Privacy", tab_row_top),
+            ("dns", "󰙲  DNS", tab_row_top),
+            ("tailscale", "󰖂  Tailscale", tab_row_bottom),
+            ("ufw", "󰈸  Firewall", tab_row_bottom),
+            ("clamav", "🛡️  ClamAV", tab_row_bottom)):
+        b = btn(tlabel, active=(name == "privacy"))
+        b.connect("clicked", lambda _b, n=name: _switch(n))
+        tab_btns[name] = b
+        target_row.pack_start(b, False, False, 0)
+    stack.set_visible_child_name("privacy")
+
+    outer = vbox(4); safe_pad_edge(outer, 380, top=False, bottom=True)
+    outer.pack_start(tab_row_top, True, False, 2)
+    outer.pack_start(tab_row_bottom, True, False, 0)
+    outer.pack_start(tab_sep(), False, False, 0)
+    outer.pack_start(stack, False, False, 0)
+    return outer
+
+def build_security(win: Gtk.Window):
+    win.set_default_size(380, 1)
+    win.add(_security_content(win))
+
+def _build_settings_security(page: Gtk.Box, key: str, label: str, win: Gtk.Window) -> None:
+    page.pack_start(_security_content(win), True, True, 0)
+
 SETTINGS_BUILDERS = {
     "display":    _build_settings_display,
     "brightness": _build_settings_brightness,
@@ -5958,6 +10875,7 @@ SETTINGS_BUILDERS = {
     "battery":    _build_settings_battery,
     "calendar":   _build_settings_calendar,
     "appearance": _build_settings_appearance,
+    "security":   _build_settings_security,
 }
 
 def build_settings(win: Gtk.Window):
@@ -5991,7 +10909,12 @@ def build_settings(win: Gtk.Window):
             page = vbox(4); safe_pad_edge(page, 420, top=True, bottom=False)
             if cat_key not in _reused_widget_categories:
                 page.pack_start(btitle(f"{icon}  {cat_label}"), False, False, 0)
-                page.pack_start(sep(), False, False, 2)
+                # Redesign-Liste: "Unter Display eine fette Linie
+                # anstatt einer dünnen" - NUR für die Display-Seite,
+                # alle anderen Kategorien behalten den normalen
+                # dünnen sep().
+                page.pack_start(hub_sep() if cat_key in ("display", "security") else sep(),
+                                 False, False, 2)
             # WICHTIG: _current_win muss HIER, unmittelbar um den
             # Builder-Aufruf, gesetzt sein - nicht nur beim initialen
             # build_settings(win) in toggle_widget(). Diese Seiten
@@ -6022,7 +10945,7 @@ def build_settings(win: Gtk.Window):
     hub_title = btitle("󰒓  Settings")
     hub_title.get_style_context().add_class("compact-title")
     hub.pack_start(hub_title, False, False, 0)
-    hub.pack_start(sep(), False, False, 0)
+    hub.pack_start(hub_sep(), False, False, 0)
 
     # Dynamische Sortierung: Kategorien mit einem Widget, das gerade
     # in der Waybar (modules-left/-center/-right) auftaucht, landen im
@@ -6062,6 +10985,14 @@ def build_settings(win: Gtk.Window):
     hub_tab_btns: dict = {}
     def _switch_hub_tab(name):
         hub_stack.set_visible_child_name(name)
+        # War hier bisher NICHT dabei (anders als bei jedem anderen
+        # Tab-Wechsel im ganzen Daemon, siehe _switch_stack()) - genau
+        # das war der gemeldete Bug: von "Other" auf "In Waybar"
+        # wechseln (oder umgekehrt) hat das Fenster nie wieder auf die
+        # für den jetzt sichtbaren Tab tatsächlich nötige Höhe
+        # zurückschrumpfen lassen, es blieb auf der Höhe des zuletzt
+        # besuchten (evtl. größeren) Tabs stehen.
+        GLib.idle_add(_shrink_to_fit, win)
         for n, b in hub_tab_btns.items():
             ctx = b.get_style_context()
             if n == name: ctx.add_class("active")
@@ -6102,6 +11033,7 @@ BUILDERS = {
     "akku":       build_akku,
     "clock":      build_clock,
     "settings":   build_settings,
+    "security":   build_security,
 }
 
 # ════════════════════════════════════════════════════════════
