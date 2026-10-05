@@ -1,5 +1,5 @@
 ───────────────────────
-LICENSE v4 | 07.06.2026
+LICENSE v5 | 05.10.2026
 ───────────────────────
 
 Copyright © 2026 TrafkHop Entertainment™ <contact.trafkhop@proton.me>
@@ -30,13 +30,33 @@ equivalent provisions under Austrian or EU law.
 
 To request explicit written permission for any use not covered by this
 license, contact TrafkHop Entertainment™ at: contact.trafkhop@proton.me
-Permission may be granted via confirmed email reply from TrafkHop
-Entertainment™. Confirmations via social media platforms (such as comments,
-direct messages, or posts on YouTube, Twitter/X, Discord, or similar) do
-NOT constitute valid written permission, regardless of content.
 
-Previous versions of this license are archived at:
-https://trafkhop-entertainment.github.io/TrafkSite/SourceHop-Notes/assets/Sourcehop-Documents.html
+Written permission is granted EXCLUSIVELY in the form of a custom, individ-
+ually tailored PDF Approval Document, issued per party and per project.
+This document is cryptographically signed with the personal GPG key of
+Daniel Raberger, Owner of TrafkHop Entertainment™, and is delivered
+directly to the authorized party via TrafkHop Entertainment™'s official
+contact email above.
+
+This signed PDF Approval Document is the ONLY valid form of written
+permission under this license. No other form of communication —
+including but not limited to plain (unsigned) email replies, verbal
+agreements, or any comments, direct messages, or posts on social media
+platforms (such as YouTube, Twitter/X, Discord, or similar) — constitutes
+valid written permission, regardless of content.
+
+Both the authorized party and TrafkHop Entertainment™ must retain their
+respective copy of the signed Approval Document for the full duration of
+the granted permission. This retained, signed copy is the sole proof of
+authorization and may be requested as evidence of permission at any time.
+
+The authenticity of any Approval Document can be verified against Daniel
+Raberger's GPG key:
+
+  GPG key fingerprint: [35A1 4104 CDF1 1BA0 5656  8120 6979 BC4D 23F6 0269]
+  Public key available at: [https://github.com/TrafkHop-Entertainment/SourceHop-Documents/blob/main/DanielRabergerPublicKey.asc]
+
+Previous versions of this license are archived at: [https://github.com/TrafkHop-Entertainment/SourceHop-Documents/tree/main/Licenses]
 
 ─────────────────────
 0. THIRD-PARTY MATERIAL
@@ -104,7 +124,7 @@ Entertainment™.
 
 You MAY:
 
-* compile the code for personal, non-distributed use, IF the code and assets are given by TrafkHop with PERMISSION
+* compile the code for personal, non-distributed use, IF the code and assets are given by TrafkHop with PERMISSION or are publicly available and discintly marked as downloadable/compilable.
 * view and reference the code for educational purposes, IF the code is publicly viewable
 
 ─────────────────────────────────────────────
