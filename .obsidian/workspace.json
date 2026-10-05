@@ -187,10 +187,12 @@
   },
   "active": "0dee9cc8a2a9674a",
   "lastOpenFiles": [
+    "README_OLDER.md",
+    "READMEOLD.md",
+    "README.md",
+    "archiso/airootfs/etc/pamac.conf",
     "arbeitssachen grad/Settings.md",
     "arbeitssachen grad/habmalnefrage.de widgets.txt",
-    "README_OLDER.md",
-    "README.md",
     "arbeitssachen grad/boot turboprinz.de.txt",
     "arbeitssachen grad/TrafkTuxLauncher Mailueberfall.de.txt",
     "archiso/airootfs/etc/skel/Vorlagen/MD.md"

@@ -86,6 +86,7 @@ ufw
 keyd
 libpwquality
 clamav
+pam-u2f
 
 # --- Dateisystem / Datenträger ---
 ntfs-3g
