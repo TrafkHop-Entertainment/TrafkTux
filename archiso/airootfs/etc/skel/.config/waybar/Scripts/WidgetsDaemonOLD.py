@@ -7,14 +7,14 @@ Widgets: volume | network | bluetooth | brightness | akku | clock | settings | s
 """
 
 import gi, sys, os, re, signal, subprocess, json, threading, time, calendar, shutil, traceback
-import random, math, glob, stat
+import random, math, glob, stat, tempfile
 from datetime import datetime, date
 from pathlib import Path
 
 gi.require_version("Gtk", "3.0")
 gi.require_version("Gdk", "3.0")
 gi.require_version("GdkPixbuf", "2.0")
-from gi.repository import Gtk, Gdk, GLib, Pango, GdkPixbuf, Gio
+from gi.repository import Gtk, Gdk, GLib, Pango, GdkPixbuf, Gio, GObject
 
 try:
     gi.require_version("GtkLayerShell", "0.1")
@@ -923,86 +923,12 @@ def _make_particles(n: int = _PARTICLE_N) -> list:
         })
     return parts
 
-def _draw_window(win: Gtk.Window, ctx) -> bool:
-    """Ein einziger Draw-Handler pro Fenster: die große Blase (manuell
-    per Cairo/GdkPixbuf gemalt, siehe _paint_bubble_bg) + die Scale/
-    Bounce-Animation beim Öffnen/Schließen + die frei fliegenden
-    Gold-Pünktchen.
-
-    ANIMATION: reines Skalieren + Verschieben, verankert an der
-    Fensterecke, an der das Fenster auch per GtkLayerShell hängt
-    (unten rechts) - der Inhalt wächst von winzig auf Endgröße, MIT
-    Überschwingen/Bounce (siehe _ease_out_elastic: schießt kurz über
-    100% hinaus und pendelt sich dann ein), statt einer separaten
-    Opacity-Überblendung ("kein einfaches Einblenden") - Sichtbarkeit
-    kommt allein aus der Größe, nicht aus Alpha. Schließen ist exakt
-    dieselbe Animation, nur mit rückwärts laufendem Fortschritt
-    (state["closing_since"] gesetzt -> p_pop zählt von 1.0 auf 0.0
-    statt von 0.0 auf 1.0) - identische Dauer (_POPUP_MS), identische
-    Easing-Funktion, wirklich nur zeitlich umgekehrt abgespielt.
-
-    WICHTIG zum Rendern: läuft NICHT über win.set_opacity() (das hat
-    sich als unzuverlässig auf GtkLayerShell-Overlay-Surfaces
-    herausgestellt - manche Wayland-Compositor ziehen Live-Änderungen
-    der Fenster-Opacity nicht sauber nach, das Fenster blieb dann
-    komplett unsichtbar). Stattdessen wird ALLES (Hintergrund-Blase +
-    Pünktchen + die eigentlichen Kind-Widgets) manuell in eine
-    transformierte Cairo-Gruppe gemalt (push_group/translate/scale/
-    propagate_draw/pop_group_to_source) - reines Cairo-Compositing,
-    hängt an gar nichts Wayland/Compositor-Spezifischem und
-    funktioniert daher überall gleich zuverlässig."""
-    state = _anim.get(win)
-    now = time.time()
-    alloc = win.get_allocation()
-    w, h = max(alloc.width, 1), max(alloc.height, 1)
-
-    if state is None:
-        # Kein Cairo-Zustand (z.B. HAS_CAIRO=False) - einfach normal
-        # zeichnen lassen, ohne jeden Effekt. Overlay (TrafkBubble1.png)
-        # bewusst NICHT hier mit gemalt: dieser Zweig gibt False zurück
-        # und lässt GTKs eigenen Default-Handler die Kinder NACH diesem
-        # Aufruf zeichnen - ein hier gemaltes Overlay würde also unter
-        # den Kindern landen statt darüber. Reiner Degraded-Fallback für
-        # den seltenen Fall ohne Cairo, daher nicht weiter optimiert.
-        ctx.set_source_rgba(0, 0, 0, 0)
-        ctx.paint()
-        _paint_bubble_bg(ctx, w, h)
-        return False
-
-    closing_since = state.get("closing_since")
-    if closing_since is not None:
-        t_close = (now - closing_since) / (_POPUP_MS / 1000.0)
-        p_pop = 1.0 - _ease_out_elastic(min(1.0, t_close))
-    else:
-        t_pop = (now - state["popup_start"]) / (_POPUP_MS / 1000.0)
-        p_pop = _ease_out_elastic(t_pop)
-
-    scale = max(0.0, p_pop)
-    # Statt einer künstlichen Mindestgröße (die den Rest der
-    # Schließen-Animation als ein stehenbleibendes kleines Pünktchen
-    # hätte "einfrieren" lassen, bis der Cleanup-Timer das Fenster
-    # irgendwann zerstört) hier bewusst GAR NICHTS mehr zeichnen, sobald
-    # die Blase praktisch unsichtbar ist - sowohl ganz am Anfang des
-    # Öffnens als auch ganz am Ende des Schließens. ctx.scale() mit
-    # einem Wert nahe 0 würde außerdem eine (fast) singuläre Matrix
-    # ergeben, was bei manchen Cairo-Operationen (z.B. Radial-Gradienten
-    # der Pünktchen weiter unten) zu Fehlern führen kann - dieses
-    # frühzeitige Return umgeht das gleich mit.
-    if scale < 0.02:
-        ctx.set_source_rgba(0, 0, 0, 0)
-        ctx.paint()
-        return True
-    tx = w * (1 - scale)
-    ty = h * (1 - scale)
-
-    ctx.push_group()
-    ctx.translate(tx, ty)
-    ctx.scale(scale, scale)
-
-    ctx.set_source_rgba(0, 0, 0, 0)
-    ctx.paint()
-    _paint_bubble_bg(ctx, w, h)
-
+def _draw_particles(ctx, state: dict, w: int, h: int, now: float) -> None:
+    """Physik-Update + Zeichnen der frei fliegenden Gold-Pünktchen.
+    Ausgelagert aus _draw_window(), damit der Ruhezustand-Pfad (siehe
+    dort, Analyse Punkt 6a) und der Animations-Pfad exakt denselben
+    Code nutzen - identische Gradienten/Größe/Geschwindigkeit/
+    Bewegungsmuster in beiden Fällen, keinerlei optische Änderung."""
     r_gold, g_gold, b_gold = _GOLD_RGB
     # Pünktchen bleiben innerhalb desselben Sicherheitsbereichs wie der
     # Content (nicht im vollen Fensterrechteck) - sonst fliegen sie
@@ -1058,6 +984,151 @@ def _draw_window(win: Gtk.Window, ctx) -> bool:
         ctx.set_source_rgba(r_gold, g_gold, b_gold, core_alpha)
         ctx.fill()
         ctx.restore()
+
+def _draw_window(win: Gtk.Window, ctx) -> bool:
+    """Ein einziger Draw-Handler pro Fenster: die große Blase (manuell
+    per Cairo/GdkPixbuf gemalt, siehe _paint_bubble_bg) + die Scale/
+    Bounce-Animation beim Öffnen/Schließen + die frei fliegenden
+    Gold-Pünktchen.
+
+    ANIMATION: reines Skalieren + Verschieben, verankert an der
+    Fensterecke, an der das Fenster auch per GtkLayerShell hängt
+    (unten rechts) - der Inhalt wächst von winzig auf Endgröße, MIT
+    Überschwingen/Bounce (siehe _ease_out_elastic: schießt kurz über
+    100% hinaus und pendelt sich dann ein), statt einer separaten
+    Opacity-Überblendung ("kein einfaches Einblenden") - Sichtbarkeit
+    kommt allein aus der Größe, nicht aus Alpha. Schließen ist exakt
+    dieselbe Animation, nur mit rückwärts laufendem Fortschritt
+    (state["closing_since"] gesetzt -> p_pop zählt von 1.0 auf 0.0
+    statt von 0.0 auf 1.0) - identische Dauer (_POPUP_MS), identische
+    Easing-Funktion, wirklich nur zeitlich umgekehrt abgespielt.
+
+    WICHTIG zum Rendern: läuft NICHT über win.set_opacity() (das hat
+    sich als unzuverlässig auf GtkLayerShell-Overlay-Surfaces
+    herausgestellt - manche Wayland-Compositor ziehen Live-Änderungen
+    der Fenster-Opacity nicht sauber nach, das Fenster blieb dann
+    komplett unsichtbar). Stattdessen wird ALLES (Hintergrund-Blase +
+    Pünktchen + die eigentlichen Kind-Widgets) manuell in eine
+    transformierte Cairo-Gruppe gemalt (push_group/translate/scale/
+    propagate_draw/pop_group_to_source) - reines Cairo-Compositing,
+    hängt an gar nichts Wayland/Compositor-Spezifischem und
+    funktioniert daher überall gleich zuverlässig."""
+    state = _anim.get(win)
+    now = time.time()
+    alloc = win.get_allocation()
+    w, h = max(alloc.width, 1), max(alloc.height, 1)
+
+    if state is None:
+        # Kein Cairo-Zustand (z.B. HAS_CAIRO=False) - einfach normal
+        # zeichnen lassen, ohne jeden Effekt. Overlay (TrafkBubble1.png)
+        # bewusst NICHT hier mit gemalt: dieser Zweig gibt False zurück
+        # und lässt GTKs eigenen Default-Handler die Kinder NACH diesem
+        # Aufruf zeichnen - ein hier gemaltes Overlay würde also unter
+        # den Kindern landen statt darüber. Reiner Degraded-Fallback für
+        # den seltenen Fall ohne Cairo, daher nicht weiter optimiert.
+        ctx.set_source_rgba(0, 0, 0, 0)
+        ctx.paint()
+        _paint_bubble_bg(ctx, w, h)
+        return False
+
+    closing_since = state.get("closing_since")
+    if closing_since is not None:
+        t_close = (now - closing_since) / (_POPUP_MS / 1000.0)
+        p_pop = 1.0 - _ease_out_elastic(min(1.0, t_close))
+        # BUGFIX (vom Nutzer gemeldet: "Fenster taucht beim Schließen
+        # nochmal kurz auf"): hier IMMER True, auch sobald t_close >= 1.
+        # Grund: der "Ruhezustand"-Schnellpfad weiter unten (if not
+        # animating: ...) kennt KEIN scale/tx/ty - er zeichnet immer
+        # die VOLLE, unskalierte Blase. Wenn man ihn hier (fälschlich,
+        # mein Fehler) auch nach Ende der Schließen-Animation
+        # anspringen lässt, blitzt für einen Frame nochmal die komplette
+        # Blase in voller Größe auf, bevor der Cleanup-Timer das Fenster
+        # zerstört. Richtig ist: der Schließen-Pfad bleibt IMMER im
+        # skalierten (animating) Zweig - der behandelt das Ende über
+        # "scale < 0.02 -> nichts zeichnen" bereits korrekt.
+        animating = True
+    else:
+        t_pop = (now - state["popup_start"]) / (_POPUP_MS / 1000.0)
+        p_pop = _ease_out_elastic(t_pop)
+        # _ease_out_elastic() klemmt t intern auf [0,1] -> sobald
+        # t_pop >= 1 ist p_pop dauerhaft exakt 1.0 (kein Nachschwingen
+        # mehr danach). Für t_pop < 1 läuft noch die eigentliche
+        # Bounce-Animation (inkl. kurzem Überschwingen über 1.0). Der
+        # Ruhezustand-Schnellpfad (siehe oben) ist NUR hier zulässig,
+        # weil scale in diesem Zweig nach Ende der Animation garantiert
+        # 1.0 ist (nicht 0.0 wie beim Schließen) - voll ausgewachsene,
+        # unskalierte Blase IST hier der korrekte Dauerzustand.
+        animating = t_pop < 1.0
+
+    scale = max(0.0, p_pop)
+
+    # FIX (Analyse Punkt 6a - Performance ohne jede optische
+    # Änderung): im eingeschwungenen Ruhezustand (nicht am Öffnen/
+    # Schließen gerade beteiligt) ist scale hier IMMER exakt 1.0,
+    # tx/ty wären also 0 - push_group()/translate(0,0)/scale(1,1)/
+    # pop_group_to_source() ist in diesem Fall eine reine
+    # Identitätstransformation, die visuell exakt dasselbe Ergebnis
+    # liefert wie direktes Zeichnen in ctx, aber JEDEN der alle 33ms
+    # laufenden Frames (siehe _amb_tid in make_win()) eine komplette
+    # Offscreen-Surface anlegt und kompositiert, obendrein inklusive
+    # eines manuellen zweiten propagate_draw() des kompletten
+    # Kind-Baums. Hintergrund, Pünktchen (exakt dieselbe
+    # _draw_particles()-Funktion, identische Gradienten/Größe/
+    # Geschwindigkeit) und Overlay werden hier direkt in ctx gemalt,
+    # die Kind-Widgets überlässt GTK seiner eigenen, ohnehin
+    # effizienteren Draw-Pipeline (return False).
+    if not animating:
+        ctx.set_source_rgba(0, 0, 0, 0)
+        ctx.paint()
+        _paint_bubble_bg(ctx, w, h)
+        _draw_particles(ctx, state, w, h, now)
+        # WICHTIG (Reihenfolge): TrafkBubble1.png muss weiterhin ÜBER
+        # den Kind-Widgets liegen (siehe _paint_bubble_overlay()-
+        # Docstring) - dafür hier wie im Animations-Pfad die Kinder
+        # selbst per propagate_draw() VOR dem Overlay zeichnen, statt
+        # einfach False zurückzugeben (das würde GTKs Default-Handler
+        # die Kinder erst NACH diesem Aufruf malen lassen, also unter
+        # dem Overlay - sichtbarer Unterschied zum bisherigen
+        # Verhalten). push_group()/pop_group_to_source() ist dafür
+        # nicht nötig: ohne Skalierung/Verschiebung (scale ist hier
+        # ohnehin 1.0) reicht direktes Malen in ctx, um dasselbe
+        # Schichtbild zu erzeugen, nur ohne die teure Offscreen-Surface.
+        child = win.get_child()
+        if child is not None:
+            win.propagate_draw(child, ctx)
+        _paint_bubble_overlay(ctx, w, h)
+        return True
+
+    # Statt einer künstlichen Mindestgröße (die den Rest der
+    # Schließen-Animation als ein stehenbleibendes kleines Pünktchen
+    # hätte "einfrieren" lassen, bis der Cleanup-Timer das Fenster
+    # irgendwann zerstört) hier bewusst GAR NICHTS mehr zeichnen, sobald
+    # die Blase praktisch unsichtbar ist - sowohl ganz am Anfang des
+    # Öffnens als auch ganz am Ende des Schließens. ctx.scale() mit
+    # einem Wert nahe 0 würde außerdem eine (fast) singuläre Matrix
+    # ergeben, was bei manchen Cairo-Operationen (z.B. Radial-Gradienten
+    # der Pünktchen weiter unten) zu Fehlern führen kann - dieses
+    # frühzeitige Return umgeht das gleich mit.
+    if scale < 0.02:
+        ctx.set_source_rgba(0, 0, 0, 0)
+        ctx.paint()
+        return True
+    tx = w * (1 - scale)
+    ty = h * (1 - scale)
+
+    # Nur während der ~_POPUP_MS Popup-/Close-Animation der bisherige,
+    # teurere Pfad über eine transformierte Offscreen-Gruppe - hier
+    # IST die Transformation sichtbar (scale != 1.0), push_group() also
+    # tatsächlich nötig, um Hintergrund + Pünktchen + Kind-Widgets
+    # gemeinsam zu skalieren/verschieben.
+    ctx.push_group()
+    ctx.translate(tx, ty)
+    ctx.scale(scale, scale)
+
+    ctx.set_source_rgba(0, 0, 0, 0)
+    ctx.paint()
+    _paint_bubble_bg(ctx, w, h)
+    _draw_particles(ctx, state, w, h, now)
 
     # Die eigentlichen Kind-Widgets (Buttons, Labels, ...) manuell mit
     # in dieselbe transformierte Gruppe zeichnen, damit sie exakt
@@ -4522,10 +4593,49 @@ def _processes_content(win: Gtk.Window) -> Gtk.Box:
         row.pack_start(kill_b, False, False, 0)
         return row, lbl, stat_lbl
 
+    _warmed_up = [False]
+
     def _fetch() -> dict:
         import psutil
         seen_pids = set()
         data = {}
+
+        # FIX (Analyse Punkt 5 - Processes-Tab zeigt beim Öffnen immer
+        # 0.0%): psutil.Process.cpu_percent(interval=None) liefert beim
+        # ALLERERSTEN Aufruf für ein Process-Objekt laut Dokumentation
+        # IMMER 0.0 zurück, egal wie lange der Prozess davor schon
+        # lief - es braucht zwingend einen ZWEITEN Aufruf mit etwas
+        # Zeitabstand dazwischen. Ein früherer Versuch, das über einen
+        # separaten Vorwärm-Hintergrund-Thread + GLib.timeout_add zu
+        # lösen, hat nicht zuverlässig funktioniert - vermutlich weil
+        # in_thread()/ThreadPoolExecutor Exceptions aus einem
+        # submit()-ten Callable komplett lautlos verschluckt (niemand
+        # ruft .result() auf das Future ab), ein Fehler darin also ganz
+        # ohne jede sichtbare Fehlermeldung einfach nichts getan hätte.
+        # Jetzt stattdessen denkbar einfach UND robust: genau EINMAL,
+        # synchron, direkt hier im ohnehin schon per in_thread()
+        # laufenden Hintergrund-Thread (siehe _refresh() unten) - erst
+        # für ALLE Prozesse den Referenzpunkt setzen, kurz blockierend
+        # warten (blockiert NUR diesen Hintergrund-Thread, nicht die
+        # UI), DANACH erst die eigentliche Messung. Kein zweiter Thread,
+        # kein Timer, keine Race Condition, keine Stelle, an der ein
+        # Fehler die ganze Vorwärm-Logik unbemerkt stilllegen könnte.
+        if not _warmed_up[0]:
+            _warmed_up[0] = True
+            for p in psutil.process_iter(["pid"]):
+                pid = p.info["pid"]
+                if pid == 0:
+                    continue
+                _proc_cache[pid] = p
+                try:
+                    p.cpu_percent(interval=None)  # nur Referenzpunkt setzen
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
+            # 350ms: genug Zeitfenster für eine brauchbare erste
+            # CPU%-Messung, kurz genug, dass die Verzögerung beim allerersten
+            # Öffnen des Tabs kaum auffällt (siehe Analyse, 300-500ms).
+            time.sleep(0.35)
+
         for p in psutil.process_iter(["pid", "name"]):
             pid = p.info["pid"]
             if pid == 0:
@@ -4646,6 +4756,11 @@ def _processes_content(win: Gtk.Window) -> Gtk.Box:
         in_thread(_work)
         return True
 
+    # Wieder das ursprüngliche, simple Muster (Timer für die
+    # Folge-Ticks + ein sofortiger erster Aufruf) - das eigentliche
+    # Warm-up (siehe _fetch()-Docstring oben) passiert jetzt INNERHALB
+    # dieses ersten Aufrufs selbst, transparent für den Rest des Codes
+    # hier.
     add_timer(2000, _refresh)
     _refresh()
     return root
@@ -5796,6 +5911,24 @@ def _clock_content(win: Gtk.Window) -> Gtk.Box:
             cal_grid.pack_start(week_row, False, False, 0)
         cal_grid.show_all()
 
+        # BUGFIX ("Blase viel zu groß für den Inhalt" beim
+        # Kalender-Widget): calendar.monthcalendar() liefert je nach
+        # Monat 4, 5 oder 6 Wochen-Zeilen zurück - das Grid wird hier
+        # bei jeder Navigation (_nav_prev/_nav_next) komplett neu
+        # gebaut und kann dadurch von einem Monat zum nächsten
+        # SCHRUMPFEN (z.B. von einem 6-Wochen- auf einen 4-Wochen-
+        # Monat). GTK-Fenster werden aber nie von selbst wieder
+        # kleiner (siehe _shrink_to_fit()-Docstring) - ohne diesen
+        # Aufruf hier blieb das Fenster/die Blase bei der Größe des
+        # größten bisher gezeigten Monats hängen, während der Grid-
+        # Inhalt selbst schon kleiner war. _switch_stack() (Tab-
+        # Wechsel) hatte diesen Aufruf schon immer, _build_grid()
+        # (Monats-Wechsel INNERHALB des Calendar-Tabs) bisher nicht -
+        # derselbe Bug-Mechanismus kann grundsätzlich überall auftreten,
+        # wo Inhalt nachträglich schrumpft, ohne dass ein Tab-Wechsel
+        # (und damit _switch_stack()) im Spiel ist.
+        GLib.idle_add(_shrink_to_fit, win)
+
         if not khal_ok:
             return
 
@@ -5957,6 +6090,71 @@ def atomic_write_text(path: Path, text: str) -> None:
     tmp = path.with_name(path.name + f".tmp{os.getpid()}")
     tmp.write_text(text)
     os.replace(tmp, path)
+
+# ── TrafkTuxLauncher Settings.json (neuer "Launcher"-Tab, Appearance) ──
+def _launcher_settings_path() -> Path:
+    return Path(HOME) / ".config" / "TrafkTuxLauncher" / "Settings.json"
+
+_LAUNCHER_SPEED_PRESETS = ("Normal", "Fast", "Turbo")
+
+def _read_launcher_settings() -> dict:
+    """Liest TrafkTuxLauncher/Settings.json, exakt nach der in
+    Settings.md dokumentierten Logik: Datei fehlt -> Defaults, Schlüssel
+    fehlt/Wert ungültig -> Default für GENAU diesen Wert (nicht die
+    ganze Datei), kaputtes JSON -> Defaults + Warnung auf stderr (der
+    Launcher selbst verhält sich laut Settings.md identisch - diese UI
+    soll bei einer von Hand editierten, kaputten Datei also nicht
+    einfach crashen, sondern genau wie der Launcher selbst reagieren).
+    Gibt IMMER ein Dict mit "Style" (str) und "Speed" (str) zurück -
+    bei Speed bleibt eine Zahl als String erhalten (z.B. "1.5"), damit
+    die aufrufende UI selbst entscheiden kann, ob sie das als Preset
+    oder als Custom-Zahl anzeigt."""
+    p = _launcher_settings_path()
+    style, speed = "Classic", "Normal"
+    if p.is_file():
+        try:
+            data = json.loads(p.read_text())
+        except Exception as e:
+            print(f"[Launcher-Settings] {p}: invalid JSON, using defaults ({e})",
+                  file=sys.stderr)
+            data = {}
+        anim = data.get("Animation", {}) if isinstance(data, dict) else {}
+        if isinstance(anim, dict):
+            s = anim.get("Style")
+            if isinstance(s, str) and s.strip().lower() in ("classic", "radial"):
+                style = s.strip()
+            sp = anim.get("Speed")
+            _preset_match = None
+            if isinstance(sp, str):
+                _preset_match = next(
+                    (preset for preset in _LAUNCHER_SPEED_PRESETS
+                     if preset.lower() == sp.strip().lower()), None)
+            if _preset_match is not None:
+                speed = _preset_match  # auf kanonische Schreibweise normalisiert
+            elif isinstance(sp, (int, float)):
+                speed = f"{max(0.25, min(8.0, float(sp)))}"
+            elif isinstance(sp, str):
+                try:
+                    speed = f"{max(0.25, min(8.0, float(sp)))}"
+                except ValueError:
+                    pass  # ungültiger Text -> Default "Normal" bleibt stehen
+    return {"Style": style, "Speed": speed}
+
+def _write_launcher_settings(style: str = None, speed: str = None) -> None:
+    """Schreibt Settings.json atomar (siehe atomic_write_text()). Nur
+    der jeweils übergebene Wert wird geändert, der andere bleibt
+    unangetastet (vorher aus der bestehenden Datei gelesen) - ein Klick
+    auf "Radial" soll die Speed-Einstellung nicht anfassen und
+    umgekehrt. Das Verzeichnis wird bei Bedarf angelegt, da die Datei
+    laut Settings.md optional ist und beim allerersten Ändern über
+    diese UI noch gar nicht existieren muss."""
+    cur = _read_launcher_settings()
+    new_style = style if style is not None else cur["Style"]
+    new_speed = speed if speed is not None else cur["Speed"]
+    p = _launcher_settings_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    payload = {"Animation": {"Style": new_style, "Speed": new_speed}}
+    atomic_write_text(p, json.dumps(payload, indent=2) + "\n")
 
 def apply_change(desc: str, apply_fn, on_status=None, reset_fn=None) -> None:
     """Ersetzt das frühere Stage/Apply/Discard-System (PendingChange +
@@ -6210,9 +6408,10 @@ def _build_settings_appearance(page: Gtk.Box, key: str, label: str, win: Gtk.Win
     stack.set_hhomogeneous(False)
     stack.set_vhomogeneous(False)
 
-    t_sound = vbox(4)
-    t_look  = vbox(4)
-    t_lang  = vbox(4)
+    t_sound    = vbox(4)
+    t_look     = vbox(4)
+    t_lang     = vbox(4)
+    t_launcher = vbox(4)
 
     # Gemeinsame Statuszeile für alle Einstellungen dieser Seite (über
     # alle 3 Tabs hinweg EINE einzige, unterhalb des Stacks, damit sie
@@ -6583,14 +6782,133 @@ def _build_settings_appearance(page: Gtk.Box, key: str, label: str, win: Gtk.Win
     # nötig) und dadurch auch unabhängig testbar ist.
     t_wall = _build_appearance_wallpapers_tab(win)
 
-    # ══════════════════════ Tabs zusammensetzen ══════════════════════
-    stack.add_named(t_sound, "sound")
-    stack.add_named(t_look,  "look")
-    stack.add_named(t_lang,  "language")
-    stack.add_named(t_wall,  "wallpapers")
+    # ══════════════════════════ TAB: LAUNCHER ═════════════════════════
+    # Neuer Tab für ~/.config/TrafkTuxLauncher/Settings.json (siehe
+    # Settings.md/.json) - Animation.Style (Classic/Radial) +
+    # Animation.Speed (Normal/Fast/Turbo oder eine eigene Zahl
+    # 0.25-8). Die Datei wird bei JEDEM Öffnen des Launchers neu
+    # gelesen (laut Settings.md), eine Änderung hier braucht also
+    # keinen Neustart/Reload-Befehl - anders als z.B. die Cursor-
+    # Effekte oben, die extra den Tooltip mit dem hyprctl-reload-
+    # Hinweis brauchen.
+    _launcher_cur = _read_launcher_settings()
 
-    tab_row = hbox(6)
-    tab_row.set_halign(Gtk.Align.CENTER)
+    style_row = hbox(10)
+    style_row.set_halign(Gtk.Align.CENTER)
+    style_btns: dict = {}
+
+    def _refresh_style_btns(active_style: str):
+        for n, b in style_btns.items():
+            ctx = b.get_style_context()
+            if n.lower() == active_style.lower(): ctx.add_class("active")
+            else:                                  ctx.remove_class("active")
+
+    def _on_style_click(_w, _name):
+        def _apply():
+            _write_launcher_settings(style=_name)
+        _refresh_style_btns(_name)  # sofortiges visuelles Feedback
+        apply_change(f"Launcher animation style: {_name}", _apply,
+                     on_status=_flash_appearance_status,
+                     reset_fn=lambda: _refresh_style_btns(_read_launcher_settings()["Style"]))
+
+    for name in ("Classic", "Radial"):
+        b = btn(name)
+        b.connect("clicked", lambda _b, n=name: _on_style_click(_b, n))
+        style_btns[name] = b
+        style_row.pack_start(b, False, False, 0)
+    _refresh_style_btns(_launcher_cur["Style"])
+    style_row.set_tooltip_text(
+        "Classic: reading order (top-left → bottom-right). "
+        "Radial: spreads out from the selected bubble.")
+    t_launcher.pack_start(bsec("Animation Style"), False, False, 0)
+    t_launcher.pack_start(style_row, False, False, 0)
+
+    speed_row = hbox(10)
+    speed_row.set_halign(Gtk.Align.CENTER)
+    speed_btns: dict = {}
+
+    def _cur_speed_is_preset(speed_str: str) -> bool:
+        return speed_str in _LAUNCHER_SPEED_PRESETS
+
+    def _refresh_speed_btns(speed_str: str):
+        is_preset = _cur_speed_is_preset(speed_str)
+        for n, b in speed_btns.items():
+            ctx = b.get_style_context()
+            active = (n == speed_str) if n != "Custom…" else not is_preset
+            if active: ctx.add_class("active")
+            else:      ctx.remove_class("active")
+        speed_btns["Custom…"].set_label(
+            "Custom…" if is_preset else f"Custom… ({speed_str}×)")
+
+    def _on_speed_preset_click(_w, _name):
+        def _apply():
+            _write_launcher_settings(speed=_name)
+        _refresh_speed_btns(_name)
+        apply_change(f"Launcher animation speed: {_name}", _apply,
+                     on_status=_flash_appearance_status,
+                     reset_fn=lambda: _refresh_speed_btns(_read_launcher_settings()["Speed"]))
+
+    def _on_speed_custom_click(_w):
+        cur = _read_launcher_settings()["Speed"]
+        initial = cur if not _cur_speed_is_preset(cur) else ""
+        val = _prompt_text_generic(
+            win, "Custom Animation Speed",
+            "Factor, e.g. 1.5 (clamped to 0.25–8)", initial=initial)
+        if val is None:
+            return
+        try:
+            factor = float(val.replace(",", "."))
+        except ValueError:
+            _flash_appearance_status(f"⚠ '{val}' is not a number.")
+            return
+        factor = max(0.25, min(8.0, factor))
+        speed_str = f"{factor}"
+        def _apply():
+            _write_launcher_settings(speed=speed_str)
+        _refresh_speed_btns(speed_str)
+        apply_change(f"Launcher animation speed: {speed_str}×", _apply,
+                     on_status=_flash_appearance_status,
+                     reset_fn=lambda: _refresh_speed_btns(_read_launcher_settings()["Speed"]))
+
+    for name in _LAUNCHER_SPEED_PRESETS:
+        b = btn(name)
+        b.connect("clicked", lambda _b, n=name: _on_speed_preset_click(_b, n))
+        speed_btns[name] = b
+        speed_row.pack_start(b, False, False, 0)
+    custom_b = btn("Custom…")
+    custom_b.connect("clicked", _on_speed_custom_click)
+    speed_btns["Custom…"] = custom_b
+    speed_row.pack_start(custom_b, False, False, 0)
+    _refresh_speed_btns(_launcher_cur["Speed"])
+    speed_row.set_tooltip_text(
+        "Scales the duration of all bubble animations. Normal=1×, "
+        "Fast=2×, Turbo=3×, or pick your own factor (0.25–8).")
+    t_launcher.pack_start(bsec("Animation Speed"), False, False, 0)
+    t_launcher.pack_start(speed_row, False, False, 0)
+
+    if not _launcher_settings_path().parent.is_dir():
+        hint = Gtk.Label(
+            label="No TrafkTuxLauncher config found yet — it will be "
+                  "created on your first change here.")
+        hint.set_line_wrap(True)
+        hint.set_opacity(0.65)
+        hint.get_style_context().add_class("caption")
+        t_launcher.pack_start(hint, False, False, 4)
+
+    # ══════════════════════ Tabs zusammensetzen ══════════════════════
+    stack.add_named(t_sound,    "sound")
+    stack.add_named(t_look,     "look")
+    stack.add_named(t_lang,     "language")
+    stack.add_named(t_wall,     "wallpapers")
+    stack.add_named(t_launcher, "launcher")
+
+    # 2 Zeilen statt 1 lange, gleiches Muster wie beim Security-Widget
+    # (siehe dort) - 5 Tabs in einer Reihe wären entweder zu breit oder
+    # würden auf schmaleren Bildschirmen umbrechen.
+    tab_row_top = hbox(6)
+    tab_row_top.set_halign(Gtk.Align.CENTER)
+    tab_row_bottom = hbox(6)
+    tab_row_bottom.set_halign(Gtk.Align.CENTER)
     tab_btns: dict = {}
     def _switch(name):
         _switch_stack(stack, win, name)
@@ -6598,16 +6916,20 @@ def _build_settings_appearance(page: Gtk.Box, key: str, label: str, win: Gtk.Win
             ctx = b.get_style_context()
             if n == name: ctx.add_class("active")
             else:         ctx.remove_class("active")
-    for name, tlabel in (("sound", "🔊  Sound"), ("look", "🎨  Look"),
-                          ("language", "🌐  Language"),
-                          ("wallpapers", "🖼  Wallpapers")):
+    for name, tlabel, target_row in (
+            ("sound", "🔊  Sound", tab_row_top),
+            ("look", "🎨  Look", tab_row_top),
+            ("language", "🌐  Language", tab_row_top),
+            ("wallpapers", "🖼  Wallpapers", tab_row_bottom),
+            ("launcher", "🚀  Launcher", tab_row_bottom)):
         b = btn(tlabel, active=(name == "sound"))
         b.connect("clicked", lambda _b, n=name: _switch(n))
         tab_btns[name] = b
-        tab_row.pack_start(b, False, False, 0)
+        target_row.pack_start(b, False, False, 0)
     stack.set_visible_child_name("sound")
 
-    page.pack_start(tab_row, True, False, 2)
+    page.pack_start(tab_row_top, True, False, 2)
+    page.pack_start(tab_row_bottom, True, False, 0)
     page.pack_start(tab_sep(), False, False, 0)
     page.pack_start(stack, False, False, 0)
     page.pack_start(appearance_status_lbl, False, False, 6)
@@ -7010,12 +7332,23 @@ def _hypr_monitors_live() -> list:
     return jrun(["hyprctl", "monitors", "-j"]) or []
 
 def _parse_modes(modes: list) -> dict:
+    """FIX (Zusatzblock, Punkt c): Hz-Werte jetzt immer als float
+    normalisiert und einheitlich mit zwei Dezimalstellen zurückgegeben
+    (z.B. sowohl "165Hz" als auch "165.00Hz" werden zu "165.00"). Vorher
+    behielt hz.rstrip("Hz") den Rohtext bei - meldete Hyprland einen
+    Modus ohne Dezimalstellen ("...@165Hz"), während cur_hz (siehe
+    _fill_hz()-Aufrufstelle) als "165.00" gebildet wurde, stimmten die
+    Strings nicht überein, die Vorauswahl schlug fehl und _fill_hz()
+    fiel auf set_active(0) zurück - bei absteigend sortierter Liste
+    also den HÖCHSTEN verfügbaren Wert statt des tatsächlich aktiven."""
     out: dict = {}
     for m in modes:
         try:
             res, hz = m.split("@")
-            out.setdefault(res, []).append(hz.rstrip("Hz"))
-        except ValueError:
+            hz_clean = hz.rstrip("Hz").strip()
+            hz_val = float(hz_clean)
+            out.setdefault(res, []).append(f"{hz_val:.2f}")
+        except (ValueError, IndexError):
             continue
     return out
 
@@ -7052,7 +7385,20 @@ def _edid_extra_modes(name: str) -> dict:
     if not edid_f or not shutil.which("edid-decode"):
         return {}
     out, _err, ec = run_ec(["edid-decode", str(edid_f)], timeout=5)
-    if ec != 0 or not out:
+    # FIX (vermutlich DER Hauptgrund, warum Hz>120 trotz der obigen
+    # Regex-Fixes nie ankamen): edid-decodes Exit-Code spiegelt NICHT
+    # "Parsen erfolgreich ja/nein" wider, sondern die Anzahl/Schwere
+    # gefundener EDID-KONFORMITÄTS-Probleme (Warnings/Failures laut
+    # eigener Doku) - und so gut wie jedes reale Monitor-EDID hat
+    # IRGENDEINE kleine Nichtkonformität (Hersteller nehmen es mit dem
+    # Standard oft nicht genau). "if ec != 0: return {}" hat also
+    # praktisch IMMER den kompletten, vollständig und korrekt auf
+    # stdout stehenden Output verworfen - die Regex-Fixes weiter unten
+    # kamen dadurch nie zum Einsatz, selbst wenn das Monitor-EDID
+    # bereits 144/165Hz-Timings sauber enthielt. Jetzt wird NUR NOCH
+    # geprüft, ob überhaupt Output da ist - der Exit-Code selbst ist
+    # für unseren reinen Lese-/Grep-Zweck irrelevant.
+    if not out:
         return {}
     # Ein generelles Muster deckt ALLE Timing-Listen-Abschnitte ab
     # (Established Timings, Standard Timings, CTA Video Data Block
@@ -7061,11 +7407,26 @@ def _edid_extra_modes(name: str) -> dict:
     # "WIDTHxHEIGHT   FLOAT Hz", nur mit unterschiedlichen Zeilen-
     # Präfixen (IBM/DMT/GTF/Apple/VIC/DTD). Verifiziert gegen echten
     # edid-decode-Output eines realen Monitors (siehe Kommentar oben).
+    #
+    # FIX (Zusatzblock, Punkt b): die Regex war zu eng gefasst - sie
+    # verlangte zwingend Whitespace zwischen "WIDTHxHEIGHT" und dem
+    # Hz-Wert sowie 1-9999 Pixel ohne Breiten-Begrenzung. edid-decode
+    # gibt Timings aber auch als "1920x1080@165Hz" (ohne Leerzeichen,
+    # mit "@") aus, und reine Ziffernfolgen ohne Breitenbegrenzung
+    # können versehentlich auf Timing-fremden Text matchen. Jetzt:
+    # Auflösungswerte auf plausible 3-5-stellige Pixelzahlen begrenzt
+    # und ein optionales "@" (mit optionalem Whitespace drumherum)
+    # zwischen Auflösung und Hz-Zahl zugelassen - deckt sowohl
+    # "1920x1080  165.00 Hz" als auch "1920x1080@165Hz" ab.
     extra: dict = {}
-    for m in re.finditer(r'(\d+)x(\d+)\s+([\d.]+)\s*Hz', out):
+    for m in re.finditer(r'(\d{3,5})x(\d{3,5})\s*(?:@\s*)?([\d.]+)\s*Hz', out):
         w, h, hz = m.group(1), m.group(2), m.group(3)
         res = f"{w}x{h}"
-        hz_str = f"{float(hz):.2f}"
+        try:
+            hz_val = float(hz)
+        except ValueError:
+            continue
+        hz_str = f"{hz_val:.2f}"
         extra.setdefault(res, set()).add(hz_str)
     return extra
 
@@ -7426,22 +7787,31 @@ def _valid_scales_for_resolution(width: int, height: int) -> list[float]:
     """Gibt alle Scale-Werte zurück, bei denen sowohl width/scale als
     auch height/scale exakt ganzzahlig sind – nur diese Werte führen in
     Hyprland zu pixelgenauen, überlappungsfreien Monitor-Layouts.
-    Brute-Force über rationale Zahlen p/q (q ≤ 20), Bereich 0.5–3.0."""
+
+    FIX (Analyse Punkt 1): die alte Brute-Force über beliebige
+    rationale Zahlen p/q (q ≤ 20) ließ mathematisch gültige, aber für
+    Hyprland UNGÜLTIGE Brüche wie 12/13 ≈ 0.9231 durch - Hyprland
+    quantisiert Scales intern auf Vielfache von 1/120 und verlangt
+    exakte Teilbarkeit beider Dimensionen durch genau diesen
+    quantisierten Wert, nicht durch einen beliebigen anderen Bruch mit
+    (zufällig) kleinem Nenner. Jetzt wird nur noch über n/120 iteriert
+    (n von 60 bis 360, also exakt der von Hyprland tatsächlich
+    verwendete Wertebereich 0.5–3.0 in 1/120-Schritten) - dieselbe
+    Grundidee wie das externe PyPI-Paket `hyprland-monitors`
+    (compute_valid_scales()), nur ohne zusätzliche Abhängigkeit und
+    dafür selbst gepflegt."""
     seen: set[float] = set()
     valid: list[float] = []
-    for q in range(1, 21):
-        for p in range(max(1, q // 4), q * 4 + 1):
-            scale = p / q
-            if scale < 0.5 or scale > 3.0:
-                continue
-            key = round(scale, 4)
-            if key in seen:
-                continue
-            lw = width / scale
-            lh = height / scale
-            if abs(lw - round(lw)) < 0.01 and abs(lh - round(lh)) < 0.01:
-                seen.add(key)
-                valid.append(key)
+    for n in range(60, 361):
+        scale = n / 120
+        key = round(scale, 4)
+        if key in seen:
+            continue
+        lw = width / scale
+        lh = height / scale
+        if abs(lw - round(lw)) < 0.01 and abs(lh - round(lh)) < 0.01:
+            seen.add(key)
+            valid.append(key)
     # Auch die bounds prüfen
     lo, hi = _scale_bounds(height)
     valid = [s for s in valid if lo <= s <= hi]
@@ -7596,6 +7966,18 @@ def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.W
     hz_combo.get_style_context().add_class("bubble")
     hz_combo.get_style_context().add_class("dropdown")
     hz_combo.set_can_focus(False)
+    # FIX (Zusatzblock, Punkt a): ein stiller Fallback auf eine
+    # unvollständige Modusliste (weil edid-decode fehlt) ist keine
+    # akzeptable Lösung - der Nutzer soll sehen, WARUM hohe
+    # Bildwiederholraten evtl. fehlen, statt das für einen Bug zu
+    # halten. Tooltip statt Statuszeile, damit das Dropdown selbst
+    # nicht ständig eine zusätzliche Zeile Platz braucht.
+    if not shutil.which("edid-decode"):
+        hz_combo.set_tooltip_text(
+            "'edid-decode' not found (package v4l-utils) — refresh "
+            "rates reported only via Hyprland's own mode list are "
+            "shown; some high refresh rates your monitor actually "
+            "supports may be missing until v4l-utils is installed.")
 
     custom_state = {"res": cur_res, "hz": cur_hz}
 
@@ -7655,6 +8037,18 @@ def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.W
             return 0
         return min(range(len(vals)), key=lambda i: abs(vals[i] - target))
 
+    # REVERT: ein Gtk.Popover (ScrollablePopoverCombo, der vorherige
+    # Versuch hier) rendert in diesem Setup KEINEN eigenen Hintergrund,
+    # sondern zeigt einen Ausschnitt des manuell per Cairo gemalten
+    # Bubble-Hintergrundbilds des Haupt-Fensters - vermutlich weil
+    # Popover-GdkWindows hier (Layer-Shell + custom RGBA-Visual) nicht
+    # denselben Compositing-Pfad wie ein normales Top-Level-Fenster
+    # bekommen, und laut Nutzer-Hinweis trat exakt dieser Bug schon in
+    # einer alten Version auf derselben Grundlage auf. Zurück zu
+    # Gtk.ComboBoxText - die 1/120-Quantisierung in
+    # _valid_scales_for_resolution() (siehe dort) hält die Liste
+    # inzwischen ohnehin kurz genug, dass das alte "Popup wächst über
+    # den Bildschirmrand"-Problem praktisch nicht mehr auftritt.
     scale_combo = Gtk.ComboBoxText()
     scale_combo.get_style_context().add_class("bubble")
     scale_combo.get_style_context().add_class("dropdown")
@@ -7897,7 +8291,25 @@ def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.W
             if preselect in hzs:
                 hz_combo.set_active(hzs.index(preselect))
             elif hzs:
-                hz_combo.set_active(0)
+                # FIX (Zusatzblock, Punkt c): vorher hier blind
+                # set_active(0) bei fehlender EXAKTER Übereinstimmung -
+                # da hzs absteigend sortiert ist, landete das faktisch
+                # immer beim HÖCHSTEN verfügbaren Wert (z.B. 120 Hz
+                # statt der tatsächlich aktiven 165 Hz), sobald sich
+                # cur_hz/preselect und die geparsten Hz-Strings auch
+                # nur in der Nachkommastellen-Formatierung
+                # unterschieden. _parse_modes() normalisiert Hz-Werte
+                # mittlerweile zwar schon einheitlich (siehe dort), als
+                # zusätzliches Sicherheitsnetz hier trotzdem: bei
+                # fehlender exakter Übereinstimmung den NÄCHSTGELEGENEN
+                # Wert wählen statt stur den ersten/höchsten.
+                try:
+                    target = float(preselect)
+                    idx = min(range(len(hzs)),
+                              key=lambda i: abs(float(hzs[i]) - target))
+                    hz_combo.set_active(idx)
+                except (ValueError, TypeError):
+                    hz_combo.set_active(0)
         finally:
             if hz_handler_id[0] is not None:
                 hz_combo.handler_unblock(hz_handler_id[0])
@@ -7922,7 +8334,7 @@ def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.W
         elif val is not None:
             _flash_status(f"Invalid format: '{val}' (expected WIDTHxHEIGHT)")
         _update_custom_visibility()
-        _apply_now()
+        _apply_now(confirm_after=not _suppress_confirm[0])
 
     def _on_hz_custom_selected():
         val = _prompt_text("Custom Refresh Rate", "e.g. 75",
@@ -7934,7 +8346,7 @@ def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.W
             except ValueError:
                 _flash_status(f"Invalid refresh rate: '{val}'")
         _update_custom_visibility()
-        _apply_now()
+        _apply_now(confirm_after=not _suppress_confirm[0])
 
     res_val_lbl.connect("clicked", lambda _w: _on_res_custom_selected())
     hz_val_lbl.connect("clicked", lambda _w: _on_hz_custom_selected())
@@ -8195,13 +8607,33 @@ def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.W
                 atomic_write_text(lua_path, txt)
 
                 # Nachbar-Positionen auch live per hyprctl setzen, damit
-                # Hyprland sofort reagiert und nicht erst beim nächsten Reload
+                # Hyprland sofort reagiert und nicht erst beim nächsten Reload.
+                #
+                # FIX (Analyse Punkt 2 - "Hyprland beschwert sich weiterhin"):
+                # vorher wurde hier für JEDEN Nachbarn einzeln _hypr_eval()
+                # aufgerufen - Hyprland führt nach JEDEM einzelnen
+                # "hyprctl eval"-Aufruf seinen Layout-Check durch und sah
+                # dabei zwischen zwei Nachbarn einen inkonsistenten
+                # Zwischenzustand (ein Nachbar schon an neuer Position, der
+                # nächste noch an der alten, jetzt dazu nicht mehr passenden
+                # Position). Die eigentliche Positions-MATHEMATIK in
+                # _repack_lua_positions() war bereits korrekt, nur die
+                # Anwendungs-Reihenfolge nicht. Jetzt: alle hl.monitor(...)-
+                # Aufrufe für die Nachbarn werden gesammelt und als EIN
+                # einziger Lua-Chunk in EINEM "hyprctl eval"-Aufruf
+                # geschickt - "hyprctl eval" nimmt einen ganzen Lua-
+                # Codeblock entgegen, mehrere hl.monitor()-Aufrufe lassen
+                # sich also zu einem String verketten. Dadurch validiert
+                # Hyprland das Layout genau einmal, gegen den bereits
+                # vollständig konsistenten Endzustand aller Nachbarn - nicht
+                # mehrfach gegen Zwischenzustände.
                 neighbor_block_re = re.compile(
                     r'hl\.monitor\(\{[^}]*\}\)', re.S)
                 out_name_re = re.compile(r'output\s*=\s*"([^"]*)"')
                 mode_re     = re.compile(r'mode\s*=\s*"([^"]*)"')
                 pos_re      = re.compile(r'position\s*=\s*"([^"]*)"')
                 sc_re       = re.compile(r'scale\s*=\s*([0-9.]+)')
+                nb_lua_statements: list[str] = []
                 for nb in neighbor_block_re.finditer(txt):
                     blk = nb.group(0)
                     nm_m = out_name_re.search(blk)
@@ -8219,13 +8651,16 @@ def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.W
                     # Gleicher Fix wie oben: "keyword" durch "eval" +
                     # hl.monitor({...}) ersetzt, siehe Kommentar beim
                     # primären monitor_lua-Aufruf weiter oben.
-                    nb_lua = (
+                    nb_lua_statements.append(
                         "hl.monitor({ output = \"" + nb_name + "\", "
                         "mode = \"" + nb_mode + "\", "
                         f"position = \"{nb_pos}\", "
                         f"scale = {nb_sc} }})"
                     )
-                    _hypr_eval(nb_lua)
+                if nb_lua_statements:
+                    # EIN Aufruf, EIN Lua-Chunk mit allen Nachbarn drin -
+                    # statt eines Aufrufs pro Monitor (siehe Kommentar oben).
+                    _hypr_eval("\n".join(nb_lua_statements))
 
             orig[0], orig[1] = res, hz
             orig[2] = scale
@@ -8251,7 +8686,79 @@ def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.W
         _sync_sdr_sensitivity()
         _update_custom_visibility()
 
-    def _apply_now():
+    # ── Bestätigungs-Dialog nach Auflösungs-/Hz-Änderungen ───────────
+    # Klassisches Verhalten wie bei Windows/macOS/GNOME-Monitor-
+    # Einstellungen: nach einer Res/Hz-Änderung 35 Sekunden Zeit, die
+    # neue Einstellung zu bestätigen ("Keep changes") - bestätigt der
+    # Nutzer nicht aktiv, wird automatisch auf die zuletzt erfolgreich
+    # angewendeten Werte zurückgesetzt. Schützt davor, sich mit einer
+    # falschen Auflösung/Bildwiederholrate (schwarzes Bild, kein Signal
+    # mehr, Maus/Tastatur aber auch kein Zugriff auf den Dialog selbst)
+    # komplett auszusperren. Bewusst NUR für Res/Hz, nicht für Scale/
+    # HDR/Position/SDR - die können zwar auch optisch danebengehen,
+    # aber nicht "kein Bild mehr"-artig komplett aussperren.
+    _suppress_confirm = [False]
+
+    def _do_revert(snapshot: list):
+        """snapshot ist eine Kopie von orig() VOR der jetzt zu
+        verwerfenden Änderung. _suppress_confirm verhindert, dass die
+        durch _reset() ausgelöste res_combo-"changed"-Kaskade (siehe
+        _on_res_change() unten) selbst wieder einen neuen
+        Bestätigungsdialog für den Revert öffnet. Der explizite
+        _apply_now()-Aufruf am Ende ist nötig, weil _fill_hz() (von
+        _reset() aufgerufen) hz_combos eigenen "changed"-Handler
+        absichtlich blockt (siehe dort) - bei einer reinen Hz-Änderung
+        (Auflösung unverändert) würde sonst NICHTS den Revert
+        tatsächlich an hyprctl schicken, nur die UI würde sich
+        zurücksetzen."""
+        _suppress_confirm[0] = True
+        try:
+            orig[:] = snapshot
+            _reset()
+            _apply_now()
+        finally:
+            _suppress_confirm[0] = False
+
+    def _start_confirm_flow(snapshot: list):
+        res, hz = _resolve_res_hz()
+        dlg = Gtk.MessageDialog(
+            transient_for=win, modal=True,
+            message_type=Gtk.MessageType.QUESTION,
+            buttons=Gtk.ButtonsType.NONE,
+            text="Keep this display setting?")
+        dlg.set_keep_above(True)
+        dlg.add_buttons("Revert", Gtk.ResponseType.CANCEL,
+                        "Keep changes", Gtk.ResponseType.OK)
+        seconds_left = [35]
+
+        def _update_secondary():
+            dlg.format_secondary_text(
+                f"{name}: {res or '?'}@{hz or '?'}Hz\n\n"
+                f"Reverting automatically in {seconds_left[0]}s "
+                "if you don't confirm.")
+        _update_secondary()
+
+        def _tick():
+            seconds_left[0] -= 1
+            if seconds_left[0] <= 0:
+                dlg.response(Gtk.ResponseType.CANCEL)
+                return False
+            _update_secondary()
+            return True
+        # GLib.timeout_add tickt auch INNERHALB der verschachtelten
+        # Main-Loop von dlg.run() weiter (run() verarbeitet den
+        # Default-Main-Context ganz normal mit) - kein separater Thread
+        # nötig.
+        tick_id = GLib.timeout_add(1000, _tick)
+
+        resp = dlg.run()
+        GLib.source_remove(tick_id)
+        dlg.destroy()
+
+        if resp != Gtk.ResponseType.OK:
+            _do_revert(snapshot)
+
+    def _apply_now(confirm_after: bool = False):
         _update_custom_visibility()
         res, hz = _resolve_res_hz()
         scale_txt = (scale_combo.get_active_text() or "?").replace("×", "").strip()
@@ -8262,21 +8769,35 @@ def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.W
             extras.append(pos_combo.get_active_text())
         extra_txt = f", {', '.join(extras)}" if extras else ""
         desc = f"{name}: {res or '?'}@{hz or '?'}Hz, scale={scale_txt}{extra_txt}"
-        apply_change(desc, _apply, on_status=_flash_status, reset_fn=_reset)
+
+        # Snapshot JETZT nehmen (bevor _apply() im Erfolgsfall orig auf
+        # die NEUEN Werte überschreibt, siehe orig[0], orig[1] = res, hz
+        # weiter oben) - sonst wäre der "vorherige" Stand beim Revert
+        # schon mit dem gerade erst applizierten identisch.
+        pending_snapshot = list(orig) if confirm_after else None
+
+        def _on_status(text):
+            _flash_status(text)
+            if pending_snapshot is not None and not text.startswith("Error"):
+                _start_confirm_flow(pending_snapshot)
+
+        apply_change(desc, _apply,
+                     on_status=_on_status if pending_snapshot is not None else _flash_status,
+                     reset_fn=_reset)
 
     def _on_res_change(_w):
         if res_combo.get_active_text() != CUSTOM_LABEL:
             _fill_hz(res_combo.get_active_text())
             _update_custom_visibility()
             _sync_scale_slider_range()
-            _apply_now()
+            _apply_now(confirm_after=not _suppress_confirm[0])
         else:
             _on_res_custom_selected()
 
     def _on_hz_change(_w):
         if hz_combo.get_active_text() != CUSTOM_LABEL:
             _update_custom_visibility()
-            _apply_now()
+            _apply_now(confirm_after=not _suppress_confirm[0])
         else:
             _on_hz_custom_selected()
 
@@ -8659,8 +9180,13 @@ def _camera_set_blocked(blocked: bool) -> tuple[bool, str]:
     # /dev/video*-Nodes gehören root:video, chmod braucht den
     # Eigentümer oder root - reines Gruppen-Schreibrecht (auch wenn der
     # Nutzer selbst in "video" ist) reicht dafür nicht, der erste
-    # Versuch würde also ohnehin garantiert scheitern.
-    return _run_maybe_priv(["chmod", mode, *devs], timeout=15)
+    # Versuch würde also ohnehin garantiert scheitern. FIX: vorher wurde
+    # hier trotz dieses Kommentars noch die heuristik-basierte
+    # _run_maybe_priv() aufgerufen (Docstring/Code-Widerspruch) - jetzt
+    # wie _rfkill_set()/_freshclam_update() konsequent auf
+    # _run_maybe_priv_force() umgestellt, kein garantiert scheiternder
+    # erster Versuch mehr pro Kamera-Toggle.
+    return _run_maybe_priv_force(["chmod", mode, *devs], timeout=15)
 
 # ── Mikrofon: Standard-Eingabegerät stumm schalten ───────────────────
 # Kein echter Hardware-Killswitch (Software-Mute über wpctl/Pipewire,
@@ -10780,23 +11306,631 @@ def _clamav_content(win: Gtk.Window) -> Gtk.Box:
 
     return root
 
+# ════════════════════════════════════════════════════════════
+#  AUTHENTICATION (Analyse Punkt 3) — Password / Fingerprint / FIDO
+#  Neuer Security-Sub-Tab. Alles, was auf einem normalen Linux-System
+#  (PAM, fprintd, pam-u2f) technisch machbar ist, ohne Abstriche bei
+#  der Funktionalität - siehe Analyse-Dokument für die recherchierten
+#  Befehle/Optionen.
+# ════════════════════════════════════════════════════════════
+
+def _current_username() -> str:
+    return os.environ.get("USER") or os.path.basename(HOME) or "user"
+
+def _pam_target_file() -> Path:
+    """Arch Linux (dieses Projekt läuft laut README/Analyse auf Arch)
+    nutzt 'system-auth' als zentrale, von allen anderen PAM-Diensten
+    per 'include'/'auth include system-auth' eingebundene Datei -
+    genau dort gehören pam_fprintd.so/pam_u2f.so rein, damit sie für
+    ALLE Dienste (Login, sudo, Display-Manager, …) gelten, nicht nur
+    für einen einzelnen. Fällt die Datei doch nicht vorhanden sein
+    (z.B. minimales/anders aufgesetztes System), auf '/etc/pam.d/sudo'
+    zurückfallen (siehe Analyse) - gilt dann wenigstens für sudo."""
+    sysauth = Path("/etc/pam.d/system-auth")
+    if sysauth.is_file():
+        return sysauth
+    return Path("/etc/pam.d/sudo")
+
+def _pam_write_privileged(path: Path, new_text: str) -> tuple[bool, str]:
+    """Schreibt eine neue Version einer PAM-Datei root-privilegiert.
+    Baut den neuen Inhalt vorher lokal als normaler User zusammen und
+    kopiert ihn per 'pkexec cp' an die Zielposition, statt Nutzerdaten
+    in einen sed/printf-Shell-Befehl für pkexec einzubetten (vermeidet
+    Quoting-/Injection-Risiken bei Sonderzeichen).
+
+    WICHTIG (siehe Analyse, Arch-Wiki-Warnung zu PAM): ruft IMMER
+    zuerst backup_file() auf DIESER Datei auf - eine fehlerhafte
+    PAM-Änderung kann den Nutzer aussperren, und ein pkexec-Dialog
+    ersetzt KEINE Root-Shell als Rettungsanker. Das Backup hier ist
+    die einzige eingebaute Notbremse; die UI erinnert zusätzlich aktiv
+    daran, vor dem Aktivieren von "2FA erzwingen" eine Root-Shell offen
+    zu halten (siehe _authentication_content())."""
+    backup_file(path)
+    tmp = Path(tempfile.gettempdir()) / f"wb-pam-{os.getpid()}-{int(time.time()*1000)}.tmp"
+    try:
+        tmp.write_text(new_text)
+        tmp.chmod(0o644)
+        out, err, ec = run_ec(["pkexec", "cp", str(tmp), str(path)], timeout=15)
+        if ec != 0:
+            return False, err or out or f"exit code {ec}"
+        return True, ""
+    except Exception as e:
+        return False, str(e)
+    finally:
+        try:
+            tmp.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+def _run_streaming(cmd: list, on_line, on_done, input_text: str | None = None) -> None:
+    """Gemeinsames Streaming-Muster für interaktive Subprozesse
+    (fprintd-enroll, pamu2fcfg, passwd, …) - exakt dasselbe Vorgehen
+    wie das bereits etablierte _clamav_scan() (Popen, stdout/stderr
+    zusammengeführt, zeilenweise über GLib.idle_add in den GTK-
+    Hauptthread durchgereicht). input_text wird (falls angegeben)
+    einmal komplett auf stdin geschrieben und der Stream dann
+    geschlossen - deckt z.B. passwd (current/new/new je Zeile) und
+    fido2-token -S -e (current-/new-PIN je Zeile) ab."""
+    def _worker():
+        try:
+            proc = subprocess.Popen(
+                cmd, stdin=subprocess.PIPE if input_text is not None else None,
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                text=True, bufsize=1)
+        except Exception as e:
+            msg = str(e)
+            GLib.idle_add(lambda: (on_done([], msg), False)[1])
+            return
+        if input_text is not None:
+            try:
+                proc.stdin.write(input_text)
+                proc.stdin.close()
+            except Exception:
+                pass
+        lines = []
+        for line in proc.stdout:
+            line = line.rstrip("\n")
+            lines.append(line)
+            if line:
+                GLib.idle_add(lambda l=line: (on_line(l), False)[1])
+        ec = proc.wait()
+        GLib.idle_add(lambda: (on_done(lines, None if ec == 0 else f"exit code {ec}"), False)[1])
+    in_thread(_worker)
+
+# ── Password ─────────────────────────────────────────────────────
+def _change_password(current: str, new: str, on_line, on_done) -> None:
+    """'passwd' für den eigenen Account - PAM fragt das aktuelle
+    Passwort selbst ab, braucht also kein root (siehe Analyse).
+    current/new werden zeilenweise auf stdin geschrieben, exakt der
+    Reihenfolge, in der 'passwd' interaktiv danach fragt (aktuelles,
+    neues, neues zur Bestätigung)."""
+    _run_streaming(["passwd"], on_line, on_done,
+                   input_text=f"{current}\n{new}\n{new}\n")
+
+# ── Fingerprint (fprintd) ────────────────────────────────────────
+def _fprintd_available() -> bool:
+    return bool(shutil.which("fprintd-enroll"))
+
+def _fprintd_list(user: str) -> list[str]:
+    out, _err, ec = run_ec(["fprintd-list", user], timeout=5)
+    if ec != 0 or not out:
+        return []
+    # fprintd-list gibt i.d.R. eine Zeile wie
+    # "user has 2 enrolled fingers: right-index-finger, left-thumb" aus
+    m = re.search(r":\s*(.+)$", out.strip())
+    if not m:
+        return []
+    return [f.strip() for f in m.group(1).split(",") if f.strip()]
+
+def _fprintd_delete(user: str) -> tuple[bool, str]:
+    out, err, ec = run_ec(["fprintd-delete", user], timeout=10)
+    return ec == 0, (err or out if ec != 0 else "")
+
+def _fprintd_enroll(on_line, on_done) -> None:
+    """'fprintd-enroll' (ohne Argument: Standard-Finger des aktuellen
+    Users) ist interaktiv und blockiert, bis ein Finger aufgelegt wird
+    - läuft hier über dasselbe Live-Ausgabe-Streaming-Muster wie der
+    bestehende ClamAV-Scan (_run_streaming/_clamav_scan)."""
+    _run_streaming(["fprintd-enroll"], on_line, on_done)
+
+def _fprintd_verify(on_line, on_done) -> None:
+    _run_streaming(["fprintd-verify"], on_line, on_done)
+
+def _pam_fprintd_enabled() -> bool:
+    try:
+        txt = _pam_target_file().read_text()
+    except Exception:
+        return False
+    return bool(re.search(r'^\s*auth\s+\S+\s+pam_fprintd\.so', txt, re.M))
+
+def _pam_fprintd_set_enabled(enabled: bool) -> tuple[bool, str]:
+    """Schreibt/entfernt die 'auth sufficient pam_fprintd.so'-Zeile in
+    der PAM-Datei (siehe _pam_target_file()). Muss VOR der
+    pam_unix.so-Zeile stehen, sonst wird pam_unix zuerst gefragt und
+    der Fingerabdruck-Erfolg kommt nie zum Tragen (gleiches Prinzip
+    wie bei pam_u2f, siehe Analyse)."""
+    path = _pam_target_file()
+    try:
+        txt = path.read_text() if path.is_file() else ""
+    except Exception as e:
+        return False, str(e)
+    line_re = re.compile(r'^\s*auth\s+\S+\s+pam_fprintd\.so.*$\n?', re.M)
+    if enabled:
+        if line_re.search(txt):
+            return True, ""  # schon aktiv, nichts zu tun
+        new_line = "auth      sufficient                                   pam_fprintd.so\n"
+        unix_re = re.compile(r'^(\s*auth\s+\S+\s+pam_unix\.so.*)$', re.M)
+        m = unix_re.search(txt)
+        if m:
+            new_txt = txt[:m.start()] + new_line + txt[m.start():]
+        else:
+            # Kein pam_unix.so-Anker gefunden (unüblich) - ganz oben einfügen,
+            # das ist für ein "sufficient"-Modul (kann nur ERFOLGREICH früher
+            # durchlassen, nie zusätzlich blockieren) der sicherste Ort.
+            new_txt = new_line + txt
+    else:
+        if not line_re.search(txt):
+            return True, ""  # schon inaktiv
+        new_txt = line_re.sub("", txt)
+    return _pam_write_privileged(path, new_txt)
+
+# ── FIDO2/U2F (pam_u2f) ──────────────────────────────────────────
+def _u2f_mapping_path() -> Path:
+    return Path(HOME) / ".config" / "Yubico" / "u2f_keys"
+
+def _u2f_available() -> bool:
+    return bool(shutil.which("pamu2fcfg"))
+
+def _u2f_registered_count() -> int:
+    """pamu2fcfg schreibt pro Nutzer EINE Zeile
+    'username:credential1:credential2:...' - die Anzahl der Keys ist
+    also (Anzahl ':'-getrennter Felder in der Zeile) - 1 (das erste
+    Feld ist der Username, kein Key)."""
+    p = _u2f_mapping_path()
+    if not p.is_file():
+        return 0
+    try:
+        lines = [l for l in p.read_text().splitlines() if l.strip()]
+    except Exception:
+        return 0
+    total = 0
+    for line in lines:
+        parts = line.split(":")
+        total += max(0, len(parts) - 1)
+    return total
+
+def _u2f_enabled() -> bool:
+    try:
+        txt = _pam_target_file().read_text()
+    except Exception:
+        return False
+    return bool(re.search(r'^\s*auth\s+\S+\s+pam_u2f\.so', txt, re.M))
+
+def _u2f_set_enabled(enabled: bool, authfile: Path, require_password: bool) -> tuple[bool, str]:
+    """Schreibt/entfernt die pam_u2f.so-Zeile. require_password=True
+    schreibt 'required ... cue' (echtes 2FA: Passwort UND Key nötig),
+    False schreibt 'sufficient' (passwordless: Key allein reicht) -
+    siehe Analyse für beide Varianten. Muss ebenfalls VOR pam_unix.so
+    stehen."""
+    path = _pam_target_file()
+    try:
+        txt = path.read_text() if path.is_file() else ""
+    except Exception as e:
+        return False, str(e)
+    line_re = re.compile(r'^\s*auth\s+\S+\s+pam_u2f\.so.*$\n?', re.M)
+    if enabled:
+        control = "required" if require_password else "sufficient"
+        extra = " cue" if require_password else ""
+        new_line = (f"auth      {control:<10} pam_u2f.so authfile={authfile}{extra}\n")
+        txt_wo_old = line_re.sub("", txt)
+        unix_re = re.compile(r'^(\s*auth\s+\S+\s+pam_unix\.so.*)$', re.M)
+        m = unix_re.search(txt_wo_old)
+        if m:
+            new_txt = txt_wo_old[:m.start()] + new_line + txt_wo_old[m.start():]
+        else:
+            new_txt = new_line + txt_wo_old
+    else:
+        if not line_re.search(txt):
+            return True, ""
+        new_txt = line_re.sub("", txt)
+    return _pam_write_privileged(path, new_txt)
+
+def _pamu2fcfg_add_key(on_line, on_done, append: bool) -> None:
+    """Startet 'pamu2fcfg' (bzw. 'pamu2fcfg -n' für einen weiteren Key
+    zur bestehenden Datei dazu, siehe Analyse) mit Live-Ausgabe
+    ("Touch your key…" erscheint während pamu2fcfg wartet). on_done
+    bekommt zusätzlich die fertige Mapping-Zeile zum Anhängen - das
+    Anhängen selbst übernimmt der Aufrufer (siehe
+    _authentication_content()), damit diese Funktion keine
+    Dateisystem-Annahmen treffen muss."""
+    cmd = ["pamu2fcfg"] + (["-n"] if append else [])
+    _run_streaming(cmd, on_line, on_done)
+
+def _fido2_list_tokens() -> list[str]:
+    out, _err, ec = run_ec(["fido2-token", "-L"], timeout=5)
+    if ec != 0 or not out:
+        return []
+    # Jede Zeile beginnt mit dem Device-Pfad, z.B. "/dev/hidraw3: ..."
+    return [l.split(":")[0].strip() for l in out.splitlines() if l.strip()]
+
+def _fido2_set_pin(device: str, current_pin: str, new_pin: str, on_line, on_done) -> None:
+    """'fido2-token -S -e <device>' fragt (bzw. erwartet über stdin,
+    falls nicht an ein Terminal gebunden) zuerst die aktuelle PIN
+    (leer lassen = Key hat noch keine PIN), dann zweimal die neue PIN."""
+    _run_streaming(["fido2-token", "-S", "-e", device], on_line, on_done,
+                   input_text=f"{current_pin}\n{new_pin}\n{new_pin}\n")
+
+
+def _authentication_content(win: Gtk.Window) -> Gtk.Box:
+    """Neuer Security-Sub-Tab "Authentication" (Analyse Punkt 3):
+    Password / Fingerprint / FIDO Key, als eigener kleiner Gtk.Stack
+    innerhalb des Tabs (gleiches Verschachtelungs-Muster wie der
+    ClamAV-Tab mit seinen 4 Unter-Tabs)."""
+    root = vbox(4)
+
+    status_lbl = Gtk.Label(label="")
+    status_lbl.get_style_context().add_class("caption")
+    status_lbl.set_opacity(0.8)
+    status_lbl.set_line_wrap(True)
+    status_lbl.set_max_width_chars(40)
+    status_lbl.set_no_show_all(True)
+    status_lbl.hide()
+
+    def _flash(text: str, ms: int = 5000):
+        status_lbl.set_label(text)
+        status_lbl.show()
+        GLib.timeout_add(ms, lambda: (status_lbl.hide(), False)[1])
+
+    def _backup_reminder_dialog() -> bool:
+        """Warnung (siehe Analyse, Arch-Wiki-Hinweis) VOR jeder
+        PAM-Aktivierung: ein pkexec-Dialog ist kein Rettungsanker."""
+        d = Gtk.MessageDialog(
+            transient_for=win, modal=True,
+            message_type=Gtk.MessageType.WARNING,
+            buttons=Gtk.ButtonsType.NONE,
+            text="Enabling this changes system login (PAM) rules.")
+        d.format_secondary_text(
+            "A backup of the PAM file is made automatically, but a "
+            "bad PAM change can still lock you out of sudo/login. "
+            "Keep a root shell open elsewhere until you've confirmed "
+            "this works. Continue?")
+        d.add_buttons("Cancel", Gtk.ResponseType.CANCEL,
+                      "I have a root shell open — Continue", Gtk.ResponseType.OK)
+        d.set_keep_above(True)
+        resp = d.run()
+        d.destroy()
+        return resp == Gtk.ResponseType.OK
+
+    # ── Sub-Stack ────────────────────────────────────────────────
+    stack = Gtk.Stack()
+    stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
+    stack.set_transition_duration(200)
+
+    # ══ Password ══
+    pw_box = vbox(6); pad(pw_box, h=4, v=4)
+    pw_box.pack_start(Gtk.Label(label="Change your account password."), False, False, 0)
+    pw_change_btn = btn("Change Password…")
+    pw_box.pack_start(pw_change_btn, False, False, 0)
+
+    def _on_change_password(_b):
+        dlg = Gtk.Dialog(title="Change Password", transient_for=win)
+        dlg.set_name("wb-daemon-popup")
+        dlg.set_modal(True)
+        dlg.set_keep_above(True)
+        dlg.set_type_hint(Gdk.WindowTypeHint.DIALOG)
+        dlg.add_buttons("Cancel", Gtk.ResponseType.CANCEL,
+                        "Change", Gtk.ResponseType.OK)
+        area = dlg.get_content_area()
+        e_cur = Gtk.Entry(); e_cur.set_visibility(False)
+        e_cur.set_placeholder_text("Current password")
+        e_new = Gtk.Entry(); e_new.set_visibility(False)
+        e_new.set_placeholder_text("New password")
+        e_conf = Gtk.Entry(); e_conf.set_visibility(False)
+        e_conf.set_placeholder_text("Confirm new password")
+        e_conf.set_activates_default(True)
+        e_conf.connect("activate", lambda _: dlg.response(Gtk.ResponseType.OK))
+        for e in (e_cur, e_new, e_conf):
+            area.pack_start(e, True, True, 4)
+        dlg.show_all()
+        resp = dlg.run()
+        current, new, conf = e_cur.get_text(), e_new.get_text(), e_conf.get_text()
+        dlg.destroy()
+        if resp != Gtk.ResponseType.OK:
+            return
+        if not current or not new:
+            _flash("⚠ Current and new password are required.")
+            return
+        if new != conf:
+            _flash("⚠ New password and confirmation don't match.")
+            return
+        _flash("Changing password…", ms=60000)
+        lines_acc = []
+        def _done(lines, error):
+            if error:
+                tail = "\n".join(l for l in lines_acc if l.strip())[-300:]
+                _flash(f"⚠ passwd failed: {tail or error}")
+            else:
+                _flash("✓ Password changed.")
+        def _on_line(l):
+            lines_acc.append(l)
+        _change_password(current, new, _on_line, _done)
+    pw_change_btn.connect("clicked", _on_change_password)
+
+    # ══ Fingerprint ══
+    fp_box = vbox(6); pad(fp_box, h=4, v=4)
+    if not _fprintd_available():
+        fp_box.pack_start(
+            Gtk.Label(label="fprintd not installed — install 'fprintd' to use this."),
+            False, False, 0)
+    else:
+        fp_list_lbl = Gtk.Label(label="")
+        fp_list_lbl.set_line_wrap(True)
+        fp_box.pack_start(fp_list_lbl, False, False, 0)
+
+        fp_pam_toggle = btn("PAM: sudo/login via fingerprint — Off", active=False)
+        fp_row = hrow(sp=6)
+        fp_enroll_btn = btn("Enroll finger…")
+        fp_verify_btn = btn("Verify")
+        fp_delete_btn = btn("Delete all")
+        for b in (fp_enroll_btn, fp_verify_btn, fp_delete_btn):
+            fp_row.pack_start(b, False, False, 0)
+        fp_box.pack_start(fp_row, False, False, 0)
+        fp_box.pack_start(fp_pam_toggle, False, False, 0)
+
+        def _refresh_fp():
+            fingers = _fprintd_list(_current_username())
+            fp_list_lbl.set_label(
+                f"Enrolled: {', '.join(fingers)}" if fingers else "No fingers enrolled yet.")
+            fp_pam_toggle.set_label(
+                "PAM: sudo/login via fingerprint — " +
+                ("On" if _pam_fprintd_enabled() else "Off"))
+
+        def _on_enroll(_b):
+            _flash("Touch your fingerprint reader…", ms=30000)
+            lines_acc = []
+            def _done(lines, error):
+                _refresh_fp()
+                if error:
+                    _flash(f"⚠ Enroll failed: {error}")
+                else:
+                    _flash("✓ Finger enrolled.")
+            _fprintd_enroll(lines_acc.append, _done)
+        fp_enroll_btn.connect("clicked", _on_enroll)
+
+        def _on_verify(_b):
+            _flash("Touch your fingerprint reader to verify…", ms=30000)
+            def _done(lines, error):
+                tail = "\n".join(l for l in lines if l.strip())
+                if error:
+                    _flash(f"⚠ No match / error: {tail or error}")
+                else:
+                    _flash(f"✓ {tail or 'Verified.'}")
+            _fprintd_verify(lambda l: None, _done)
+        fp_verify_btn.connect("clicked", _on_verify)
+
+        def _on_delete(_b):
+            ok, err = _fprintd_delete(_current_username())
+            _refresh_fp()
+            _flash("✓ Deleted all enrolled fingers." if ok else f"⚠ {err}")
+        fp_delete_btn.connect("clicked", _on_delete)
+
+        def _on_pam_toggle(_b):
+            enable = not _pam_fprintd_enabled()
+            if enable and not _backup_reminder_dialog():
+                return
+            def _worker():
+                ok, err = _pam_fprintd_set_enabled(enable)
+                def _done():
+                    _refresh_fp()
+                    _flash("✓ PAM updated." if ok else f"⚠ {err}")
+                    return False
+                GLib.idle_add(_done)
+            in_thread(_worker)
+        fp_pam_toggle.connect("clicked", _on_pam_toggle)
+
+        _refresh_fp()
+
+    # ══ FIDO Key ══
+    fido_box = vbox(6); pad(fido_box, h=4, v=4)
+    if not _u2f_available():
+        fido_box.pack_start(
+            Gtk.Label(label="pam-u2f not installed — install 'pam-u2f' "
+                             "(provides pamu2fcfg) to use this."),
+            False, False, 0)
+    else:
+        fido_status_lbl = Gtk.Label(label="")
+        fido_status_lbl.set_line_wrap(True)
+        fido_box.pack_start(fido_status_lbl, False, False, 0)
+
+        fido_add_btn = btn("Add Key…")
+        fido_enforce_toggle = btn("Require key for sudo/login — Off", active=False)
+        fido_row = hrow(sp=6)
+        fido_row.pack_start(fido_add_btn, False, False, 0)
+        fido_box.pack_start(fido_row, False, False, 0)
+        fido_box.pack_start(fido_enforce_toggle, False, False, 0)
+
+        pin_row = hrow(sp=6)
+        fido_pin_btn = btn("Manage PIN…")
+        pin_row.pack_start(fido_pin_btn, False, False, 0)
+        fido_box.pack_start(pin_row, False, False, 0)
+
+        def _refresh_fido():
+            n = _u2f_registered_count()
+            fido_status_lbl.set_label(
+                f"{n} key(s) registered in {_u2f_mapping_path()}" if n
+                else f"No keys registered yet (will be saved to {_u2f_mapping_path()}).")
+            fido_enforce_toggle.set_label(
+                "Require key for sudo/login — " + ("On" if _u2f_enabled() else "Off"))
+
+        def _on_add_key(_b):
+            d = Gtk.MessageDialog(
+                transient_for=win, modal=True, message_type=Gtk.MessageType.QUESTION,
+                buttons=Gtk.ButtonsType.NONE,
+                text="Register a FIDO2/U2F key")
+            d.format_secondary_text(
+                "You'll be asked to touch the key in a moment. Add it as "
+                "an additional key (keeps existing ones), or replace the "
+                "whole file?")
+            d.add_buttons("Cancel", Gtk.ResponseType.CANCEL,
+                          "Replace file", Gtk.ResponseType.REJECT,
+                          "Add (keep existing)", Gtk.ResponseType.OK)
+            d.set_keep_above(True)
+            resp = d.run()
+            d.destroy()
+            if resp not in (Gtk.ResponseType.OK, Gtk.ResponseType.REJECT):
+                return
+            append = (resp == Gtk.ResponseType.OK)
+            _flash("Touch your key…", ms=30000)
+            def _done(lines, error):
+                if error:
+                    tail = "\n".join(l for l in lines if l.strip())[-300:]
+                    _flash(f"⚠ pamu2fcfg failed: {tail or error}")
+                    return
+                # Letzte nicht-leere Ausgabezeile ist die fertige
+                # Mapping-Zeile (username:cred1:cred2:...).
+                cred_line = next((l for l in reversed(lines) if l.strip()), "")
+                if not cred_line:
+                    _flash("⚠ pamu2fcfg produced no output.")
+                    return
+                p = _u2f_mapping_path()
+                try:
+                    p.parent.mkdir(parents=True, exist_ok=True)
+                    if append and p.is_file():
+                        backup_file(p)
+                        existing = p.read_text()
+                        if not existing.endswith("\n") and existing:
+                            existing += "\n"
+                        p.write_text(existing + cred_line + "\n")
+                    else:
+                        if p.is_file():
+                            backup_file(p)
+                        atomic_write_text(p, cred_line + "\n")
+                    _refresh_fido()
+                    _flash("✓ Key registered.")
+                except Exception as e:
+                    _flash(f"⚠ Could not write mapping file: {e}")
+            _pamu2fcfg_add_key(lambda l: None, _done, append=append)
+        fido_add_btn.connect("clicked", _on_add_key)
+
+        def _on_enforce_toggle(_b):
+            enable = not _u2f_enabled()
+            require_password = True
+            if enable:
+                if not _backup_reminder_dialog():
+                    return
+                d = Gtk.MessageDialog(
+                    transient_for=win, modal=True, message_type=Gtk.MessageType.QUESTION,
+                    buttons=Gtk.ButtonsType.NONE,
+                    text="Require password AND key, or key alone?")
+                d.add_buttons("Cancel", Gtk.ResponseType.CANCEL,
+                              "Key alone (passwordless)", Gtk.ResponseType.REJECT,
+                              "Password AND key (2FA)", Gtk.ResponseType.OK)
+                d.set_keep_above(True)
+                resp = d.run()
+                d.destroy()
+                if resp not in (Gtk.ResponseType.OK, Gtk.ResponseType.REJECT):
+                    return
+                require_password = (resp == Gtk.ResponseType.OK)
+            def _worker():
+                ok, err = _u2f_set_enabled(enable, _u2f_mapping_path(), require_password)
+                def _done():
+                    _refresh_fido()
+                    _flash("✓ PAM updated." if ok else f"⚠ {err}")
+                    return False
+                GLib.idle_add(_done)
+            in_thread(_worker)
+        fido_enforce_toggle.connect("clicked", _on_enforce_toggle)
+
+        def _on_manage_pin(_b):
+            tokens = _fido2_list_tokens()
+            if not tokens:
+                _flash("⚠ No FIDO2 key detected (fido2-token -L found none).")
+                return
+            device = tokens[0]
+            dlg = Gtk.Dialog(title=f"Manage PIN — {device}", transient_for=win)
+            dlg.set_name("wb-daemon-popup")
+            dlg.set_modal(True)
+            dlg.set_keep_above(True)
+            dlg.set_type_hint(Gdk.WindowTypeHint.DIALOG)
+            dlg.add_buttons("Cancel", Gtk.ResponseType.CANCEL,
+                            "Set PIN", Gtk.ResponseType.OK)
+            area = dlg.get_content_area()
+            area.pack_start(Gtk.Label(
+                label="Leave 'Current PIN' empty if the key has no PIN yet."),
+                False, False, 4)
+            e_cur = Gtk.Entry(); e_cur.set_visibility(False)
+            e_cur.set_placeholder_text("Current PIN (leave empty if none)")
+            e_new = Gtk.Entry(); e_new.set_visibility(False)
+            e_new.set_placeholder_text("New PIN")
+            e_new.set_activates_default(True)
+            e_new.connect("activate", lambda _: dlg.response(Gtk.ResponseType.OK))
+            area.pack_start(e_cur, True, True, 4)
+            area.pack_start(e_new, True, True, 4)
+            dlg.show_all()
+            resp = dlg.run()
+            cur_pin, new_pin = e_cur.get_text(), e_new.get_text()
+            dlg.destroy()
+            if resp != Gtk.ResponseType.OK or not new_pin:
+                return
+            _flash("Setting PIN — touch your key if it blinks…", ms=30000)
+            def _done(lines, error):
+                if error:
+                    tail = "\n".join(l for l in lines if l.strip())[-300:]
+                    _flash(f"⚠ Failed: {tail or error}")
+                else:
+                    _flash("✓ PIN set.")
+            _fido2_set_pin(device, cur_pin, new_pin, lambda l: None, _done)
+        fido_pin_btn.connect("clicked", _on_manage_pin)
+
+        _refresh_fido()
+
+    stack.add_named(pw_box, "password")
+    stack.add_named(fp_box, "fingerprint")
+    stack.add_named(fido_box, "fido")
+
+    tab_row = hbox(6)
+    tab_row.set_halign(Gtk.Align.CENTER)
+    tab_btns: dict = {}
+    def _switch_auth_tab(name):
+        _switch_stack(stack, win, name)
+        for n, b in tab_btns.items():
+            ctx = b.get_style_context()
+            if n == name: ctx.add_class("active")
+            else:         ctx.remove_class("active")
+    for name, tlabel in (("password", "Password"),
+                         ("fingerprint", "Fingerprint"),
+                         ("fido", "FIDO Key")):
+        b = btn(tlabel, active=(name == "password"))
+        b.connect("clicked", lambda _b, n=name: _switch_auth_tab(n))
+        tab_btns[name] = b
+        tab_row.pack_start(b, False, False, 0)
+    stack.set_visible_child_name("password")
+
+    root.pack_start(tab_row, True, False, 2)
+    root.pack_start(tab_sep(), False, False, 0)
+    root.pack_start(stack, False, False, 0)
+    root.pack_start(status_lbl, False, False, 4)
+    return root
+
 def _security_content(win: Gtk.Window) -> Gtk.Box:
-    """Tab-Hülle fürs Security-Widget - alle 5 README-Sub-Panels: 
+    """Tab-Hülle fürs Security-Widget - alle 6 Sub-Panels:
     "Privacy" (Kill-Switches) + "DNS" (Server-Auswahl + Enforce-DoT +
     Guest-WiFi) + "Tailscale" + "Firewall" (UFW) + "ClamAV" (Signatur-
-    Update, On-Demand-Scan, Auto-Scan-Toggle), als Gtk.Stack wie bei
+    Update, On-Demand-Scan, Auto-Scan-Toggle) + "Authentication"
+    (Password/Fingerprint/FIDO, Analyse Punkt 3), als Gtk.Stack wie bei
     Volume/Battery/Appearance.
 
-    UFW-Tab ist LAZY (wie der Processes-Tab beim Battery-Widget) -
-    NICHT weil er einen eigenen Poll-Timer bräuchte (hat er nicht,
-    siehe _ufw_content()-Docstring), sondern weil sein allererster
-    Status-Abruf selbst schon einen Polkit-Passwort-Dialog auslösen
-    kann (ufw braucht für praktisch alles Root) - der soll nicht
-    einfach beim Öffnen des Widgets ungefragt aufpoppen, nur weil der
-    Privacy-Tab (der KEINE Root-Rechte braucht) initial sichtbar ist.
-    ClamAV braucht dasselbe NICHT (Status-Lesen + Auto-Scan-Toggle sind
-    root-frei, siehe _clamav_content()-Docstring), ist also wie DNS/
-    Tailscale eager gebaut."""
+    UFW- UND Authentication-Tab sind LAZY (wie der Processes-Tab beim
+    Battery-Widget) - UFW, weil sein allererster Status-Abruf selbst
+    schon einen Polkit-Passwort-Dialog auslösen kann (ufw braucht für
+    praktisch alles Root), Authentication, weil sein Fingerprint-/FIDO-
+    Unterbereich beim ersten Aufbau bereits `fprintd-list`/einen Read
+    der PAM-Datei ausführt - beides soll nicht einfach beim Öffnen des
+    Widgets ungefragt passieren, nur weil der Privacy-Tab (der KEINE
+    Root-Rechte braucht) initial sichtbar ist. ClamAV braucht dasselbe
+    NICHT (Status-Lesen + Auto-Scan-Toggle sind root-frei, siehe
+    _clamav_content()-Docstring), ist also wie DNS/Tailscale eager
+    gebaut."""
     stack = Gtk.Stack()
     stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
     stack.set_transition_duration(200)
@@ -10808,6 +11942,7 @@ def _security_content(win: Gtk.Window) -> Gtk.Box:
     stack.add_named(_clamav_content(win), "clamav")
 
     ufw_built = [False]
+    auth_built = [False]
 
     def _ensure_ufw_tab():
         if ufw_built[0]:
@@ -10823,9 +11958,20 @@ def _security_content(win: Gtk.Window) -> Gtk.Box:
             _current_win[0] = None
         stack.show_all()
 
+    def _ensure_auth_tab():
+        if auth_built[0]:
+            return
+        auth_built[0] = True
+        _current_win[0] = win
+        try:
+            stack.add_named(_authentication_content(win), "authentication")
+        finally:
+            _current_win[0] = None
+        stack.show_all()
+
     # 2 Zeilen statt 1 lange (README-Feedback: "die ersten 2 Tabs über
     # den anderen 3, damit Platz gespart wird") - eine durchgehend lange
-    # Tab-Reihe mit 5 Einträgen hätte entweder das Fenster unnötig
+    # Tab-Reihe mit jetzt 6 Einträgen hätte entweder das Fenster unnötig
     # breit gemacht oder wäre auf schmaleren Bildschirmen umgebrochen.
     tab_row_top = hbox(6)
     tab_row_top.set_halign(Gtk.Align.CENTER)
@@ -10835,6 +11981,8 @@ def _security_content(win: Gtk.Window) -> Gtk.Box:
     def _switch(name):
         if name == "ufw":
             _ensure_ufw_tab()
+        elif name == "authentication":
+            _ensure_auth_tab()
         _switch_stack(stack, win, name)
         for n, b in tab_btns.items():
             ctx = b.get_style_context()
@@ -10843,6 +11991,7 @@ def _security_content(win: Gtk.Window) -> Gtk.Box:
     for name, tlabel, target_row in (
             ("privacy", "󰦝  Privacy", tab_row_top),
             ("dns", "󰙲  DNS", tab_row_top),
+            ("authentication", "󰌋  Auth", tab_row_top),
             ("tailscale", "󰖂  Tailscale", tab_row_bottom),
             ("ufw", "󰈸  Firewall", tab_row_bottom),
             ("clamav", "🛡️  ClamAV", tab_row_bottom)):

@@ -36,6 +36,14 @@ if [[ ! -f "${REPO_DIR}/trafktux.db" ]]; then
     exit 1
 fi
 
+OPT_REPO_DIR="${PROFILE_DIR}/airootfs/opt/TrafkTuxOptional"
+
+if [[ ! -f "${OPT_REPO_DIR}/TrafkTuxOptional.db" ]]; then
+    echo "FEHLER: ${OPT_REPO_DIR}/TrafkTuxOptional.db nicht gefunden." >&2
+    echo "Bitte zuerst ./BuildOptionalRepo.sh ausfuehren." >&2
+    exit 1
+fi
+
 # Hinweis (keine harte Voraussetzung): der komplette hyprpm-State liegt,
 # falls schonmal gebaut, dauerhaft unter airootfs/opt/trafktux-hyprpm-cache
 # und wird beim Post-Install-Schritt (install-hyprpm-plugins.sh) auf den

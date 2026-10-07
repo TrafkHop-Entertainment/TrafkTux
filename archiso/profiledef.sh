@@ -27,6 +27,10 @@ file_permissions=(
 
   ["/usr/local/bin/install-aur-packages.sh"]="0:0:755"
 
+  ["/usr/local/lib/trafktux/OptionalSync.sh"]="0:0:755"
+
+  ["/usr/local/lib/trafktux/SystemUpdate.sh"]="0:0:755"
+
   # Calamares-Starter + Skripte
   ["/usr/local/bin/Installation_guide"]="0:0:755"
 

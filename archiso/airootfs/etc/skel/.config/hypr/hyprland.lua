@@ -64,6 +64,7 @@ hl.on("hyprland.start", function()
         "bash -c 'hyprctl plugin list | grep -q kinetic-scroll || (hyprpm reload -n && sleep 1 && hyprctl reload)'"
     )
     hl.exec_cmd("xfdesktop")
+    hl.exec_cmd("bash /usr/local/lib/trafktux/OptionalSync.sh --watch")
     hl.exec_cmd("bash ~/.config/hypr/Wallpapers.sh")
     -- TrafkTuxBar ersetzt waybar (siehe TrafkTuxBar.c/.jsonc) - alte
     -- waybar-Zeile vorerst nur auskommentiert, nicht geloescht.

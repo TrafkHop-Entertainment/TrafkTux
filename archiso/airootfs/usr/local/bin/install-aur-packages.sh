@@ -5,11 +5,18 @@
 # mitgelieferten [trafktux]-Repo (airootfs/opt/trafktux-repo). Braucht
 # KEIN Internet und KEIN yay/makepkg mehr, da alle Pakete bereits von
 # build-local-repo.sh vorgebaut wurden.
+#
+# Das [trafktux]-Repo steht NICHT in der dauerhaften /etc/pacman.conf des
+# Zielsystems. Es wird hier nur fuer diesen einen pacman-Aufruf ueber eine
+# temporaere Config dazugegeben. Dadurch bleibt nach der Installation nichts
+# zu bereinigen (das Cleanup loescht nur noch /opt/trafktux-repo + DB).
 set -euo pipefail
 
 REPO_DIR="/opt/trafktux-repo"
 REPO_NAME="trafktux"
-SYNC_DB="/var/lib/pacman/sync/${REPO_NAME}.db"
+OPT_DIR="/opt/TrafkTuxOptional"
+OPT_NAME="TrafkTuxOptional"
+SYNC_DIR="/var/lib/pacman/sync"
 
 PACKAGES=(
   xwaylandvideobridge
@@ -30,14 +37,31 @@ if [[ ! -d "${REPO_DIR}" ]]; then
     exit 0
 fi
 
-# Die lokale Repo-Datenbank direkt einspielen, statt "pacman -Sy"
+# Die lokalen Repo-Datenbanken direkt einspielen, statt "pacman -Sy"
 # aufzurufen. "pacman -Sy" wuerde ALLE konfigurierten Repos (also auch
 # core/extra ueber's Internet) synchronisieren wollen und ohne
 # Internetverbindung fehlschlagen - das hier bleibt komplett offline.
-mkdir -p "$(dirname "${SYNC_DB}")"
-cp -f "${REPO_DIR}/${REPO_NAME}.db.tar.gz" "${SYNC_DB}"
+mkdir -p "${SYNC_DIR}"
+cp -f "${REPO_DIR}/${REPO_NAME}.db.tar.gz" "${SYNC_DIR}/${REPO_NAME}.db"
+
+# Optional-Repo: nur die DB einspielen, damit pacman die in /etc/pacman.conf
+# eingetragene Datenbank findet und Pamac die Metapakete sofort anzeigt.
+if [[ -f "${OPT_DIR}/${OPT_NAME}.db.tar.gz" ]]; then
+    cp -f "${OPT_DIR}/${OPT_NAME}.db.tar.gz" "${SYNC_DIR}/${OPT_NAME}.db"
+fi
+
+# Temporaere Config = die echte Ziel-Config + [trafktux] ganz hinten
+TMP_CONF="$(mktemp)"
+trap 'rm -f "${TMP_CONF}"' EXIT
+cp -f /etc/pacman.conf "${TMP_CONF}"
+cat >> "${TMP_CONF}" <<EOF
+
+[${REPO_NAME}]
+SigLevel = Optional TrustAll
+Server = file://${REPO_DIR}
+EOF
 
 echo "==> Installiere Zusatzpakete aus lokalem Repo (${REPO_NAME})..."
-pacman -S --noconfirm --needed "${PACKAGES[@]}"
+pacman --config "${TMP_CONF}" -S --noconfirm --needed "${PACKAGES[@]}"
 
 echo "==> AUR-Zusatzpakete fertig installiert (offline, aus lokalem Repo)."

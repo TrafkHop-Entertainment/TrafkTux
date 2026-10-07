@@ -693,7 +693,7 @@ def _get_bubble_surface():
         _bubble_surface = surf
     except Exception as e:
         _bubble_load_failed = True
-        print(f"⚠ Blasenbild konnte nicht geladen werden ({BUBBLE_PATH}): {e}", file=sys.stderr)
+        print(f"WARNING: Blasenbild konnte nicht geladen werden ({BUBBLE_PATH}): {e}", file=sys.stderr)
     return _bubble_surface
 
 _overlay_surface = None
@@ -712,7 +712,7 @@ def _get_overlay_surface():
         _overlay_surface = surf
     except Exception as e:
         _overlay_load_failed = True
-        print(f"⚠ Overlay-Bild konnte nicht geladen werden ({OVERLAY_PATH}): {e}", file=sys.stderr)
+        print(f"WARNING: Overlay-Bild konnte nicht geladen werden ({OVERLAY_PATH}): {e}", file=sys.stderr)
     return _overlay_surface
 
 def _paint_bubble_bg(ctx, w: int, h: int) -> None:
@@ -1179,7 +1179,7 @@ def _fade_out_and_close(name: str, win: Gtk.Window) -> None:
             try:
                 cleanup_fn()
             except Exception as e:
-                print(f"⚠ _cleanup für Widget '{name}' fehlgeschlagen: {e}", file=sys.stderr)
+                print(f"WARNING: _cleanup für Widget '{name}' fehlgeschlagen: {e}", file=sys.stderr)
         else:
             try: win.destroy()
             except Exception: pass
@@ -1225,14 +1225,14 @@ def _destroy_widget(name: str) -> None:
     if cleanup_fn is not None:
         try: cleanup_fn()
         except Exception as e:
-            print(f"⚠ _cleanup für Widget '{name}' fehlgeschlagen: {e}", file=sys.stderr)
+            print(f"WARNING: _cleanup für Widget '{name}' fehlgeschlagen: {e}", file=sys.stderr)
     else:
         # Sollte nie vorkommen (make_win registriert IMMER einen
         # Eintrag, bevor ein Fenster in _open landen kann) - Fallback
         # nur zur Sicherheit, damit das Fenster wenigstens verschwindet.
         try: win.destroy()
         except Exception as e:
-            print(f"⚠ win.destroy() für Widget '{name}' fehlgeschlagen: {e}", file=sys.stderr)
+            print(f"WARNING: win.destroy() für Widget '{name}' fehlgeschlagen: {e}", file=sys.stderr)
 
 def _close_all(except_name: str = None) -> None:
     for name in list(_open):
@@ -1969,18 +1969,35 @@ def _wifi_dev_name() -> str | None:
     return wifi_devs[0][0] if wifi_devs else None
 
 def _wifi_list() -> list:
+    """Eine Zeile pro SSID. Mehrere Access Points mit gleichem Namen
+    werden zusammengeführt: aktiv gewinnt immer, sonst das stärkste
+    Signal. rsplit() schneidet SECURITY und SIGNAL rechts ab, damit
+    escapte Doppelpunkte (\\:) in SSIDs nicht stören."""
     out = run(["nmcli", "-t", "-f", "IN-USE,SSID,SIGNAL,SECURITY",
                "dev", "wifi", "list"])
-    nets, seen = [], set()
+    best = {}
     for line in out.splitlines():
-        p = line.split(":", 3)
-        if len(p) < 4 or not p[1] or p[1] in seen: continue
-        seen.add(p[1])
-        try: sig = int(p[2])
-        except: sig = 0
-        nets.append({"active": p[0].strip()=="*", "ssid": p[1],
-                     "signal": sig, "secure": bool(p[3].strip())})
-    nets.sort(key=lambda n: n["signal"], reverse=True)
+        try:
+            head, sig_s, sec = line.rsplit(":", 2)
+            in_use, ssid = head.split(":", 1)
+        except ValueError:
+            continue
+        ssid = ssid.replace("\\:", ":")
+        if not ssid:
+            continue
+        try: sig = int(sig_s)
+        except ValueError: sig = 0
+        sec = sec.strip()
+        active = in_use.strip() == "*"
+        cur = best.get(ssid)
+        if cur is None:
+            best[ssid] = {"active": active, "ssid": ssid, "signal": sig,
+                          "secure": bool(sec),
+                          "enterprise": "802.1x" in sec.lower()}
+        else:
+            cur["active"] = cur["active"] or active
+            cur["signal"] = max(cur["signal"], sig)
+    nets = sorted(best.values(), key=lambda n: n["signal"], reverse=True)
     return nets[:20]
 
 def _sig_icon(p: int) -> str:
@@ -2010,6 +2027,129 @@ def _pw_dialog(parent: Gtk.Window, ssid: str) -> str | None:
     pw = e.get_text() if resp == Gtk.ResponseType.OK else None
     dlg.destroy()
     return pw
+
+def _eap_dialog(parent: Gtk.Window, ssid: str) -> dict | None:
+    """Benutzername+Passwort+EAP-Methode für WPA2/WPA3-Enterprise-
+    (802.1X-)Netzwerke - genau das Feld, das bisher komplett fehlte
+    (siehe _pw_dialog() oben, die nur ein einzelnes Passwort-Feld
+    kennt). PEAP/MSCHAPv2 ist voreingestellt, weil das mit großem
+    Abstand die häufigste Kombination bei Schul-/Uni-/Firmen-RADIUS-
+    Servern ist (dieselbe Standard-Kombi, die Windows/Android/iOS-
+    Verbindungsassistenten defaultmäßig vorschlagen) - TTLS/TLS/FAST
+    stehen als Alternative zur Auswahl, falls PEAP bei einem
+    bestimmten Netzwerk nicht klappt."""
+    dlg = Gtk.Dialog(title=f"Enterprise Wi-Fi: {ssid}", transient_for=parent)
+    dlg.set_name("wb-daemon-popup")
+    dlg.set_modal(True)
+    dlg.set_keep_above(True)
+    dlg.set_type_hint(Gdk.WindowTypeHint.DIALOG)
+    dlg.add_buttons("Cancel", Gtk.ResponseType.CANCEL,
+                    "Connect", Gtk.ResponseType.OK)
+    area = dlg.get_content_area()
+    area.pack_start(Gtk.Label(
+        label="This network needs your personal login (802.1X), "
+              "not just a shared Wi-Fi password."),
+        False, False, 4)
+
+    e_user = Gtk.Entry()
+    e_user.set_placeholder_text("Username")
+    area.pack_start(e_user, True, True, 4)
+
+    e_pw = Gtk.Entry()
+    e_pw.set_visibility(False)
+    e_pw.set_placeholder_text("Password")
+    e_pw.set_activates_default(True)
+    e_pw.connect("activate", lambda _: dlg.response(Gtk.ResponseType.OK))
+    area.pack_start(e_pw, True, True, 4)
+
+    eap_row = hrow(sp=6)
+    eap_row.pack_start(Gtk.Label(label="EAP method:"), False, False, 0)
+    eap_combo = Gtk.ComboBoxText()
+    eap_combo.get_style_context().add_class("bubble")
+    eap_combo.get_style_context().add_class("dropdown")
+    for m in ("PEAP", "TTLS", "TLS", "FAST"):
+        eap_combo.append_text(m)
+    eap_combo.set_active(0)
+    eap_row.pack_start(eap_combo, False, False, 0)
+    area.pack_start(eap_row, False, False, 4)
+
+    dlg.show_all()
+    resp = dlg.run()
+    result = None
+    if resp == Gtk.ResponseType.OK:
+        result = {
+            "username": e_user.get_text(),
+            "password": e_pw.get_text(),
+            "eap": (eap_combo.get_active_text() or "peap").lower(),
+        }
+    dlg.destroy()
+    return result
+
+def _check_and_open_captive_portal(on_done=None) -> None:
+    """Fragt NetworkManager nach dem Verbindungsstatus (eigener Check,
+    nicht über DNS/HTTP, daher kein Fehlalarm auf Netzen, die HTTP
+    blockieren). Bei 'portal' oder 'limited' wird der Gast-Modus fürs
+    Profil aktiviert (Router-DNS erlaubt, DoT pro Link aus) und der
+    Browser auf eine reine HTTP-Seite geöffnet, damit das Portal greift."""
+    state = run(["nmcli", "networking", "connectivity", "check"],
+                timeout=15).strip().lower()
+    portal = state in ("portal", "limited")
+    if portal:
+        conn = _active_connection_name()
+        if conn and not _guest_wifi_active(conn):
+            _set_guest_wifi(conn, True)
+        for cmd in (["xdg-open", "http://neverssl.com"],
+                    [os.environ.get("BROWSER", "xdg-open"), "http://neverssl.com"]):
+            try:
+                subprocess.Popen(cmd, stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL, start_new_session=True)
+                break
+            except Exception:
+                continue
+    if on_done:
+        GLib.idle_add(on_done, portal)
+
+def _wifi_connect_psk(ssid: str, password: str, dev: str | None) -> tuple[bool, str]:
+    cmd = ["nmcli", "dev", "wifi", "connect", ssid]
+    if password:
+        cmd += ["password", password]
+    if dev:
+        cmd += ["ifname", dev]
+    out, err, rc = run_ec(cmd, timeout=20)
+    return rc == 0, (err or out)
+
+def _wifi_connect_enterprise(ssid: str, creds: dict, dev: str | None) -> tuple[bool, str]:
+    """802.1X-Verbindung. Das bestehende Profil bleibt erhalten, bis das
+    neue erfolgreich aktiviert ist (vorher wurde es zuerst gelöscht, bei
+    einem falschen Passwort war dann nichts mehr da). password-flags 0
+    speichert das Passwort im Profil, sonst fragt NM über einen Agenten
+    nach, den das Widget nicht hat."""
+    tmp = f"{ssid}__tmp"
+    run_ec(["nmcli", "connection", "delete", tmp], timeout=10)
+    add_cmd = [
+        "nmcli", "connection", "add", "type", "wifi", "con-name", tmp,
+        "ssid", ssid,
+        "wifi-sec.key-mgmt", "wpa-eap",
+        "802-1x.eap", creds["eap"],
+        "802-1x.identity", creds["username"],
+        "802-1x.password", creds["password"],
+        "802-1x.password-flags", "0",
+        "connection.autoconnect", "yes",
+    ]
+    if creds["eap"] in ("peap", "ttls"):
+        add_cmd += ["802-1x.phase2-auth", "mschapv2"]
+    if dev:
+        add_cmd += ["ifname", dev]
+    out, err, rc = run_ec(add_cmd, timeout=15)
+    if rc != 0:
+        return False, err or out
+    out2, err2, rc2 = run_ec(["nmcli", "connection", "up", tmp], timeout=25)
+    if rc2 != 0:
+        run_ec(["nmcli", "connection", "delete", tmp], timeout=10)
+        return False, err2 or out2
+    run_ec(["nmcli", "connection", "delete", ssid], timeout=10)
+    run_ec(["nmcli", "connection", "modify", tmp, "connection.id", ssid], timeout=10)
+    return True, ""
 
 def _ethernet_devices() -> list:
     """Alle LAN/Ethernet-Geräte - fehlten bisher komplett im Networks-
@@ -2117,9 +2257,31 @@ def _set_guest_wifi(conn_name: str, enable: bool) -> tuple[bool, str]:
     Verbindungsprofil (kein globaler Default, siehe README: "new
     networks joined later still get encrypted DNS by default") und
     verbindet neu, damit die Änderung sofort greift. Braucht KEIN
-    pkexec - NetworkManager erlaubt einem angemeldeten User per Polkit
-    standardmäßig, seine EIGENEN Verbindungsprofile zu ändern (exakt
-    dieselbe Berechtigungslage wie beim bestehenden _set_dns() oben)."""
+    pkexec für diesen Teil - NetworkManager erlaubt einem angemeldeten
+    User per Polkit standardmäßig, seine EIGENEN Verbindungsprofile zu
+    ändern (exakt dieselbe Berechtigungslage wie beim bestehenden
+    _set_dns() oben).
+
+    FIX (gemeldet: Captive-Portal-Login in Schul-/Gäste-WLANs zeigt
+    GAR NICHTS an, weder Login-Seite noch sonst was lädt): ignore-
+    auto-dns allein reicht NICHT. Ist "Enforce DNS over TLS" global
+    aktiv (DNSOverTLS=yes in /etc/systemd/resolved.conf - und das ist
+    hier der Default, siehe _refresh_dot()), gilt das für JEDEN Link,
+    auch für diesen hier - selbst wenn jetzt brav der Router-eigene
+    DNS-Server benutzt wird (ignore-auto-dns=no), verlangt
+    systemd-resolved von GENAU DIESEM Server trotzdem zwingend DNS-
+    over-TLS. Schul-/Hotel-/Flughafen-Router-DNS kann so gut wie nie
+    DoT - die Namensauflösung über diesen Link schlägt dann KOMPLETT
+    fehl, nicht nur die Captive-Portal-Erkennung. Genau das war der
+    Bug: nicht "Login-Seite wird nicht erkannt", sondern "DNS geht für
+    dieses Netzwerk überhaupt nicht mehr". Fix: zusätzlich ein
+    PER-LINK-Override setzen (resolvectl dnsovertls <iface> no/...) -
+    nur für dieses eine Interface, zur Laufzeit, OHNE die globale
+    resolved.conf-Einstellung anzutasten (andere Links/Netzwerke
+    bleiben weiter voll verschlüsselt). systemd-resolved erlaubt das
+    per Polkit normalerweise auch ohne root für die aktive Sitzung -
+    _run_maybe_priv() eskaliert automatisch auf pkexec, falls ein
+    System das doch anders konfiguriert hat."""
     val = "no" if enable else "yes"
     out, err, ec = run_ec(["nmcli", "connection", "modify", conn_name,
                             "ipv4.ignore-auto-dns", val,
@@ -2129,6 +2291,22 @@ def _set_guest_wifi(conn_name: str, enable: bool) -> tuple[bool, str]:
     out2, err2, ec2 = run_ec(["nmcli", "connection", "up", conn_name], timeout=15)
     if ec2 != 0:
         return False, err2 or out2
+
+    iface = run(["nmcli", "-g", "GENERAL.DEVICES",
+                 "connection", "show", conn_name]).strip()
+    if iface and shutil.which("resolvectl"):
+        # Beim Ausschalten zurück auf den gerade geltenden GLOBALEN
+        # Modus (yes/opportunistic) - nicht hart auf "yes", falls der
+        # Nutzer Enforce DoT inzwischen selbst auf opportunistic
+        # gestellt hat.
+        dot_val = "no" if enable else (_dns_over_tls_status() or "yes")
+        ok, err3 = _run_maybe_priv(["resolvectl", "dnsovertls", iface, dot_val], timeout=15)
+        if not ok:
+            # DNS/Verbindung selbst stehen trotzdem schon - das hier
+            # nur als Hinweis zurückgeben, kein harter Fehlschlag der
+            # ganzen Aktion.
+            return True, (f"Guest WiFi set, but per-link DoT override failed "
+                           f"({err3}) - DNS over TLS may still block this network.")
     return True, ""
 
 def _dns_content(win: Gtk.Window) -> Gtk.Box:
@@ -2218,6 +2396,16 @@ def _dns_content(win: Gtk.Window) -> Gtk.Box:
             def _apply():
                 ok, err = _set_guest_wifi(conn, new_val)
                 if not ok:
+                    raise RuntimeError(err)
+                if err:
+                    # ok=True, aber mit Hinweistext (z.B. der Fallback-
+                    # resolvectl-Aufruf in _set_guest_wifi() schlug
+                    # fehl) - bewusst trotzdem als Fehler hochreichen,
+                    # statt den Hinweis stillschweigend zu verschlucken:
+                    # ein Nutzer, der denkt "Guest WiFi ist an" während
+                    # DNS over TLS den Router-DNS insgeheim weiter
+                    # blockiert, ist schlechter dran als einer, der
+                    # einfach nochmal klicken muss.
                     raise RuntimeError(err)
             def _reset():
                 _refresh_guest(_guest_wifi_active(conn))
@@ -2366,7 +2554,7 @@ def _network_content(win: Gtk.Window) -> Gtk.Box:
             label = f"{check}{_sig_icon(n['signal'])}  {n['ssid'][:26]}{lock}"
             b = btn(label, tip=f"Signal: {n['signal']}%",
                     active=n["active"])
-            def _mk(ssid, secure, active):
+            def _mk(ssid, secure, enterprise, active):
                 def _cb(_):
                     if active:
                         def _disconnect():
@@ -2375,23 +2563,46 @@ def _network_content(win: Gtk.Window) -> Gtk.Box:
                                 run(["nmcli", "dev", "disconnect", dev])
                             GLib.idle_add(_do_load)
                         in_thread(_disconnect)
+                    elif enterprise:
+                        # FIX: Schul-/Firmen-WLANs (z.B. "HTL ...")
+                        # sind so gut wie immer WPA2/WPA3-Enterprise
+                        # (802.1X) - brauchen Benutzername UND
+                        # Passwort, nicht nur ein gemeinsames WLAN-
+                        # Passwort. Siehe _eap_dialog()/
+                        # _wifi_connect_enterprise() weiter oben.
+                        creds = _eap_dialog(win, ssid)
+                        if creds is None or not creds["username"]:
+                            return
+                        def _connect():
+                            dev = _wifi_dev_name()
+                            ok, err = _wifi_connect_enterprise(ssid, creds, dev)
+                            if not ok:
+                                GLib.idle_add(_show_connect_error, err)
+                            else:
+                                _check_and_open_captive_portal()
+                            GLib.idle_add(_do_load)
+                        in_thread(_connect)
                     else:
                         pw = _pw_dialog(win, ssid) if secure else ""
                         if pw is None: return
                         def _connect():
                             dev = _wifi_dev_name()
-                            cmd = ["nmcli", "dev", "wifi", "connect", ssid]
-                            if pw:
-                                cmd += ["password", pw]
-                            if dev:
-                                cmd += ["ifname", dev]
-                            out, err, rc = run_ec(cmd, timeout=15)
-                            if rc != 0:
-                                GLib.idle_add(_show_connect_error, err or out)
+                            ok, err = _wifi_connect_psk(ssid, pw, dev)
+                            if not ok:
+                                GLib.idle_add(_show_connect_error, err)
+                            else:
+                                # FIX (gemeldet: "sollte eigentlich auf
+                                # ne Login-Seite weiterleiten") - nach
+                                # jeder erfolgreichen Verbindung kurz
+                                # prüfen, ob ein Captive Portal (Gäste-/
+                                # Hotel-/Flughafen-WLAN) im Weg hängt,
+                                # und falls ja automatisch den Browser
+                                # auf dessen Login-Seite öffnen.
+                                _check_and_open_captive_portal()
                             GLib.idle_add(_do_load)
                         in_thread(_connect)
                 return _cb
-            b.connect("clicked", _mk(n["ssid"], n["secure"], n["active"]))
+            b.connect("clicked", _mk(n["ssid"], n["secure"], n["enterprise"], n["active"]))
             net_box.pack_start(b, False, False, 0)
         net_box.show_all()
 
@@ -4160,9 +4371,11 @@ def _akku_content(win: Gtk.Window) -> Gtk.Box:
     gm_fx_row = hbox(6)
     gm_fx_row.set_halign(Gtk.Align.CENTER)
 
-    gm_btn = btn("🎮", tip="Gaming Mode: performance profile + CPU boost off")
-    fx_btn = btn("🔋", active=effects_battery_active(),
-                 tip="Save power: turn off animations, blur, shadow, hyprglass & cursor effects")
+    gm_btn = Gtk.Button.new_from_icon_name("input-gaming-symbolic", Gtk.IconSize.BUTTON)
+    gm_btn.set_tooltip_text("Gaming Mode: performance profile + CPU boost off")
+    fx_btn = Gtk.Button.new_from_icon_name("battery-good-symbolic", Gtk.IconSize.BUTTON)
+    fx_btn.set_tooltip_text(
+        "Save power: turn off animations, blur, shadow, hyprglass & cursor effects")
     gm_fx_row.pack_start(gm_btn, False, False, 0)
     gm_fx_row.pack_start(fx_btn, False, False, 0)
     t_prof.pack_start(gm_fx_row, False, False, 0)
@@ -4584,7 +4797,7 @@ def _processes_content(win: Gtk.Window) -> Gtk.Box:
                     err_msg = f"Failed to end “{n}”: {e}"
                 def _done():
                     if err_msg:
-                        _flash(f"⚠ {err_msg}")
+                        _flash(f"Error: {err_msg}")
                     _refresh()
                     return False
                 GLib.idle_add(_done)
@@ -5822,8 +6035,9 @@ def _clock_content(win: Gtk.Window) -> Gtk.Box:
                 title_lbl.set_halign(Gtk.Align.START)
                 title_lbl.set_line_wrap(True)
                 title_lbl.set_max_width_chars(28)
-                del_btn = btn("🗑", tip="Delete event",
-                               cb=lambda _w, ev=e: _on_delete_event(ev))
+                del_btn = Gtk.Button.new_from_icon_name("user-trash-symbolic", Gtk.IconSize.BUTTON)
+                del_btn.set_tooltip_text("Delete event")
+                del_btn.connect("clicked", lambda _w, ev=e: _on_delete_event(ev))
                 row.pack_start(time_lbl, False, False, 0)
                 row.pack_start(title_lbl, True, True, 0)
                 row.pack_start(del_btn, False, False, 0)
@@ -6036,7 +6250,7 @@ def _clock_content(win: Gtk.Window) -> Gtk.Box:
             ctx = b.get_style_context()
             if n == name: ctx.add_class("active")
             else:         ctx.remove_class("active")
-    for name, label in (("clock", "🕐  Clock"),
+    for name, label in (("clock", "  Clock"),
                          ("weather", "󰖐  Weather"),
                          ("calendar", "󰃭  Calendar")):
         b = btn(label, active=(name == "clock"))
@@ -6165,7 +6379,7 @@ def apply_change(desc: str, apply_fn, on_status=None, reset_fn=None) -> None:
     Aufrufe, sonst würde die UI beim Klick kurz einfrieren).
 
     on_status(text) - falls angegeben - bekommt optional "Applying…"
-    und danach "Applied ✓" bzw. eine Fehlermeldung, als Ersatz für die
+    und danach "Applied" bzw. eine Fehlermeldung, als Ersatz für die
     frühere gemeinsame Statuszeile in der Apply-Leiste.
 
     reset_fn wird NUR bei einem Fehler aufgerufen, um das betroffene
@@ -6188,7 +6402,7 @@ def apply_change(desc: str, apply_fn, on_status=None, reset_fn=None) -> None:
                 try: reset_fn()
                 except Exception: pass
             if on_status:
-                on_status(f"Error: {err}" if err else "Applied ✓")
+                on_status(f"Error: {err}" if err else "Applied")
             return False
         GLib.idle_add(_finish)
 
@@ -6447,6 +6661,12 @@ def _build_settings_appearance(page: Gtk.Box, key: str, label: str, win: Gtk.Win
     # (theme-glow-dark-Klasse, siehe CSS oben), normales Gold bei
     # Light (Standard-.active-Look, keine Zusatzklasse nötig).
     theme_toggle = btn("", active=True)
+    theme_toggle.set_always_show_image(True)
+    def _set_theme_toggle_label(is_dark: bool):
+        theme_toggle.set_label("Dark" if is_dark else "Light")
+        theme_toggle.set_image(Gtk.Image.new_from_icon_name(
+            "weather-clear-night-symbolic" if is_dark else "weather-clear-symbolic",
+            Gtk.IconSize.BUTTON))
     def _refresh_theme_toggle():
         # Robuster: _is_dark_mode() liest aus Gtk.Settings (live im Prozess)
         # UND fällt auf gsettings zurück, falls die In-Prozess-Property
@@ -6459,10 +6679,11 @@ def _build_settings_appearance(page: Gtk.Box, key: str, label: str, win: Gtk.Win
                 is_dark = "dark" in _gs_out.lower()
         except Exception:
             pass
-        # Label: "🌙 Dark" wenn Dark-Mode aktiv, "☀️ Light" wenn Light aktiv.
-        # Eindeutiger als vorher (kein "Dark Theme" das im Light-Modus
-        # verwirrt) - das aktive Icon + Glow zeigt, was GERADE läuft.
-        theme_toggle.set_label("🌙 Dark" if is_dark else "☀️ Light")
+        # Label+Icon: "Dark"/moon wenn Dark-Mode aktiv, "Light"/sun wenn
+        # Light aktiv. Eindeutiger als vorher (kein "Dark Theme" das im
+        # Light-Modus verwirrt) - das aktive Icon + Glow zeigt, was
+        # GERADE läuft.
+        _set_theme_toggle_label(is_dark)
         ctx = theme_toggle.get_style_context()
         if is_dark:
             ctx.add_class("active")
@@ -6489,7 +6710,7 @@ def _build_settings_appearance(page: Gtk.Box, key: str, label: str, win: Gtk.Win
         def _reset():
             _refresh_theme_toggle()
         # Sofortiges visuelles Feedback
-        theme_toggle.set_label("🌙 Dark" if new_dark else "☀️ Light")
+        _set_theme_toggle_label(new_dark)
         ctx = theme_toggle.get_style_context()
         if new_dark:
             ctx.add_class("theme-glow-dark")
@@ -6859,7 +7080,7 @@ def _build_settings_appearance(page: Gtk.Box, key: str, label: str, win: Gtk.Win
         try:
             factor = float(val.replace(",", "."))
         except ValueError:
-            _flash_appearance_status(f"⚠ '{val}' is not a number.")
+            _flash_appearance_status(f"'{val}' is not a number.")
             return
         factor = max(0.25, min(8.0, factor))
         speed_str = f"{factor}"
@@ -6916,13 +7137,15 @@ def _build_settings_appearance(page: Gtk.Box, key: str, label: str, win: Gtk.Win
             ctx = b.get_style_context()
             if n == name: ctx.add_class("active")
             else:         ctx.remove_class("active")
-    for name, tlabel, target_row in (
-            ("sound", "🔊  Sound", tab_row_top),
-            ("look", "🎨  Look", tab_row_top),
-            ("language", "🌐  Language", tab_row_top),
-            ("wallpapers", "🖼  Wallpapers", tab_row_bottom),
-            ("launcher", "🚀  Launcher", tab_row_bottom)):
+    for name, tlabel, ticon, target_row in (
+            ("sound", "Sound", "audio-volume-high-symbolic", tab_row_top),
+            ("look", "Look", "preferences-desktop-theme-symbolic", tab_row_top),
+            ("language", "Language", "preferences-desktop-locale-symbolic", tab_row_top),
+            ("wallpapers", "Wallpapers", "preferences-desktop-wallpaper-symbolic", tab_row_bottom),
+            ("launcher", "Launcher", "system-run-symbolic", tab_row_bottom)):
         b = btn(tlabel, active=(name == "sound"))
+        b.set_image(Gtk.Image.new_from_icon_name(ticon, Gtk.IconSize.BUTTON))
+        b.set_always_show_image(True)
         b.connect("clicked", lambda _b, n=name: _switch(n))
         tab_btns[name] = b
         target_row.pack_start(b, False, False, 0)
@@ -8804,8 +9027,8 @@ def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.W
     res_combo.connect("changed", _on_res_change)
     hz_handler_id[0] = hz_combo.connect("changed", _on_hz_change)
 
-    # Scale-Zeile: Icon-Label + Dropdown nebeneinander, zentriert
-    scale_row_lbl = Gtk.Label(label="⛶")
+    # Scale-Zeile: Icon + Dropdown nebeneinander, zentriert
+    scale_row_lbl = Gtk.Image.new_from_icon_name("zoom-fit-best-symbolic", Gtk.IconSize.BUTTON)
     scale_row_lbl.get_style_context().add_class("bubble")
     scale_row_lbl.set_opacity(0.7)
     scale_row = hbox(8)
@@ -9034,7 +9257,7 @@ SETTINGS_CATEGORIES = [
     ("battery",    "󰁹", "Battery",       "Advanced power options"),
     ("calendar",   "󰃭", "Calendar",      "Weather, Time, Events"),
     ("security",   "󰦝", "Security",      "Privacy, Kill-Switches"),
-    ("apps",       "󱁤", "Apps & Editor", "Launcher editor, Config files"),
+    ("apps",       "󱁤", "Apps & Shortcuts", "Launcher editor, Config files"),
 ]
 
 def _build_settings_brightness(page: Gtk.Box, key: str, label: str, win: Gtk.Window) -> None:
@@ -9298,7 +9521,9 @@ def _privacy_content(win: Gtk.Window) -> Gtk.Box:
     _force_block_fns: list = []
     _refresh_fns: list = []
 
-    panic_btn = btn("🚨  Everything")
+    panic_btn = btn("Everything")
+    panic_btn.set_image(Gtk.Image.new_from_icon_name("dialog-warning-symbolic", Gtk.IconSize.BUTTON))
+    panic_btn.set_always_show_image(True)
     panic_btn.set_hexpand(True)
     panic_btn.set_tooltip_text(
         "Immediately blocks Wi-Fi, Bluetooth, WWAN/GPS, Camera and "
@@ -9374,8 +9599,17 @@ def _privacy_content(win: Gtk.Window) -> Gtk.Box:
     # ── Kamera & Mikrofon: einfaches Bool-Muster (kein Hard/Soft-
     #    Unterschied wie bei rfkill) ──────────────────────────────────
     def _make_bool_row(icon: str, label_text: str, get_blocked, set_blocked,
-                        missing_tip: str = "Not found") -> Gtk.Button:
-        b = btn(f"{icon}  {label_text}")
+                        missing_tip: str = "Not found", icon_name: str = None) -> Gtk.Button:
+        # icon_name: echtes Icon-Theme-Icon statt Nerd-Font-Glyph im
+        # Label-Text (für Fälle ohne verlässliches Nerd-Font-Symbol zur
+        # Hand, siehe Touchpad/Touchscreen weiter unten) - icon bleibt
+        # das bisherige Verhalten für Camera/Mic.
+        if icon_name:
+            b = btn(label_text)
+            b.set_image(Gtk.Image.new_from_icon_name(icon_name, Gtk.IconSize.BUTTON))
+            b.set_always_show_image(True)
+        else:
+            b = btn(f"{icon}  {label_text}")
         b.set_hexpand(True)
 
         def _refresh():
@@ -9421,11 +9655,11 @@ def _privacy_content(win: Gtk.Window) -> Gtk.Box:
         "󰍬", "Microphone", _mic_muted, _mic_set_muted,
         missing_tip="No default input device"))
     _privacy_rows.append(_make_bool_row(
-        "🖱️", "Touchpad", _touchpad_blocked, _touchpad_set_blocked,
-        missing_tip="No touchpad found"))
+        "", "Touchpad", _touchpad_blocked, _touchpad_set_blocked,
+        missing_tip="No touchpad found", icon_name="input-touchpad-symbolic"))
     _privacy_rows.append(_make_bool_row(
-        "👆", "Touchscreen", _touchscreen_blocked, _touchscreen_set_blocked,
-        missing_tip="No touchscreen found"))
+        "", "Touchscreen", _touchscreen_blocked, _touchscreen_set_blocked,
+        missing_tip="No touchscreen found", icon_name="input-touchscreen-symbolic"))
     # "Der Lock everything Button ist noch 'Everything' mit Emoji und
     # kommt rechts von Touchscreen hin" - Touchscreen ist der 7. (also
     # ungerade) Eintrag in _privacy_rows, hätte in der 2er-Paarung
@@ -9629,7 +9863,7 @@ def _ufw_content(win: Gtk.Window) -> Gtk.Box:
     t_fw = vbox(4); pad(t_fw, h=4, v=10)
     fw_row = hbox(8)
     fw_row.set_halign(Gtk.Align.CENTER)
-    onoff_toggle = btn("🔴  Firewall")
+    onoff_toggle = btn("Firewall — Off")
     refresh_b = Gtk.Button(label="󰑐")
     refresh_b.set_relief(Gtk.ReliefStyle.NONE)
     refresh_b.get_style_context().add_class("flat")
@@ -9642,7 +9876,9 @@ def _ufw_content(win: Gtk.Window) -> Gtk.Box:
     t_rules = vbox(3)
     rules_sw, rules_box = scroll_box(200)
     t_rules.pack_start(rules_sw, False, False, 0)
-    add_row_btn = btn("➕  Add rule")
+    add_row_btn = btn("Add rule")
+    add_row_btn.set_image(Gtk.Image.new_from_icon_name("list-add-symbolic", Gtk.IconSize.BUTTON))
+    add_row_btn.set_always_show_image(True)
     t_rules.pack_start(add_row_btn, False, False, 0)
 
     t_log = vbox(3)
@@ -9724,10 +9960,17 @@ def _ufw_content(win: Gtk.Window) -> Gtk.Box:
             row.get_style_context().add_class("bubble")
             row.get_style_context().add_class("item")
             pad(row, h=8, v=4)
-            action_icon = "🟢" if r["action"].upper().startswith("ALLOW") else \
-                          ("🟡" if r["action"].upper().startswith("LIMIT") else "🔴")
+            if r["action"].upper().startswith("ALLOW"):
+                action_icon_name = "emblem-ok-symbolic"
+            elif r["action"].upper().startswith("LIMIT"):
+                action_icon_name = "dialog-warning-symbolic"
+            else:
+                action_icon_name = "process-stop-symbolic"
+            action_icon = Gtk.Image.new_from_icon_name(action_icon_name, Gtk.IconSize.MENU)
+            action_icon.set_tooltip_text(r["action"])
+            row.pack_start(action_icon, False, False, 0)
             lbl = Gtk.Label(
-                label=f'{action_icon} {r["to"]}  ·  {r["action"]}  ·  from {r["from"]}')
+                label=f'{r["to"]}  ·  {r["action"]}  ·  from {r["from"]}')
             lbl.set_halign(Gtk.Align.START)
             # KEIN set_ellipsize() mehr - gleicher Fix wie beim Task-
             # Manager: Regel sollte NIE abgeschnitten werden, egal wie
@@ -9759,7 +10002,7 @@ def _ufw_content(win: Gtk.Window) -> Gtk.Box:
         GLib.idle_add(_shrink_to_fit, win)
 
     def _refresh_onoff_ui():
-        onoff_toggle.set_label("🟢  Firewall" if _state["active"] else "🔴  Firewall")
+        onoff_toggle.set_label("Firewall — On" if _state["active"] else "Firewall — Off")
         ctx = onoff_toggle.get_style_context()
         if _state["active"]: ctx.add_class("active")
         else:                ctx.remove_class("active")
@@ -9814,8 +10057,12 @@ def _ufw_content(win: Gtk.Window) -> Gtk.Box:
         content.pack_start(port_e, False, False, 0)
 
         action_row = hbox(8)
-        allow_toggle = btn("✅  Allow", active=True)
-        deny_toggle  = btn("⛔  Deny")
+        allow_toggle = btn("Allow", active=True)
+        allow_toggle.set_image(Gtk.Image.new_from_icon_name("emblem-ok-symbolic", Gtk.IconSize.BUTTON))
+        allow_toggle.set_always_show_image(True)
+        deny_toggle  = btn("Deny")
+        deny_toggle.set_image(Gtk.Image.new_from_icon_name("process-stop-symbolic", Gtk.IconSize.BUTTON))
+        deny_toggle.set_always_show_image(True)
         action_state = {"action": "allow"}
         def _pick_allow(_w=None):
             action_state["action"] = "allow"
@@ -10222,8 +10469,12 @@ def _tailscale_content(win: Gtk.Window) -> Gtk.Box:
             row.get_style_context().add_class("bubble")
             row.get_style_context().add_class("item")
             pad(row, h=8, v=4)
-            dot = "🟢" if p["online"] else "⚪"
-            txt = f'{dot} {p["name"]}' + (f'  ·  {p["ip"]}' if p["ip"] else "")
+            dot = Gtk.Image.new_from_icon_name(
+                "emblem-ok-symbolic" if p["online"] else "process-stop-symbolic",
+                Gtk.IconSize.MENU)
+            dot.set_tooltip_text("Online" if p["online"] else "Offline")
+            row.pack_start(dot, False, False, 0)
+            txt = p["name"] + (f'  ·  {p["ip"]}' if p["ip"] else "")
             lbl = Gtk.Label(label=txt)
             lbl.set_halign(Gtk.Align.START)
             # Kein Ellipsize/Namenslimit - gleicher Fix wie Task-Manager
@@ -10303,7 +10554,7 @@ def _tailscale_content(win: Gtk.Window) -> Gtk.Box:
                 for flag, toggle in opt_toggles.items():
                     key = flag.replace("-", "_")
                     on = bool(prefs.get(key))
-                    toggle.set_label("🟢  On" if on else "⚪  Off")
+                    toggle.set_label("On" if on else "Off")
                     ctx = toggle.get_style_context()
                     if on: ctx.add_class("active")
                     else:  ctx.remove_class("active")
@@ -10337,7 +10588,7 @@ def _tailscale_content(win: Gtk.Window) -> Gtk.Box:
                     raise RuntimeError(err)
             def _reset():
                 _refresh_prefs()
-            toggle.set_label("🟢  On" if new_val else "⚪  Off")
+            toggle.set_label("On" if new_val else "Off")
             ctx = toggle.get_style_context()
             if new_val: ctx.add_class("active")
             else:       ctx.remove_class("active")
@@ -10803,8 +11054,12 @@ def _clamav_content(win: Gtk.Window) -> Gtk.Box:
     Scan-Arbeit aus, und das jeweils erst auf Knopfdruck, nie beim
     bloßen Öffnen des Tabs."""
     root = vbox(4); pad(root, h=4, v=6)
-    root.pack_start(btitle("🛡️  ClamAV"), False, False, 0)
-    root.pack_start(sep(), False, False, 2)
+    # BUGFIX (gemeldet: "im ClamAV-Tab ist noch immer die Überschrift
+    # im Tab und der Trennstrich darunter") - kein anderer Sub-Tab
+    # dieses Security-Widgets (Privacy/DNS/Tailscale/Firewall/
+    # Authentication) wiederholt seinen eigenen Tab-Namen nochmal als
+    # Überschrift IM Inhalt - der Tab-Button selbst sagt bereits
+    # "ClamAV". btitle()+sep() hier waren redundant.
 
     if not _clamav_available():
         root.pack_start(bitem("clamscan is not installed", dim=True), False, False, 0)
@@ -11198,7 +11453,7 @@ def _clamav_content(win: Gtk.Window) -> Gtk.Box:
         def _work():
             enabled = _clamav_autoscan_enabled()
             def _apply():
-                autoscan_toggle.set_label("🟢  On" if enabled else "⚪  Off")
+                autoscan_toggle.set_label("On" if enabled else "Off")
                 ctx = autoscan_toggle.get_style_context()
                 if enabled: ctx.add_class("active")
                 else:       ctx.remove_class("active")
@@ -11411,6 +11666,25 @@ def _change_password(current: str, new: str, on_line, on_done) -> None:
 def _fprintd_available() -> bool:
     return bool(shutil.which("fprintd-enroll"))
 
+# Standard-Fingernamen, die fprintd(-enroll/-list/-delete) kennt (siehe
+# `man fprintd-enroll`) - (interner Name, Anzeige-Name) je Eintrag.
+FPRINTD_FINGERS = [
+    ("right-index-finger",  "Right index finger"),
+    ("right-thumb",         "Right thumb"),
+    ("right-middle-finger", "Right middle finger"),
+    ("right-ring-finger",   "Right ring finger"),
+    ("right-little-finger", "Right little finger"),
+    ("left-index-finger",   "Left index finger"),
+    ("left-thumb",          "Left thumb"),
+    ("left-middle-finger",  "Left middle finger"),
+    ("left-ring-finger",    "Left ring finger"),
+    ("left-little-finger",  "Left little finger"),
+]
+_FPRINTD_FRIENDLY = dict(FPRINTD_FINGERS)
+
+def _finger_friendly(internal_name: str) -> str:
+    return _FPRINTD_FRIENDLY.get(internal_name, internal_name.replace("-", " ").capitalize())
+
 def _fprintd_list(user: str) -> list[str]:
     out, _err, ec = run_ec(["fprintd-list", user], timeout=5)
     if ec != 0 or not out:
@@ -11426,15 +11700,60 @@ def _fprintd_delete(user: str) -> tuple[bool, str]:
     out, err, ec = run_ec(["fprintd-delete", user], timeout=10)
     return ec == 0, (err or out if ec != 0 else "")
 
-def _fprintd_enroll(on_line, on_done) -> None:
-    """'fprintd-enroll' (ohne Argument: Standard-Finger des aktuellen
-    Users) ist interaktiv und blockiert, bis ein Finger aufgelegt wird
-    - läuft hier über dasselbe Live-Ausgabe-Streaming-Muster wie der
-    bestehende ClamAV-Scan (_run_streaming/_clamav_scan)."""
-    _run_streaming(["fprintd-enroll"], on_line, on_done)
+# fprintd-enroll gibt bei jedem Sensor-Kontakt eine Zeile
+# "Enroll result: <code>" aus. Terminal-Codes beenden den Vorgang
+# (erfolgreich ODER endgültig fehlgeschlagen), alle anderen sind nur
+# eine Zwischen-Rückmeldung zu EINER Auflage - fprintd fragt danach
+# automatisch weiter ab, bis genug gute Auflagen zusammenkommen (wie
+# viele das sind, hängt vom Sensor ab und wird von fprintd selbst
+# entschieden, nicht hier). Liste nicht abschließend garantiert (neuere
+# fprintd-Versionen können weitere Codes einführen), aber deckt alle
+# dokumentierten/üblichen Fälle ab - ein unbekannter Code fällt unten
+# auf eine generische "noch in Arbeit"-Meldung zurück statt zu crashen.
+_FPRINTD_STAGE_MSG = {
+    "enroll-stage-passed":        "Good — lift your finger and place it again…",
+    "enroll-swipe-too-short":     "Swipe was too short — try again.",
+    "enroll-finger-not-centered": "Finger wasn't centered on the sensor — try again.",
+    "enroll-remove-and-retry":    "Lift your finger, then place it again.",
+}
+_FPRINTD_TERMINAL_OK = {"enroll-completed"}
+_FPRINTD_TERMINAL_ERR = {
+    "enroll-failed":       "Enrollment failed.",
+    "enroll-disconnected": "Fingerprint reader was disconnected.",
+    "enroll-unknown-error": "Unknown error from the fingerprint reader.",
+    "enroll-data-full":    "This reader's storage is full — delete an old finger first.",
+}
 
-def _fprintd_verify(on_line, on_done) -> None:
-    _run_streaming(["fprintd-verify"], on_line, on_done)
+def _fprintd_parse_enroll_line(line: str) -> tuple[str, str | None]:
+    """Übersetzt EINE Zeile aus dem fprintd-enroll-Live-Output in
+    (anzuzeigender Text, Ergebnis) - Ergebnis ist "ok"/"error"/None
+    (None = Zwischenstand, noch nicht fertig). Macht die rohen
+    "Enroll result: enroll-stage-passed"-Codes erst für Menschen
+    lesbar - genau das hat vorher komplett gefehlt (die Live-Zeilen
+    wurden zwar eingesammelt, aber nie angezeigt)."""
+    m = re.search(r"Enroll result:\s*(\S+)", line)
+    if not m:
+        if "Enrolling" in line or "Using device" in line:
+            return "Place your finger on the sensor…", None
+        return line, None
+    code = m.group(1)
+    if code in _FPRINTD_TERMINAL_OK:
+        return "Done.", "ok"
+    if code in _FPRINTD_TERMINAL_ERR:
+        return _FPRINTD_TERMINAL_ERR[code], "error"
+    return _FPRINTD_STAGE_MSG.get(code, f"Still scanning ({code})…"), None
+
+def _fprintd_enroll(finger: str, on_line, on_done) -> None:
+    """Fingerabdruck für EINEN bestimmten Finger einlesen - 'fprintd-
+    enroll -f <finger>' statt ohne Argument (das würde immer denselben
+    Default-Finger nehmen, der Nutzer konnte bisher gar nicht wählen,
+    WELCHEN Finger er registriert). Läuft über dasselbe Live-Ausgabe-
+    Streaming-Muster wie der bestehende ClamAV-Scan
+    (_run_streaming/_clamav_scan)."""
+    _run_streaming(["fprintd-enroll", "-f", finger], on_line, on_done)
+
+def _fprintd_verify(finger: str, on_line, on_done) -> None:
+    _run_streaming(["fprintd-verify", "-f", finger], on_line, on_done)
 
 def _pam_fprintd_enabled() -> bool:
     try:
@@ -11638,19 +11957,19 @@ def _authentication_content(win: Gtk.Window) -> Gtk.Box:
         if resp != Gtk.ResponseType.OK:
             return
         if not current or not new:
-            _flash("⚠ Current and new password are required.")
+            _flash("Current and new password are required.")
             return
         if new != conf:
-            _flash("⚠ New password and confirmation don't match.")
+            _flash("New password and confirmation don't match.")
             return
         _flash("Changing password…", ms=60000)
         lines_acc = []
         def _done(lines, error):
             if error:
                 tail = "\n".join(l for l in lines_acc if l.strip())[-300:]
-                _flash(f"⚠ passwd failed: {tail or error}")
+                _flash(f"passwd failed: {tail or error}")
             else:
-                _flash("✓ Password changed.")
+                _flash("Password changed.")
         def _on_line(l):
             lines_acc.append(l)
         _change_password(current, new, _on_line, _done)
@@ -11667,7 +11986,53 @@ def _authentication_content(win: Gtk.Window) -> Gtk.Box:
         fp_list_lbl.set_line_wrap(True)
         fp_box.pack_start(fp_list_lbl, False, False, 0)
 
-        fp_pam_toggle = btn("PAM: sudo/login via fingerprint — Off", active=False)
+        # Finger-Auswahl: vorher gab es dafür GAR KEINE UI - 'fprintd-
+        # enroll' ohne '-f' hat immer nur denselben Default-Finger
+        # genommen, man konnte also faktisch nur einen einzigen Finger
+        # je registrieren, egal welcher Finger tatsächlich aufgelegt
+        # wurde. Jetzt: Dropdown mit allen 10 von fprintd unterstützten
+        # Fingern (siehe FPRINTD_FINGERS), Enroll/Verify wirken auf den
+        # hier gewählten Finger.
+        finger_row = hrow(sp=6)
+        finger_row.pack_start(Gtk.Label(label="Finger:"), False, False, 0)
+        finger_combo = Gtk.ComboBoxText()
+        finger_combo.get_style_context().add_class("bubble")
+        finger_combo.get_style_context().add_class("dropdown")
+        finger_combo.set_can_focus(False)
+        for _internal, _disp in FPRINTD_FINGERS:
+            finger_combo.append_text(_disp)
+        finger_combo.set_active(0)
+        finger_row.pack_start(finger_combo, False, False, 0)
+        fp_box.pack_start(finger_row, False, False, 0)
+
+        def _selected_finger() -> str:
+            idx = max(0, finger_combo.get_active())
+            return FPRINTD_FINGERS[idx][0]
+
+        # Eigene, deutlich sichtbare Status-Zeile NUR fürs Enroll/
+        # Verify-Live-Feedback (statt des allgemeinen status_lbl ganz
+        # unten) - genau das hat vorher komplett gefehlt: die
+        # Live-Zeilen von fprintd-enroll wurden zwar eingesammelt
+        # (lines_acc.append), aber nirgendwo angezeigt. Der Nutzer sah
+        # also weder "jetzt auflegen", noch "nochmal", noch einen
+        # konkreten Fehlergrund - nur irgendwann Erfolg oder Stille.
+        fp_live_lbl = Gtk.Label(label="")
+        fp_live_lbl.set_line_wrap(True)
+        fp_live_lbl.get_style_context().add_class("caption")
+        fp_live_lbl.set_no_show_all(True)
+        fp_live_lbl.hide()
+        fp_box.pack_start(fp_live_lbl, False, False, 0)
+
+        fp_pam_toggle = btn("Fingerprint for sudo/login — Off", active=False)
+        fp_pam_toggle.get_style_context().add_class("caption")
+        fp_pam_toggle.set_tooltip_text(
+            "When ON, Linux's authentication system (PAM) accepts your "
+            "fingerprint as an alternative to typing your password — "
+            "for sudo, login, screen unlock, polkit prompts, and "
+            "anything else on this system that asks for your password. "
+            "Your password still works too; this just adds the "
+            "fingerprint as a second way in. Changes a system file "
+            f"({_pam_target_file()}), automatically backed up first.")
         fp_row = hrow(sp=6)
         fp_enroll_btn = btn("Enroll finger…")
         fp_verify_btn = btn("Verify")
@@ -11680,38 +12045,49 @@ def _authentication_content(win: Gtk.Window) -> Gtk.Box:
         def _refresh_fp():
             fingers = _fprintd_list(_current_username())
             fp_list_lbl.set_label(
-                f"Enrolled: {', '.join(fingers)}" if fingers else "No fingers enrolled yet.")
+                "Enrolled: " + ", ".join(_finger_friendly(f) for f in fingers)
+                if fingers else "No fingers enrolled yet.")
             fp_pam_toggle.set_label(
-                "PAM: sudo/login via fingerprint — " +
+                "Fingerprint for sudo/login — " +
                 ("On" if _pam_fprintd_enabled() else "Off"))
 
+        def _fp_live(text: str):
+            fp_live_lbl.set_label(text)
+            fp_live_lbl.show()
+
         def _on_enroll(_b):
-            _flash("Touch your fingerprint reader…", ms=30000)
-            lines_acc = []
+            finger = _selected_finger()
+            _fp_live(f"Place your {_finger_friendly(finger).lower()} on the sensor…")
+            def _on_line(line: str):
+                text, result = _fprintd_parse_enroll_line(line)
+                _fp_live(text)
             def _done(lines, error):
                 _refresh_fp()
                 if error:
-                    _flash(f"⚠ Enroll failed: {error}")
+                    tail = next((t for l in reversed(lines)
+                                 for t, r in [_fprintd_parse_enroll_line(l)] if r == "error"), None)
+                    _fp_live(f"Enroll failed: {tail or error}")
                 else:
-                    _flash("✓ Finger enrolled.")
-            _fprintd_enroll(lines_acc.append, _done)
+                    _fp_live(f"{_finger_friendly(finger)} enrolled.")
+            _fprintd_enroll(finger, _on_line, _done)
         fp_enroll_btn.connect("clicked", _on_enroll)
 
         def _on_verify(_b):
-            _flash("Touch your fingerprint reader to verify…", ms=30000)
+            finger = _selected_finger()
+            _fp_live(f"Place your {_finger_friendly(finger).lower()} on the sensor to verify…")
             def _done(lines, error):
                 tail = "\n".join(l for l in lines if l.strip())
                 if error:
-                    _flash(f"⚠ No match / error: {tail or error}")
+                    _fp_live(f"No match / error: {tail or error}")
                 else:
-                    _flash(f"✓ {tail or 'Verified.'}")
-            _fprintd_verify(lambda l: None, _done)
+                    _fp_live(tail or "Verified — match.")
+            _fprintd_verify(finger, lambda l: None, _done)
         fp_verify_btn.connect("clicked", _on_verify)
 
         def _on_delete(_b):
             ok, err = _fprintd_delete(_current_username())
             _refresh_fp()
-            _flash("✓ Deleted all enrolled fingers." if ok else f"⚠ {err}")
+            _fp_live("Deleted all enrolled fingers." if ok else f"Delete failed: {err}")
         fp_delete_btn.connect("clicked", _on_delete)
 
         def _on_pam_toggle(_b):
@@ -11722,7 +12098,7 @@ def _authentication_content(win: Gtk.Window) -> Gtk.Box:
                 ok, err = _pam_fprintd_set_enabled(enable)
                 def _done():
                     _refresh_fp()
-                    _flash("✓ PAM updated." if ok else f"⚠ {err}")
+                    _flash("PAM updated." if ok else f"PAM update failed: {err}")
                     return False
                 GLib.idle_add(_done)
             in_thread(_worker)
@@ -11743,7 +12119,21 @@ def _authentication_content(win: Gtk.Window) -> Gtk.Box:
         fido_box.pack_start(fido_status_lbl, False, False, 0)
 
         fido_add_btn = btn("Add Key…")
-        fido_enforce_toggle = btn("Require key for sudo/login — Off", active=False)
+        fido_enforce_toggle = btn("FIDO key required for sudo/login — Off", active=False)
+        fido_enforce_toggle.get_style_context().add_class("caption")
+        fido_enforce_toggle.set_tooltip_text(
+            "When ON, Linux's authentication system (PAM) will ask for "
+            "this USB/NFC security key whenever something on this "
+            "system normally asks for your password (sudo, login, "
+            "screen unlock, polkit prompts, …). You'll be asked to "
+            "choose between two modes: 'Password AND key' keeps your "
+            "password required too and adds the key as a second, "
+            "mandatory factor (real 2FA — touch the key when it "
+            "blinks). 'Key alone' lets the key by itself replace "
+            "typing your password entirely (faster, but means losing "
+            "the key locks you out unless you still have your "
+            "password-based login as a fallback). Changes a system "
+            f"file ({_pam_target_file()}), automatically backed up first.")
         fido_row = hrow(sp=6)
         fido_row.pack_start(fido_add_btn, False, False, 0)
         fido_box.pack_start(fido_row, False, False, 0)
@@ -11760,7 +12150,7 @@ def _authentication_content(win: Gtk.Window) -> Gtk.Box:
                 f"{n} key(s) registered in {_u2f_mapping_path()}" if n
                 else f"No keys registered yet (will be saved to {_u2f_mapping_path()}).")
             fido_enforce_toggle.set_label(
-                "Require key for sudo/login — " + ("On" if _u2f_enabled() else "Off"))
+                "FIDO key required for sudo/login — " + ("On" if _u2f_enabled() else "Off"))
 
         def _on_add_key(_b):
             d = Gtk.MessageDialog(
@@ -11784,13 +12174,13 @@ def _authentication_content(win: Gtk.Window) -> Gtk.Box:
             def _done(lines, error):
                 if error:
                     tail = "\n".join(l for l in lines if l.strip())[-300:]
-                    _flash(f"⚠ pamu2fcfg failed: {tail or error}")
+                    _flash(f"pamu2fcfg failed: {tail or error}")
                     return
                 # Letzte nicht-leere Ausgabezeile ist die fertige
                 # Mapping-Zeile (username:cred1:cred2:...).
                 cred_line = next((l for l in reversed(lines) if l.strip()), "")
                 if not cred_line:
-                    _flash("⚠ pamu2fcfg produced no output.")
+                    _flash("pamu2fcfg produced no output.")
                     return
                 p = _u2f_mapping_path()
                 try:
@@ -11806,9 +12196,9 @@ def _authentication_content(win: Gtk.Window) -> Gtk.Box:
                             backup_file(p)
                         atomic_write_text(p, cred_line + "\n")
                     _refresh_fido()
-                    _flash("✓ Key registered.")
+                    _flash("Key registered.")
                 except Exception as e:
-                    _flash(f"⚠ Could not write mapping file: {e}")
+                    _flash(f"Could not write mapping file: {e}")
             _pamu2fcfg_add_key(lambda l: None, _done, append=append)
         fido_add_btn.connect("clicked", _on_add_key)
 
@@ -11835,7 +12225,7 @@ def _authentication_content(win: Gtk.Window) -> Gtk.Box:
                 ok, err = _u2f_set_enabled(enable, _u2f_mapping_path(), require_password)
                 def _done():
                     _refresh_fido()
-                    _flash("✓ PAM updated." if ok else f"⚠ {err}")
+                    _flash("PAM updated." if ok else f"PAM update failed: {err}")
                     return False
                 GLib.idle_add(_done)
             in_thread(_worker)
@@ -11844,7 +12234,7 @@ def _authentication_content(win: Gtk.Window) -> Gtk.Box:
         def _on_manage_pin(_b):
             tokens = _fido2_list_tokens()
             if not tokens:
-                _flash("⚠ No FIDO2 key detected (fido2-token -L found none).")
+                _flash("No FIDO2 key detected (fido2-token -L found none).")
                 return
             device = tokens[0]
             dlg = Gtk.Dialog(title=f"Manage PIN — {device}", transient_for=win)
@@ -11876,9 +12266,9 @@ def _authentication_content(win: Gtk.Window) -> Gtk.Box:
             def _done(lines, error):
                 if error:
                     tail = "\n".join(l for l in lines if l.strip())[-300:]
-                    _flash(f"⚠ Failed: {tail or error}")
+                    _flash(f"Failed: {tail or error}")
                 else:
-                    _flash("✓ PIN set.")
+                    _flash("PIN set.")
             _fido2_set_pin(device, cur_pin, new_pin, lambda l: None, _done)
         fido_pin_btn.connect("clicked", _on_manage_pin)
 
@@ -11994,7 +12384,7 @@ def _security_content(win: Gtk.Window) -> Gtk.Box:
             ("authentication", "󰌋  Auth", tab_row_top),
             ("tailscale", "󰖂  Tailscale", tab_row_bottom),
             ("ufw", "󰈸  Firewall", tab_row_bottom),
-            ("clamav", "🛡️  ClamAV", tab_row_bottom)):
+            ("clamav", "  ClamAV", tab_row_bottom)):
         b = btn(tlabel, active=(name == "privacy"))
         b.connect("clicked", lambda _b, n=name: _switch(n))
         tab_btns[name] = b
@@ -12147,7 +12537,7 @@ def build_settings(win: Gtk.Window):
             if n == name: ctx.add_class("active")
             else:         ctx.remove_class("active")
     # "Other" zuerst: das sind genau die Kategorien OHNE eigenes
-    # Waybar-Icon (Display, Appearance & Language, Apps & Editor) -
+    # Waybar-Icon (Display, Appearance & Language, Apps & Shortcuts) -
     # die erreicht man sonst nirgendwo direkt, im Gegensatz zu den
     # "In Waybar"-Kategorien, die man normalerweise eh per Klick auf
     # ihr eigenes Waybar-Icon öffnet.
@@ -12221,7 +12611,7 @@ def _diag_report() -> str:
         untracked = [w for w in toplevels if w not in tracked]
         lines.append(f"GTK toplevels total:          {len(toplevels)} (visible: {len(visible)})")
         if untracked:
-            lines.append(f"⚠ UNTRACKED toplevels (nicht in _open!): {len(untracked)}")
+            lines.append(f"WARNING: UNTRACKED toplevels (nicht in _open!): {len(untracked)}")
             for w in untracked:
                 try:
                     title = w.get_title()
@@ -12332,10 +12722,10 @@ def _reconcile_theme_state() -> None:
         if _kvantum_current_theme() != (KVANTUM_DARK if want_dark else KVANTUM_LIGHT):
             ok, err = _set_dark_mode(want_dark)
             if not ok:
-                print(f"⚠ Theme-Reconcile beim Start fehlgeschlagen: {err}",
+                print(f"WARNING: Theme-Reconcile beim Start fehlgeschlagen: {err}",
                       file=sys.stderr)
     except Exception as e:
-        print(f"⚠ Theme-Reconcile beim Start fehlgeschlagen: {e}", file=sys.stderr)
+        print(f"WARNING: Theme-Reconcile beim Start fehlgeschlagen: {e}", file=sys.stderr)
 
 def main():
     load_css()
