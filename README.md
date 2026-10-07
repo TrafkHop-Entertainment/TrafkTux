@@ -116,6 +116,7 @@ TrafkTux is currently being tested on a Lenovo IdeaPad 5 2-in-1 14AHP9 (model 83
 - **Swap:** 4.00 GiB
 
 ## Update
+You can update the system via the pamac software center located in the Launcher app under stores! We have a custom Repo with some meta packages and 3 TrafkTux System Update Packages that allows the user to upgrade the TrafkHop Side of the system from the newest github repo commit that if verified!
 
 As it is Arch based, it constantly updates! But as system updates are separate from normal updates, you can manually update the system separately from everything else – which is also a good thing, as a system update will **RESET** any changes you as a user made.
 
@@ -126,6 +127,8 @@ We would also like to explain *why* we use Arch and its update rolls:
 As you may or may not know, Arch Linux updates all the time with the newest versions. This has the disadvantage that sometimes updates break certain apps. We think that **this is not a problem**!
 
 TrafkTux is used by HoppiTex, the sole maintainer, and if something breaks, he will fix it soon. And the **advantage** of rolling releases is that you have the newest programs and features, which you do not get on distributions like Debian or Fedora.
+
+But we do have to warn you, that we cannot garantie that it will work on your specific system. it should work though!
 
 ## Shortcuts
 
@@ -265,98 +268,7 @@ TrafkTux comes preinstalled with a bunch of software while still not overdoing i
 As you can see, TrafkTux throws a bunch of unrelated packages together and creates something truly unique! An Arch + Hyprland setup which uses the XFCE desktop + file manager + terminal, has many custom programs/scripts, but also heavily relies on 3rd-party software.
 
 ### Optional Packages
-
-Those apps are **NOT PREINSTALLED** and can be installed via the App Settings menu!
-
-**Social**
-- discord *(pacman)*
-- ladybird *(aur)*
-
-**Multimedia**
-- qbittorrent *(pacman)*
-- makemkv + makemkv-libaacs *(aur)*
-  ```bash
-  sudo sg | sudo tee -a /etc/modules-load.d/sg.conf
-  ```
-- asunder *(pacman)*
-- handbrake *(pacman)*
-
-**Work**
-- obsidian
-- jetbrains-toolbox *(aur)*
-- bambustudio-bin *(aur)*
-- audacity, obs-studio, gimp, qalculate-gtk, libreoffice-fresh, lmms *(pacman)*
-- davinci-resolve, onlyoffice-bin *(aur)*
-- docker & docker-desktop *(pacman & aur)*
-  ```bash
-  sudo systemctl start docker
-  sudo systemctl enable docker
-  ```
-- **DaVinci Resolve:** download from the official website, then run:
-  ```bash
-  sudo pacman -S cuda
-  sudo mkdir -p /opt/resolve/libs/disabled-libraries
-  sudo mv /opt/resolve/libs/libglib-2.0.so* /opt/resolve/libs/disabled-libraries/
-  sudo mv /opt/resolve/libs/libgio-2.0.so* /opt/resolve/libs/disabled-libraries/
-  sudo mv /opt/resolve/libs/libgmodule-2.0.so* /opt/resolve/libs/disabled-libraries/
-  sudo mv /opt/resolve/libs/libgobject-2.0.so* /opt/resolve/libs/disabled-libraries/
-  ```
-
-**Drivers**
-- opentabletdriver, webcamoid
-
-**Other**
-- timeshift *(pacman)*
-- archiso *(pacman)*
-- theclicker *(aur)*
-- **MEGA:**
-  ```bash
-  wget https://mega.nz/linux/repo/Arch_Extra/x86_64/megasync-x86_64.pkg.tar.zst && sudo pacman -U "$PWD/megasync-x86_64.pkg.tar.zst"
-  ```
-
-**Games**
-- steam, waydroid *(pacman)*
-- itch-bin, heroic-games-launcher-bin, lsfg-vk-bin, bedrock-on-linux-bin *(aur)*
-
-**Game launchers / titles:**
-- openttd, supertuxkart, prismlauncher *(pacman)*
-- cubyz-bin, airshipper, srb2, srb2kart *(aur)*
-- [hytale-launcher-bin (aur)](https://aur.archlinux.org/packages/hytale-launcher-bin)
-
-**Flatpak:**
-```bash
-flatpak install flathub org.vinegarhq.Sober
-flatpak install flathub org.vinegarhq.Vinegar
-```
-
-**Emulators (AUR unless noted):**
-- stella, bigpemu-bin, xemu, xenia-edge-bin
-- [azaharplus-appimage](https://aur.archlinux.org/pkgbase/azaharplus-appimage)
-- 3beans-git, parallel-launcher, cemu, mesen, bsnes-hd, melonds, vita3k-bin, rpcs3-bin, pcsx2-latest-bin, duckstation-preview-latest-bin, shadps4-qtlauncher-bin, kega-fusion, flycast-bin, vbam-wx
-- dolphin-emu, mgba-qt, ppsspp *(pacman)*
-
-**Virtualization:**
-```bash
-sudo pacman -S virt-manager qemu-full libvirt dnsmasq
-sudo systemctl enable --now libvirtd
-sudo usermod -aG libvirt $USER
-```
-
-**Android Mirroing to PC**
-```
-sudo pacman -S scrcpy android-tools
-```
-**Learning**
-```bash
-sudo docker run -p 3000:3000 bkimminich/juice-shop
-```
-Then open http://localhost:3000/#/.
-
-**AI**
-- ollama, ollama-cuda
-
-**OBS**
-- obs-pipewire-audio-capture-bin *(aur)*
+We have a custom repo with some meta packages that you can install! There are quite a bunch of app bundles to choose from!
 
 ## Customisation
 
@@ -579,7 +491,6 @@ Still to be themed / done:
 ## Known Bugs
 
 - The ISO doesn't currently boot – since the distro is still in development, this is a minor issue that will be fixed soon. Some grub permission problem or something
-- guest wifi / captive /vsolutioncast not working
 
 ### Other Stuff
 - Finish System Sounds - tortenboxer
