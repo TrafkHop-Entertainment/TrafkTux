@@ -52,7 +52,7 @@
   },
   "scripts": {
     "sound-center": {
-      "exec": "$HOME/.config/swaync/SoundCenterNotify.sh",
+      "exec": "$HOME/.config/hypr/SoundControl Dunst",
       "app-name": ".*"
     }
   }

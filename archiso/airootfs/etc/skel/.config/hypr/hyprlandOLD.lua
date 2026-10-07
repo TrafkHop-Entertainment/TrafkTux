@@ -106,10 +106,7 @@ hl.on("hyprland.start", function()
     -- Start synchron, genau wie TrafkTuxBar - selbes Wettlauf-Problem,
     -- selbe Lösung: erst kopieren, dann starten).
     hl.exec_cmd("killall TrafkTuxLauncher; ~/.config/TrafkTuxLauncher/TrafkTuxLauncher --daemon &")
-    -- SwaySyncWatchdog.sh statt direktem swaync-Aufruf: startet swaync wie
-    -- bisher, startet es aber automatisch neu, falls es abstuerzt (siehe
-    -- SwaySyncWatchdog.sh fuer Details/Stop-Befehl).
-    hl.exec_cmd("setsid -f bash $HOME/.config/swaync/SwaySyncWatchdog.sh >/dev/null 2>&1 &")
+    hl.exec_cmd("swaync --replace --skip-system-css &")
     hl.exec_cmd("hypridle")
     hl.exec_cmd("/usr/lib/polkit-kde-authentication-agent-1")
     hl.exec_cmd("nm-applet --indicator")

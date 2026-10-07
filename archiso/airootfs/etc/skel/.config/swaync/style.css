@@ -54,19 +54,16 @@
   color: @gold;
   font-weight: bold;
   font-size: 18px;
-  text-align: center;
 }
 
 .body {
   color: @text-normal;
-  text-align: center;
 }
 
 .time {
   color: @text-normal;
   opacity: 0.6;
   font-size: 12px;
-  text-align: center;
 }
 
 .close-button {
