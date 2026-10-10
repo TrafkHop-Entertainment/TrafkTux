@@ -1,6 +1,7 @@
 {
   "Animation": {
     "Style": "Classic",
-    "Speed": "Normal"
+    "Speed": "Normal",
+    "Selection": "Flicker"
   }
 }

@@ -7,7 +7,7 @@ Widgets: volume | network | bluetooth | brightness | akku | clock | settings | s
 """
 
 import gi, sys, os, re, signal, subprocess, json, threading, time, calendar, shutil, traceback
-import random, math, glob, stat, tempfile
+import random, math, glob, stat, tempfile, configparser
 from datetime import datetime, date
 from pathlib import Path
 
@@ -4368,7 +4368,12 @@ def _akku_content(win: Gtk.Window) -> Gtk.Box:
                 False, False, 0)
         pp_section.show_all()
 
-    gm_fx_row = hbox(6)
+    # 24px statt 6px zwischen den beiden Buttons: bei nur 2 Buttons
+    # (statt 3 wie bei den Profilen oben) wirkte der enge pp_row-Abstand
+    # hier, als würden GameMode und Battery-Saver aneinanderkleben -
+    # für die gewünschte "umgekehrte Pyramide" (oben breiter, unten
+    # schmaler, aber klar abgesetzt) brauchen die 2 Buttons mehr Luft.
+    gm_fx_row = hbox(24)
     gm_fx_row.set_halign(Gtk.Align.CENTER)
 
     gm_btn = Gtk.Button.new_from_icon_name("input-gaming-symbolic", Gtk.IconSize.BUTTON)
@@ -4378,7 +4383,11 @@ def _akku_content(win: Gtk.Window) -> Gtk.Box:
         "Save power: turn off animations, blur, shadow, hyprglass & cursor effects")
     gm_fx_row.pack_start(gm_btn, False, False, 0)
     gm_fx_row.pack_start(fx_btn, False, False, 0)
-    t_prof.pack_start(gm_fx_row, False, False, 0)
+    # Extra Abstand zu den 3 Profil-Buttons oben (t_prof = vbox(4) gibt
+    # sonst nur die knappen 4px Standard-Spacing zwischen ALLEN Kindern
+    # - das ließ die 2 Buttons hier optisch an den 3 Profil-Buttons
+    # kleben statt wie eine "umgekehrte Pyramide" abgesetzt zu wirken).
+    t_prof.pack_start(gm_fx_row, False, False, 14)
 
     if not _cpu_boost_supported():
         gm_btn.set_sensitive(False)
@@ -6324,7 +6333,7 @@ def _read_launcher_settings() -> dict:
     die aufrufende UI selbst entscheiden kann, ob sie das als Preset
     oder als Custom-Zahl anzeigt."""
     p = _launcher_settings_path()
-    style, speed = "Classic", "Normal"
+    style, speed, selection = "Classic", "Normal", "Flicker"
     if p.is_file():
         try:
             data = json.loads(p.read_text())
@@ -6352,22 +6361,31 @@ def _read_launcher_settings() -> dict:
                     speed = f"{max(0.25, min(8.0, float(sp)))}"
                 except ValueError:
                     pass  # ungültiger Text -> Default "Normal" bleibt stehen
-    return {"Style": style, "Speed": speed}
+            # NEU: Animation.Selection (Flicker/Fade) - siehe TrafkTuxLauncher.c,
+            # exakt dieselbe Default-/Fallback-Logik wie dort (case-insensitive,
+            # fehlend/ungültig -> "Flicker" bleibt stehen).
+            se = anim.get("Selection")
+            if isinstance(se, str) and se.strip().lower() in ("flicker", "fade"):
+                selection = "Flicker" if se.strip().lower() == "flicker" else "Fade"
+    return {"Style": style, "Speed": speed, "Selection": selection}
 
-def _write_launcher_settings(style: str = None, speed: str = None) -> None:
+def _write_launcher_settings(style: str = None, speed: str = None,
+                              selection: str = None) -> None:
     """Schreibt Settings.json atomar (siehe atomic_write_text()). Nur
-    der jeweils übergebene Wert wird geändert, der andere bleibt
+    der jeweils übergebene Wert wird geändert, die anderen bleiben
     unangetastet (vorher aus der bestehenden Datei gelesen) - ein Klick
-    auf "Radial" soll die Speed-Einstellung nicht anfassen und
-    umgekehrt. Das Verzeichnis wird bei Bedarf angelegt, da die Datei
-    laut Settings.md optional ist und beim allerersten Ändern über
-    diese UI noch gar nicht existieren muss."""
+    auf "Radial" soll weder die Speed- noch die Selection-Einstellung
+    anfassen und umgekehrt. Das Verzeichnis wird bei Bedarf angelegt,
+    da die Datei laut Settings.md optional ist und beim allerersten
+    Ändern über diese UI noch gar nicht existieren muss."""
     cur = _read_launcher_settings()
     new_style = style if style is not None else cur["Style"]
     new_speed = speed if speed is not None else cur["Speed"]
+    new_selection = selection if selection is not None else cur["Selection"]
     p = _launcher_settings_path()
     p.parent.mkdir(parents=True, exist_ok=True)
-    payload = {"Animation": {"Style": new_style, "Speed": new_speed}}
+    payload = {"Animation": {"Style": new_style, "Speed": new_speed,
+                              "Selection": new_selection}}
     atomic_write_text(p, json.dumps(payload, indent=2) + "\n")
 
 def apply_change(desc: str, apply_fn, on_status=None, reset_fn=None) -> None:
@@ -7106,6 +7124,41 @@ def _build_settings_appearance(page: Gtk.Box, key: str, label: str, win: Gtk.Win
         "Fast=2×, Turbo=3×, or pick your own factor (0.25–8).")
     t_launcher.pack_start(bsec("Animation Speed"), False, False, 0)
     t_launcher.pack_start(speed_row, False, False, 0)
+
+    # NEU: Animation.Selection (Flicker/Fade) - siehe Settings.json/
+    # TrafkTuxLauncher.c: steuert, wie der Launcher beim Auswahl-
+    # wechsel zwischen den Bubbles überblendet - Flicker = Glühlampen-
+    # Flackern (Default), Fade = ruhiges Überblenden. Gleiches
+    # Button-Muster wie "Animation Style" oben.
+    selection_row = hbox(10)
+    selection_row.set_halign(Gtk.Align.CENTER)
+    selection_btns: dict = {}
+
+    def _refresh_selection_btns(active_selection: str):
+        for n, b in selection_btns.items():
+            ctx = b.get_style_context()
+            if n.lower() == active_selection.lower(): ctx.add_class("active")
+            else:                                      ctx.remove_class("active")
+
+    def _on_selection_click(_w, _name):
+        def _apply():
+            _write_launcher_settings(selection=_name)
+        _refresh_selection_btns(_name)  # sofortiges visuelles Feedback
+        apply_change(f"Launcher selection effect: {_name}", _apply,
+                     on_status=_flash_appearance_status,
+                     reset_fn=lambda: _refresh_selection_btns(_read_launcher_settings()["Selection"]))
+
+    for name in ("Flicker", "Fade"):
+        b = btn(name)
+        b.connect("clicked", lambda _b, n=name: _on_selection_click(_b, n))
+        selection_btns[name] = b
+        selection_row.pack_start(b, False, False, 0)
+    _refresh_selection_btns(_launcher_cur["Selection"])
+    selection_row.set_tooltip_text(
+        "Flicker: lightbulb-style flicker when the selection changes (default). "
+        "Fade: calm crossfade instead.")
+    t_launcher.pack_start(bsec("Selection Effect"), False, False, 0)
+    t_launcher.pack_start(selection_row, False, False, 0)
 
     if not _launcher_settings_path().parent.is_dir():
         hint = Gtk.Label(
@@ -12405,6 +12458,1098 @@ def build_security(win: Gtk.Window):
 def _build_settings_security(page: Gtk.Box, key: str, label: str, win: Gtk.Window) -> None:
     page.pack_start(_security_content(win), True, True, 0)
 
+# ════════════════════════════════════════════════════════════
+#  APP EDITOR — Tab 1: TrafkTux App Launcher (menu.json)
+#
+#  Spiegelt die App-Quellen-Logik 1:1 aus TrafkTuxLauncher.c
+#  (get_desktop_apps/get_filtered_desktop_apps/get_path_binaries/
+#  extract_binary/strip_exec_field_codes), damit Editor und Launcher
+#  immer dieselbe Sicht auf "welche Apps gibt es" / "was ist schon
+#  einsortiert" haben. "All Packages" in menu.json ist trotz des
+#  Namens $PATH-Binaries, keine Pacman-Pakete (siehe VMODE_RUN dort).
+# ════════════════════════════════════════════════════════════
+
+_APPLAUNCHER_WRAPPER_PREFIXES = ("kitty", "sudo")
+# Binaries, die so generisch sind, dass ein exec-Match darauf NICHTS über
+# die eigentliche App aussagt (Interpreter/Runtime-Wrapper - typischerweise
+# das erste Token bei "flatpak run <id>", "python3 <script>.py", etc.).
+# Ohne diese Ausnahme reicht 1 einsortierte App mit so einem Exec, um ALLE
+# anderen Apps mit demselben Interpreter fälschlich aus "Unsorted" zu
+# werfen, weil extract_binary() nur das erste Token nimmt und Argumente
+# ignoriert - vermutlich derselbe Effekt wie in extract_binary() in
+# TrafkTuxLauncher.c, da dort 1:1 dieselbe Logik läuft.
+_APPLAUNCHER_GENERIC_BINARIES = {
+    "env", "bash", "sh", "zsh", "fish", "python", "python3", "python2",
+    "perl", "ruby", "node", "nodejs", "electron", "java", "javaw",
+    "flatpak", "snap", "appimage-run", "wine", "wine64", "wineconsole",
+}
+_APPLAUNCHER_SCAN_CACHE_TTL = 15  # Sekunden, wie SCAN_CACHE_TTL im Launcher
+
+def _applauncher_menu_path() -> Path:
+    return Path(HOME) / ".config" / "TrafkTuxLauncher" / "AppLauncher" / "menu.json"
+
+# Fallback, falls die Datei (noch) nicht existiert - 1:1 der mitgeshippte
+# Standard-Inhalt, damit der Editor auf einem System ohne installierten
+# TrafkTuxLauncher nicht einfach crasht.
+_APPLAUNCHER_DEFAULT_TREE = {
+    "name": "root", "type": "folder", "children": [
+        {"name": "System", "type": "folder", "icon": "computer", "children": [
+            {"name": "Xfce4 Terminal", "type": "app", "icon": "utilities-terminal", "exec": "xfce4-terminal"},
+            {"name": "Thunar", "type": "app", "icon": "system-file-manager", "exec": "thunar"},
+            {"name": "Ark", "type": "app", "icon": "ark", "exec": "ark"},
+        ]},
+        {"name": "Creation", "type": "folder", "icon": "applications-graphics", "children": [
+            {"name": "VScodium", "type": "app", "icon": "vscodium", "exec": "vscodium"},
+        ]},
+        {"name": "Utilitys", "type": "folder", "icon": "applications-accessories", "children": [
+            {"name": "Fastfetch", "type": "app", "icon": "utilities-system-monitor",
+             "exec": "xfce4-terminal --hold fastfetch"},
+        ]},
+        {"name": "Games", "type": "folder", "icon": "applications-games", "children": []},
+        {"name": "Multimedia", "type": "folder", "icon": "applications-multimedia", "children": [
+            {"name": "VLC", "type": "app", "icon": "vlc", "exec": "vlc"},
+            {"name": "Viewnior", "type": "app", "icon": "viewnior", "exec": "viewnior"},
+        ]},
+        {"name": "Social", "type": "folder", "icon": "user-available", "children": [
+            {"name": "Firefox", "type": "app", "icon": "firefox", "exec": "firefox"},
+        ]},
+        {"name": "Stores", "type": "folder", "icon": "software-center", "children": [
+            {"name": "Pamac Manager", "type": "app", "icon": "package-x-generic", "exec": "pamac-manager"},
+        ]},
+        {"name": "Settings", "type": "folder", "icon": "preferences-system", "children": []},
+        {"name": "Administration", "type": "folder", "icon": "drive-harddisk", "children": [
+            {"name": "Htop", "type": "app", "icon": "utilities-system-monitor", "exec": "xfce4-terminal Htop"},
+            {"name": "Gnome Disks", "type": "app", "icon": "gnome-disks", "exec": "gnome-disk-utility"},
+            {"name": "Fedora Media Writer", "type": "app", "icon": "mediawriter", "exec": "mediawriter"},
+        ]},
+        {"name": "Unordered Programs", "type": "special-drun-filtered", "icon": "applications-utilities"},
+        {"name": "All Programs", "type": "special-drun", "icon": "system-run"},
+        {"name": "All Packages", "type": "special-run", "icon": "package-x-generic"},
+    ],
+}
+
+def _applauncher_load_tree() -> dict:
+    p = _applauncher_menu_path()
+    if p.is_file():
+        try:
+            data = json.loads(p.read_text())
+            if isinstance(data, dict) and isinstance(data.get("children"), list):
+                return data
+        except Exception as e:
+            print(f"[AppEditor] {p}: invalid JSON, using bundled default ({e})", file=sys.stderr)
+    return json.loads(json.dumps(_APPLAUNCHER_DEFAULT_TREE))  # deep copy ohne extra import
+
+def _applauncher_save_tree(tree: dict) -> None:
+    p = _applauncher_menu_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    backup_file(p)
+    atomic_write_text(p, json.dumps(tree, indent=2) + "\n")
+
+# ── Baum-Navigation: Pfade sind Index-Listen, analog zur "/"-Index-
+# Pfadnotation von get_node_by_path() in TrafkTuxLauncher.c ────────────
+def _applauncher_node_at(tree: dict, path: list) -> dict | None:
+    node = tree
+    for idx in path:
+        children = node.get("children")
+        if not isinstance(children, list) or idx < 0 or idx >= len(children):
+            return None
+        node = children[idx]
+    return node
+
+def _applauncher_iter_app_nodes(tree: dict, path: list | None = None):
+    """Liefert (path, node) für jeden 'app'-Knoten im kompletten Baum."""
+    if path is None:
+        path = []
+    for i, child in enumerate(tree.get("children", []) or []):
+        cpath = path + [i]
+        if child.get("type") == "app":
+            yield cpath, child
+        elif child.get("type") == "folder":
+            yield from _applauncher_iter_app_nodes(child, cpath)
+
+def _applauncher_extract_binary(exec_str: str) -> str | None:
+    """Portierung von extract_binary() in TrafkTuxLauncher.c."""
+    if not exec_str:
+        return None
+    p = exec_str.strip()
+    if not p:
+        return None
+    again = True
+    while again:
+        again = False
+        for pre in _APPLAUNCHER_WRAPPER_PREFIXES:
+            if p[:len(pre)].lower() == pre and (len(p) == len(pre) or p[len(pre)] in " \t"):
+                p = p[len(pre):].lstrip()
+                again = True
+                break
+        low = p.lower()
+        if low.startswith("bash") and len(p) > 4 and p[4] in " \t":
+            q = p[4:].lstrip()
+            if q[:2].lower() == "-c" and len(q) > 2 and q[2] in " \t":
+                q = q[2:].lstrip()
+                if q[:1] in ("'", '"'):
+                    quote = q[0]
+                    end = q.find(quote, 1)
+                    if end != -1:
+                        p = q[1:end].lstrip()
+                        again = True
+                        continue
+    bin_part = re.split(r"[ \t\n\r]", p, maxsplit=1)[0]
+    return os.path.basename(bin_part) if bin_part else None
+
+def _applauncher_used_keys(tree: dict) -> tuple:
+    """(names, exec_binaries), beide casefolded - dieselben zwei Dedup-
+    Schlüssel wie get_filtered_desktop_apps() im Launcher."""
+    names, execs = set(), set()
+    for _path, node in _applauncher_iter_app_nodes(tree):
+        nm = (node.get("name") or "").strip().casefold()
+        if nm:
+            names.add(nm)
+        bin_ = _applauncher_extract_binary(node.get("exec") or "")
+        if bin_ and bin_.casefold() not in _APPLAUNCHER_GENERIC_BINARIES:
+            execs.add(bin_.casefold())
+    return names, execs
+
+_APPLAUNCHER_FIELD_CODE_RE = re.compile(r"%(.)")
+def _applauncher_strip_exec_field_codes(exec_str: str) -> str:
+    def _sub(m):
+        c = m.group(1)
+        if c == "%":
+            return "%"
+        if c in "fFuUickdDnNvm":
+            return ""
+        return m.group(0)
+    out = _APPLAUNCHER_FIELD_CODE_RE.sub(_sub, exec_str or "")
+    return " ".join(out.split())
+
+def _applauncher_xdg_data_dirs() -> list:
+    raw = [str(Path(HOME) / ".local" / "share")]
+    xdg_data_home = os.environ.get("XDG_DATA_HOME")
+    if xdg_data_home:
+        raw.insert(0, xdg_data_home)
+    xdg_data_dirs = os.environ.get("XDG_DATA_DIRS") or "/usr/local/share:/usr/share"
+    raw += [d for d in xdg_data_dirs.split(":") if d]
+    seen, out = set(), []
+    for d in raw:
+        if d not in seen:
+            seen.add(d); out.append(d)
+    return out
+
+def _applauncher_current_desktop_names() -> set:
+    raw = os.environ.get("XDG_CURRENT_DESKTOP") or ""
+    return {p.strip().casefold() for p in raw.split(":") if p.strip()}
+
+_applauncher_desktop_cache = {"ts": 0.0, "apps": []}
+_applauncher_path_cache = {"ts": 0.0, "apps": []}
+
+def _applauncher_scan_desktop_apps() -> list:
+    """Portierung von collect_desktop_apps_impl(): Scan über
+    XDG_DATA_DIRS/applications/*.desktop, mit demselben Cache-TTL wie
+    der Launcher selbst, damit beide ungefähr dieselbe Sicht haben."""
+    now = time.time()
+    if (now - _applauncher_desktop_cache["ts"]) < _APPLAUNCHER_SCAN_CACHE_TTL:
+        return _applauncher_desktop_cache["apps"]
+
+    current_desktop = _applauncher_current_desktop_names()
+    seen_ids: set = set()
+    out: list = []
+    for data_dir in _applauncher_xdg_data_dirs():
+        app_dir = Path(data_dir) / "applications"
+        if not app_dir.is_dir():
+            continue
+        try:
+            found = sorted(app_dir.rglob("*.desktop"))
+        except Exception:
+            continue
+        for full_path in found:
+            try:
+                rel = full_path.relative_to(app_dir)
+            except Exception:
+                continue
+            desktop_id = "-".join(rel.parts)
+            if desktop_id in seen_ids:
+                continue
+            cp = configparser.RawConfigParser(strict=False, interpolation=None)
+            try:
+                cp.read(full_path, encoding="utf-8")
+            except Exception:
+                continue
+            if not cp.has_section("Desktop Entry"):
+                continue
+            sec = cp["Desktop Entry"]
+            seen_ids.add(desktop_id)
+            if sec.get("Type", "Application") != "Application":
+                continue
+            if sec.get("Hidden", "false").strip().lower() == "true":
+                continue
+            if sec.get("NoDisplay", "false").strip().lower() == "true":
+                continue
+            only_show_in = sec.get("OnlyShowIn", "")
+            if only_show_in and current_desktop:
+                allowed = bool({x.strip().casefold() for x in only_show_in.split(";") if x.strip()}
+                                & current_desktop)
+                if not allowed:
+                    continue
+            not_show_in = sec.get("NotShowIn", "")
+            if not_show_in and current_desktop:
+                denied = bool({x.strip().casefold() for x in not_show_in.split(";") if x.strip()}
+                               & current_desktop)
+                if denied:
+                    continue
+            exec_raw = sec.get("Exec", "")
+            if not exec_raw.strip():
+                continue
+            name = sec.get("Name", "").strip() or desktop_id
+            icon = sec.get("Icon", "").strip() or "application-x-executable"
+            stripped = _applauncher_strip_exec_field_codes(exec_raw)
+            terminal = sec.get("Terminal", "false").strip().lower() == "true"
+            final_exec = f"kitty {stripped}" if terminal else stripped
+            out.append({"name": name, "icon": icon, "exec": final_exec, "sort_key": name.casefold()})
+    out.sort(key=lambda e: e["sort_key"])
+    _applauncher_desktop_cache["ts"] = now
+    _applauncher_desktop_cache["apps"] = out
+    return out
+
+def _applauncher_scan_path_binaries() -> list:
+    """Portierung von get_path_binaries() - trotz des irreführenden
+    Namens 'All Packages' in menu.json sind das $PATH-Binaries, keine
+    Pacman-Pakete (siehe VMODE_RUN in TrafkTuxLauncher.c)."""
+    now = time.time()
+    if (now - _applauncher_path_cache["ts"]) < _APPLAUNCHER_SCAN_CACHE_TTL:
+        return _applauncher_path_cache["apps"]
+    path_env = os.environ.get("PATH") or "/usr/local/bin:/usr/bin:/bin"
+    seen: set = set()
+    out: list = []
+    for d in path_env.split(":"):
+        if not d:
+            continue
+        try:
+            entries = sorted(os.listdir(d))
+        except OSError:
+            continue
+        for fname in entries:
+            if fname in seen:
+                continue
+            full = os.path.join(d, fname)
+            if os.path.isfile(full) and os.access(full, os.X_OK):
+                seen.add(fname)
+                out.append({"name": fname, "icon": "application-x-executable",
+                            "exec": f"'{full}'", "sort_key": fname.casefold()})
+    out.sort(key=lambda e: e["sort_key"])
+    _applauncher_path_cache["ts"] = now
+    _applauncher_path_cache["apps"] = out
+    return out
+
+def _applauncher_unsorted_apps(tree: dict) -> list:
+    """Portierung von get_filtered_desktop_apps(): alle Desktop-Apps,
+    MINUS die, deren Name oder exec-Binary schon irgendwo im Baum
+    verwendet wird."""
+    used_names, used_execs = _applauncher_used_keys(tree)
+    out = []
+    for e in _applauncher_scan_desktop_apps():
+        if e["name"].casefold() in used_names:
+            continue
+        bin_ = _applauncher_extract_binary(e["exec"])
+        if bin_ and bin_.casefold() in used_execs:
+            continue
+        out.append(e)
+    return out
+
+def _applauncher_custom_apps(tree: dict) -> list:
+    """App-Knoten im Baum, die über 'New Custom App' im Editor angelegt
+    wurden (markiert mit 'custom': true - ein Zusatzfeld, das
+    TrafkTuxLauncher.c schlicht ignoriert, da JSON-GLib nur die ihm
+    bekannten Member ausliest)."""
+    out = []
+    for path, node in _applauncher_iter_app_nodes(tree):
+        if node.get("custom"):
+            out.append({"name": node.get("name", ""),
+                        "icon": node.get("icon") or "application-x-executable",
+                        "exec": node.get("exec", ""), "path": path})
+    out.sort(key=lambda e: e["name"].casefold())
+    return out
+
+def _applauncher_ordered_apps(tree: dict) -> list:
+    out = []
+    for path, node in _applauncher_iter_app_nodes(tree):
+        folder_names = []
+        cur = tree
+        for idx in path[:-1]:
+            cur = cur["children"][idx]
+            folder_names.append(cur.get("name", "?"))
+        out.append({"name": node.get("name", ""),
+                    "icon": node.get("icon") or "application-x-executable",
+                    "exec": node.get("exec", ""), "path": path,
+                    "folder": " / ".join(folder_names) if folder_names else "—"})
+    out.sort(key=lambda e: (e["folder"], e["name"].casefold()))
+    return out
+
+# ── Zeilen-/Zellen-Widgets ───────────────────────────────────────────
+# KEIN Drag & Drop (mehr) - bewusst rausgeworfen (siehe Chat: "drag und
+# drop muss es auch nicht haben"): jede Zeile/jedes Icon ist stattdessen
+# ein ganz normaler Gtk.Button - klicken fügt die App/den neuen Ordner/
+# die neue Custom-App dem GERADE GEÖFFNETEN Ordner hinzu. Button statt
+# reiner Box auch deshalb, weil nur Gtk.Button von Haus aus Hover-/
+# Press-Feedback über das Theme bekommt (siehe _settings_category_row
+# weiter oben, gleiches Prinzip) - eine reine Box bekommt das NICHT.
+_APPLAUNCHER_NAME_MAX_CHARS = 28
+
+_APPLAUNCHER_TEXT_PX = 13       # Basis-Schriftgröße von .bubble.item (siehe CSS oben)
+_APPLAUNCHER_ICON_RATIO = 1.65  # Icon-Größe relativ zum Text (Wunsch: 1.65x)
+_APPLAUNCHER_ICON_PX = round(_APPLAUNCHER_TEXT_PX * _APPLAUNCHER_ICON_RATIO)     # Zeilen
+_APPLAUNCHER_ICON_PX_LG = _APPLAUNCHER_ICON_PX  # Root-Ordner-Zellen - gleiche Regel
+
+def _applauncher_icon_img(icon_name: str, px: int = _APPLAUNCHER_ICON_PX) -> Gtk.Image:
+    """Lädt IMMER exakt px×px, egal ob Theme-Icon-Name ('firefox') oder
+    absoluter Pfad. Letzteres kommt bei vielen Flatpak/AppImage/manuell
+    installierten .desktop-Dateien vor (Icon=/pfad/zu/oft-riesigem.png,
+    z.B. 512x512) - Gtk.Image.new_from_icon_name() kennt solche Pfade
+    nicht und hat dafür dann in nativer Auflösung statt der angefragten
+    Größe gerendert (der 'Icon frisst den halben Bildschirm'-Bug)."""
+    name = (icon_name or "").strip() or "application-x-executable"
+    if os.path.isabs(name):
+        try:
+            pb = GdkPixbuf.Pixbuf.new_from_file_at_scale(name, px, px, True)
+            return Gtk.Image.new_from_pixbuf(pb)
+        except Exception:
+            name = "application-x-executable"
+    img = Gtk.Image.new_from_icon_name(name, Gtk.IconSize.BUTTON)
+    img.set_pixel_size(px)  # überschreibt IconSize hart auf px, immer gleich groß
+    return img
+
+def _applauncher_folder_cell(node: dict, on_click) -> Gtk.Button:
+    b = Gtk.Button()
+    b.get_style_context().add_class("bubble")
+    b.get_style_context().add_class("item")
+    b.set_size_request(72, 60)
+    inner = vbox(2); inner.set_halign(Gtk.Align.CENTER)
+    inner.pack_start(_applauncher_icon_img(node.get("icon") or "folder", _APPLAUNCHER_ICON_PX_LG),
+                      False, False, 0)
+    lbl = Gtk.Label(label=node.get("name", "?"))
+    lbl.set_ellipsize(Pango.EllipsizeMode.END)
+    lbl.set_max_width_chars(10)
+    inner.pack_start(lbl, False, False, 0)
+    b.add(inner)
+    b.connect("clicked", lambda _b: on_click())
+    return b
+
+def _applauncher_child_row(node: dict, on_open, on_remove, on_change_icon) -> Gtk.Widget:
+    """Zeile innerhalb eines geöffneten Ordners. Icon ist IMMER sein
+    eigener kleiner Button (klicken = Icon ändern) - getrennt vom
+    Namens-Teil, weil GTK keine Buttons ineinander verschachteln kann.
+    Ordner-Namen sind zusätzlich ein klickbarer Button (navigiert rein),
+    App-Namen nur Text - jeweils mit eigenem ✕-Button rechts."""
+    row = hbox(2)
+    is_folder = node.get("type") == "folder"
+    name = node.get("name", "?") + (" ›" if is_folder else "")
+    icon = node.get("icon") or ("folder" if is_folder else "application-x-executable")
+
+    icon_btn = Gtk.Button()
+    icon_btn.get_style_context().add_class("bubble")
+    icon_btn.get_style_context().add_class("item")
+    icon_btn.set_tooltip_text("Change icon")
+    icon_btn.add(_applauncher_icon_img(icon))
+    icon_btn.connect("clicked", lambda _b: on_change_icon())
+    row.pack_start(icon_btn, False, False, 0)
+
+    if on_open:
+        b = Gtk.Button()
+        b.get_style_context().add_class("bubble")
+        b.get_style_context().add_class("item")
+        lbl = Gtk.Label(label=name)
+        lbl.set_halign(Gtk.Align.START)
+        lbl.set_ellipsize(Pango.EllipsizeMode.END)
+        lbl.set_max_width_chars(_APPLAUNCHER_NAME_MAX_CHARS)
+        b.add(lbl)
+        b.connect("clicked", lambda _b: on_open())
+        content: Gtk.Widget = b
+    else:
+        inner = hbox(6)
+        inner.get_style_context().add_class("bubble")
+        inner.get_style_context().add_class("item")
+        pad(inner, h=6, v=3)
+        lbl = Gtk.Label(label=name)
+        lbl.set_halign(Gtk.Align.START)
+        lbl.set_ellipsize(Pango.EllipsizeMode.END)
+        lbl.set_max_width_chars(_APPLAUNCHER_NAME_MAX_CHARS)
+        inner.pack_start(lbl, True, True, 0)
+        content = inner
+
+    rm = Gtk.Button.new_from_icon_name("list-remove-symbolic", Gtk.IconSize.MENU)
+    rm.set_relief(Gtk.ReliefStyle.NONE)
+    rm.set_tooltip_text("Unassign")
+    rm.connect("clicked", lambda _b: on_remove())
+
+    row.pack_start(content, True, True, 0)
+    row.pack_start(rm, False, False, 0)
+    return row
+
+def _applauncher_source_row(entry: dict, subtitle: str | None, on_click) -> Gtk.Button:
+    """Zeile in der rechten Quell-Liste - klicken = der im linken
+    Bereich gerade geöffnete Ordner bekommt diesen Eintrag."""
+    b = Gtk.Button()
+    b.get_style_context().add_class("bubble")
+    b.get_style_context().add_class("item")
+    row = hbox(6); pad(row, h=2, v=0)
+    row.pack_start(_applauncher_icon_img(entry.get("icon")), False, False, 0)
+    txt = vbox(0)
+    lbl = Gtk.Label(label=entry.get("name", "?"))
+    lbl.set_halign(Gtk.Align.START)
+    lbl.set_ellipsize(Pango.EllipsizeMode.END)
+    lbl.set_max_width_chars(_APPLAUNCHER_NAME_MAX_CHARS)
+    txt.pack_start(lbl, False, False, 0)
+    if subtitle:
+        sub = Gtk.Label(label=subtitle)
+        sub.set_halign(Gtk.Align.START)
+        sub.set_opacity(0.6)
+        sub.set_ellipsize(Pango.EllipsizeMode.END)
+        sub.set_max_width_chars(_APPLAUNCHER_NAME_MAX_CHARS)
+        sub.get_style_context().add_class("caption")
+        txt.pack_start(sub, False, False, 0)
+    row.pack_start(txt, True, True, 0)
+    b.add(row)
+    b.connect("clicked", lambda _b: on_click())
+    return b
+
+def _applauncher_pinned_row(icon_name: str, label: str, on_click) -> Gtk.Button:
+    b = Gtk.Button()
+    b.get_style_context().add_class("bubble")
+    b.get_style_context().add_class("item")
+    b.get_style_context().add_class("active")
+    row = hbox(4); pad(row, h=2, v=0)
+    row.pack_start(_applauncher_icon_img(icon_name), False, False, 0)
+    row.pack_start(Gtk.Label(label=label), False, False, 0)
+    b.add(row)
+    b.connect("clicked", lambda _b: on_click())
+    return b
+
+def _applauncher_known_icon_names() -> list:
+    """Icon-Namen aller gescannten Desktop-Apps (nur Theme-Namen, keine
+    absoluten Pfade - die landen eh nicht in einem durchsuchbaren Theme-
+    Icon-Grid), dedupliziert + sortiert. Das ist die "von vorhandenen
+    Apps"-Quelle für den Icon-Picker."""
+    names = set()
+    for e in _applauncher_scan_desktop_apps():
+        ic = (e.get("icon") or "").strip()
+        if ic and not os.path.isabs(ic):
+            names.add(ic)
+    return sorted(names, key=str.casefold)
+
+def _applauncher_icons_dir() -> Path:
+    return _applauncher_menu_path().parent / "icons"
+
+def _applauncher_import_custom_icon(src_path: str) -> str:
+    """Kopiert ein frei gewähltes Bild (z.B. aus ~/Downloads) stabil nach
+    .../AppLauncher/icons/ und gibt den NEUEN absoluten Pfad zurück.
+    Grund: load_icon_pixbuf() in TrafkTuxLauncher.c akzeptiert zwar
+    absolute Pfade, aber eben nur absolute - verschiebt/löscht man die
+    Originaldatei später (oder synct die Config auf einen anderen
+    Rechner, wo sie unter dem Pfad gar nicht existiert), zeigt das Icon
+    nur noch den Fallback. Mit eigener Kopie im Config-Baum bleibt es
+    stabil UND wandert mit, wenn der restliche TrafkTux-Config gesynct
+    wird (gleicher Pfad relativ zu $HOME auf jeder Maschine)."""
+    src = Path(src_path)
+    icons_dir = _applauncher_icons_dir()
+    icons_dir.mkdir(parents=True, exist_ok=True)
+    dest = icons_dir / src.name
+    if dest.resolve() != src.resolve():
+        n = 1
+        while dest.exists():
+            dest = icons_dir / f"{src.stem}-{n}{src.suffix}"
+            n += 1
+        shutil.copy2(src, dest)
+    return str(dest)
+
+def _applauncher_pick_icon(parent: Gtk.Window, current: str = "") -> str | None:
+    """Icon-Auswahl-Dialog mit 2 Reitern: 'From Apps' (durchsuchbares
+    Grid aller Icon-Namen aus den gescannten .desktop-Dateien) und
+    'Custom Image' (Dateiauswahl - der volle Pfad wird direkt als Icon-
+    Wert übernommen; _applauncher_icon_img() versteht sowohl Theme-
+    Namen als auch absolute Pfade, siehe dort). Gibt den gewählten
+    Icon-Wert zurück, oder None bei Abbruch."""
+    dlg = Gtk.Dialog(title="Choose icon", transient_for=parent)
+    dlg.set_name("wb-daemon-popup")
+    dlg.set_modal(True)
+    dlg.set_keep_above(True)
+    dlg.set_type_hint(Gdk.WindowTypeHint.DIALOG)
+    dlg.set_default_size(260, 340)
+    dlg.add_buttons("Cancel", Gtk.ResponseType.CANCEL)
+    box = dlg.get_content_area()
+    result = {"icon": None}
+
+    def _choose(icon_value: str):
+        result["icon"] = icon_value
+        dlg.response(Gtk.ResponseType.OK)
+
+    # ── Reiter "From Apps" ──────────────────────────────────────────
+    search_e = Gtk.Entry(); search_e.set_placeholder_text("Search…")
+    flow = Gtk.FlowBox()
+    flow.set_selection_mode(Gtk.SelectionMode.NONE)
+    flow.set_max_children_per_line(5)
+    flow.set_homogeneous(True)
+    flow_sw = Gtk.ScrolledWindow()
+    flow_sw.set_size_request(240, 220)
+    flow_sw.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+    flow_sw.add(flow)
+    all_names = _applauncher_known_icon_names()
+
+    def _populate(filter_text: str = ""):
+        for c in list(flow.get_children()):
+            flow.remove(c)
+        ft = filter_text.strip().casefold()
+        shown = [n for n in all_names if ft in n.casefold()][:150] if ft else all_names[:150]
+        for n in shown:
+            ib = Gtk.Button()
+            ib.get_style_context().add_class("bubble")
+            ib.get_style_context().add_class("item")
+            ib.set_tooltip_text(n)
+            ib.add(_applauncher_icon_img(n, 24))
+            ib.connect("clicked", lambda _b, nn=n: _choose(nn))
+            flow.add(ib)
+        flow.show_all()
+    search_e.connect("changed", lambda _e: _populate(search_e.get_text()))
+    _populate()
+
+    from_apps_page = vbox(4)
+    from_apps_page.pack_start(search_e, False, False, 0)
+    from_apps_page.pack_start(flow_sw, True, True, 0)
+
+    # ── Reiter "Custom Image" ────────────────────────────────────────
+    custom_page = vbox(8); pad(custom_page, h=10, v=30)
+    pick_file_btn = btn("📁  Choose image file…")
+    def _on_pick_file(_b):
+        fc = Gtk.FileChooserDialog(title="Choose icon image", transient_for=dlg,
+                                    action=Gtk.FileChooserAction.OPEN)
+        fc.add_buttons("Cancel", Gtk.ResponseType.CANCEL, "Choose", Gtk.ResponseType.OK)
+        img_filter = Gtk.FileFilter(); img_filter.set_name("Images")
+        for pattern in ("*.png", "*.svg", "*.jpg", "*.jpeg", "*.xpm", "*.webp"):
+            img_filter.add_pattern(pattern)
+        fc.add_filter(img_filter)
+        fc.set_filter(img_filter)
+        resp = fc.run()
+        path = fc.get_filename() if resp == Gtk.ResponseType.OK else None
+        fc.destroy()
+        if path:
+            try:
+                stable_path = _applauncher_import_custom_icon(path)
+            except Exception:
+                stable_path = path  # Kopieren fehlgeschlagen - lieber Original als gar nichts
+            _choose(stable_path)
+    pick_file_btn.connect("clicked", _on_pick_file)
+    custom_page.pack_start(pick_file_btn, False, False, 0)
+
+    # ── Reiter-Umschalter (gleiches Muster wie die Sortier-Tabs) ─────
+    stack = Gtk.Stack()
+    stack.add_named(from_apps_page, "from_apps")
+    stack.add_named(custom_page, "custom")
+    stack.set_visible_child_name("from_apps")
+    tab_row = hbox(4); tab_row.set_halign(Gtk.Align.CENTER)
+    tab_btns = {}
+    def _switch_tab(name):
+        stack.set_visible_child_name(name)
+        for n, b in tab_btns.items():
+            ctx = b.get_style_context()
+            if n == name: ctx.add_class("active")
+            else:         ctx.remove_class("active")
+    for name, tlabel in (("from_apps", "From Apps"), ("custom", "Custom Image")):
+        b = btn(tlabel, active=(name == "from_apps"))
+        b.connect("clicked", lambda _b, n=name: _switch_tab(n))
+        tab_btns[name] = b
+        tab_row.pack_start(b, False, False, 0)
+
+    box.pack_start(tab_row, False, False, 4)
+    box.pack_start(tab_sep(), False, False, 0)
+    box.pack_start(stack, True, True, 4)
+    dlg.show_all()
+    dlg.run()
+    dlg.destroy()
+    return result["icon"]
+
+def _build_app_launcher_tab(win: Gtk.Window) -> Gtk.Box:
+    root = vbox(4); pad(root, h=4, v=6)
+
+    state = {
+        "tree": _applauncher_load_tree(),
+        "dirty": False,
+        "cur_path": [],            # [] == Root-Ansicht (9 Ordner)
+        "sort_mode": "unsorted",   # unsorted | all
+        "search": "",
+    }
+
+    status_lbl = Gtk.Label(label="")
+    status_lbl.get_style_context().add_class("caption")
+    status_lbl.set_opacity(0.75)
+    status_lbl.set_line_wrap(True)
+    status_lbl.set_no_show_all(True)
+    status_lbl.hide()
+
+    def _flash(text: str, ms: int = 2500):
+        status_lbl.set_label(text)
+        status_lbl.show()
+        GLib.timeout_add(ms, lambda: (status_lbl.hide(), False)[1])
+
+    # ── Kopfzeile: klickbarer Breadcrumb + Reload/Save ──────────────
+    head_row = hbox(6)
+    breadcrumb_box = hbox(2)   # wird in _refresh_breadcrumb() befüllt
+    breadcrumb_sw = Gtk.ScrolledWindow()
+    breadcrumb_sw.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.NEVER)
+    breadcrumb_sw.set_propagate_natural_height(True)
+    breadcrumb_sw.add(breadcrumb_box)
+    back_btn = Gtk.Button.new_from_icon_name("go-previous-symbolic", Gtk.IconSize.BUTTON)
+    back_btn.set_relief(Gtk.ReliefStyle.NONE)
+    back_btn.set_no_show_all(True)
+    save_btn = btn("󰆓  Save")
+    save_btn.set_sensitive(False)
+    reload_btn = Gtk.Button.new_from_icon_name("view-refresh-symbolic", Gtk.IconSize.BUTTON)
+    reload_btn.set_relief(Gtk.ReliefStyle.NONE)
+    reload_btn.set_tooltip_text("Discard unsaved changes & reload from disk")
+    head_row.pack_start(back_btn, False, False, 0)
+    head_row.pack_start(breadcrumb_sw, True, True, 0)
+    head_row.pack_start(reload_btn, False, False, 0)
+    head_row.pack_start(save_btn, False, False, 0)
+    root.pack_start(head_row, False, False, 0)
+    root.pack_start(sep(), False, False, 0)   # dünner Trenner - bleibt so
+
+    def _refresh_breadcrumb():
+        for c in breadcrumb_box.get_children():
+            breadcrumb_box.remove(c)
+        root_btn = btn("󱁤 Root")
+        root_btn.set_relief(Gtk.ReliefStyle.NONE)
+        root_btn.connect("clicked", lambda _b: _go_to([]))
+        breadcrumb_box.pack_start(root_btn, False, False, 0)
+        node = state["tree"]
+        for i, idx in enumerate(state["cur_path"]):
+            node = node["children"][idx]
+            slash = Gtk.Label(label="/")
+            slash.set_opacity(0.5)
+            breadcrumb_box.pack_start(slash, False, False, 0)
+            seg_path = state["cur_path"][:i + 1]
+            seg_btn = btn(node.get("name", "?"))
+            seg_btn.set_relief(Gtk.ReliefStyle.NONE)
+            seg_lbl = seg_btn.get_child()
+            if isinstance(seg_lbl, Gtk.Label):
+                seg_lbl.set_ellipsize(Pango.EllipsizeMode.END)
+                seg_lbl.set_max_width_chars(14)
+            seg_btn.connect("clicked", lambda _b, p=seg_path: _go_to(p))
+            breadcrumb_box.pack_start(seg_btn, False, False, 0)
+        breadcrumb_box.show_all()
+
+    def _mark_dirty():
+        state["dirty"] = True
+        save_btn.set_sensitive(True)
+        save_btn.set_label("󰆓  Save*")
+
+    # ── Linke Seite: Ordner-Grid (Root) bzw. Ordner-Inhalt (Sub) ────
+    folder_area = vbox(4)
+    folder_area_sw = Gtk.ScrolledWindow()
+    folder_area_sw.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+    folder_area_sw.set_max_content_height(230)
+    folder_area_sw.set_propagate_natural_height(True)
+    folder_area_sw.set_valign(Gtk.Align.START)
+    folder_area_sw.add(folder_area)
+    folder_area_sw.set_size_request(170, -1)
+
+    # ── Rechte Seite: gepinnte Create-Icons + Suche + Sortier-Tabs + Liste
+    pinned_row = hbox(4); pinned_row.set_halign(Gtk.Align.CENTER)
+    search_e = Gtk.Entry()
+    search_e.set_placeholder_text("🔍  Search apps…")
+    sort_row = hbox(4); sort_row.set_halign(Gtk.Align.CENTER)
+    sort_btns: dict = {}
+    list_sw, list_box = scroll_box(190)   # etwas niedriger - mehr Luft unten (Pkt. 6)
+    list_sw.set_valign(Gtk.Align.START)
+    # Harte Breiten-Grenze: ohne die wächst die Spalte mit dem längsten
+    # App-Namen mit (set_size_request auf der Box ist nur ein Minimum,
+    # kein Maximum) - zusammen mit set_max_width_chars auf den Labels
+    # in den Zeilen-Widgets sorgt das für echtes Abschneiden mit "…"
+    # statt eines immer breiter werdenden Fensters.
+    list_sw.set_size_request(260, -1)
+
+    side = hbox(8)
+    left_col = vbox(4); left_col.set_size_request(170, -1); left_col.set_valign(Gtk.Align.START)
+    right_col = vbox(3); right_col.set_size_request(260, -1); right_col.set_valign(Gtk.Align.START)
+    left_col.pack_start(folder_area_sw, False, False, 0)
+    right_col.pack_start(pinned_row, False, False, 0)
+    right_col.pack_start(search_e, False, False, 0)
+    right_col.pack_start(sort_row, False, False, 0)
+    right_col.pack_start(sep(), False, False, 0)   # dünner statt tab_sep() (Pkt. 7)
+    right_col.pack_start(list_sw, False, False, 0)
+    vsep = Gtk.Separator(orientation=Gtk.Orientation.VERTICAL)
+    vsep.set_valign(Gtk.Align.START)
+    vsep.set_size_request(-1, 320)   # stretcht nicht mehr bis ganz unten (Pkt. 6)
+    side.pack_start(left_col, True, True, 0)
+    side.pack_start(vsep, False, False, 0)
+    side.pack_start(right_col, True, True, 0)
+
+    root.pack_start(side, False, False, 0)
+    root.pack_start(status_lbl, False, False, 2)
+    bottom_spacer = Gtk.Box()
+    bottom_spacer.set_size_request(-1, 10)   # etwas Platz unten (Pkt. 6)
+    root.pack_start(bottom_spacer, False, False, 0)
+
+    # ── Dialoge ───────────────────────────────────────────────────────
+    def _icon_pick_row(dlg: Gtk.Dialog, icon_e: Gtk.Entry) -> Gtk.Box:
+        """Icon-Entry + Live-Vorschau + 'Choose...'-Button - gemeinsam
+        für den Folder- und den Custom-App-Dialog."""
+        row = hbox(6)
+        preview = Gtk.Image()
+        def _refresh_preview():
+            preview.clear()
+            img = _applauncher_icon_img(icon_e.get_text().strip() or "application-x-executable", 22)
+            # Pixbuf/Icon-Name vom frisch gebauten Image auf die feste
+            # preview-Instanz übernehmen, statt das Image im Baum zu
+            # ersetzen (einfacher als preview jedes Mal neu einzuhängen).
+            if img.get_storage_type() == Gtk.ImageType.PIXBUF:
+                preview.set_from_pixbuf(img.get_pixbuf())
+            else:
+                preview.set_from_icon_name(icon_e.get_text().strip() or "application-x-executable",
+                                            Gtk.IconSize.BUTTON)
+                preview.set_pixel_size(22)
+        icon_e.connect("changed", lambda _e: _refresh_preview())
+        pick_btn = Gtk.Button.new_with_label("Choose…")
+        def _on_pick(_b):
+            chosen = _applauncher_pick_icon(dlg, icon_e.get_text().strip())
+            if chosen:
+                icon_e.set_text(chosen)
+        pick_btn.connect("clicked", _on_pick)
+        row.pack_start(preview, False, False, 0)
+        row.pack_start(icon_e, True, True, 0)
+        row.pack_start(pick_btn, False, False, 0)
+        _refresh_preview()
+        return row
+
+    def _ask_new_folder():
+        dlg = Gtk.Dialog(title="New folder", transient_for=win)
+        dlg.set_name("wb-daemon-popup")
+        dlg.set_modal(True)
+        dlg.set_keep_above(True)
+        dlg.set_type_hint(Gdk.WindowTypeHint.DIALOG)
+        dlg.add_buttons("Cancel", Gtk.ResponseType.CANCEL, "Create", Gtk.ResponseType.OK)
+        box = dlg.get_content_area()
+        name_e = Gtk.Entry(); name_e.set_placeholder_text("Folder name")
+        name_e.set_activates_default(True)
+        name_e.connect("activate", lambda _: dlg.response(Gtk.ResponseType.OK))
+        icon_e = Gtk.Entry(); icon_e.set_text("folder"); icon_e.set_placeholder_text("Icon")
+        box.pack_start(name_e, True, True, 4)
+        box.pack_start(_icon_pick_row(dlg, icon_e), True, True, 4)
+        dlg.show_all()
+        resp = dlg.run()
+        result = None
+        if resp == Gtk.ResponseType.OK:
+            nm = name_e.get_text().strip()
+            if nm:
+                result = {"name": nm, "icon": icon_e.get_text().strip() or "folder"}
+        dlg.destroy()
+        return result
+
+    def _ask_custom_app():
+        dlg = Gtk.Dialog(title="New custom app", transient_for=win)
+        dlg.set_name("wb-daemon-popup")
+        dlg.set_modal(True)
+        dlg.set_keep_above(True)
+        dlg.set_type_hint(Gdk.WindowTypeHint.DIALOG)
+        dlg.add_buttons("Cancel", Gtk.ResponseType.CANCEL, "Add", Gtk.ResponseType.OK)
+        box = dlg.get_content_area()
+        name_e = Gtk.Entry(); name_e.set_placeholder_text("Name")
+        icon_e = Gtk.Entry(); icon_e.set_text("application-x-executable")
+        exec_e = Gtk.Entry(); exec_e.set_placeholder_text("Command")
+        exec_e.set_activates_default(True)
+        exec_e.connect("activate", lambda _: dlg.response(Gtk.ResponseType.OK))
+        box.pack_start(name_e, True, True, 4)
+        box.pack_start(_icon_pick_row(dlg, icon_e), True, True, 4)
+        box.pack_start(exec_e, True, True, 4)
+        dlg.show_all()
+        resp = dlg.run()
+        result = None
+        if resp == Gtk.ResponseType.OK:
+            nm = name_e.get_text().strip()
+            ex = exec_e.get_text().strip()
+            if nm and ex:
+                result = {"name": nm, "type": "app",
+                          "icon": icon_e.get_text().strip() or "application-x-executable",
+                          "exec": ex, "custom": True}
+        dlg.destroy()
+        return result
+
+    # ── Save / Reload ────────────────────────────────────────────────
+    def _on_save(_b=None):
+        try:
+            _applauncher_save_tree(state["tree"])
+            state["dirty"] = False
+            save_btn.set_label("󰆓  Save")
+            save_btn.set_sensitive(False)
+            # TrafkTuxLauncher lädt menu.json nur einmal beim Start in
+            # app->root (siehe build_app() in TrafkTuxLauncher.c) und
+            # baut das Fenster danach nie neu - ohne Neustart würde die
+            # Änderung also nie sichtbar. Exakt derselbe Befehl wie der
+            # Daemon-Autostart in hyprland.lua, damit er garantiert mit
+            # denselben Flags wieder hochkommt.
+            run_bg(["bash", "-c",
+                    "killall TrafkTuxLauncher; "
+                    "$HOME/.config/TrafkTuxLauncher/TrafkTuxLauncher --daemon &"])
+            _flash("Saved — TrafkTuxLauncher restarting…")
+        except Exception as e:
+            _flash(f"Error: {e}")
+    save_btn.connect("clicked", _on_save)
+
+    def _on_reload(_b=None):
+        state["tree"] = _applauncher_load_tree()
+        state["dirty"] = False
+        state["cur_path"] = []
+        save_btn.set_label("󰆓  Save")
+        save_btn.set_sensitive(False)
+        _refresh_all()
+        _flash("Reloaded from disk")
+    reload_btn.connect("clicked", _on_reload)
+
+    # ── Drop-Logik: einen Payload (App / New-Folder / New-Custom /
+    # Move) auf einen Ziel-Ordner-Pfad anwenden ─────────────────────
+    def _apply_drop(target_path: list, payload: dict):
+        target = _applauncher_node_at(state["tree"], target_path)
+        if target is None or target.get("type") != "folder":
+            return
+        kind = payload.get("kind")
+        if kind == "new_folder":
+            info = _ask_new_folder()
+            if not info:
+                return
+            target.setdefault("children", []).append(
+                {"name": info["name"], "type": "folder", "icon": info["icon"], "children": []})
+        elif kind == "new_custom_app":
+            new_app = _ask_custom_app()
+            if not new_app:
+                return
+            target.setdefault("children", []).append(new_app)
+        elif kind == "app":
+            target.setdefault("children", []).append({
+                "name": payload.get("name", "App"), "type": "app",
+                "icon": payload.get("icon") or "application-x-executable",
+                "exec": payload.get("exec", "")})
+        elif kind == "move":
+            src_path = payload.get("src_path")
+            if not isinstance(src_path, list) or not src_path:
+                return
+            if target_path[:len(src_path)] == src_path:
+                return  # nicht in sich selbst / einen eigenen Nachfahren verschieben
+            src_parent = _applauncher_node_at(state["tree"], src_path[:-1])
+            if src_parent is None:
+                return
+            idx = src_path[-1]
+            kids = src_parent.get("children", [])
+            if idx < 0 or idx >= len(kids):
+                return
+            node = kids.pop(idx)
+            target.setdefault("children", []).append(node)
+        else:
+            return
+        _mark_dirty()
+        _refresh_all()
+
+    def _apply_unassign(payload: dict):
+        """Drop auf die 'Unsorted'-Zone (nur im 'Ordered'-Modus
+        sichtbar): Knoten aus seinem aktuellen Ordner lösen, sodass er
+        wieder als 'unsorted' auftaucht."""
+        if payload.get("kind") != "move":
+            return
+        src_path = payload.get("src_path")
+        if not isinstance(src_path, list) or not src_path:
+            return
+        src_parent = _applauncher_node_at(state["tree"], src_path[:-1])
+        if src_parent is None:
+            return
+        idx = src_path[-1]
+        kids = src_parent.get("children", [])
+        if idx < 0 or idx >= len(kids):
+            return
+        kids.pop(idx)
+        _mark_dirty()
+        _refresh_all()
+
+    # ── Navigation ───────────────────────────────────────────────────
+    def _go_to(path: list):
+        state["cur_path"] = path
+        _refresh_folder_area()
+
+    def _go_back():
+        if state["cur_path"]:
+            _go_to(state["cur_path"][:-1])
+    back_btn.connect("clicked", lambda _b: _go_back())
+
+    # ── "aktuell geöffneter Ordner" - zentrale Stelle für alle Klick-
+    # Aktionen rechts (Apps/Pins). Root zählt NICHT als offener Ordner. ─
+    def _require_open_folder() -> list | None:
+        if not state["cur_path"]:
+            _flash("Open one of the 9 folders first, then click an app to add it there")
+            return None
+        return list(state["cur_path"])
+
+    def _on_new_folder_clicked():
+        target = _require_open_folder()
+        if target is not None:
+            _apply_drop(target, {"kind": "new_folder"})
+
+    def _on_new_custom_app_clicked():
+        target = _require_open_folder()
+        if target is not None:
+            _apply_drop(target, {"kind": "new_custom_app"})
+
+    def _on_source_entry_clicked(entry: dict):
+        target = _require_open_folder()
+        if target is None:
+            return
+        _apply_drop(target, {"kind": "app", "name": entry.get("name", "App"),
+                              "icon": entry.get("icon"), "exec": entry.get("exec")})
+
+    def _on_change_icon(path: list):
+        node = _applauncher_node_at(state["tree"], path)
+        if node is None:
+            return
+        chosen = _applauncher_pick_icon(win, node.get("icon") or "")
+        if not chosen:
+            return
+        node["icon"] = chosen
+        _mark_dirty()
+        _refresh_folder_area()
+
+    # ── Linke Seite neu aufbauen ─────────────────────────────────────
+    def _refresh_folder_area():
+        for c in folder_area.get_children():
+            folder_area.remove(c)
+        _refresh_breadcrumb()
+        back_btn.set_visible(bool(state["cur_path"]))
+
+        if not state["cur_path"]:
+            grid = Gtk.Grid(column_spacing=6, row_spacing=6)
+            grid.set_halign(Gtk.Align.CENTER)
+            col = row = 0
+            for i, child in enumerate(state["tree"].get("children", [])):
+                if child.get("type") != "folder":
+                    continue
+                cell = _applauncher_folder_cell(child, lambda p=[i]: _go_to(p))
+                grid.attach(cell, col, row, 1, 1)
+                col += 1
+                if col >= 3:
+                    col = 0; row += 1
+            folder_area.pack_start(grid, False, False, 0)
+        else:
+            node = _applauncher_node_at(state["tree"], state["cur_path"])
+            if node is None:
+                state["cur_path"] = []
+                return _refresh_folder_area()
+            kids = node.get("children", [])
+            if not kids:
+                folder_area.pack_start(bitem("Empty — click an app on the right to add it here", dim=True),
+                                        False, False, 0)
+            for i, child in enumerate(kids):
+                cpath = state["cur_path"] + [i]
+                row_w = _applauncher_child_row(
+                    child,
+                    on_open=(lambda p=cpath: _go_to(p)) if child.get("type") == "folder" else None,
+                    on_remove=lambda p=cpath: _apply_unassign({"kind": "move", "src_path": p}),
+                    on_change_icon=lambda p=cpath: _on_change_icon(p))
+                folder_area.pack_start(row_w, False, False, 0)
+        folder_area.show_all()
+        GLib.idle_add(_shrink_to_fit, win)
+
+    # ── Rechte Seite: nur noch Unsorted/All Apps (Custom/Ordered/All
+    # Packages auf Wunsch wieder raus) + Namens-Suche ────────────────
+    _SORT_MODES = (("unsorted", "Unsorted"), ("all", "All Apps"))
+
+    def _switch_sort(mode: str):
+        state["sort_mode"] = mode
+        for n, b in sort_btns.items():
+            ctx = b.get_style_context()
+            if n == mode: ctx.add_class("active")
+            else:         ctx.remove_class("active")
+        _refresh_list()
+    for mkey, mlabel in _SORT_MODES:
+        b = btn(mlabel, active=(mkey == "unsorted"))
+        b.connect("clicked", lambda _b, n=mkey: _switch_sort(n))
+        sort_btns[mkey] = b
+        sort_row.pack_start(b, False, False, 0)
+
+    def _on_search_changed(_e):
+        state["search"] = search_e.get_text()
+        _refresh_list()
+    search_e.connect("changed", _on_search_changed)
+
+    new_folder_row = _applauncher_pinned_row("folder-new", "New Folder", _on_new_folder_clicked)
+    new_app_row = _applauncher_pinned_row("list-add", "New Custom App", _on_new_custom_app_clicked)
+    pinned_row.pack_start(new_folder_row, False, False, 0)
+    pinned_row.pack_start(new_app_row, False, False, 0)
+
+    def _refresh_list():
+        for c in list_box.get_children():
+            list_box.remove(c)
+        mode = state["sort_mode"]
+        entries = _applauncher_unsorted_apps(state["tree"]) if mode == "unsorted" \
+            else _applauncher_scan_desktop_apps()
+        needle = state["search"].strip().casefold()
+        if needle:
+            entries = [e for e in entries if needle in e["name"].casefold()]
+
+        if not entries:
+            list_box.pack_start(bitem("Nothing here", dim=True), False, False, 0)
+        for e in entries[:400]:
+            row_w = _applauncher_source_row(e, None, lambda ee=e: _on_source_entry_clicked(ee))
+            list_box.pack_start(row_w, False, False, 0)
+        list_box.show_all()
+        GLib.idle_add(_shrink_to_fit, win)
+
+    def _refresh_all():
+        _refresh_folder_area()
+        _refresh_list()
+
+    _refresh_all()
+    return root
+
+def _build_settings_apps(page: Gtk.Box, key: str, label: str, win: Gtk.Window) -> None:
+    root = vbox(4)
+    stack = Gtk.Stack()
+    stack.set_transition_type(Gtk.StackTransitionType.NONE)
+    stack.set_hhomogeneous(False)
+    stack.set_vhomogeneous(False)
+
+    tab_row_top = hbox(4); tab_row_top.set_halign(Gtk.Align.CENTER)
+    tab_row_bottom = hbox(4); tab_row_bottom.set_halign(Gtk.Align.CENTER)
+    tab_btns: dict = {}
+
+    def _switch(name):
+        _switch_stack(stack, win, name)
+        for n, b in tab_btns.items():
+            ctx = b.get_style_context()
+            if n == name: ctx.add_class("active")
+            else:         ctx.remove_class("active")
+
+    def _placeholder(text: str) -> Gtk.Box:
+        b = vbox(4); pad(b, h=4, v=14)
+        b.pack_start(bitem(text, dim=True), False, False, 0)
+        return b
+
+    # Nur Tab 1 (Launcher) ist bereits fertig - 2/3/5 folgen als
+    # nächstes, 4 (Default Apps) bewusst als Platzhalter (siehe Chat:
+    # Recherche zu xdg-mime/mimeapps.list kommt zuletzt).
+    stack.add_named(_build_app_launcher_tab(win), "launcher")
+    stack.add_named(_placeholder("Bar shortcuts editor — coming next"), "bar")
+    stack.add_named(_placeholder("Autostart editor — coming next"), "autostart")
+    stack.add_named(_placeholder("Default apps — coming last (needs its own research pass)"), "defaults")
+    stack.add_named(_placeholder("Wine/GameScope excludes — coming next"), "wine")
+
+    for name, tlabel, trow in (
+            ("launcher", "Launcher", tab_row_top), ("bar", "Bar", tab_row_top),
+            ("autostart", "Autostart", tab_row_top),
+            ("defaults", "Defaults", tab_row_bottom), ("wine", "Wine", tab_row_bottom)):
+        b = btn(tlabel, active=(name == "launcher"))
+        b.connect("clicked", lambda _b, n=name: _switch(n))
+        tab_btns[name] = b
+        trow.pack_start(b, False, False, 0)
+    stack.set_visible_child_name("launcher")
+
+    root.pack_start(tab_row_top, True, False, 2)
+    root.pack_start(tab_row_bottom, True, False, 0)
+    root.pack_start(tab_sep(), False, False, 0)
+    root.pack_start(stack, False, False, 0)
+    page.pack_start(root, True, True, 0)
+
 SETTINGS_BUILDERS = {
     "display":    _build_settings_display,
     "brightness": _build_settings_brightness,
@@ -12415,6 +13560,7 @@ SETTINGS_BUILDERS = {
     "calendar":   _build_settings_calendar,
     "appearance": _build_settings_appearance,
     "security":   _build_settings_security,
+    "apps":       _build_settings_apps,
 }
 
 def build_settings(win: Gtk.Window):

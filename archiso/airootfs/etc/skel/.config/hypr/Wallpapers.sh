@@ -3,6 +3,33 @@
 # Wallpapers.sh
 # Setzt beim Start ein zufälliges Wallpaper pro Hyprland-Monitor.
 #
+# ─────────────────────────────────────────────────────────────────
+# UMBAU (siehe Chat): xfdesktop kann auf diesem System aus bisher
+# ungeklärten Gründen auf externen Monitoren unter Hyprland/Wayland
+# KEIN Hintergrundbild mehr zeichnen - und zwar nicht nur über dieses
+# Skript, sondern nachweislich auch über die offizielle
+# xfce4-desktop-Settings-GUI selbst (dort geht's inzwischen auf GAR
+# keinem Monitor mehr, nicht mal intern). Property-Zuordnung
+# (xfconf-Keys pro Monitor) war die ganze Zeit korrekt - das Problem
+# sitzt tiefer in xfdesktop selbst (passt zur Warnung
+# "Window<->Workspace association is not available on your
+# compositor" - xfdesktop läuft unter Hyprland in einem
+# Kompatibilitäts-/Degraded-Modus).
+#
+# Daher: das eigentliche Hintergrundbild kommt jetzt von hyprpaper
+# (Hyprlands eigener, nativer Wallpaper-Daemon - gebaut genau für
+# Multi-Monitor-Wayland, kein X11-Kompatibilitätsgedöns). xfdesktop
+# bleibt parallel aktiv, aber NUR noch für die Desktop-Icons - sein
+# eigener Hintergrund wird auf "kein Bild" + "durchsichtig" gesetzt
+# (ensure_xfdesktop_transparent()), damit hyprpapers Layer darunter
+# sichtbar durchscheint. Netter Nebeneffekt: kein `killall xfdesktop`
+# mehr nötig -> kein Schwarz-Flackern mehr beim Rerollen.
+#
+# Voraussetzung: hyprpaper ist installiert und läuft (per systemd-User-
+# Service oder exec-once in hyprland.lua) - dieses Skript versucht es
+# notfalls selbst zu starten, falls es (noch) nicht läuft.
+# ─────────────────────────────────────────────────────────────────
+#
 # Neue Ordnerstruktur:
 #   ~/.config/hypr/Wallpapers/<ratio>/
 #   Ratio-Keys: 11, 1610, 169, 219, 329, 43
@@ -13,6 +40,10 @@
 #
 # Explizite Auswahl statt Zufall (siehe apply_image_to_monitor() unten):
 #   ~/.config/hypr/Wallpapers.sh --set /pfad/zum/bild.jpg [MONITOR]
+#
+# Diagnose der Monitor->xfconf-Zuordnung (nur noch relevant fürs
+# Icon-Layer/die Transparenz, nicht mehr fürs Bild selbst):
+#   ~/.config/hypr/Wallpapers.sh --debug-monitors
 
 WALLPAPER_DIR="$HOME/.config/hypr/Wallpapers"
 CHANNEL="xfce4-desktop"
@@ -82,24 +113,178 @@ set_prop() {
     fi
 }
 
-apply_image_to_monitor() {
+# ─────────────────────────────────────────────────────────────────
+# Nur noch fürs Icon-Layer relevant: xfdesktop soll pro Monitor KEIN
+# eigenes Bild mehr zeichnen und durchsichtig bleiben, damit hyprpaper
+# darunter sichtbar ist. Schreibt defensiv auf BEIDE denkbaren
+# xfconf-Pfad-Varianten (Connector-Name UND GDK-Modellname, siehe
+# discover_xfconf_monitor_map/resolve_xfkeys) - welche davon diese
+# xfdesktop-Version tatsächlich für die Icon-Platzierung nutzt, ist
+# unklar, schadet aber nicht, beide zu pflegen.
+# ─────────────────────────────────────────────────────────────────
+declare -gA XFKEY_FOR_MON=()
+
+discover_xfconf_monitor_map() {
+    local -a hypr_lines gdk_lines
+    mapfile -t hypr_lines < <(
+        hyprctl monitors -j 2>/dev/null \
+            | jq -r '.[] | [.name, (.x|tostring), (.y|tostring), (.width|tostring), (.height|tostring)] | @tsv'
+    )
+    [ "${#hypr_lines[@]}" -eq 0 ] && return 1
+
+    mapfile -t gdk_lines < <(python3 - <<'PYEOF' 2>/dev/null
+import gi
+gi.require_version("Gdk", "3.0")
+from gi.repository import Gdk
+d = Gdk.Display.get_default()
+if d is None:
+    raise SystemExit(1)
+for i in range(d.get_n_monitors()):
+    m = d.get_monitor(i)
+    g = m.get_geometry()
+    model = (m.get_model() or "").strip()
+    print(f"{g.x}\t{g.y}\t{g.width}\t{g.height}\t{model}")
+PYEOF
+    )
+    [ "${#gdk_lines[@]}" -eq 0 ] && return 1
+
+    local hline
+    for hline in "${hypr_lines[@]}"; do
+        IFS=$'\t' read -r hname hx hy hw hh <<< "$hline"
+        local matched=""
+        local gline
+        for gline in "${gdk_lines[@]}"; do
+            IFS=$'\t' read -r gx gy gw gh gmodel <<< "$gline"
+            if [ "$gx" = "$hx" ] && [ "$gy" = "$hy" ]; then
+                matched="$gmodel"; break
+            fi
+        done
+        if [ -z "$matched" ]; then
+            for gline in "${gdk_lines[@]}"; do
+                IFS=$'\t' read -r gx gy gw gh gmodel <<< "$gline"
+                if [ "$gw" = "$hw" ] && [ "$gh" = "$hh" ]; then
+                    matched="$gmodel"; break
+                fi
+            done
+        fi
+        if [ -n "$matched" ]; then
+            local sanitized
+            sanitized=$(printf '%s' "$matched" | tr -cd 'A-Za-z0-9')
+            [ -n "$sanitized" ] && XFKEY_FOR_MON["$hname"]="monitor${sanitized}"
+        fi
+    done
+    [ "${#XFKEY_FOR_MON[@]}" -gt 0 ]
+}
+
+resolve_xfkeys() {
+    local mon="$1"
+    local -a keys=("monitor${mon}")
+    if [ -n "${XFKEY_FOR_MON[$mon]:-}" ] && [ "${XFKEY_FOR_MON[$mon]}" != "monitor${mon}" ]; then
+        keys+=("${XFKEY_FOR_MON[$mon]}")
+    fi
+    printf '%s\n' "${keys[@]}"
+}
+
+ensure_xfdesktop_transparent() {
+    local mon xfkey
+    local -a mons
+    mapfile -t mons < <(hyprctl monitors -j 2>/dev/null | jq -r '.[].name')
+    for mon in "${mons[@]}"; do
+        while IFS= read -r xfkey; do
+            local base="/backdrop/screen0/${xfkey}/workspace0"
+            set_prop "$base/image-style" int 0   # 0 = Kein Bild (hyprpaper übernimmt)
+            set_prop "$base/color-style" int 0   # 0 = Durchsichtig
+        done < <(resolve_xfkeys "$mon")
+    done
+}
+
+if [ "${1:-}" = "--debug-monitors" ]; then
+    echo "hyprctl monitors:"
+    hyprctl monitors -j | jq -r '.[] | "  \(.name)  pos=\(.x),\(.y)  size=\(.width)x\(.height)"'
+    echo
+    discover_xfconf_monitor_map || true
+    echo "Icon-Layer xfconf-Zuordnung (NICHT mehr fürs Bild zuständig - nur Transparenz/Icons):"
+    for k in "${!XFKEY_FOR_MON[@]}"; do
+        echo "  $k  ->  /backdrop/screen0/${XFKEY_FOR_MON[$k]}/workspace0"
+    done
+    echo
+    echo "hyprpaper Status:"
+    if pgrep -x hyprpaper >/dev/null 2>&1; then
+        echo "  läuft (PID $(pgrep -x hyprpaper | tr '\n' ' '))"
+        echo "  aktive Zuordnung:"; hyprctl hyprpaper listactive 2>/dev/null | sed 's/^/    /'
+        echo "  vom letzten Lauf dieses Skripts geladen gehaltene Bilder"
+        echo "  (listloaded gibt's in deiner hyprpaper-Version nicht mehr,"
+        echo "  siehe hyprpaper_unload_unused()):"
+        if [ -f "$HOME/.cache/wb-wallpapers-hyprpaper-loaded" ]; then
+            sed 's/^/    /' "$HOME/.cache/wb-wallpapers-hyprpaper-loaded"
+        else
+            echo "    (noch kein echter Lauf mit diesem Skript - Datei fehlt noch)"
+        fi
+    else
+        echo "  LÄUFT NICHT"
+    fi
+    exit 0
+fi
+
+# ─────────────────────────────────────────────────────────────────
+# hyprpaper-Anbindung - das eigentliche Hintergrundbild läuft jetzt
+# komplett hierüber, nicht mehr über xfconf.
+# ─────────────────────────────────────────────────────────────────
+ensure_hyprpaper_running() {
+    if pgrep -x hyprpaper >/dev/null 2>&1; then
+        return 0
+    fi
+    (setsid hyprpaper >/dev/null 2>&1 &) 
+    sleep 0.5
+    if pgrep -x hyprpaper >/dev/null 2>&1; then
+        return 0
+    fi
+    notify-send "Wallpaper" "hyprpaper läuft nicht und konnte nicht automatisch gestartet werden - bitte manuell prüfen (hyprpaper installiert? in hyprland.lua/systemd per exec-once eingebunden?)." 2>/dev/null || true
+    return 1
+}
+
+hyprpaper_set() {
     local mon="$1" image="$2"
-    local base="/backdrop/screen0/monitor${mon}/workspace0"
-    set_prop "$base/last-image"  string "$image"
-    set_prop "$base/image-style" int    5   # 5 = Vergrößert
-    set_prop "$base/color-style" int    0   # 0 = Durchsichtig
+    hyprctl hyprpaper preload "$image" >/dev/null 2>&1
+    hyprctl hyprpaper wallpaper "${mon},${image}" >/dev/null 2>&1
+}
+
+# Nicht mehr gebrauchte, zuvor geladene Bilder wieder aus hyprpapers
+# RAM-Cache entfernen, damit der über viele Rerolls hinweg nicht
+# unbegrenzt wächst. KEEP_IMAGES wird vom Hauptdurchlauf befüllt.
+#
+# WICHTIG: `hyprctl hyprpaper listloaded` existiert in neueren
+# hyprpaper-Versionen nicht mehr (siehe Chat - "invalid hyprpaper
+# request" bei dir). Statt das abzufragen, merkt sich dieses Skript
+# daher SELBST in einer kleinen State-Datei, welche Bilder es beim
+# letzten Lauf geladen hat, und entlädt davon nur die, die jetzt nicht
+# mehr gebraucht werden - funktioniert unabhängig davon, ob/wie
+# `listloaded` bei dir gerade heißt.
+declare -ga KEEP_IMAGES=()
+HYPRPAPER_LOADED_STATE="$HOME/.cache/wb-wallpapers-hyprpaper-loaded"
+
+hyprpaper_unload_unused() {
+    mkdir -p "$(dirname "$HYPRPAPER_LOADED_STATE")"
+    local -a previously_loaded
+    mapfile -t previously_loaded 2>/dev/null < "$HYPRPAPER_LOADED_STATE"
+
+    local img keep k
+    for img in "${previously_loaded[@]}"; do
+        [ -z "$img" ] && continue
+        keep=0
+        for k in "${KEEP_IMAGES[@]}"; do
+            [ "$img" = "$k" ] && { keep=1; break; }
+        done
+        [ "$keep" = "0" ] && hyprctl hyprpaper unload "$img" >/dev/null 2>&1
+    done
+
+    printf '%s\n' "${KEEP_IMAGES[@]}" > "$HYPRPAPER_LOADED_STATE"
 }
 
 # ─────────────────────────────────────────────────────────────────
-# Explizite Auswahl (fürs Wallpapers-Tab in Appearance & Language):
+# Explizite Auswahl (fürs Wallpapers-Tab in den Widgets):
 #   Wallpapers.sh --set /pfad/zum/bild.jpg [MONITORNAME]
-# Ohne MONITORNAME wird das Bild auf ALLE aktuell angeschlossenen
-# Monitore gesetzt (identisches Bild überall); mit MONITORNAME nur auf
-# den genannten (Name wie von "hyprctl monitors" gemeldet, z.B. "eDP-1",
-# "HDMI-A-1"). Nutzt dieselbe apply_image_to_monitor()-Funktion wie der
-# normale Zufalls-Durchlauf unten, damit beide Wege konsistent bleiben
-# und ein manuell gesetztes Bild dieselben xfconf-Keys bekommt wie ein
-# gewürfeltes.
+# ─────────────────────────────────────────────────────────────────
 if [ "${1:-}" = "--set" ]; then
     IMAGE="${2:-}"
     TARGET_MON="${3:-}"
@@ -120,17 +305,21 @@ if [ "${1:-}" = "--set" ]; then
         exit 1
     fi
 
-    for MON in "${MONS[@]}"; do
-        apply_image_to_monitor "$MON" "$IMAGE"
-    done
+    ensure_hyprpaper_running || exit 1
+    discover_xfconf_monitor_map || true
+    ensure_xfdesktop_transparent
 
-    killall xfdesktop 2>/dev/null || true
-    sleep 1
-    xfdesktop &
+    for MON in "${MONS[@]}"; do
+        hyprpaper_set "$MON" "$IMAGE"
+        KEEP_IMAGES+=("$IMAGE")
+    done
+    hyprpaper_unload_unused
     exit 0
 fi
 
-# Monitore einlesen: name, width, height
+# ─────────────────────────────────────────────────────────────────
+# Normaler Zufalls-Durchlauf
+# ─────────────────────────────────────────────────────────────────
 mapfile -t MONITORS < <(
     hyprctl monitors -j | jq -r '.[] | [.name, (.width|tostring), (.height|tostring)] | @tsv'
 )
@@ -138,6 +327,12 @@ mapfile -t MONITORS < <(
 if [ "${#MONITORS[@]}" -eq 0 ]; then
     notify-send "Wallpaper" "Keine Monitore von hyprctl erhalten." 2>/dev/null
     exit 1
+fi
+
+if [ "$DRY_RUN" != "1" ]; then
+    ensure_hyprpaper_running || exit 1
+    discover_xfconf_monitor_map || true
+    ensure_xfdesktop_transparent
 fi
 
 for line in "${MONITORS[@]}"; do
@@ -157,18 +352,16 @@ for line in "${MONITORS[@]}"; do
     fi
 
     if [ "$DRY_RUN" = "1" ]; then
-        echo "$MON: ${W}x${H} -> ratio $KEY -> source $SRC -> $IMAGE"
+        echo "$MON: ${W}x${H} -> ratio $KEY -> source $SRC -> $IMAGE (hyprpaper)"
         continue
     fi
 
-    apply_image_to_monitor "$MON" "$IMAGE"
+    hyprpaper_set "$MON" "$IMAGE"
+    KEEP_IMAGES+=("$IMAGE")
 done
 
 if [ "$DRY_RUN" = "1" ]; then
     exit 0
 fi
 
-# xfdesktop neu starten, damit die neuen Keys sauber aufgelöst werden.
-killall xfdesktop 2>/dev/null || true
-sleep 1
-xfdesktop &
+hyprpaper_unload_unused

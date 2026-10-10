@@ -485,8 +485,8 @@ Change the scale (to a certain degree). Toggle HDR. Change where your other moni
 
 Still to be themed / done:
 - Calamares
-- Optional package installer
-- Editor for: Rofi folders/apps, Waybar widgets/shortcuts, autostart apps, default apps: TrafkTux App Editor
+- Editor for: Rofi folders/apps, Waybar widgets/shortcuts, autostart apps, default apps: TrafkTux App Editor – mailueberfall
+- Lua Config should be many seperated files including user config files – partybombe
 
 ## Known Bugs
 
@@ -506,107 +506,3 @@ It has those tabs:
 4. You can set the default applications for files.
 5. add/remove apps that should/not be effected by the wine wrapper (1 for general 1 for dgvoodo2) and also set if the New or Old version of dgvoodoo2 should be used and also exclude apps from only dgvoodoo2 injection fix or compleately
 
-
-# Optional Packages
-The Optional Packages will be available in the Pamac software center
-via a local "TrafkTuxOptionalPackages" Repo!
-
-In this repo, there will be several meta packages that do not hold any
-real apps, but only depend on them.
-
-Because this only works for packages from the official repos, we also
-use a custom install script that gets executed by pacman after the meta
-package is installed. This script installs AUR, Flatpak and custom apps.
-
-The List of Meta-Packages:
-- **Social
-  - discord
-- **MultiMedia
-  - qbittorrent
-  - makemkv
-  - makemkv-libaacs *(aur)*
-  - ```sudo sg | sudo tee -a /etc/modules-load.d/sg.conf```
-  - asunder
-  - handbrake
-- **Work
-  - obsidian
-  - jetbrains-toolbox *(aur)*
-  - audacity
-  - obs-studio
-  - obs-pipewire-audio-capture-bin *(aur)*
-  - gimp
-  - qalculate-gtk
-  - geogebra-6-bin *(aur)*
-  - onlyoffice-bin *(aur)*
-  - lmms
-- **GameLaunchers
-  - steam
-  - itch-bin *(aur)*
-  - heroic-games-launcher-bin *(aur)*
-- **Games
-  - prismlauncher
-  - hytale-launcher-bin *(aur)*
-  - bedrock-on-linux-bin *(aur)*
-  - openttd
-  - supertuxkart
-  - cubyz-bin *(aur)*
-  - airshipper *(aur)*
-  - srb2 *(aur)*
-  - srb2kart *(aur)*
-  - flatpak install flathub org.vinegarhq.Sober
-  - flatpak install flathub org.vinegarhq.Vinegar
-- **Emulators (aur default)
-  - stella
-  - bigpemu-bin
-  - xemu
-  - xenia-edge-bin
-  - azaharplus-appimage
-  - 3beans-git
-  - parallel-launcher
-  - cemu
-  - mesen
-  - bsnes-hd
-  - melonds
-  - vita3k-bin
-  - rpcs3-bin
-  - pcsx2-latest-bin
-  - duckstation-preview-latest-bin
-  - shadps4-qtlauncher-bin
-  - kega-fusion
-  - flycast-bin
-  - vbam-wx
-  - dolphin-emu (pacman)
-  - mgba-qt (pacman)
-  - ppsspp (pacman)
-- **Virtualisation
-  ```
-  sudo pacman -S virt-manager qemu-full libvirt dnsmasq
-  sudo systemctl enable --now libvirtd
-  sudo usermod -aG libvirt $USER
-  ```
-- **AndroidMirroring
-  - scrcpy
-  - android-tools
-- **Learning
-  ```
-  sudo docker run -p 3000:3000 bkimminich/juice-shop
-  ```
-- **Other (METAPACKAGES FOR ONLY 1* APP)**
-  - bambustudio-bin *(aur)*
-  - ladybird (aur)
-  - Docker
-    - docker
-    - docker-desktop *(aur)*
-    - `sudo systemctl start docker`
-    - `sudo systemctl enable docker`
-  - opentabletdriver *(aur)*
-  - webcamoid *(aur)
-  - timeshift
-  - archiso
-  - theclicker *(aur)*
-  - lsfg-vk-bin (aur)
-  - MEGA
-    ```
-    wget https://mega.nz/linux/repo/Arch_Extra/x86_64/megasync-x86_64.pkg.tar.zst && sudo pacman -U "$PWD/megasync-x86_64.pkg.tar.zst"
-    ```
-    

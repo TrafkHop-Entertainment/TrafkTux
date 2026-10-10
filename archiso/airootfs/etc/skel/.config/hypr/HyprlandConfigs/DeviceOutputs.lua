@@ -1,0 +1,86 @@
+-- DeviceOutputs.lua
+--
+-- Bindet Touchscreen(s) und Grafiktablett(s) an den Monitor, auf dem
+-- sie physisch sitzen.
+--
+-- HINTERGRUND / BUG:
+-- Hyprland (wie jeder Wayland-Compositor) behandelt alle angeschlossenen
+-- Monitore als EINE zusammenhängende virtuelle Fläche. Absolute
+-- Zeigegeräte - Touchscreen und Grafiktablett arbeiten beide mit
+-- absoluten statt relativen Koordinaten, anders als eine Maus - werden
+-- standardmäßig auf GENAU DIESE gesamte virtuelle Fläche gemappt, nicht
+-- nur auf den physischen Bildschirm, auf dem sie eigentlich sitzen.
+-- Liegt ein zweiter Monitor in der virtuellen Anordnung "über" dem
+-- Laptop-Panel, landet ein Touch auf der oberen Hälfte des Panels
+-- rechnerisch auf dem anderen Monitor - exakt das gemeldete Symptom.
+--
+-- FIX: Jedes Touch-/Tablet-Gerät bekommt per hl.device({ name=...,
+-- output=... }) explizit den Namen des Monitors zugewiesen, auf dem es
+-- physisch sitzt. Diese Signatur ist aus /usr/share/hypr/stubs/hl.meta.lua
+-- bestätigt: HL.DeviceSpec hat "name" und "output" als flache, direkte
+-- Felder (nicht verschachtelt unter touchdevice={}/tablet={} - diese
+-- verschachtelten Typen sind nur für globale Defaults über
+-- hl.config({input={...}}) gedacht, nicht für hl.device()).
+--
+-- DIESE DATEI IST BEWUSST STATISCH.
+-- Keine hyprctl-/io.popen-Aufrufe hier drin - so eine Abfrage zur
+-- Config-Load-Zeit hat beim ersten Testlauf den Compositor komplett
+-- aufgehängt (Henne-Ei-Problem: hyprctl fragt den Compositor ab,
+-- während der Compositor noch mitten im eigenen Config-Load steckt
+-- und währenddessen nicht zuverlässig auf eigene IPC-Requests
+-- antwortet). Deshalb hier nur fest eingetragene name/output-Paare.
+--
+-- WO DIE AUTOMATISIERUNG WIRKLICH PASSIERT:
+-- Das Settings-Skript (außerhalb von Hyprland, läuft NICHT während
+-- des Config-Loads) ist dafür zuständig:
+--   1. Aktuelle Geräte abfragen: hyprctl devices -j
+--      (Touch-Geräte i.d.R. unter dem Schlüssel "touch", Tablets unter
+--      "tablets" - gegen die echte Ausgabe auf diesem System prüfen,
+--      Schlüsselnamen können sich zwischen Versionen unterscheiden)
+--   2. Aktuelle Monitore abfragen: hyprctl monitors -j
+--      (internes Laptop-Panel i.d.R. am Namenspräfix "eDP" erkennbar -
+--      auch das eine Heuristik, kein Garant für jedes System)
+--   3. Diese Datei NEU SCHREIBEN mit den unten gezeigten
+--      hl.device({...})-Zeilen, mit den echten, aktuellen Namen.
+--   4. Erst DANACH, als separater Schritt: "hyprctl reload" auslösen -
+--      niemals hyprctl-Abfragen aus dieser Datei selbst heraus starten.
+--
+-- EINBINDUNG: ganz unten in hyprland.lua, analog zum vorhandenen
+-- AppWallpaper.lua-Include:
+--   pcall(dofile, os.getenv("HOME") .. "/.config/hypr/DeviceOutputs.lua")
+--
+-- ============================================================
+-- Ab hier: der Teil, den das Settings-Skript automatisch generiert/
+-- überschreibt. Die Zeilen unten sind PLATZHALTER - mit den echten
+-- Namen aus "hyprctl devices -j" und "hyprctl monitors -j" ersetzen
+-- (oder direkt vom Settings-Skript ersetzen lassen).
+-- ============================================================
+
+-- Eingetragen aus der echten Ausgabe von "hyprctl devices -j" und
+-- "hyprctl monitors -j" auf diesem System (Stand: 10. Okt. 2026).
+-- Internes Panel: eDP-1 (AU Optronics 0x20A7, y=0).
+-- Externer Monitor HDMI-A-1 liegt bei y=-1080, also virtuell ÜBER
+-- eDP-1 - das war die Ursache des gemeldeten Bugs.
+--
+-- "wacf2200:00-056a:53b9" ist der Wacom-Controller deines eingebauten
+-- Touch-/Stift-Displays. Er meldet sich unter "hyprctl devices -j"
+-- mit DREI Einträgen (ein Tablet/Stift-Eintrag, zwei Touch-Einträge) -
+-- alle drei werden hier ans interne Panel gebunden.
+--
+-- ZUSÄTZLICH: "opentabletdriver-virtual-artist-tablet" ist ein
+-- virtuelles Gerät von OpenTabletDriver (siehe "hyprctl devices" ohne
+-- -j - dort als zweiter, separater "Tablet at..."-Eintrag sichtbar).
+-- OpenTabletDriver liest die Rohdaten vom echten Wacom-Stylus und
+-- spiegelt sie als eigenes virtuelles Eingabegerät - Hyprland sieht
+-- vermutlich DIESES virtuelle Gerät als tatsächliche Eingabequelle,
+-- nicht den rohen Hardware-Stylus. Deshalb griff die Bindung auf
+-- "...-stylus" allein nicht - "...-stylus" bleibt trotzdem mit
+-- eingetragen, falls OpenTabletDriver mal aus ist/deaktiviert wird.
+
+-- Stift/Zeichentablett (Hardware + virtuelles OpenTabletDriver-Gerät)
+hl.device({ name = "wacf2200:00-056a:53b9-stylus", output = "eDP-1" })
+hl.device({ name = "opentabletdriver-virtual-artist-tablet", output = "eDP-1" })
+
+-- Touchscreen (zwei Einträge unter "touch" im JSON)
+hl.device({ name = "wacf2200:00-056a:53b9", output = "eDP-1" })
+hl.device({ name = "wacf2200:00-056a:53b9-touchscreen", output = "eDP-1" })

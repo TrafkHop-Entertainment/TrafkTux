@@ -94,6 +94,30 @@
 
 static const char *WRAPPER_PREFIXES[] = { "kitty", "sudo", NULL };
 
+/* Binaries, die so generisch sind, dass ein exec-Match darauf NICHTS ueber
+ * die eigentliche App aussagt (Interpreter/Runtime-/Meta-Launcher - z.B.
+ * "steam" bei JEDEM Spiel-Shortcut, "python3 <script>.py", "flatpak run
+ * <id>"). Ohne diese Ausnahme reicht 1 einsortierte App mit so einem exec
+ * (z.B. "Steam" selbst), um ALLE anderen Apps mit demselben Erst-Token
+ * faelschlich aus "Unordered Programs" zu werfen, weil extract_binary()
+ * nur das erste Token nimmt und Argumente/IDs ignoriert. Siehe App-Editor
+ * -Chat: exakt dasselbe Problem wurde dort zuerst mit Steam-Spielen
+ * gefunden und hier 1:1 nachgezogen. */
+static const char *GENERIC_BINARIES[] = {
+    "env", "bash", "sh", "zsh", "fish", "python", "python3", "python2",
+    "perl", "ruby", "node", "nodejs", "electron", "java", "javaw",
+    "flatpak", "snap", "appimage-run", "wine", "wine64", "wineconsole",
+    "steam", "lutris", "heroic", "bottles", NULL
+};
+
+static gboolean is_generic_binary(const char *bin) {
+    if (!bin) return FALSE;
+    for (int i = 0; GENERIC_BINARIES[i]; i++) {
+        if (g_ascii_strcasecmp(bin, GENERIC_BINARIES[i]) == 0) return TRUE;
+    }
+    return FALSE;
+}
+
 /* =========================================================================
  * exec_detached / play_sound / cleanup - 1:1 aus dem Original übernommen
  * ========================================================================= */
@@ -216,6 +240,126 @@ static MenuState default_state(void) {
 /* =========================================================================
  * Menü-JSON laden & Pfadauflösung - 1:1 übernommen
  * ========================================================================= */
+
+/* ── Usermenu.json: zusätzliche, update-sichere Einträge ────────────────
+ * menu.json "gehört" dem System/Update-Skript (wird dort einfach neu
+ * hingelegt/überschrieben). Für eigene Einträge, die ein Update
+ * ÜBERLEBEN sollen, braucht es daher eine ZWEITE Datei im selben Ordner -
+ * Usermenu.json - die das Update-Skript nie anfasst (es kennt nur
+ * menu.json). Fehlt sie, wird sie HIER genau einmal als leeres Gerüst
+ * angelegt: ein "children"-Eintrag pro echtem Ordner der GERADE
+ * geladenen menu.json (also auch bei zukünftigen Umbenennungen/neuen
+ * Ordnern automatisch passend) - "echt" heißt: hat selbst ein
+ * "children"-Array, die special-drun/-filtered/-run-Einträge (Unordered
+ * Programs/All Programs/All Packages) haben keins und werden dabei
+ * automatisch übersprungen, da man dort ohnehin nichts manuell einträgt.
+ * Existiert Usermenu.json schon - egal mit welchem Inhalt -, fasst diese
+ * Funktion sie NICHT an. Genau das macht sie update-sicher. */
+static void ensure_user_menu_skeleton(const char *user_menu_path, JsonObject *sys_root) {
+    if (g_file_test(user_menu_path, G_FILE_TEST_EXISTS)) return; /* nie überschreiben - auch nicht ergänzen */
+
+    JsonObject *skeleton = json_object_new();
+    json_object_set_string_member(skeleton, "name", "root");
+    json_object_set_string_member(skeleton, "type", "folder");
+    JsonArray *children = json_array_new();
+
+    if (json_object_has_member(sys_root, "children")) {
+        JsonArray *sys_children = json_object_get_array_member(sys_root, "children");
+        guint n = json_array_get_length(sys_children);
+        for (guint i = 0; i < n; i++) {
+            JsonNode *cnode = json_array_get_element(sys_children, i);
+            if (json_node_get_node_type(cnode) != JSON_NODE_OBJECT) continue;
+            JsonObject *cobj = json_node_get_object(cnode);
+            /* Kein "children"-Array -> special-drun/-filtered/-run o.ä., kein
+             * befüllbarer Ordner - überspringen. */
+            if (!json_object_has_member(cobj, "children")) continue;
+            if (!json_object_has_member(cobj, "name")) continue;
+            const char *name = json_object_get_string_member(cobj, "name");
+            if (!name) continue;
+
+            JsonObject *entry = json_object_new();
+            json_object_set_string_member(entry, "name", name);
+            json_object_set_string_member(entry, "type", "folder");
+            json_object_set_array_member(entry, "children", json_array_new());
+            json_array_add_object_element(children, entry);
+        }
+    }
+    json_object_set_array_member(skeleton, "children", children);
+
+    gchar *dir = g_path_get_dirname(user_menu_path);
+    g_mkdir_with_parents(dir, 0755); /* zur Sicherheit, menu.json liegt hier normalerweise schon */
+    g_free(dir);
+
+    JsonNode *root_node = json_node_new(JSON_NODE_OBJECT);
+    json_node_set_object(root_node, skeleton); /* nimmt eine eigene Ref auf skeleton */
+    JsonGenerator *gen = json_generator_new();
+    json_generator_set_root(gen, root_node);
+    json_generator_set_pretty(gen, TRUE);
+    GError *err = NULL;
+    if (!json_generator_to_file(gen, user_menu_path, &err)) {
+        g_warning("Konnte Usermenu.json nicht anlegen (%s): %s", user_menu_path, err->message);
+        g_error_free(err);
+    } else {
+        g_printerr("TrafkTuxLauncher: Usermenu.json neu angelegt: %s\n", user_menu_path);
+    }
+    g_object_unref(gen);
+    json_node_free(root_node);
+    json_object_unref(skeleton); /* unsere eigene Ref aus json_object_new() */
+}
+
+/* Hängt die "children" von user_node rekursiv in sys_node ein:
+ *   - gleicher "name" UND user-Eintrag hat selbst "children"
+ *     -> als derselbe Ordner behandeln, rekursiv WEITER zusammenführen
+ *        (keine Duplizierung des Ordners selbst, nur seine Kinder wandern
+ *        rein) - das erlaubt theoretisch auch mehrstufig verschachtelte
+ *        Ordner, auch wenn aktuell nur eine Ebene (die 9 Hauptordner)
+ *        genutzt wird.
+ *   - kein Treffer (neuer Name) ODER User-Eintrag ist nur ein Blatt
+ *     (App-Eintrag ohne eigenes "children")
+ *     -> als komplett neuer, eigenständiger Eintrag ans Ende angehängt. */
+static void merge_user_node(JsonObject *sys_node, JsonObject *user_node) {
+    if (!json_object_has_member(user_node, "children")) return;
+    JsonArray *user_children = json_object_get_array_member(user_node, "children");
+    guint ulen = json_array_get_length(user_children);
+    if (ulen == 0) return;
+
+    if (!json_object_has_member(sys_node, "children"))
+        json_object_set_array_member(sys_node, "children", json_array_new());
+    JsonArray *sys_children = json_object_get_array_member(sys_node, "children");
+
+    for (guint i = 0; i < ulen; i++) {
+        JsonNode *unode = json_array_get_element(user_children, i);
+        if (json_node_get_node_type(unode) != JSON_NODE_OBJECT) continue;
+        JsonObject *uobj = json_node_get_object(unode);
+        const char *uname = json_object_has_member(uobj, "name")
+            ? json_object_get_string_member(uobj, "name") : NULL;
+
+        JsonObject *match = NULL;
+        if (uname) {
+            guint slen = json_array_get_length(sys_children);
+            for (guint j = 0; j < slen; j++) {
+                JsonNode *snode = json_array_get_element(sys_children, j);
+                if (json_node_get_node_type(snode) != JSON_NODE_OBJECT) continue;
+                JsonObject *sobj = json_node_get_object(snode);
+                const char *sname = json_object_has_member(sobj, "name")
+                    ? json_object_get_string_member(sobj, "name") : NULL;
+                if (sname && g_strcmp0(sname, uname) == 0) { match = sobj; break; }
+            }
+        }
+
+        if (match && json_object_has_member(uobj, "children")) {
+            merge_user_node(match, uobj);
+        } else {
+            json_array_add_element(sys_children, json_node_copy(unode));
+        }
+    }
+}
+
+/* Lädt menu.json wie bisher, mischt danach - falls vorhanden bzw. frisch
+ * angelegt - Usermenu.json aus demselben Ordner hinein (siehe
+ * ensure_user_menu_skeleton()/merge_user_node() oben). Ein fehlendes oder
+ * kaputtes Usermenu.json ist dabei NIE fatal - im schlimmsten Fall gibt's
+ * halt keine zusätzlichen Einträge, menu.json allein reicht wie bisher. */
 static JsonObject* load_menu_json(const char *menu_name) {
     gchar *path = g_build_filename(g_get_home_dir(), ".config", "TrafkTuxLauncher", menu_name, "menu.json", NULL);
     JsonParser *parser = json_parser_new();
@@ -231,6 +375,30 @@ static JsonObject* load_menu_json(const char *menu_name) {
     JsonObject *root = json_node_get_object(json_parser_get_root(parser));
     JsonObject *clone = json_object_ref(root);
     g_object_unref(parser);
+
+    gchar *user_path = g_build_filename(g_get_home_dir(), ".config", "TrafkTuxLauncher", menu_name, "Usermenu.json", NULL);
+    ensure_user_menu_skeleton(user_path, clone);
+
+    JsonParser *user_parser = json_parser_new();
+    GError *user_err = NULL;
+    if (json_parser_load_from_file(user_parser, user_path, &user_err)) {
+        JsonNode *user_rootn = json_parser_get_root(user_parser);
+        if (user_rootn && JSON_NODE_HOLDS_OBJECT(user_rootn)) {
+            merge_user_node(clone, json_node_get_object(user_rootn));
+        } else {
+            g_printerr("TrafkTuxLauncher: Usermenu.json (%s) hat kein Objekt als Wurzel - ignoriert.\n", user_path);
+        }
+    } else {
+        /* Frisch angelegtes Gerüst ist absichtlich leer in allen
+         * "children"-Arrays - das lädt problemlos, hier landen wir also
+         * nur bei einem tatsächlich kaputten/handbearbeiteten Usermenu.json. */
+        g_printerr("TrafkTuxLauncher: Usermenu.json (%s) nicht lesbar (%s) - nur menu.json wird verwendet.\n",
+                    user_path, user_err->message);
+        g_error_free(user_err);
+    }
+    g_object_unref(user_parser);
+    g_free(user_path);
+
     return clone;
 }
 
@@ -327,6 +495,10 @@ static char* extract_binary(const char *exec_str) {
     if (space) *space = '\0';
     char *bin = g_path_get_basename(p);
     g_free(copy);
+    if (is_generic_binary(bin)) {
+        g_free(bin);
+        return NULL;   /* generischer Interpreter/Meta-Launcher - kein Match-Signal */
+    }
     return bin;
 }
 
@@ -1270,6 +1442,17 @@ typedef struct {
      * mehr nötig, siehe draw_content()/switch_content(). */
     AnimType anim_type;
     gint64 anim_start_us;
+    /* Bug-Fix "2. Wechsel ruckelt": elapsed wurde bisher als
+     * (jetzt - anim_start_us) * anim_speed berechnet - ändert sich
+     * anim_speed MITTEN in der laufenden Animation (genau das passiert,
+     * wenn während Hop 1 schon der nächste Druck ankommt), wirkt das
+     * rückwirkend auf die GESAMTE bisher vergangene Zeit und die Animation
+     * springt sichtbar vor. anim_virtual_us/anim_last_real_us integrieren
+     * die Geschwindigkeit statt sie rückwirkend draufzumultiplizieren -
+     * eine Geschwindigkeitsänderung wirkt dann nur noch auf das, was ab
+     * jetzt noch kommt, nie auf das, was schon vergangen ist. */
+    double anim_virtual_us;
+    gint64 anim_last_real_us;
     guint tick_id;
     GPtrArray *prev_slots; /* Kopie der ALTEN Slots, nur während ANIM_SWITCH gültig */
     /* Kleiner "Press"-Puls für die Pfeile bei Klick/q/e, UND das Ein-/
@@ -1295,25 +1478,53 @@ typedef struct {
     gint64 sel_bounce_start_us;
     int prev_sel_slot;           /* gerade abgewählter Slot (für Iris-Wipe-raus), -1 = keiner */
     /* Animations-Geschwindigkeitsfaktor der GERADE LAUFENDEN Animation.
-     * 1.0 = normal. Wird nur erhöht, wenn WÄHREND dieser Animation schon
-     * der nächste Wechsel angefordert wird (siehe request_page_switch) -
-     * damit die aktuelle Animation zügig fertig wird, BEVOR direkt im
-     * Anschluss (nahtlos, kein Schnitt) die nächste losläuft. */
+     * 1.0 = normal. anim_speed ist der tatsächlich für die Integration
+     * benutzte, GEGLÄTTETE Wert; anim_speed_target wird bei JEDEM
+     * eingehenden Druck sofort neu gesetzt (siehe note_press) - auch
+     * während ein Hop noch läuft. anim_speed läuft anim_speed_target über
+     * eine kurze Kurve nach (siehe anim_advance_elapsed_us) statt
+     * instantan zu springen - so kann sich eine laufende Animation live
+     * beschleunigen (rasant, aber nicht ruckartig), ohne den "2. Wechsel
+     * ruckelt"-Sprung-Bug zurückzubringen (der kam vom INSTANTANEN
+     * Ändern, nicht vom Ändern an sich). */
     double anim_speed;
-    /* Seitenwechsel-Warteschlange (Tiefe 1): wenn während einer laufenden
-     * ANIM_SWITCH-Animation erneut q/e/Pfeil/WASD-Rand gedrückt wird, wird
-     * NICHT sofort umgeschaltet (das würde abschneiden) - stattdessen wird
-     * der Wunsch hier vorgemerkt und direkt nach Fertigwerden der aktuellen
-     * Animation nahtlos nachgeholt (siehe on_anim_tick). Erneutes Drücken
-     * während bereits ein Wechsel vorgemerkt ist, aktualisiert nur die
-     * Richtung/das Ziel (letzter Wunsch gewinnt) statt eine eigene zweite
-     * Animation anzuhängen. */
-    /* Vorzeichenbehafteter Zähler noch offener Seitenwechsel: jeder Druck
-     * WÄHREND eine Switch-Animation läuft, erhöht/verringert diesen Wert
-     * um 1 (statt nur die Richtung zu überschreiben) - so wird bei
-     * Spam KEIN Tastendruck "verschluckt": jeder einzelne Druck löst am
-     * Ende seinen eigenen (ggf. schnellen) Hop aus, nicht nur der letzte. */
-    int pending_delta_sum;
+    double anim_speed_target;
+    /* ───── Warteschlange, Tiefe GENAU 1 (Nutzer-Idee) ─────
+     * Kein aufsummierender Backlog-Zähler mehr: während ein Hop läuft,
+     * wird ein weiterer Druck NICHT gezählt/aufgestaut, sondern merkt sich
+     * nur "die aktuelle Animation, UND die nächste" - genau einen
+     * wartenden Schritt. Kommt währenddessen noch ein Druck, überschreibt
+     * er einfach next_step (letzter Wunsch gewinnt) statt eine dritte
+     * Animation anzuhängen. Dadurch kann der Nachlauf nach dem Loslassen
+     * nie mehr als EIN zusätzlicher Hop sein, egal wie lange/schnell
+     * vorher gedrückt wurde. */
+    int next_step; /* -1 / 0 / +1 - der eine wartende Hop, 0 = keiner */
+    /* Zeitpunkt des letzten eingegangenen Drucks (Taste ODER Klick, jede
+     * Quelle) sowie das dabei gemessene Intervall zum Druck davor. Dieses
+     * Intervall bestimmt, wie schnell der NÄCHSTE Hop läuft (siehe
+     * compute_hop_speed) - schnelles Hintereinander-Drücken (oder eine
+     * gehaltene Taste mit ihrer Auto-Repeat-Rate) ergibt automatisch
+     * kurze, schnelle Hops; eine Pause zwischen zwei Drücken ergibt
+     * automatisch wieder die normale, "perfekte" Geschwindigkeit - ganz
+     * ohne separate Abkling-Formel, das Intervall IST die Abklingzeit. */
+    gint64 last_press_us;
+    gint64 pending_hop_interval_us;
+    /* ── Touchscreen-Unterstützung ─────────────────────────────────────
+     * GDK_BUTTON_PRESS_MASK allein bekommt auf (manchen) Touchscreens -
+     * speziell unter Wayland/gtk-layer-shell - keine zuverlässige
+     * Zeiger-Emulation für Finger-Events; ohne GDK_TOUCH_MASK + eigenen
+     * Handler kommt ein Tap dort gar nicht oder nur manchmal als
+     * "button-press-event" an. Touch wird daher explizit (siehe
+     * on_touch_event) wie ein Linksklick behandelt: Finger runter =
+     * Hover/Auswahl wie bei der Maus aktualisieren, Finger hoch (ohne
+     * vorher spürbar bewegt oder lang gehalten) = Klick an der Stelle.
+     * Langes Halten = Touch-Äquivalent zum neuen Rechtsklick-"Zurück",
+     * da ein Touchscreen keinen Rechtsklick kennt. */
+    GdkEventSequence *touch_seq; /* der gerade aktive Finger, NULL = keiner (weitere Finger werden ignoriert) */
+    double touch_down_x, touch_down_y;
+    gboolean touch_moved;        /* Finger hat sich über die Toleranzschwelle hinaus bewegt -> kein Tap mehr */
+    gboolean touch_longpress_fired;
+    guint touch_longpress_id;    /* 0 = kein Long-Press-Timer aktiv */
 } App;
 
 static void rebuild_slots(App *app) {
@@ -1362,14 +1573,36 @@ static void rebuild_slots(App *app) {
             app->total_pages = 1;
         } else {
             JsonArray *arr = json_object_get_array_member(node, "children");
-            guint total = json_array_get_length(arr);
+            guint raw_total = json_array_get_length(arr);
+
+            /* Root-Ordner mit "hidden": true (App-Editor-Funktion: Apps
+             * vor "Unsorted" verstecken koennen, ohne dass dafuer ein
+             * sichtbarer 10. Ordner im Haupt-Grid auftaucht) werden hier
+             * komplett aus der sichtbaren Liste gefiltert. Die Kinder
+             * bleiben im Baum und zaehlen fuer get_filtered_desktop_apps()
+             * weiterhin ganz normal als "schon einsortiert" - nur die
+             * Kachel selbst wird nie gezeichnet. idx_str unten bleibt der
+             * ECHTE Array-Index (nicht die gefilterte Position), damit
+             * resolve_path()/Klicks weiterhin auf die richtigen Kinder
+             * zeigen. */
+            GArray *visible_idx = g_array_new(FALSE, FALSE, sizeof(guint));
+            for (guint i = 0; i < raw_total; i++) {
+                JsonObject *child = json_node_get_object(json_array_get_element(arr, i));
+                if (is_root && json_object_has_member(child, "hidden") &&
+                    json_object_get_boolean_member(child, "hidden")) {
+                    continue;
+                }
+                g_array_append_val(visible_idx, i);
+            }
+            guint total = visible_idx->len;
             int total_pages = (total + PAGE_SIZE - 1) / PAGE_SIZE;
             if (total_pages == 0) total_pages = 1;
             app->state.page = CLAMP(app->state.page, 0, total_pages - 1);
 
             GPtrArray *content = g_ptr_array_new_with_free_func(slot_free);
             guint start = app->state.page * PAGE_SIZE;
-            for (guint i = start; i < start + PAGE_SIZE && i < total; i++) {
+            for (guint vi = start; vi < start + PAGE_SIZE && vi < total; vi++) {
+                guint i = g_array_index(visible_idx, guint, vi);
                 JsonObject *child = json_node_get_object(json_array_get_element(arr, i));
                 const char *type = json_object_get_string_member(child, "type");
                 if (g_strcmp0(type, "placeholder") == 0) {
@@ -1382,6 +1615,7 @@ static void rebuild_slots(App *app) {
                     g_free(idx_str);
                 }
             }
+            g_array_free(visible_idx, TRUE);
             /* 3+1-Verteilung nur auf der ERSTEN Seite der Wurzel (dort war
              * sie ursprünglich auch nur gemeint) - ab Seite 2 ganz normal
              * sequenziell, falls die Wurzel jemals >12 Einträge hat. */
@@ -1545,6 +1779,17 @@ static double flicker_envelope(double t_us) {
     return alpha;
 }
 
+/* Bug-3: Alternative zu flicker_envelope() für den neuen Settings-Wert
+ * Animation.Selection = "Fade" - einfaches, EINPHASIGES Überblenden
+ * (dieselbe Gesamtdauer FLICKER_US, derselbe Ease-Out-Cubic, aber ohne das
+ * "Hin-und-zurück"-Pendeln der Glühlampe) für alle, die beim Navigieren
+ * lieber ein ruhiges Blenden statt das Flackern wollen. */
+static double fade_envelope(double t_us) {
+    if (t_us <= 0.0) return 0.0;
+    if (t_us >= FLICKER_US) return 1.0;
+    return flicker_ease(t_us / FLICKER_US);
+}
+
 /* alpha_selected < 0  -> kein Flackern/Abkühlen, einfach "selected" direkt
  *                        zeichnen.
  * alpha_selected 0..1 -> fertiges Deckkraft-Gewicht des SELECTED-Bilds
@@ -1591,24 +1836,31 @@ static void clear_transparent(cairo_t *cr) {
  * Änderungen greifen also, ohne den Daemon neu zu starten.
  *
  *   { "Animation": { "Style": "Classic" | "Radial",
- *                    "Speed": "Normal" | "Fast" | "Turbo" | <Zahl> } }
+ *                    "Speed": "Normal" | "Fast" | "Turbo" | <Zahl>,
+ *                    "Selection": "Flicker" | "Fade" } }
  *
  * Schlüssel sind PascalCase (case-sensitiv), die Textwerte egal ob gross/klein.
  *
- * Style: Classic = Lesereihenfolge (vorwärts: oben links, rückwärts: unten rechts)
- *        Radial  = Ausbreitung von der ausgewählten Bubble
- * Speed: Normal = 1x, Fast = 2x (halbe Dauer), Turbo = 3x (Drittel der Dauer);
- *        eine Zahl wird direkt als Faktor genommen (0.25 .. 8).
- * Fehlt die Datei oder ein Wert / ist er ungültig -> Default (Classic, Normal). */
+ * Style:     Classic = Lesereihenfolge (vorwärts: oben links, rückwärts: unten rechts)
+ *            Radial  = Ausbreitung von der ausgewählten Bubble
+ * Speed:     Normal = 1x, Fast = 2x (halbe Dauer), Turbo = 3x (Drittel der Dauer);
+ *            eine Zahl wird direkt als Faktor genommen (0.25 .. 8).
+ * Selection: Flicker = Glühlampen-Flackern beim Auswahlwechsel (Default,
+ *            bisheriges Verhalten: Blende pendelt kurz hin und zurück).
+ *            Fade    = einfaches, ruhiges Überblenden ohne das Pendeln.
+ * Fehlt die Datei oder ein Wert / ist er ungültig -> Default (Classic, Normal, Flicker). */
 typedef enum { ANIMSTYLE_CLASSIC = 0, ANIMSTYLE_RADIAL } AnimStyle;
+typedef enum { SELFX_FLICKER = 0, SELFX_FADE } SelectFx;
 static struct {
     AnimStyle style;
     double    speed_mult;   /* Zeitfaktor aller Bubble-Animationen, 1.0 = normal */
-} g_settings = { ANIMSTYLE_CLASSIC, 1.0 };
+    SelectFx  select_fx;    /* Flicker (Default) oder Fade beim Auswahlwechsel */
+} g_settings = { ANIMSTYLE_CLASSIC, 1.0, SELFX_FLICKER };
 
 static void load_settings(void) {
     g_settings.style = ANIMSTYLE_CLASSIC;
     g_settings.speed_mult = 1.0;
+    g_settings.select_fx = SELFX_FLICKER;
 
     gchar *path = g_build_filename(g_get_home_dir(), ".config", "TrafkTuxLauncher", "Settings.json", NULL);
     JsonParser *parser = json_parser_new();
@@ -1650,6 +1902,12 @@ static void load_settings(void) {
                 }
             }
         }
+        if (anim && json_object_has_member(anim, "Selection")) {
+            const gchar *se = json_object_get_string_member_with_default(anim, "Selection", "Flicker");
+            if (g_ascii_strcasecmp(se, "Fade") == 0) g_settings.select_fx = SELFX_FADE;
+            else if (g_ascii_strcasecmp(se, "Flicker") != 0)
+                g_printerr("TrafkTuxLauncher: unbekannter Animation.Selection '%s' - nutze Flicker.\n", se);
+        }
     }
     g_object_unref(parser);
     g_free(path);
@@ -1657,6 +1915,58 @@ static void load_settings(void) {
 
 #define ANIM_POP_US       65000.0   /* Pop-Dauer EINER Bubble, wie gewünscht */
 #define ANIM_STAGGER_US   23000.0   /* Startzeit-Versatz pro Bubble in Lesereihenfolge */
+
+/* Referenz-Tempobasis für die Intervall->Speed-Umrechnung: die Dauer einer
+ * "vollen" 12-Bubble-Seite bei normalem Tempo. Dient nur als fixer
+ * Bezugspunkt, unabhängig davon, wie viele Bubbles die jeweils aktuelle
+ * Seite tatsächlich hat (das regelt weiterhin anim_total_duration_us). */
+#define ANIM_REF_DURATION_US (ANIM_POP_US + 11.0 * ANIM_STAGGER_US)
+/* Schnellstmögliche Hop-Dauer - darunter wird aus dem Stagger-Pop nur noch
+ * ein ununterscheidbarer Blitz, keine wahrnehmbare Animation mehr. */
+#define ANIM_MIN_HOP_DURATION_US 40000.0
+
+/* Nutzer-Idee: statt eines Backlog-Zählers mit manueller Zu-/Abnahme wird
+ * die Geschwindigkeit des NÄCHSTEN Hops direkt aus dem Intervall zwischen
+ * dem Druck, der ihn ausgelöst hat, und dem Druck davor abgeleitet - siehe
+ * app->pending_hop_interval_us (gesetzt bei jedem eingehenden Druck, egal
+ * ob der sofort einen Hop startet oder nur next_step setzt).
+ *   kleines Intervall (schnell hintereinander gedrückt, oder Auto-Repeat
+ *   einer gehaltenen Taste)  -> kurze, schnelle Hop-Dauer -> hohes Tempo
+ *   großes Intervall (einzelner, entspannter Druck, oder nach einer Pause)
+ *   -> auf die normale Referenzdauer geklemmt -> Tempo genau 1.0x
+ * Das "Abklingen" nach einer Pause braucht dadurch KEINE eigene Formel
+ * mehr: ein langes Intervall ergibt automatisch wieder 1.0x, weil es
+ * einfach auf die Referenzdauer geklemmt wird. Wird NUR beim Start eines
+ * neuen Hops aufgerufen, nie während ein Hop schon läuft (siehe
+ * anim_advance_elapsed_us) - genau das verhindert den Sprung-Bug. */
+static double compute_hop_speed(gint64 interval_us) {
+    /* Deckel so gewählt, dass die EFFEKTIVE Geschwindigkeit (anim_speed *
+     * g_settings.speed_mult, siehe anim_advance_elapsed_us) bei ~4x bleibt,
+     * egal welche Basis-Geschwindigkeit (Normal/Fast/Turbo) eingestellt
+     * ist - wie beim alten Backlog-System. */
+    double speed_cap = MAX(7.0 / g_settings.speed_mult, 1.0);
+    double desired_duration = CLAMP((double)interval_us, ANIM_MIN_HOP_DURATION_US, ANIM_REF_DURATION_US);
+    return CLAMP(ANIM_REF_DURATION_US / desired_duration, 1.0, speed_cap);
+}
+
+/* Von JEDER Eingangsstelle (q/e, a/d-Seitenrand, Maus-Pfeil-Klick) bei
+ * jedem eingehenden Druck aufzurufen, BEVOR entschieden wird, ob sofort
+ * gestartet oder nur next_step gesetzt wird. Misst das Intervall zum
+ * letzten Druck, merkt es für den nächsten Hop-Start vor UND setzt sofort
+ * das Ziel-Tempo (anim_speed_target) - dadurch wirkt sich ein schneller
+ * Druck SOFORT auch auf eine bereits laufende Animation aus (über die
+ * Rampe in anim_advance_elapsed_us), nicht erst auf den nächsten Hop.
+ * Das ist der Unterschied zu vorher: wer von Anfang an schnell drückt,
+ * bekommt die Beschleunigung schon im ERSTEN Hop zu sehen, nicht erst ab
+ * dem zweiten/dritten. */
+static void note_press(App *app) {
+    gint64 now = g_get_monotonic_time();
+    app->pending_hop_interval_us = (app->last_press_us > 0)
+        ? (now - app->last_press_us) : (gint64)ANIM_REF_DURATION_US;
+    app->last_press_us = now;
+    app->anim_speed_target = compute_hop_speed(app->pending_hop_interval_us);
+}
+
 #define ARROW_PRESS_US    150000.0  /* Dauer des kleinen Press-Pulses auf einem Pfeil */
 #define ARROW_STATE_FADE_US 150000.0 /* Dauer des Ein-/Ausblendens aktiv<->inaktiv */
 #define ARROW_ALPHA_INACTIVE 0.65   /* wie gewünscht */
@@ -1804,10 +2114,15 @@ static void draw_bubbles(App *app, cairo_t *cr, PangoLayout *layout, GPtrArray *
             double be_clamped = (double)be;
             if (be_clamped < 0.0) be_clamped = 0.0;
             if (be_clamped > FLICKER_US) be_clamped = FLICKER_US;
+            /* Bug-3: je nach Settings.json (Animation.Selection) entweder
+             * die flackernde Glühlampen-Hüllkurve oder die ruhige, einfache
+             * Fade-Hüllkurve nehmen - Gesamtdauer/Timing bleibt identisch,
+             * nur die Form der Blende unterscheidet sich. */
+            double (*envelope)(double) = (g_settings.select_fx == SELFX_FADE) ? fade_envelope : flicker_envelope;
             if ((int)i == app->sel_bounce_slot) {
-                alpha_selected = flicker_envelope(be_clamped);               /* vorwärts: 0 -> 1 */
+                alpha_selected = envelope(be_clamped);               /* vorwärts: 0 -> 1 */
             } else if ((int)i == app->prev_sel_slot) {
-                alpha_selected = flicker_envelope(FLICKER_US - be_clamped);  /* rückwärts: 1 -> 0 (Abkühlzeit) */
+                alpha_selected = envelope(FLICKER_US - be_clamped);  /* rückwärts: 1 -> 0 (Abkühlzeit) */
             }
         }
 
@@ -1953,6 +2268,53 @@ static void draw_content(App *app, cairo_t *cr, AnimType anim_type, gint64 elaps
     g_object_unref(layout);
 }
 
+/* Bug-Fix "2. Wechsel ruckelt": liefert die vergangene "virtuelle"
+ * Animationszeit NICHT durch rückwirkendes Multiplizieren der gesamten
+ * bisherigen Realzeit mit dem aktuellen anim_speed (das lässt die Animation
+ * springen, sobald sich anim_speed mitten in der laufenden Animation
+ * ändert - z.B. weil während Hop 1 schon der nächste Druck ankam), sondern
+ * durch Aufsummieren: jedes Realzeit-Intervall seit dem letzten Aufruf wird
+ * mit dem anim_speed MULTIPLIZIERT, DER IN DIESEM INTERVALL GALT, und auf
+ * die bisherige virtuelle Zeit aufaddiert. Eine Geschwindigkeitsänderung
+ * wirkt sich damit nur noch auf das aus, was ab jetzt noch an Zeit vergeht -
+ * nie mehr auf das, was schon vergangen ist. on_draw und on_anim_tick rufen
+ * dieselbe Funktion auf; anim_last_real_us verhindert, dass ein Realzeit-
+ * Intervall doppelt gezählt wird, falls beide im selben Frame feuern. */
+/* Zeitkonstante für das Ranpen von anim_speed auf anim_speed_target -
+ * klein = schnell ("rasant"), aber nie 0 (0 wäre wieder der alte instantane
+ * Sprung). 18ms heißt: nach ~18ms ist man ~63% des Wegs zum neuen Tempo,
+ * nach ~55ms über 95% - innerhalb von 2-3 Frames spürbar da, aber immer
+ * noch eine (sehr kurze) Kurve, kein Schnitt. */
+#define ANIM_SPEED_RAMP_TAU_US 18000.0
+
+static gint64 anim_advance_elapsed_us(App *app) {
+    gint64 now = g_get_monotonic_time();
+    gint64 real_dt = now - app->anim_last_real_us;
+    if (real_dt > 0) {
+        /* anim_speed sanft Richtung anim_speed_target rampen - DAS ist der
+         * Mechanismus, der eine schon laufende Animation live schneller
+         * werden lässt (Nutzer-Wunsch: "erlauben sich während es noch
+         * abspielt schneller abzuspielen, mit ner Kurve, rasant"), ohne
+         * den Sprung-Bug zurückzubringen: pro Tick wird anim_speed nur ein
+         * kleines Stück weiterbewegt, die Integration unten sieht also nie
+         * einen Sprung, nur eine sich allmählich ändernde Rate. */
+        double alpha = 1.0 - exp(-(double)real_dt / ANIM_SPEED_RAMP_TAU_US);
+        app->anim_speed += (app->anim_speed_target - app->anim_speed) * alpha;
+
+        app->anim_virtual_us += (double)real_dt * app->anim_speed * g_settings.speed_mult;
+        app->anim_last_real_us = now;
+    }
+    return (gint64)app->anim_virtual_us;
+}
+
+/* Setzt eine FRISCH beginnende Animation (Öffnen/Schließen/neuer Wechsel-Hop)
+ * auf virtuelle Zeit 0 zurück - im Gegensatz zu request_page_switch's
+ * reinem Tempo-Update, das NICHTS zurücksetzt (siehe dort). */
+static void anim_reset_virtual_clock(App *app) {
+    app->anim_virtual_us = 0.0;
+    app->anim_last_real_us = g_get_monotonic_time();
+}
+
 static gboolean on_draw(GtkWidget *widget, cairo_t *cr, gpointer user_data) {
     App *app = (App*)user_data;
     (void)widget;
@@ -1965,7 +2327,7 @@ static gboolean on_draw(GtkWidget *widget, cairo_t *cr, gpointer user_data) {
         return FALSE;
     }
 
-    gint64 elapsed = (gint64)((g_get_monotonic_time() - app->anim_start_us) * app->anim_speed * g_settings.speed_mult);
+    gint64 elapsed = anim_advance_elapsed_us(app);
     draw_content(app, cr, app->anim_type, elapsed);
     return FALSE;
 }
@@ -2013,7 +2375,24 @@ static gboolean point_in_grid_bounds(App *app, double px, double py) {
 /* ── Aktionen ────────────────────────────────────────────────────────── */
 static gboolean g_daemon_mode = FALSE; /* --daemon: Fenster verstecken statt Prozess beenden */
 
+/* Bricht einen laufenden Touch-Long-Press-Timer ab, falls einer aktiv ist -
+ * ruft NUR g_source_remove auf, löst NIE selbst eine Aktion aus. Muss vor
+ * jedem Zurücksetzen/Freigeben des App-State aufgerufen werden, sonst würde
+ * der Timer später auf einen schon zurückgesetzten/freigegebenen App*
+ * zugreifen. Siehe on_touch_event weiter unten für den eigentlichen
+ * Handler. */
+static void touch_cancel_longpress(App *app) {
+    if (app->touch_longpress_id) {
+        g_source_remove(app->touch_longpress_id);
+        app->touch_longpress_id = 0;
+    }
+}
+
 static void reset_app_state(App *app) {
+    touch_cancel_longpress(app);
+    app->touch_seq = NULL;
+    app->touch_moved = FALSE;
+    app->touch_longpress_fired = FALSE;
     g_free(app->state.path);
     g_free(app->state.vmode);
     app->state.path = g_strdup("");
@@ -2024,7 +2403,10 @@ static void reset_app_state(App *app) {
     app->sel_bounce_slot = -1;
     app->prev_sel_slot = -1;
     app->anim_speed = 1.0;
-    app->pending_delta_sum = 0;
+    app->anim_speed_target = 1.0;
+    app->next_step = 0;
+    app->last_press_us = 0;
+    app->pending_hop_interval_us = 0;
     if (app->history) { g_ptr_array_unref(app->history); app->history = NULL; }
     app->history = g_ptr_array_new_with_free_func(history_entry_free);
 }
@@ -2037,13 +2419,45 @@ static void hide_app(App *app) {
 /* Treibt die Öffnen/Schließen/Crossfade-Animation per Frame-Clock-Tick an
  * (vsync-synchron, glatter als ein fester g_timeout_add-Takt). Läuft bis
  * die Gesamtdauer erreicht ist, danach räumt sie sich selbst ab. */
+/* Bug-4-Diagnose: misst, mit wie vielen fps der Tick-Callback TATSÄCHLICH
+ * läuft - unabhängig vom Augenmaß. Standardmäßig komplett inaktiv (kostet
+ * nichts im Normalbetrieb), nur wenn die Umgebungsvariable TTL_FPS_DEBUG
+ * gesetzt ist, wird einmal pro Sekunde die gemessene fps-Zahl auf stderr
+ * ausgegeben. Zum Testen z.B.:
+ *   TTL_FPS_DEBUG=1 ~/.config/TrafkTuxLauncher/TrafkTuxLauncher --show AppLauncher
+ * (im Standalone-Modus, NICHT über den Daemon, sonst siehst du kein stderr)
+ * - Fenster auf den 165Hz-Monitor ziehen/dort öffnen und z.B. e gedrückt
+ * halten, damit dauerhaft Ticks laufen, dann die ausgegebene Zahl ablesen
+ * und mit demselben Test auf dem 60Hz-Monitor vergleichen. */
+static void ttl_fps_debug_tick(void) {
+    static gboolean checked_env = FALSE, enabled = FALSE;
+    static gint64 window_start_us = 0;
+    static guint64 frames_in_window = 0;
+    if (!checked_env) { enabled = g_getenv("TTL_FPS_DEBUG") != NULL; checked_env = TRUE; }
+    if (!enabled) return;
+    gint64 now = g_get_monotonic_time();
+    if (window_start_us == 0) window_start_us = now;
+    frames_in_window++;
+    gint64 span = now - window_start_us;
+    if (span >= 1000000) {
+        g_printerr("TrafkTuxLauncher[TTL_FPS_DEBUG]: ~%.1f fps (gemessen über %.2fs)\n",
+                   frames_in_window * 1e6 / (double)span, span / 1e6);
+        window_start_us = now;
+        frames_in_window = 0;
+    }
+}
+
 static gboolean on_anim_tick(GtkWidget *widget, GdkFrameClock *frame_clock, gpointer user_data) {
     App *app = user_data;
     (void)widget; (void)frame_clock;
+    ttl_fps_debug_tick();
 
-    /* Elapsed-Zeit mit Geschwindigkeitsfaktor skalieren (moderate
-     * Spam-Beschleunigung, siehe request_page_switch). */
-    gint64 elapsed = (gint64)((g_get_monotonic_time() - app->anim_start_us) * app->anim_speed * g_settings.speed_mult);
+    /* Elapsed-Zeit über die integrierte virtuelle Uhr (siehe
+     * anim_advance_elapsed_us) - KEINE rückwirkende Multiplikation mehr,
+     * damit ein Tempo-Update mitten in der laufenden Animation (Spam-
+     * Beschleunigung, siehe request_page_switch) nicht mehr sichtbar
+     * vorspringt. */
+    gint64 elapsed = anim_advance_elapsed_us(app);
     guint n_new = app->slots ? app->slots->len : 0;
     guint n_old = app->prev_slots ? app->prev_slots->len : 0;
     double duration;
@@ -2060,33 +2474,51 @@ static gboolean on_anim_tick(GtkWidget *widget, GdkFrameClock *frame_clock, gpoi
     if (elapsed >= (gint64)duration) {
         AnimType finishing = app->anim_type;
 
-        /* Steht in der Warteschlange noch (mindestens) ein Seitenwechsel
-         * an (Spam während dieser Animation), jetzt EINEN Hop davon NAHTLOS
-         * nachholen: der gerade fertige Stand wird das neue "Vorher"-Bild,
-         * Seite wandert genau einen Schritt weiter, neue Slots gebaut,
-         * Animation läuft ab JETZT weiter - kein Tick-Stop, kein Schnitt.
-         * Die Geschwindigkeit wird NICHT auf 1.0 zurückgesetzt, sondern nur
-         * sanft gedämpft (*0.8) - so bleiben aufeinanderfolgende Hops beim
-         * Spammen spürbar schnell (jeder einzelne Tastendruck zieht gleich
-         * wieder nach, siehe request_page_switch) und pendeln sich erst
-         * nach einer Pause (kein neuer Druck mehr) wieder auf normal ein. */
-        if (finishing == ANIM_SWITCH && app->pending_delta_sum != 0) {
-            int step = (app->pending_delta_sum > 0) ? 1 : -1;
-            app->pending_delta_sum -= step;
+        /* Wartet noch GENAU EIN Hop (next_step, Tiefe 1 - siehe App-Struct-
+         * Kommentar), jetzt NAHTLOS nachholen: der gerade fertige Stand
+         * wird das neue "Vorher"-Bild, Seite wandert einen Schritt weiter,
+         * neue Slots gebaut, Animation läuft ab JETZT weiter - kein
+         * Tick-Stop, kein Schnitt. Die Geschwindigkeit dieses neuen Hops
+         * kommt aus dem Intervall, das beim Setzen von next_step gemessen
+         * wurde (compute_hop_speed) - schnell gedrückt/gehalten ergibt
+         * automatisch einen schnellen Hop, eine Pause automatisch wieder
+         * 1.0x. Weil next_step nie mehr als EINEN Schritt vormerkt (jeder
+         * weitere Druck überschreibt ihn nur), kann der Nachlauf nach dem
+         * Loslassen nie mehr als dieser eine zusätzliche Hop sein. */
+        if (finishing == ANIM_SWITCH && app->next_step != 0 &&
+            ((app->next_step > 0 && app->state.page < app->total_pages - 1) ||
+             (app->next_step < 0 && app->state.page > 0))) {
+            int step = app->next_step;
             gboolean reversed = (step < 0);
+            app->next_step = 0;
 
             if (app->prev_slots) { g_ptr_array_unref(app->prev_slots); app->prev_slots = NULL; }
             app->prev_slots = copy_slots(app->slots);
             app->origin_old = app->selected;
 
-            if (step > 0) { if (app->state.page < app->total_pages - 1) app->state.page++; }
-            else           { if (app->state.page > 0) app->state.page--; }
+            app->state.page += step;
             rebuild_slots(app);
             app->origin_new = app->selected;
 
             app->anim_reversed = reversed;
             app->anim_start_us = g_get_monotonic_time();
-            app->anim_speed = MAX(app->anim_speed * 0.8, 1.0); /* sanft abklingen, nie unter 1x */
+            anim_reset_virtual_clock(app); /* neuer Hop beginnt bei 0, kein Sprung aus Hop zuvor */
+            /* Bug-Fix "Spam-Animation immer ein wenig zu langsam": anim_speed
+             * HIER jetzt doch hart auf das Ziel setzen, statt es (wie vorher)
+             * über die Rampe aus anim_advance_elapsed_us nachlaufen zu lassen.
+             * Grund: diese Hop-Grenze ist bereits ein sauberer Neustart (die
+             * virtuelle Uhr wird eine Zeile drüber auf 0 zurückgesetzt), ein
+             * "Sprung" ist hier also NICHT sichtbar - anders als eine
+             * Tempoänderung MITTEN in einem schon laufenden Hop, für die die
+             * sanfte Rampe weiterhin gilt (siehe anim_advance_elapsed_us).
+             * Ohne diesen harten Set hinkte anim_speed bei jedem Spam-Hop neu
+             * hinter dem gemessenen Zieltempo her (die Exponential-Rampe
+             * erreicht ihr Ziel nie exakt, nur asymptotisch) - bei kurzen,
+             * schnellen Hops blieb dadurch IMMER ein kleiner Rückstand übrig,
+             * egal wie schnell/gleichmäßig getippt wurde. Jetzt startet jeder
+             * nachgeholte Hop sofort mit vollem, aus dem Tastendruck-Intervall
+             * berechnetem Tempo. */
+            app->anim_speed = app->anim_speed_target;
             /* app->anim_type bleibt ANIM_SWITCH, app->tick_id bleibt gültig */
             gtk_widget_queue_draw(app->area);
             return G_SOURCE_CONTINUE;
@@ -2095,7 +2527,8 @@ static gboolean on_anim_tick(GtkWidget *widget, GdkFrameClock *frame_clock, gpoi
         app->anim_type = ANIM_NONE;
         app->tick_id = 0;
         app->anim_speed = 1.0;
-        app->pending_delta_sum = 0;
+        app->anim_speed_target = 1.0;
+        app->next_step = 0;
         if (app->prev_slots) { g_ptr_array_unref(app->prev_slots); app->prev_slots = NULL; }
         if (finishing == ANIM_CLOSE) {
             if (g_daemon_mode) hide_app(app); else gtk_main_quit();
@@ -2181,6 +2614,7 @@ static void show_app(App *app, App *other) {
     app->anim_type = ANIM_OPEN;
     app->anim_reversed = FALSE;
     app->anim_start_us = g_get_monotonic_time();
+    anim_reset_virtual_clock(app);
     ensure_anim_tick(app);
 }
 
@@ -2188,10 +2622,12 @@ static void quit_app(App *app) {
     cleanup_files();
     if (app->anim_type == ANIM_CLOSE) return; /* schließt schon */
     app->anim_speed = 1.0; /* Spam-Speed zurücksetzen, Schließen läuft normal */
-    app->pending_delta_sum = 0; /* keine vorgemerkten Wechsel mehr relevant */
+    app->anim_speed_target = 1.0;
+    app->next_step = 0; /* kein vorgemerkter Wechsel mehr relevant */
     app->anim_type = ANIM_CLOSE;
     app->anim_reversed = FALSE;
     app->anim_start_us = g_get_monotonic_time();
+    anim_reset_virtual_clock(app);
     ensure_anim_tick(app);
 }
 
@@ -2206,10 +2642,12 @@ static void rerender(App *app) {
  * das Nachholen in on_anim_tick - siehe dort). */
 static void start_switch_anim(App *app, gboolean reversed) {
     app->anim_speed = 1.0;
+    app->anim_speed_target = 1.0; /* Default für Aufrufer ohne note_press (z.B. go_back) */
     app->anim_type = ANIM_SWITCH;
     app->origin_new = app->selected; /* neue Seite: Start bei der jetzt ausgewählten Bubble */
     app->anim_reversed = reversed;
     app->anim_start_us = g_get_monotonic_time();
+    anim_reset_virtual_clock(app);
     ensure_anim_tick(app);
 }
 
@@ -2226,36 +2664,41 @@ static void switch_content(App *app, gboolean reversed, int old_origin) {
 /* Einheitlicher Einstiegspunkt für Seitenwechsel (q/e, Pfeil-Klick, WASD-
  * Randüberschreitung): delta = -1 (vorherige Seite) oder +1 (nächste Seite).
  *
- * - Läuft gerade KEINE Wechsel-Animation: sofort normal umschalten.
- * - Läuft gerade EINE: nicht abschneiden - stattdessen in pending_delta_sum
- *   vormerken (ADDIEREN, nicht überschreiben - JEDER Druck zählt, auch bei
- *   Spam, nicht nur der letzte) und die laufende Animation beschleunigen.
- *   Sobald sie fertig ist, holt on_anim_tick EINEN Hop aus der Warteschlange
- *   NAHTLOS nach (kein Tick-Stop, kein Schnitt); ist danach noch was offen,
- *   hängt direkt der nächste Hop dran - mit weiter erhöhter Geschwindigkeit,
- *   solange weitergespammt wird. So fühlt sich schnelles Drücken auch
- *   wirklich schneller an, nicht nur "ein Extra-Hop dann wieder normal". */
+ * - Läuft gerade KEINE Wechsel-Animation: sofort normal umschalten, Tempo
+ *   aus dem Intervall zum letzten Druck (compute_hop_speed).
+ * - Läuft gerade EINE: NICHT abschneiden, aber auch NICHT in einen
+ *   wachsenden Rückstand aufstauen - next_step merkt sich GENAU EINEN
+ *   wartenden Schritt (überschreibt bei erneutem Druck nur Richtung/
+ *   Intervall). Sobald die laufende Animation fertig ist, holt
+ *   on_anim_tick diesen einen Hop NAHTLOS nach (kein Tick-Stop, kein
+ *   Schnitt), mit dem Tempo, das aus dem Intervall des Drucks berechnet
+ *   wurde, der next_step zuletzt gesetzt hat. Dadurch kann der Nachlauf
+ *   nach dem Loslassen nie mehr als dieser eine zusätzliche Hop sein -
+ *   egal wie lange oder wie schnell vorher gedrückt/gehalten wurde. */
 static void request_page_switch(App *app, int delta) {
     gboolean reversed = (delta < 0);
+    note_press(app); /* Intervall zum letzten Druck messen - bestimmt das Tempo des HOPS, der aus diesem Druck entsteht */
 
     if (app->anim_type == ANIM_SWITCH && app->tick_id) {
-        /* Begrenzen, damit ein liegengebliebener/auto-repeat-Finger nicht
-         * endlos viele Hops aufstaut - mehr als eine Grid-Seiten-Spanne
-         * macht ohnehin keinen sichtbaren Sinn mehr. */
-        int next_sum = app->pending_delta_sum + delta;
-        app->pending_delta_sum = CLAMP(next_sum, -12, 12);
-        /* Deutlich spürbarer Zuwachs pro zusätzlichem Druck, damit Spammen
-         * sich auch wirklich schneller anfühlt - Obergrenze 4x, damit noch
-         * jeder Hop als Animation wahrnehmbar bleibt (nicht komplett
-         * unsichtbar/instant). */
-        /* Effektive Geschwindigkeit (anim_speed * speed_mult) bleibt wie bisher auf 4x gedeckelt. */
-        app->anim_speed = MIN(app->anim_speed + 0.6, MAX(4.0 / g_settings.speed_mult, 1.0));
+        /* Tiefe GENAU 1 (Nutzer-Idee): nicht aufsummieren, nur den einen
+         * wartenden Schritt setzen/überschreiben. Jeder weitere Druck,
+         * egal wie schnell, ändert nur noch WELCHE Richtung als nächstes
+         * dran ist und WELCHES Intervall (-> Tempo) dafür gilt - niemals
+         * wie viele. So kann nach dem Loslassen nie mehr als dieser eine
+         * Hop nachlaufen. */
+        app->next_step = (delta > 0) ? 1 : -1;
+        /* Bewusst KEIN anim_reset_virtual_clock() und KEIN Ändern von
+         * app->anim_speed hier: der schon laufende Hop läuft unangetastet
+         * zu Ende (das verhindert den Sprung/"Ruckler"-Bug), erst beim
+         * Start des NÄCHSTEN Hops (on_anim_tick) wird compute_hop_speed()
+         * mit dem gerade gemessenen Intervall angewandt. */
         return;
     }
 
     if (delta > 0) { if (app->state.page < app->total_pages - 1) app->state.page++; }
     else            { if (app->state.page > 0) app->state.page--; }
     switch_content(app, reversed, app->selected);
+    app->anim_speed = app->anim_speed_target; /* von note_press() oben bereits gesetzt */
 }
 
 /* Setzt die Auswahl auf idx, falls dort ein selektierbarer Slot sitzt;
@@ -2469,12 +2912,14 @@ static void move_selection(App *app, int dcol, int drow) {
             play_sound("FocusChange");
             if (mid_anim) {
                 /* Läuft schon eine Wechsel-Animation - nicht abschneiden,
-                 * sauber nachholen lassen (siehe request_page_switch). Die
-                 * exakte Row-Beibehaltung fällt in diesem Spam-Fall weg -
-                 * nicht perfekt, aber funktional, siehe Feedback. */
+                 * sauber nachholen lassen (siehe request_page_switch, das
+                 * dort selbst note_press() aufruft). Die exakte
+                 * Row-Beibehaltung fällt in diesem Spam-Fall weg - nicht
+                 * perfekt, aber funktional, siehe Feedback. */
                 request_page_switch(app, +1);
                 return;
             }
+            note_press(app); /* nur hier messen - der mid_anim-Zweig oben misst über request_page_switch selbst */
             app->state.page++;
             if (app->prev_slots) { g_ptr_array_unref(app->prev_slots); app->prev_slots = NULL; }
             app->prev_slots = copy_slots(app->slots);
@@ -2483,13 +2928,17 @@ static void move_selection(App *app, int dcol, int drow) {
             if (!try_select(app, row * app->columns))
                 for (int c = 0; c < app->columns && !try_select(app, row * app->columns + c); c++);
             start_switch_anim(app, FALSE); /* rechts = vorwärts */
+            app->anim_speed = app->anim_speed_target; /* von note_press() oben bereits gesetzt */
             return;
         } else if (new_col < 0 && app->state.page > 0) {
             play_sound("FocusChange");
             if (mid_anim) {
+                /* siehe Kommentar oben - request_page_switch() misst das
+                 * Intervall selbst, hier nicht vorher doppelt messen. */
                 request_page_switch(app, -1);
                 return;
             }
+            note_press(app);
             app->state.page--;
             if (app->prev_slots) { g_ptr_array_unref(app->prev_slots); app->prev_slots = NULL; }
             app->prev_slots = copy_slots(app->slots);
@@ -2498,6 +2947,7 @@ static void move_selection(App *app, int dcol, int drow) {
             if (!try_select(app, row * app->columns + (app->columns - 1)))
                 for (int c = app->columns - 1; c >= 0 && !try_select(app, row * app->columns + c); c--);
             start_switch_anim(app, TRUE); /* links = rückwärts */
+            app->anim_speed = app->anim_speed_target; /* von note_press() oben bereits gesetzt */
             return;
         }
     }
@@ -2549,7 +2999,28 @@ static gboolean on_motion(GtkWidget *widget, GdkEventMotion *event, gpointer use
 static gboolean on_button_press(GtkWidget *widget, GdkEventButton *event, gpointer user_data) {
     App *app = (App*)user_data;
     (void)widget;
-    if (event->button != 1) return TRUE;
+    if (event->button != 1 && event->button != 3) return TRUE;
+    /* WICHTIG (Bugfix "mehr Seiten gewechselt als gedrückt"): GTK/GDK feuert
+     * "button-press-event" bei einem schnellen Mehrfachklick (genau das, was
+     * beim zügigen Pfeil-Tippen/Tappen ständig passiert) ZUSAETZLICH zu den
+     * normalen Press-Events derselben physischen Klicks noch einmal mit
+     * event->type == GDK_2BUTTON_PRESS (bzw. GDK_3BUTTON_PRESS bei 3 Klicks
+     * in Folge). Ohne diesen Filter wurden z.B. 2 schnelle physische Klicks
+     * auf einen Pfeil als 3 Seitenwechsel gezählt (press1, press2,
+     * 2BUTTON_PRESS-für-press2) - mit Finger/Maus viel leichter zu triggern
+     * als mit q/e auf der Tastatur, wo es dieses Event gar nicht gibt. Gilt
+     * genauso für den Rechtsklick unten. */
+    if (event->type != GDK_BUTTON_PRESS) return TRUE;
+
+    /* QoL-Wunsch: Rechtsklick = Zurück, unabhängig davon, WO im Fenster
+     * geklickt wurde (Grid, Pfeil oder Leerbereich) - schneller als erst
+     * neben das Grid klicken zu müssen. go_back_or_exit() beendet den
+     * Launcher, falls keine Historie mehr da ist (= in der Wurzel), genau
+     * wie der bisherige Leerbereich-Klick/Escape. */
+    if (event->button == 3) {
+        go_back_or_exit(app);
+        return TRUE;
+    }
 
     int special = special_at_xy(app, event->x, event->y);
     if (special == 1) { /* linker Pfeil = vorherige Seite (nur falls vorhanden) */
@@ -2585,6 +3056,86 @@ static gboolean on_button_press(GtkWidget *widget, GdkEventButton *event, gpoint
         activate_selected(app);
     }
     return TRUE;
+}
+
+/* ── Touchscreen ─────────────────────────────────────────────────────── */
+#define TOUCH_TAP_MOVE_TOLERANCE_PX 24.0  /* Finger darf sich so weit bewegen und zählt trotzdem noch als Tap */
+#define TOUCH_LONGPRESS_MS          500   /* Haltedauer bis Long-Press = Zurück auslöst */
+
+/* Timer-Callback für TOUCH_LONGPRESS_MS: löst NUR aus, wenn der Finger bis
+ * dahin noch unten ist UND sich nicht über die Toleranz hinaus bewegt hat
+ * (siehe GDK_TOUCH_UPDATE in on_touch_event, das bricht bei Bewegung ab). */
+static gboolean touch_longpress_timeout(gpointer user_data) {
+    App *app = user_data;
+    app->touch_longpress_id = 0;
+    app->touch_longpress_fired = TRUE;
+    play_sound("FocusChange");
+    go_back_or_exit(app);
+    return G_SOURCE_REMOVE;
+}
+
+/* Touch wird bewusst NICHT der GTK/GDK-internen Zeiger-Emulation überlassen
+ * (siehe Kommentar am touch_seq-Feld in der App-Struct) - stattdessen bauen
+ * wir Finger-Events hier direkt in winzige, synthetische Motion-/Button-
+ * Events um und reichen sie an die schon vorhandenen on_motion()/
+ * on_button_press()-Handler weiter. Die beiden lesen jeweils nur x/y (und
+ * on_button_press zusätzlich type/button), beide Structs dürfen also
+ * bedenkenlos nullinitialisiert und nur mit diesen Feldern befüllt werden. */
+static gboolean on_touch_event(GtkWidget *widget, GdkEventTouch *event, gpointer user_data) {
+    App *app = (App*)user_data;
+    switch (event->type) {
+        case GDK_TOUCH_BEGIN: {
+            if (app->touch_seq != NULL) return TRUE; /* schon ein Finger aktiv - weitere ignorieren, kein Multitouch-Gefummel */
+            app->touch_seq = event->sequence;
+            app->touch_down_x = event->x;
+            app->touch_down_y = event->y;
+            app->touch_moved = FALSE;
+            app->touch_longpress_fired = FALSE;
+            touch_cancel_longpress(app);
+            app->touch_longpress_id = g_timeout_add(TOUCH_LONGPRESS_MS, touch_longpress_timeout, app);
+
+            GdkEventMotion synth = {0};
+            synth.x = event->x; synth.y = event->y;
+            on_motion(widget, &synth, app); /* Bubble unterm Finger schon beim Antippen hervorheben, wie bei der Maus */
+            return TRUE;
+        }
+        case GDK_TOUCH_UPDATE: {
+            if (app->touch_seq != event->sequence) return TRUE;
+            if (fabs(event->x - app->touch_down_x) > TOUCH_TAP_MOVE_TOLERANCE_PX ||
+                fabs(event->y - app->touch_down_y) > TOUCH_TAP_MOVE_TOLERANCE_PX) {
+                app->touch_moved = TRUE;
+                touch_cancel_longpress(app); /* Finger rutscht/wischt - kein versehentliches Zurück mehr auslösen */
+            }
+            GdkEventMotion synth = {0};
+            synth.x = event->x; synth.y = event->y;
+            on_motion(widget, &synth, app);
+            return TRUE;
+        }
+        case GDK_TOUCH_END: {
+            if (app->touch_seq != event->sequence) return TRUE;
+            touch_cancel_longpress(app);
+            if (!app->touch_longpress_fired && !app->touch_moved) {
+                /* normaler Tap, Finger kaum bewegt und nicht lang genug
+                 * gehalten -> wie ein Linksklick an der Hochheb-Position. */
+                GdkEventButton synth = {0};
+                synth.type = GDK_BUTTON_PRESS;
+                synth.button = 1;
+                synth.x = event->x; synth.y = event->y;
+                synth.time = event->time;
+                on_button_press(widget, &synth, app);
+            }
+            app->touch_seq = NULL;
+            return TRUE;
+        }
+        case GDK_TOUCH_CANCEL:
+            if (app->touch_seq == event->sequence) {
+                touch_cancel_longpress(app);
+                app->touch_seq = NULL;
+            }
+            return TRUE;
+        default:
+            return TRUE;
+    }
 }
 
 static gboolean on_key_press(GtkWidget *widget, GdkEventKey *event, gpointer user_data) {
@@ -2649,7 +3200,8 @@ static App* build_app(const char *menu_name, gboolean x11) {
     app->sel_bounce_slot = -1;
     app->prev_sel_slot = -1;
     app->anim_speed = 1.0;
-    app->pending_delta_sum = 0;
+    app->anim_speed_target = 1.0;
+    app->next_step = 0;
     app->history = g_ptr_array_new_with_free_func(history_entry_free);
     app->icon_cache = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_object_unref);
     load_bubble_assets(menu_name, &app->assets);
@@ -2701,12 +3253,13 @@ static App* build_app(const char *menu_name, gboolean x11) {
 
     app->area = gtk_drawing_area_new();
     gtk_widget_set_size_request(app->area, app->win_w, app->win_h);
-    gtk_widget_add_events(app->area, GDK_POINTER_MOTION_MASK | GDK_BUTTON_PRESS_MASK);
+    gtk_widget_add_events(app->area, GDK_POINTER_MOTION_MASK | GDK_BUTTON_PRESS_MASK | GDK_TOUCH_MASK);
     gtk_container_add(GTK_CONTAINER(app->window), app->area);
 
     g_signal_connect(app->area, "draw", G_CALLBACK(on_draw), app);
     g_signal_connect(app->area, "motion-notify-event", G_CALLBACK(on_motion), app);
     g_signal_connect(app->area, "button-press-event", G_CALLBACK(on_button_press), app);
+    g_signal_connect(app->area, "touch-event", G_CALLBACK(on_touch_event), app);
     g_signal_connect(app->window, "key-press-event", G_CALLBACK(on_key_press), app);
     if (!g_daemon_mode) {
         g_signal_connect(app->window, "destroy", G_CALLBACK(gtk_main_quit), NULL);
@@ -2722,6 +3275,7 @@ static App* build_app(const char *menu_name, gboolean x11) {
 
 static void free_app(App *app) {
     if (!app) return;
+    touch_cancel_longpress(app);
     if (app->slots) g_ptr_array_unref(app->slots);
     if (app->prev_slots) g_ptr_array_unref(app->prev_slots);
     if (app->history) g_ptr_array_unref(app->history);
@@ -3067,6 +3621,7 @@ int main(int argc, char *argv[]) {
     app->anim_type = ANIM_OPEN;
     app->anim_reversed = FALSE;
     app->anim_start_us = g_get_monotonic_time();
+    anim_reset_virtual_clock(app);
     ensure_anim_tick(app);
     gtk_main();
 

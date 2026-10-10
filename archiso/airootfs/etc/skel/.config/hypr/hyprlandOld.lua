@@ -25,6 +25,15 @@ hl.monitor({
     scale = 1,
 })
 
+hl.monitor({
+    output   = "HDMI-A-1",
+    mode     = "1920x1080@165.00",
+    position = "0x-1080",
+    scale    = 1.0,
+    sdrbrightness = 1.0,
+    sdrsaturation = 1.0,
+})
+
 -- Programme & Befehle
 local terminal = "xfce4-terminal"
 local fileManager = "thunar"
@@ -106,7 +115,10 @@ hl.on("hyprland.start", function()
     -- Start synchron, genau wie TrafkTuxBar - selbes Wettlauf-Problem,
     -- selbe Lösung: erst kopieren, dann starten).
     hl.exec_cmd("killall TrafkTuxLauncher; ~/.config/TrafkTuxLauncher/TrafkTuxLauncher --daemon &")
-    hl.exec_cmd("swaync --replace --skip-system-css &")
+    -- SwaySyncWatchdog.sh statt direktem swaync-Aufruf: startet swaync wie
+    -- bisher, startet es aber automatisch neu, falls es abstuerzt (siehe
+    -- SwaySyncWatchdog.sh fuer Details/Stop-Befehl).
+    hl.exec_cmd("setsid -f bash $HOME/.config/swaync/SwaySyncWatchdog.sh >/dev/null 2>&1 &")
     hl.exec_cmd("hypridle")
     hl.exec_cmd("/usr/lib/polkit-kde-authentication-agent-1")
     hl.exec_cmd("nm-applet --indicator")
@@ -275,25 +287,6 @@ else
         "bash -c \"notify-send 'Hyprland' 'hyprgrass nicht geladen - Touch-Gesten deaktiviert (siehe: hyprctl plugin list)' -u critical || true\""
     )
 end
-
--- ============================================================
--- hyprgrass: Touchscreen-Gesten für Dateimanager & Co.
--- ============================================================
-
--- 1. Ein-Finger-Tap: Simuliert einen Linksklick, um Ordner/Dateien zu öffnen.
---    Hinweis: Manche Versionen von hyprgrass lösen `tap` erst ab 2 Fingern aus.
---    Falls der Ein-Finger-Tap nicht reagiert, ändere `fingers = 1` auf `fingers = 2`.
-hl.plugin.hyprgrass.bind({
-    pattern = { kind = "tap", fingers = 1 },
-    action = hl.dsp.exec_cmd("ydotool click 0xC0"), -- 0xC0 = Linksklick
-})
-
--- 2. Ein-Finger-Long-Press: Simuliert einen Rechtsklick für das Kontextmenü.
-hl.plugin.hyprgrass.bind({
-    pattern = { kind = "longpress", fingers = 1 },
-    action = hl.dsp.exec_cmd("ydotool click 0xC1"), -- 0xC1 = Rechtsklick
-    mouse = true, -- Wichtig: Teilt hyprgrass mit, dass dies ein Maus-Event ist.
-})
 
 -- hyprbars: Titelleiste mit Buttons
 hl.config({
@@ -1637,3 +1630,8 @@ hl.bind(mainMod .. " + CTRL + x", cornerSnap(0.5, 0.5, 0.5, 0.5)) -- unten recht
 -- https://github.com/hyprwm/Hyprland/issues/9326
 -- Fix stattdessen über FocusFixDaemon (C, siehe systemctl-Start oben),
 -- der bei jedem neuen Fenster zwangsweise fokussiert.
+
+
+
+pcall(dofile, os.getenv("HOME") .. "/.config/hypr/HyprlandConfigs/AppWallpaper.lua")
+pcall(dofile, os.getenv("HOME") .. "/.config/hypr/HyprlandConfigs/DeviceOutputs.lua")

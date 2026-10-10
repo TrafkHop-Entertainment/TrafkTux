@@ -52,6 +52,7 @@ declare -A REPO_PLUGINS=(
   ["https://github.com/virtcode/hypr-dynamic-cursors"]="dynamic-cursors"
   ["https://github.com/horriblename/hyprgrass"]="hyprgrass"
   ["https://github.com/savonovv/hypr-kinetic-scroll"]="hypr-kinetic-scroll"
+  ["https://github.com/gen3vra/hyprwinwrap"]="hyprwinwrap"
 )
 
 for repo in "${!REPO_PLUGINS[@]}"; do

@@ -28,6 +28,7 @@ hyprland
 hyprpm
 hypridle
 hyprlock
+hyprpaper
 hyprpolkitagent
 polkit
 swaync
@@ -162,7 +163,6 @@ tailscale
 iio-sensor-proxy
 fprintd
 libfprint
-ydotool
 
 # --- Anzeigemanager ---
 sddm

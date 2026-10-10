@@ -92,7 +92,19 @@ bubble_size_fraction = 0.509;
 bubble_bottom_edge_fraction = 0.98;
 bubble_center_y_fraction = bubble_bottom_edge_fraction - (bubble_size_fraction / 2);
 
-bubble_canvas_size = Math.Int(win_h * bubble_size_fraction);
+# Korrekturfaktor fuer die tatsaechlich SICHTBARE Groesse der Blase.
+# bubble_size_fraction legt die Canvas-Groesse fest, nicht die Groesse
+# des sichtbaren Kreises im Bild. Die neuen Frames (0001.png etc.) haben
+# kaum Transparenz-Rand - der Kreis fuellt die Canvas zu ~95% statt wie
+# bei den alten Bildern nur teilweise. Deshalb wirkt die Blase bei
+# gleichem bubble_size_fraction jetzt groesser. < 1.0 = kleiner,
+# 1.0 = keine Korrektur. Einfach diesen einen Wert nachtunen, falls
+# noch zu gross/klein - Position (bottom edge) bleibt dabei unveraendert,
+# da bubble_center_y weiter unten ueber die (unveraenderte) Fraction
+# berechnet wird.
+bubble_visual_scale = 0.8;
+
+bubble_canvas_size = Math.Int(win_h * bubble_size_fraction * bubble_visual_scale);
 
 bubble_frame = [];
 for (i = 0; i < frame_count; i++) {
