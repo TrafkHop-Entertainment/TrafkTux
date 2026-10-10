@@ -43,7 +43,7 @@
 #
 # Aufruf: ./sync-systemupdate.sh [--dry-run] [--full] [--fast]
 
-AIROOTFS_DIR="/run/media/hopx/HopxSSD/TrafkSite/Projects/TrafkTux/TrafkTux/archiso/airootfs"
+AIROOTFS_DIR="/run/media/hopx/HopxSSD/TrafkSite/Projects/TrafkTux/archiso/airootfs"
 BACKUP_DIR="$HOME/.trafktux-sync-backups/$(date +%Y%m%d-%H%M%S)"
 
 DRY_RUN=0
