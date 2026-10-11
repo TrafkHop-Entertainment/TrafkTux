@@ -384,7 +384,17 @@ static JsonObject* load_menu_json(const char *menu_name) {
     if (json_parser_load_from_file(user_parser, user_path, &user_err)) {
         JsonNode *user_rootn = json_parser_get_root(user_parser);
         if (user_rootn && JSON_NODE_HOLDS_OBJECT(user_rootn)) {
-            merge_user_node(clone, json_node_get_object(user_rootn));
+            JsonObject *user_root_obj = json_node_get_object(user_rootn);
+            merge_user_node(clone, user_root_obj);
+            /* "hidden_apps" ist kein Ordner-Baum-Member wie "children" und
+             * wird von merge_user_node() daher nicht mitgenommen - hier
+             * separat 1:1 nach clone durchreichen, damit
+             * get_filtered_desktop_apps(root) später direkt darauf zugreifen
+             * kann (siehe dort). */
+            if (json_object_has_member(user_root_obj, "hidden_apps")) {
+                JsonNode *hidden_node = json_object_get_member(user_root_obj, "hidden_apps");
+                json_object_set_member(clone, "hidden_apps", json_node_copy(hidden_node));
+            }
         } else {
             g_printerr("TrafkTuxLauncher: Usermenu.json (%s) hat kein Objekt als Wurzel - ignoriert.\n", user_path);
         }
@@ -769,6 +779,35 @@ static GPtrArray* get_filtered_desktop_apps(JsonObject *root) {
         }
     }
     g_queue_free(stack);
+
+    /* "hidden_apps" (vom App-Editor geschrieben, siehe Usermenu.json) -
+     * Apps, die der Nutzer explizit nie in "Unordered Programs" sehen
+     * will, OHNE sie irgendwo einzusortieren. Landen in denselben beiden
+     * Hash-Tables wie "schon einsortiert" - für den Filter unten macht
+     * das keinen Unterschied, das Ergebnis (nicht in der Liste) ist
+     * exakt dasselbe. */
+    if (json_object_has_member(root, "hidden_apps")) {
+        JsonArray *hidden = json_object_get_array_member(root, "hidden_apps");
+        for (guint i = 0; i < json_array_get_length(hidden); i++) {
+            JsonNode *hn = json_array_get_element(hidden, i);
+            if (json_node_get_node_type(hn) != JSON_NODE_OBJECT) continue;
+            JsonObject *h = json_node_get_object(hn);
+            if (json_object_has_member(h, "name")) {
+                const char *name = json_object_get_string_member(h, "name");
+                if (name && *name) g_hash_table_add(used_names, g_utf8_casefold(name, -1));
+            }
+            if (json_object_has_member(h, "exec")) {
+                const char *exec_str = json_object_get_string_member(h, "exec");
+                if (exec_str && *exec_str) {
+                    char *bin = extract_binary(exec_str);
+                    if (bin) {
+                        g_hash_table_add(used_execs, g_utf8_casefold(bin, -1));
+                        g_free(bin);
+                    }
+                }
+            }
+        }
+    }
 
     GPtrArray *filtered = g_ptr_array_new_with_free_func(app_entry_free);
     for (guint i = 0; i < all->len; i++) {

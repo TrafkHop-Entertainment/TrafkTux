@@ -224,6 +224,10 @@ make_group() {
         echo "arch=('any')"
         echo "url='https://trafkhop-entertainment.github.io/TrafkSite'"
         echo "license=('custom')"
+        # Gruppe fuer IgnoreGroup=TrafkTuxNoAutoUpdate in pacman.conf: damit
+        # bleibt dieses Metapaket bei normalen System-Updates (pamac update,
+        # pacman -Syu) aussen vor, egal wie es heisst (auch bei Name=-Override).
+        echo "groups=('TrafkTuxNoAutoUpdate')"
         echo "depends=($(quoted "${depends[@]}"))"
         [[ -n "${install_line}" ]] && echo "${install_line}"
         echo "source=($(quoted "${sources[@]}"))"

@@ -10,7 +10,26 @@
           <property name="backdrop-cycle-random-order" type="bool" value="true"/>
           <property name="backdrop-cycle-period" type="int" value="3"/>
           <property name="last-image" type="string" value="/home/hopx/.config/hypr/wallpapers/13WorldsBG3.png"/>
-          <property name="color-style" type="int" value="3"/>
+          <property name="color-style" type="int" value="0"/>
+          <property name="image-style" type="int" value="0"/>
+        </property>
+      </property>
+      <property name="monitoreDP-1" type="empty">
+        <property name="workspace0" type="empty">
+          <property name="image-style" type="int" value="0"/>
+          <property name="color-style" type="int" value="0"/>
+        </property>
+      </property>
+      <property name="monitorHDMI-A-1" type="empty">
+        <property name="workspace0" type="empty">
+          <property name="image-style" type="int" value="0"/>
+          <property name="color-style" type="int" value="0"/>
+        </property>
+      </property>
+      <property name="monitorBenQEX2710S" type="empty">
+        <property name="workspace0" type="empty">
+          <property name="image-style" type="int" value="0"/>
+          <property name="color-style" type="int" value="0"/>
         </property>
       </property>
     </property>

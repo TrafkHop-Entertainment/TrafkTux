@@ -9,7 +9,7 @@
 ---
 # TrafkTux v0.85
 
-*"Unique Creativity meets QOL and Streamlining"*
+*"Creativity meets QOL"*
 ## About
 
 **TrafkTux** is an **Arch + Hyprland** based Linux distribution with the focus of being an easy to use and streamlined system.
@@ -26,7 +26,7 @@ It also comes with many preinstalled programs for the best out-of-box experience
 
 TrafkTux can be installed via an ISO file.
 
-**Download:** DISTROISNOTAVAILABEASOFTHISMOMENT.htmllink
+**Download:** DISTROISNOTAVAILABEASOFTHISMOMENT.htmllink:)
 
 1. Download the ISO via our link!
 2. Download Fedora Media Writer and burn the ISO onto a media of your choosing
@@ -42,11 +42,9 @@ Now you have successfully installed the OS!
 
 TrafkTux may not be the sleekest of distros out there, buuut it is still way sleeker than some other operating systems!
 
-> **Note:** TrafkTux does not support SecureBoot at the moment.
+> **Note:** TrafkTux does not support SecureBoot
 
 TrafkTux is already optimized for laptops, with tuned and some extra settings for maximum performance/battery savings.
-
-Avahi is disabled by default due to a networking bug where the OS could saturate the entire network – e.g. a Nintendo Switch 2 on the same 2.4GHz WiFi network prevented good online play.
 
 ### Performance
 
@@ -54,15 +52,15 @@ Avahi is disabled by default due to a networking bug where the OS could saturate
 
 The system uses:
 
-| State | ~RAM |
-|---|---|
-| Idle | 1.15 GB |
-| + Firefox (1-5 Tabs) | +1-5 GB |
+| State                       | ~RAM      |
+| --------------------------- | --------- |
+| Idle                        | 1.31 GB   |
+| + Firefox (1-5 Tabs)        | +1-5 GB   |
 | + Firefox (viele Tabs, ~30) | +~1.98 GB |
-| + Terminal or File Manager | +0.1 GB |
-| + Discord + Steam offen | +~1.35 GB |
+| + Terminal or File Manager  | +0.1 GB   |
+| + Discord + Steam offen     | +~1.35 GB |
 
-Idle RAM usage started at ~2 GB and has since been brought down to 1.35 GB, and now to 1.15 GB.
+Idle RAM usage started at ~2 GB and has since been brought down to 1.35 GB, and then to 1.15 GB and now its back to 1.35GB. We are still optimising!
 
 **Background apps** include *(they do not impact performance)*:
 - Swaync (Notifications)
@@ -72,21 +70,22 @@ Idle RAM usage started at ~2 GB and has since been brought down to 1.35 GB, and 
 
 ### Comparison
 
-| System | Idle RAM (approx.) |
-|---|---|
-| Windows 11 | ~3.5 GB |
-| Ubuntu (GNOME) | ~1.5 GB |
-| **TrafkTux** | **~1.15 GB** |
-| KDE Plasma | ~900 MB |
-| Arch Linux with i3 | ~400-500 MB |
+| System             | Idle RAM (approx.) |
+| ------------------ | ------------------ |
+| Windows 11         | ~3.5 GB            |
+| Ubuntu (GNOME)     | ~1.5 GB            |
+| **TrafkTux**       | **~1.15 GB**       |
+| KDE Plasma         | ~900 MB            |
+| Arch Linux with i3 | ~400-500 MB        |
+| SnowFoxOS          | ~180 MB            |
 
 ### Minimum Requirements
 
 We have not tested TrafkTux on many machines. Therefore this is only an estimation:
 
-- A CPU + GPU less than 20 years old
+- A CPU + GPU less than 15 years old
 - 2 GB of RAM
-- 4 GB of storage space
+- 16 GB of storage space
 
 This should be enough to run the OS – you will not run any browser though.
 
@@ -178,7 +177,7 @@ We have gamescope and wine preinstalled! We also have a custom script that puts 
 
 ## Security
 
-TrafkTux comes secure out of the box! We take security somewhat seriously – everything below is enabled by default, no setup needed:
+TrafkTux comes secure out of the box! We take security somewhat "seriously" – everything below is enabled by default, no setup needed:
 
 - **Firewall (UFW):** enabled by default, deny incoming / allow outgoing. The only exception is the waydroid0 interface, which is left fully open (needed for Waydroid networking to even work).
 - **DNS-over-TLS:** all DNS queries are encrypted by default via systemd-resolved, using Quad9 and Cloudflare (DNSSEC on). This overrides whatever DNS server your router hands out, so encrypted DNS is enforced on every network you join – not just your home one.
@@ -207,6 +206,7 @@ TrafkTux comes secure out of the box! We take security somewhat seriously – ev
 - **Malware scanning:** ClamAV + clamtk are preinstalled and kept up to date automatically via freshclam, extended with community signatures (clamav-unofficial-sigs) for even better detection.
 
 * We also support some laptop finger print scanners!...
+* Also FIDO2 Key, although we really do not reccomend it (it has not been tested)
 
 ## Software Stack
 
@@ -268,7 +268,7 @@ TrafkTux comes preinstalled with a bunch of software while still not overdoing i
 As you can see, TrafkTux throws a bunch of unrelated packages together and creates something truly unique! An Arch + Hyprland setup which uses the XFCE desktop + file manager + terminal, has many custom programs/scripts, but also heavily relies on 3rd-party software.
 
 ### Optional Packages
-We have a custom repo with some meta packages that you can install! There are quite a bunch of app bundles to choose from!
+We have a custom repo with some meta packages that you can install! There are quite a bunch of app bundles to choose from! Available in the Pamac Store under Repositories.
 
 ## Customisation
 
@@ -486,7 +486,6 @@ Change the scale (to a certain degree). Toggle HDR. Change where your other moni
 Still to be themed / done:
 - Calamares
 - Editor for: Rofi folders/apps, Waybar widgets/shortcuts, autostart apps, default apps: TrafkTux App Editor – mailueberfall
-- Lua Config should be many seperated files including user config files – partybombe
 
 ## Known Bugs
 
@@ -496,13 +495,6 @@ Still to be themed / done:
 - Finish System Sounds - tortenboxer
 - make sddm idle animations  – turboprinz
 - Mouse cursor redesign
-
-### The App Editor
-The "App Editor" is a widget in the WidgetsDaemon App.
-It has those tabs:
-1. TrafkTux App Launcher – it has 9 folders where you can put apps in. In this menu you will be able to drag any app + custom commands into the folders, plus as many subfolders in subfolders as you want. You can sort by all packages, all apps, unordered apps, custom apps, ordered apps. This will be the main menu to sort all of your apps!
-2. You can add/remove the shortcuts of apps on the TrafkTuxBar on the "left".
-3. You can add/remove autostart applications in the hyprland.lua (but hide the standard ones, as they are essential).
-4. You can set the default applications for files.
-5. add/remove apps that should/not be effected by the wine wrapper (1 for general 1 for dgvoodo2) and also set if the New or Old version of dgvoodoo2 should be used and also exclude apps from only dgvoodoo2 injection fix or compleately
-
+- waybar pixel offset under monitor still not configurable
+- Wallpapers – partyheld
+- Transfer Widgets FIles to new Folder and other FIles still in old waybar folder

@@ -2,8 +2,11 @@
 AppWallpaper.lua — hyprwinwrap-Toggle (Pictures vs. App-Fenster als
 Hintergrund), siehe https://github.com/gen3vra/hyprwinwrap
 
-EINBINDUNG in deine echte hyprland.lua:
+EINBINDUNG: wird am Ende von HyprlandConfigs/Looks.lua per
+    require("HyprlandConfigs.AppWallpaper")
+geladen (visuell -> Looks-Kategorie). Alt, als Referenz: frueher per
     pcall(dofile, os.getenv("HOME") .. "/.config/hypr/AppWallpaper.lua")
+ganz am Ende der monolithischen hyprland.lua eingebunden.
 
 KORREKTUR (siehe Chat): die erste Version dieser Datei hat
 `hl.config({ plugin = { hyprwinwrap = { class = ... } } })` benutzt -
@@ -32,28 +35,36 @@ end
 
 if hl.plugin and hl.plugin.hyprwinwrap ~= nil then
     if state.enabled and state.class and state.class ~= "" then
-        -- hyprwinwrap selbst hat kein Monitor-Feld (siehe Chat) - die
-        -- Fensterklasse wird stattdessen per normaler Hyprland-
-        -- window_rule auf den gewünschten Monitor gezwungen, BEVOR
-        -- hyprwinwrap sie greift. Gleicher Name bei jedem Reload ->
-        -- aktualisiert die bestehende Regel statt sie zu duplizieren.
-        -- Die gewrappte App bekommt KEINE Start-Parameter für ihre
-        -- Auflösung (nicht jede App hat sowas - TrafkVerseScreensaver
-        -- z.B. startet fix bei 960x540, ist aber normal resize-fähig).
-        -- Deshalb zwingen wir die Fenstergröße selbst per window_rule
-        -- auf Monitorgröße, BEVOR hyprwinwrap das Fenster greift -
-        -- "size" braucht laut Hyprland-Doku ein floatendes Fenster,
-        -- daher float=true mit dazu. monitor_w/monitor_h sind dynamische
-        -- Hyprland-Ausdrücke (siehe Window-Rules-Doku) - kein hart
-        -- codiertes 1920x1080 o.ä., funktioniert also für jede
-        -- Monitor-Auflösung.
+        -- KORREKTUR (siehe Chat): die window_rule, die hier frueher
+        -- stand, hatte DREI Teile - float, size, monitor. size und
+        -- monitor bringen nachweislich nichts: hyprwinwrap greift das
+        -- Fenster in seinem eigenen commit-Listener, BEVOR Hyprlands
+        -- normaler window_rule-Layout-Pfad fuer dieses (durch
+        -- hyprwinwrap sofort versteckte/aus dem normalen Rendering
+        -- genommene) Fenster je zum Zug kommt (siehe Kommentar bei
+        -- _trafkverse_exec_cmd() in WidgetsDaemon.py, wo das fuer die
+        -- Groesse bereits per --width/--height-Flag an die App selbst
+        -- umgangen wurde; der Zielmonitor wird jetzt per
+        -- hl.dsp.focus({monitor=...}) VOR dem App-Start erzwungen,
+        -- siehe unten).
+        --
+        -- float=true dagegen IST weiterhin noetig und wurde faelschlich
+        -- mitentfernt: TrafkVerseScreensaver (SDL_WINDOW_RESIZABLE, kein
+        -- eigener Floating-Hint) wird von Hyprlands Tiling-Layout beim
+        -- ALLERERSTEN Buffer-Commit sonst wie ein normales tiled
+        -- Fenster behandelt und bekommt dabei nur den gerade freien
+        -- Bruchteil des Bildschirms (z.B. ~1/3 bei 2 bereits offenen
+        -- Fenstern) - hyprwinwraps eigener float+resize-Zwang feuert
+        -- laut dessen README erst "ein paar ms nach dem Oeffnen" und
+        -- kommt damit fuer diesen ersten (zu klein committeten) Buffer
+        -- offenbar zu spaet. VLC bekommt ueblicherweise schon von sich
+        -- aus (eigene Fenstertyp-Hints bzw. eine gaengige eigene
+        -- windowrule=float,class:vlc) den Floating-Status und tiled
+        -- deshalb gar nicht erst - daher fiel der Bug dort nicht auf.
         hl.window_rule({
-            name = "appwallpaper-monitor",
+            name = "appwallpaper-float",
             match = { class = state.class },
-            monitor = (state.monitor and state.monitor ~= "") and state.monitor or nil,
             float = true,
-            size = { "monitor_w", "monitor_h" },
-            move = { "0", "0" },
         })
         hl.plugin.hyprwinwrap.window({
             class = state.class,
@@ -78,6 +89,37 @@ end
 -- WidgetsDaemon.py den Prozess direkt.
 hl.on("hyprland.start", function()
     if state.enabled and state.exec and state.exec ~= "" then
+        -- Zielmonitor zuerst fokussieren (siehe Kommentar weiter oben,
+        -- "KORREKTUR") - sonst oeffnet sich die App auf dem beim Login
+        -- zufaellig fokussierten Monitor statt auf state.monitor, und
+        -- hyprwinwraps size_x/size_y=100 decken dann zwar 100% EINES
+        -- Monitors ab, aber nicht unbedingt den gewuenschten.
+        if state.monitor and state.monitor ~= "" then
+            -- KORREKTUR (siehe Chat): "hyprctl dispatch focusmonitor
+            -- <name>" ist die alte, positionale hyprlang-Syntax und
+            -- schlaegt seit Hyprland 0.55 fehl (hyprctl dispatch nimmt
+            -- nur noch einen hl.dsp.*-Lua-Ausdruck entgegen). Da wir
+            -- hier schon in der Lua-Config sind, direkt dispatchen -
+            -- kein hyprctl/Shell-Umweg noetig.
+            hl.dispatch(hl.dsp.focus({ monitor = state.monitor }))
+        end
         hl.exec_cmd("bash -c \"" .. state.exec:gsub('"', '\\"') .. "\" &")
+        -- KORREKTUR (siehe Chat): .resize/.move per Live-Dispatch
+        -- bringen nachweislich nichts (hyprwm/Hyprland#16446). Fuer
+        -- TrafkVerseScreensaver liegt der Fix jetzt client-seitig in
+        -- TrafkVerseScreensaver.c (SDL_SetWindowMinimumSize/
+        -- MaximumSize). Fuer Apps ohne eigene Groessen-Vorgabe (z.B.
+        -- VLC) nimmt hl.dsp.window.center() nachweislich einen ANDEREN,
+        -- funktionierenden Codepfad (per Nutzer-Test bestaetigt) -
+        -- WICHTIG: der Window-Selector braucht das "class:"-Praefix,
+        -- sonst "No floating window found". 1s Verzoegerung per
+        -- hl.timer(), damit die App zuerst ihre eigene Groessenanpassung
+        -- abgeschlossen hat, bevor zentriert wird.
+        if state.class and state.class ~= "" then
+            local klass = state.class
+            hl.timer(function()
+                hl.dispatch(hl.dsp.window.center({ window = "class:" .. klass }))
+            end, { timeout = 1000, type = "oneshot" })
+        end
     end
 end)

@@ -422,19 +422,19 @@ hl.bind(
 
 hl.bind(mainMod .. " + R", function()
     hl.exec_cmd(
-        "xfce4-terminal -e 'bash /run/media/hopx/HopxSSD/TrafkSite/Projects/TrafkTux/TrafkTux/SyncEverything.sh --fast'"
+        "xfce4-terminal -e 'bash /run/media/hopx/HopxSSD/TrafkSite/Projects/TrafkTux/SyncEverything.sh --fast'"
     )
 end, { description = "Sync with system" })
 
 hl.bind(mainMod .. " + SHIFT + R", function()
     hl.exec_cmd(
-        "xfce4-terminal -e 'bash /run/media/hopx/HopxSSD/TrafkSite/Projects/TrafkTux/TrafkTux/SyncEverything.sh --fast --full'"
+        "xfce4-terminal -e 'bash /run/media/hopx/HopxSSD/TrafkSite/Projects/TrafkTux/SyncEverything.sh --fast --full'"
     )
 end, { description = "Sync with system" })
 
 hl.bind(mainMod .. " + ALT + R", function()
     hl.exec_cmd(
-        "xfce4-terminal -e 'bash /run/media/hopx/HopxSSD/TrafkSite/Projects/TrafkTux/TrafkTux/SyncEverything.sh --full'"
+        "xfce4-terminal -e 'bash /run/media/hopx/HopxSSD/TrafkSite/Projects/TrafkTux/SyncEverything.sh --full'"
     )
 end, { description = "Sync with system" })
 
