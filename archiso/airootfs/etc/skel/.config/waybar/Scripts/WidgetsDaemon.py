@@ -108,9 +108,11 @@ def _scan_wallpaper_images() -> list[str]:
 #  und damit AppWallpaper.lua neu einlesen) statt über ein einzelnes
 #  Keyword. Ablauf pro Umschalten:
 #    1. alten gewrappten App-Prozess beenden (falls einer lief)
-#    2. Zustand nach ~/.config/hypr/appwallpaper_state.lua schreiben
-#       (gleiche Syntax wie der Rest der hyprland.lua-Welt - kein
-#       extra JSON-Parser in Lua nötig)
+#    2. Zustand nach ~/.config/hypr/HyprlandUserConfigs/appwallpaper_state.lua
+#       schreiben (gleiche Syntax wie der Rest der hyprland.lua-Welt -
+#       kein extra JSON-Parser in Lua nötig; liegt bewusst in
+#       HyprlandUserConfigs/ statt direkt in hypr/ - siehe Kommentar bei
+#       APPWALLPAPER_STATE_LUA unten)
 #    3. `hyprctl reload` - registriert (oder eben nicht, falls
 #       enabled=false) die Fensterklasse bei hyprwinwrap neu
 #    4. falls aktiviert: neuen App-Prozess starten, damit ein Fenster
@@ -120,21 +122,39 @@ def _scan_wallpaper_images() -> list[str]:
 #  passiert dort bewusst NICHT bei jedem `hyprctl reload` (sonst würde
 #  reload hier in Schritt 3 die App ein zweites Mal starten).
 # ════════════════════════════════════════════════════════════
-APPWALLPAPER_STATE_LUA = Path(HOME) / ".config" / "hypr" / "appwallpaper_state.lua"
+# KORREKTUR (siehe Chat): umgesiedelt von direkt ~/.config/hypr/ nach
+# HyprlandUserConfigs/ - dieselbe Konvention wie UserDisplay.lua
+# (siehe Display.lua): alles, was reines Laufzeit-/Nutzer-spezifisches
+# Zeug ist statt versioniertem Repo-Inhalt, gehört dort rein, damit ein
+# Distro-/Repo-Update die Datei nie anfasst/überschreibt. Für
+# AppWallpaper.lua's dofile()-Pfad entsprechend mitgezogen (siehe dort).
+APPWALLPAPER_STATE_LUA = Path(HOME) / ".config" / "hypr" / "HyprlandUserConfigs" / "appwallpaper_state.lua"
 
 # Die zwei standardmäßig unterstützten Apps (siehe Chat) + Custom als
 # dritte, freie Option - keine generischen Platzhalter mehr, sondern
 # konkret die 2 vom Nutzer genannten Programme.
 #
 # TrafkVerseScreensaver: fester Pfad, keine Benutzereingabe nötig.
-# Fensterklasse ist eine ERSTE VERMUTUNG (üblicherweise setzt eine App
-# ihre WM_CLASS/App-ID auf den Binary-Namen) - unbedingt einmal manuell
-# starten und mit `hyprctl clients` die TATSÄCHLICHE Klasse prüfen,
-# falls hyprwinwrap das Fenster nicht greift.
+#
+# KORREKTUR (siehe Chat): die Fensterklasse ist jetzt NICHT mehr dieselbe
+# wie bei einem normalen/manuellen Start der App. TrafkVerseScreensaver.c
+# setzt standardmäßig WM_CLASS/app_id "TrafkVerseScreensaver" - mit dem
+# neuen, nur HIER verwendeten --wallpaper-Flag (siehe
+# _trafkverse_exec_cmd() unten) aber stattdessen
+# "TrafkVerseScreensaverWallpaper". Grund: AppWallpaper.lua matcht die
+# window_rule + hyprwinwrap-Registrierung rein klassenbasiert auf
+# state.class - solange die alte, gemeinsame Klasse verwendet wurde, griff
+# das bei JEDEM Fenster dieser Klasse, auch einem ganz normal/manuell
+# gestarteten Testlauf, nicht nur bei dem über diesen Knopf hier
+# gestarteten Prozess (float=true + hyprwinwraps 100%/100%-Zwang,
+# dauerhaft, solange enabled=true gesetzt blieb - das war der gemeldete
+# "warum floatet/resized das auch ohne Wallpaper-Widget nicht"-Bug). Die
+# eigene Wallpaper-Klasse stellt sicher, dass nur ein über DIESEN Knopf
+# gestarteter Prozess je gegriffen wird.
 APPWALLPAPER_TRAFKVERSE_EXEC = str(
     Path(HOME) / ".local" / "share" / "TrafkHopEntertainment" /
     "TrafkVerseScreensaver" / "TrafkVerseScreensaver")
-APPWALLPAPER_TRAFKVERSE_CLASS_GUESS = "TrafkVerseScreensaver"
+APPWALLPAPER_TRAFKVERSE_CLASS_GUESS = "TrafkVerseScreensaverWallpaper"
 
 # VLC: Pfad (Datei ODER Ordner, alles was VLC abspielen kann) kommt
 # vom Nutzer, siehe _vlc_exec_cmd() weiter unten. Fensterklasse von
@@ -142,13 +162,20 @@ APPWALLPAPER_TRAFKVERSE_CLASS_GUESS = "TrafkVerseScreensaver"
 APPWALLPAPER_VLC_CLASS = "vlc"
 
 def _trafkverse_exec_cmd(width: int, height: int, muted: bool) -> str:
-    """Baut den Launch-Befehl für TrafkVerseScreensaver inkl. der neuen,
-    rein additiven --width/--height/--silent CLI-Flags (siehe Chat -
-    window_rule-basiertes Resizing hat bei dieser App nicht
-    funktioniert, da hyprwinwrap das Fenster offenbar vor dem
-    eigentlichen Resize-Apply greift; die App bekommt die Zielgröße
-    jetzt stattdessen direkt beim Start mit)."""
-    cmd = f"{shlex.quote(APPWALLPAPER_TRAFKVERSE_EXEC)} --width {int(width)} --height {int(height)}"
+    """Baut den Launch-Befehl für TrafkVerseScreensaver inkl. der
+    --width/--height/--silent CLI-Flags (siehe Chat - window_rule-
+    basiertes Resizing hat bei dieser App nicht funktioniert, da
+    hyprwinwrap das Fenster offenbar vor dem eigentlichen Resize-Apply
+    greift; die App bekommt die Zielgröße jetzt stattdessen direkt beim
+    Start mit) PLUS --wallpaper (siehe Kommentar bei
+    APPWALLPAPER_TRAFKVERSE_CLASS_GUESS oben - setzt die eigene
+    Wallpaper-WM_CLASS, damit nur dieser Launch-Pfad von der
+    window_rule/hyprwinwrap-Registrierung gegriffen wird, nicht jeder
+    manuelle/normale Start der App)."""
+    cmd = (
+        f"{shlex.quote(APPWALLPAPER_TRAFKVERSE_EXEC)} "
+        f"--width {int(width)} --height {int(height)} --wallpaper"
+    )
     if muted:
         cmd += " --silent"
     return cmd

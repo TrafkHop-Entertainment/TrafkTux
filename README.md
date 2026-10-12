@@ -490,10 +490,14 @@ Still to be themed / done:
 ## Known Bugs
 
 - The ISO doesn't currently boot – since the distro is still in development, this is a minor issue that will be fixed soon. Some grub permission problem or something
+- The HideAll feature does not work correctly with the app backgrounds. if one is active, the script will become very slow and you will be transported to the hidden workspace of the hidden apps, wich does not happen without it. the script fails to send the background image app into the other workspace – it should ignore it instead.
+- If Apps is chosen in the wallpaper settings menu, any app that will be opened that is the "same" app, will be also set as a background app.
 
 ### Other Stuff
 - Finish System Sounds - tortenboxer
 - make sddm idle animations  – turboprinz
+- Make SDDM Buttons
+- Make custom Buttons for GUI
 - Mouse cursor redesign
 - waybar pixel offset under monitor still not configurable
 - Wallpapers – partyheld

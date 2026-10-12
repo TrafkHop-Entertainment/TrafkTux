@@ -25,9 +25,17 @@ _appwallpaper_apply() in WidgetsDaemon.py).
 `title` wird bewusst NICHT gesetzt - nur nach `class` gematcht, weil
 der Fenstertitel (z.B. bei VLC der abgespielte Dateiname) sich ändern
 kann und sonst kein Match mehr stattfände.
+
+KORREKTUR (siehe Chat): appwallpaper_state.lua liegt jetzt in
+HyprlandUserConfigs/ statt direkt in hypr/ - dieselbe Konvention wie
+UserDisplay.lua (siehe Display.lua): reines Laufzeit-/Nutzer-
+spezifisches Zeug gehört dort rein, damit ein Distro-/Repo-Update die
+Datei nie anfasst/überschreibt. WidgetsDaemon.py schreibt entsprechend
+mitgezogen nach demselben neuen Pfad (siehe APPWALLPAPER_STATE_LUA
+dort).
 --]]
 
-local ok, state = pcall(dofile, os.getenv("HOME") .. "/.config/hypr/appwallpaper_state.lua")
+local ok, state = pcall(dofile, os.getenv("HOME") .. "/.config/hypr/HyprlandUserConfigs/appwallpaper_state.lua")
 
 if not ok or type(state) ~= "table" then
     state = { enabled = false, class = "", exec = "", monitor = "" }
@@ -61,6 +69,14 @@ if hl.plugin and hl.plugin.hyprwinwrap ~= nil then
         -- aus (eigene Fenstertyp-Hints bzw. eine gaengige eigene
         -- windowrule=float,class:vlc) den Floating-Status und tiled
         -- deshalb gar nicht erst - daher fiel der Bug dort nicht auf.
+        --
+        -- state.class ist seit dem --wallpaper-Flag-Fix (siehe Chat)
+        -- eine EIGENE Klasse ("TrafkVerseScreensaverWallpaper" statt
+        -- der normalen "TrafkVerseScreensaver"), die TrafkVerseScreensaver
+        -- nur dann setzt, wenn WidgetsDaemon.py es mit --wallpaper
+        -- startet - ein ganz normaler/manueller Start der App bleibt
+        -- dadurch von dieser window_rule/hyprwinwrap-Registrierung
+        -- unberührt.
         hl.window_rule({
             name = "appwallpaper-float",
             match = { class = state.class },

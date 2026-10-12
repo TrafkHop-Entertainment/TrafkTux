@@ -21,7 +21,6 @@ BUILD_DIR="$(pwd)/aur-build"
 
 AUR_PACKAGES=(
   calamares
-  xwaylandvideobridge
   pamac-all
   hyprshade
   hyprland-minimizer-git

@@ -19,7 +19,6 @@ OPT_NAME="TrafkTuxOptional"
 SYNC_DIR="/var/lib/pacman/sync"
 
 PACKAGES=(
-  xwaylandvideobridge
   pamac-all
   hyprshade
   hyprland-minimizer-git
