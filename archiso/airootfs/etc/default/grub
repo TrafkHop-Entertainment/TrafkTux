@@ -3,7 +3,19 @@
 GRUB_DEFAULT=0
 GRUB_TIMEOUT=3
 GRUB_DISTRIBUTOR="TrafkTux"
-GRUB_CMDLINE_LINUX_DEFAULT="loglevel=3 quiet splash"
+# amdgpu.deep_color=0 works around a known upstream kernel regression on
+# AMD DCN 3.1.x display hardware (e.g. Ryzen 780M/Phoenix APUs): a
+# REG_WAIT timeout in dcn31_program_compbuf_size can leave the display
+# controller in a hung state, which later display-mode operations (a new
+# nested X server, gamescope, a resolution change, ...) can then trip
+# into a full freeze (screen frozen, audio keeps running - only the GPU
+# driver hangs). Confirmed root cause + workaround, 2026-10-17 debugging
+# session; see github.com/CachyOS/linux-cachyos/issues/810 and the amd-gfx
+# mailing list thread on the same trace. Safe on every other GPU vendor:
+# amdgpu.* parameters are only ever read by the amdgpu kernel module, so
+# the kernel silently ignores this entirely when that module never loads
+# (Intel/Nvidia systems, or any AMD GPU that isn't actually DCN 3.1.x).
+GRUB_CMDLINE_LINUX_DEFAULT="loglevel=3 quiet splash amdgpu.deep_color=0"
 GRUB_CMDLINE_LINUX=""
 
 # Preload both GPT and MBR modules so that they are not missed

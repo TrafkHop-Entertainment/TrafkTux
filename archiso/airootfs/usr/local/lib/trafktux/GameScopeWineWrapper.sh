@@ -18,22 +18,10 @@
 #     small box in the corner while the rest of the screen stays black
 #   - the same problem showing up even when "windowed mode" is selected
 #
-# It does NOT need a per-game resolution database: a nested X server
+# It does NOT need a per-game resolution database: gamescope natively
 # intercepts the legacy mode-switch request the game makes internally
-# and the game simply renders at that size inside a normal, resizable
-# Hyprland window around it.
-#
-# BACKEND NOTE (2026-10-17): this actually runs games through Xephyr, not
-# gamescope, despite the filename. gamescope hangs 100% reproducibly on
-# this system in the gamescope<->Hyprland handshake (confirmed across
-# versions 3.16.3-3.16.31, both its wayland and sdl backends, with and
-# without Wine or Pipewire involved - see debugging session this date).
-# Xephyr sidesteps it entirely by being an ordinary X11 server that
-# Hyprland's own Xwayland already handles correctly. Trade-off: no
-# FSR/NIS upscaling filter, since Xephyr has no such concept - Filter/
-# Scaler/Sharpness in GameScopeWrapper.conf are currently unused as a
-# result, kept only so re-enabling gamescope later needs no config
-# migration.
+# and upscales the result to the real output size - that's exactly what
+# it was built for (see: Steam Deck).
 
 set -u
 
@@ -329,7 +317,7 @@ if [ "$DgvoodooExcluded" != "true" ] && [ -f "$DgvoodooInjectedMarker" ]; then
     fi
 fi
 
-# --- Determine the real output resolution to hand to Xephyr --------------
+# --- Determine the real output resolution to hand to gamescope -----------
 OutputWidth="1920"
 OutputHeight="1080"
 if command -v hyprctl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
@@ -343,8 +331,8 @@ if command -v hyprctl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
 fi
 
 # --- Launch ----------------------------------------------------------------
-if ! command -v Xephyr >/dev/null 2>&1; then
-    # Xephyr missing for whatever reason -> fail open, run natively
+if ! command -v gamescope >/dev/null 2>&1; then
+    # gamescope missing for whatever reason -> fail open, run natively
     # rather than blocking the game from starting at all.
     exec "$RealBin" "$@"
 fi
@@ -404,13 +392,46 @@ ForceKillEverything() {
 }
 trap ForceKillEverything TERM INT HUP
 
-# Xephyr's own death (window closed, crashed, or SmartClose.sh escalated to
-# kill()) is watched from OUTSIDE this script now, by the parent wrapper
-# that launched both Xephyr and us as siblings - it sends us TERM the
-# instant Xephyr is gone, which the trap above turns into a hard cleanup
-# of every descendant. No internal parent-watching needed here anymore
-# (that was specific to gamescope directly parenting this script, which
-# Xephyr does not).
+# Hyprland's kill/force-kill sends its signal directly to gamescope (the
+# actual window-owning process from its point of view) - not to us. If
+# gamescope doesn't reliably forward that signal down to its own children
+# (observed: it doesn't, always), our TERM/INT trap above never fires no
+# matter what Hyprland does. Fix: watch our own parent (gamescope) directly
+# and self-destruct the instant it's gone, for ANY reason - no signal
+# forwarding required.
+(
+    ParentPid="$PPID"
+    while kill -0 "$ParentPid" 2>/dev/null; do
+        sleep 1
+    done
+    ForceKillEverything
+) &
+WatchdogPid=$!
+
+# gamescope reports itself as "ready" (and sets DISPLAY/WAYLAND_DISPLAY for
+# this child) slightly before its own nested Xwayland socket is actually
+# accepting connections. Wine's X11 driver tries to connect essentially
+# immediately on startup - if it loses that race, it silently sits waiting
+# with no window ever created and no useful error. Confirmed cause of
+# "Wine hangs under gamescope but works fine standalone" (2026-10-17
+# debugging session). Fix: actively poll the socket ourselves for up to a
+# few seconds before ever handing off to Wine - fail-safe: if nothing
+# answers in time, fall through and let Wine try anyway rather than block
+# the launch entirely.
+if [ -n "${DISPLAY:-}" ]; then
+    WaitedForX=0
+    while [ "$WaitedForX" -lt 50 ]; do
+        if command -v xdpyinfo >/dev/null 2>&1; then
+            xdpyinfo -display "$DISPLAY" >/dev/null 2>&1 && break
+        else
+            SocketNum="${DISPLAY#:}"
+            SocketNum="${SocketNum%%.*}"
+            [ -S "/tmp/.X11-unix/X$SocketNum" ] && break
+        fi
+        sleep 0.1
+        WaitedForX=$((WaitedForX + 1))
+    done
+fi
 
 # Run the actual game command.
 "$@" &
@@ -434,78 +455,36 @@ while AnyGameProcessAlive; do
     sleep 1
 done
 
+# Normal, clean exit path - the watchdog subshell would otherwise be left
+# running forever as an orphan once this script exits.
+kill "$WatchdogPid" 2>/dev/null
 SUPERVISOR_EOF
 chmod +x "$LaunchScript"
 trap 'rm -f "$LaunchScript"' EXIT
 
 export GameScopeWrapperActive="1"
-
-# Pick a free X display number for Xephyr. Starting at :50 keeps us well
-# clear of real displays (:0, :1...) and of any other nested session.
-XephyrDisplayNum=50
-while [ -e "/tmp/.X11-unix/X$XephyrDisplayNum" ]; do
-    XephyrDisplayNum=$((XephyrDisplayNum + 1))
-done
-XephyrDisplay=":$XephyrDisplayNum"
-
-# -resizeable by default so the window behaves like a normal Hyprland
-# window (matches gamescope's old borderless behavior closely enough);
-# ForceWindowsFullscreen maps to Xephyr's own -fullscreen instead, which
-# is the closest equivalent Xephyr offers. No FSR/NIS upscaling filter or
-# scaler mode exists in Xephyr - this is the one real feature loss versus
-# gamescope, traded for something that actually starts.
-XephyrModeFlags=(-resizeable)
+# Disables gamescope's Vulkan WSI interception layer for the wrapped game.
+# Confirmed root cause of a real crash (Paradise Beach, and likely other
+# titles using less common texture formats): gamescope's WSI hook chokes
+# on certain formats even when Wine's own wined3d renderer handles them
+# fine on its own (reproduced with wined3d forced to its OpenGL backend
+# too - the crash is specifically in gamescope's interception, not Wine).
+# Confirmed fix: with this disabled, the exact same game/format combo runs
+# through gamescope without crashing. Global default, not per-game - the
+# WSI layer mainly buys gamescope some Vulkan-level present optimizations
+# that legacy titles running through wined3d don't meaningfully benefit
+# from anyway.
+export ENABLE_GAMESCOPE_WSI=0
+ExtraGamescopeFlags=()
 if [ "$ForceWindowsFullscreen" = "true" ]; then
-    XephyrModeFlags=(-fullscreen)
+    ExtraGamescopeFlags+=("--force-windows-fullscreen")
 fi
-
-XephyrLog="$(mktemp /tmp/xephyr-log-XXXXXX.log)"
-Xephyr "${XephyrModeFlags[@]}" -screen "${OutputWidth}x${OutputHeight}" -title "GameScope" "$XephyrDisplay" >"$XephyrLog" 2>&1 &
-XephyrPid=$!
-
-# Wait for Xephyr to actually accept connections before handing off to
-# Wine - the same kind of startup race gamescope had, guarded against
-# here too, except this time against a backend that's proven to work.
-WaitedForX=0
-XReady="no"
-while [ "$WaitedForX" -lt 100 ]; do
-    if ! kill -0 "$XephyrPid" 2>/dev/null; then
-        break
-    fi
-    if command -v xdpyinfo >/dev/null 2>&1; then
-        xdpyinfo -display "$XephyrDisplay" >/dev/null 2>&1 && { XReady="yes"; break; }
-    else
-        [ -S "/tmp/.X11-unix/X$XephyrDisplayNum" ] && { XReady="yes"; break; }
-    fi
-    sleep 0.1
-    WaitedForX=$((WaitedForX + 1))
-done
-
-if [ "$XReady" != "yes" ]; then
-    kill -9 "$XephyrPid" 2>/dev/null
-    rm -f "$LaunchScript" "$XephyrLog"
-    # Fail open rather than silently not starting the game at all.
-    exec "$RealBin" "$@"
-fi
-
-export DISPLAY="$XephyrDisplay"
-bash "$LaunchScript" "$RealBin" "$@" &
-SupervisorPid=$!
-
-# If Xephyr itself dies for any reason (its window closed, a crash, or
-# SmartClose.sh escalating to kill() on it), take the game down with it.
-(
-    while kill -0 "$XephyrPid" 2>/dev/null; do
-        sleep 1
-    done
-    kill -TERM "$SupervisorPid" 2>/dev/null
-) &
-XephyrWatchdogPid=$!
-
-wait "$SupervisorPid"
-SupervisorExitCode=$?
-
-kill "$XephyrWatchdogPid" 2>/dev/null
-kill -9 "$XephyrPid" 2>/dev/null
-rm -f "$LaunchScript" "$XephyrLog"
-exit "$SupervisorExitCode"
+gamescope \
+    -W "$OutputWidth" -H "$OutputHeight" \
+    -F "$Filter" -S "$Scaler" --fsr-sharpness "$Sharpness" \
+    -b \
+    "${ExtraGamescopeFlags[@]}" \
+    -- bash "$LaunchScript" "$RealBin" "$@"
+GamescopeExitCode=$?
+rm -f "$LaunchScript"
+exit "$GamescopeExitCode"
