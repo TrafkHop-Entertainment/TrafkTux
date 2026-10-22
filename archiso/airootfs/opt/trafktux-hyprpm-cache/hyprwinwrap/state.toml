@@ -1,0 +1,11 @@
+[hyprwinwrap]
+enabled = true
+failed = false
+filename = 'hyprwinwrap.so'
+
+[repository]
+author = 'gen3vra'
+hash = 'b9eef0296e25e668803bf132562f931adfa6db77'
+name = 'hyprwinwrap'
+rev = ''
+url = 'https://github.com/gen3vra/hyprwinwrap'

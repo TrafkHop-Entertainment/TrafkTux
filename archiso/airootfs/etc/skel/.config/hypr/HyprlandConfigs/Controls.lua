@@ -476,6 +476,7 @@ local function floating_focus_direction(active, direction)
                 .. (wrapped and " (per Wraparound, kein Fenster direkt in der Richtung)" or "")
         )
         hl.dispatch(hl.dsp.focus({ window = best }))
+        hl.dispatch(hl.dsp.window.alter_zorder({ mode = "top", window = best }))
         return true
     end
     debug_float_nav(

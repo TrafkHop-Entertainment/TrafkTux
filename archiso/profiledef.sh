@@ -31,11 +31,8 @@ file_permissions=(
 
   ["/usr/local/lib/trafktux/SystemUpdate.sh"]="0:0:755"
 
+  ["/etc/sudoers.d/00-sudo-timeout"]="0:0:0440"
+
   # Calamares-Starter + Skripte
   ["/usr/local/bin/Installation_guide"]="0:0:755"
-
-  # deine Hypr-Skripte (unveraendert)
-  ["/etc/skel/.config/hypr/layout_switcher.sh"]="0:0:755"
-  ["/etc/skel/.config/hypr/random_wallpaper.sh"]="0:0:755"
-  ["/etc/skel/.config/hypr/TrafkCursor_Build/build_theme.sh"]="0:0:755"
 )

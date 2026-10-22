@@ -491,7 +491,14 @@ Still to be themed / done:
 
 - The ISO doesn't currently boot – since the distro is still in development, this is a minor issue that will be fixed soon. Some grub permission problem or something
 - The HideAll feature does not work correctly with the app backgrounds. if one is active, the script will become very slow and you will be transported to the hidden workspace of the hidden apps, wich does not happen without it. the script fails to send the background image app into the other workspace – it should ignore it instead.
-- If Apps is chosen in the wallpaper settings menu, any app that will be opened that is the "same" app, will be also set as a background app.
+- The navigation also does not work correctly with apps as wallpapers as they block... idk it does not work correctly
+- Die Background app still registers in the bar as a normal app
+- BIG STUFF
+  1. Der Gamescope Wrapper geht nicht mehr, weil gamescope irgendwas hat
+  2. Das System hängt sich manchmal auf
+  3. Der xfdesktop oder hyprwinwrap oder hyprpaper entziehen der apps das tastaturtippen. man will was in ner app mit der tastatur machen, aber es geht auf den desktop (man merkt es besonders mit 2 monitoren)
+  4. VSCodium manchmal irgendwann öffnet es sich einfach nicht mehr. das hängt irgendwie mit gamescope zusammen. hat zum gleichen zeitpunkt angefangen
+- xfdesktop can crash and there is no daemon restarting it
 
 ### Other Stuff
 - Finish System Sounds - tortenboxer
@@ -499,6 +506,6 @@ Still to be themed / done:
 - Make SDDM Buttons
 - Make custom Buttons for GUI
 - Mouse cursor redesign
-- waybar pixel offset under monitor still not configurable
 - Wallpapers – partyheld
 - Transfer Widgets FIles to new Folder and other FIles still in old waybar folder
+- Transfer all sound related stuff in SoundCenter

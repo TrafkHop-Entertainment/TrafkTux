@@ -24,6 +24,17 @@ hl.config({
     },
 })
 
+-- Eigenes kb_layout (z.B. von der "Appearance & Language"-Einstellung
+-- gesetzt). Lebt bewusst NICHT in HyprlandConfigs/ (also nicht im
+-- Repo/Paket) - ein Systemupdate ersetzt nur hyprland.lua +
+-- HyprlandConfigs/, diese Datei bleibt unangetastet. MUSS NACH dem
+-- obigen hl.config({input=...}) stehen - Hyprland-Config ist additiv,
+-- der zweite Aufruf überschreibt hier gezielt nur kb_layout, alle
+-- anderen input-Defaults oben bleiben unangetastet. pcall(dofile, ...)
+-- statt require(): siehe Begründung in Autostart.lua/Display.lua -
+-- sicher, falls die Datei (noch) nicht existiert.
+pcall(dofile, os.getenv("HOME") .. "/.config/hypr/HyprlandUserConfigs/UserInput.lua")
+
 -- Bindet Touchscreen(s)/Tablett(s) an den physisch richtigen Monitor.
 -- Lebt bewusst NICHT in HyprlandConfigs/ (also nicht im Repo/Paket) -
 -- ein Systemupdate ersetzt nur hyprland.lua + HyprlandConfigs/, diese

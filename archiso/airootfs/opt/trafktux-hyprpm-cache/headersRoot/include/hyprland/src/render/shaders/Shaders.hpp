@@ -1,6 +1,12 @@
 #pragma once
-#include <map>
-static const std::map<std::string, std::string> SHADERS = {
+#include <algorithm>
+#include <array>
+#include <string_view>
+#include <utility>
+inline constexpr auto SHADERS = [](auto shaders) {
+std::ranges::sort(shaders, {}, [](auto pair) { return pair.first; });
+return shaders;
+}(std::to_array<std::pair<std::string_view, std::string_view>>({
 {"blur1.frag",
 #include "./blur1.frag.inc"
 },
@@ -52,11 +58,17 @@ static const std::map<std::string, std::string> SHADERS = {
 {"glitch.frag",
 #include "./glitch.frag.inc"
 },
+{"gradient.glsl",
+#include "./gradient.glsl.inc"
+},
 {"inner_glow.frag",
 #include "./inner_glow.frag.inc"
 },
 {"inner_glow.glsl",
 #include "./inner_glow.glsl.inc"
+},
+{"motion_blur.glsl",
+#include "./motion_blur.glsl.inc"
 },
 {"passthru.frag",
 #include "./passthru.frag.inc"
@@ -88,4 +100,4 @@ static const std::map<std::string, std::string> SHADERS = {
 {"tonemap.glsl",
 #include "./tonemap.glsl.inc"
 },
-};
+}));

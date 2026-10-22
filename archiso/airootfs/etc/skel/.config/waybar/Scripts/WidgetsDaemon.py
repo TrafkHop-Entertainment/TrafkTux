@@ -7,7 +7,7 @@ Widgets: volume | network | bluetooth | brightness | akku | clock | settings | s
 """
 
 import gi, sys, os, re, signal, subprocess, json, threading, time, calendar, shutil, traceback, shlex
-import random, math, glob, stat, tempfile
+import random, math, glob, stat, tempfile, configparser
 from datetime import datetime, date
 from pathlib import Path
 
@@ -74,21 +74,40 @@ def _resolve_wallpaper_script() -> str:
 WALLPAPER_DIR = f"{HOME}/.config/hypr/Wallpapers"
 _WALLPAPER_EXTS = (".jpg", ".jpeg", ".png", ".webp")
 
-def _scan_wallpaper_images() -> list[str]:
+def _scan_wallpaper_images(subfolder: str | None = None) -> list[str]:
     """Rein lesendes os.walk() über lokale Dateien - schnell genug für
     einen synchronen Aufruf. Das eigentliche Preview-Rendering (siehe
     _build_appearance_wallpapers_tab) läuft trotzdem in einem eigenen
     Thread, da GdkPixbuf.Pixbuf.new_from_file_at_scale() bei vielen
     bzw. großen Bildern durchaus spürbar dauern kann und den GTK-
-    Main-Thread sonst blockieren würde."""
-    if not os.path.isdir(WALLPAPER_DIR):
+    Main-Thread sonst blockieren würde. subfolder (Punkt 10): scannt
+    nur GENAU diesen direkten Unterordner statt des ganzen Baums - für
+    die prozeduralen Ratio-Untertabs."""
+    base = os.path.join(WALLPAPER_DIR, subfolder) if subfolder else WALLPAPER_DIR
+    if not os.path.isdir(base):
         return []
     out = []
-    for root, _dirs, files in os.walk(WALLPAPER_DIR):
+    for root, _dirs, files in os.walk(base):
         for f in files:
             if f.lower().endswith(_WALLPAPER_EXTS):
                 out.append(os.path.join(root, f))
     return sorted(out)
+
+def _list_wallpaper_subfolders() -> list[str]:
+    """Punkt 10: "der Wallpapers Ordner hat ja verschiedene Unterordner
+    [...] jeder Ordner der in Wallpapers drinnen ist soll ein neuer
+    Untertab werden - auch gut für user created ordner" - der Name ist
+    dabei egal (11/43/169/219/329/1610 aus Wallpapers.sh sind nur die
+    *Default*-Namen), JEDER direkte Unterordner zählt."""
+    if not os.path.isdir(WALLPAPER_DIR):
+        return []
+    try:
+        return sorted(
+            d for d in os.listdir(WALLPAPER_DIR)
+            if os.path.isdir(os.path.join(WALLPAPER_DIR, d)) and not d.startswith(".")
+        )
+    except Exception:
+        return []
 
 # ════════════════════════════════════════════════════════════
 #  AppWallpaper (hyprwinwrap-Toggle: Pictures vs. gewrapptes
@@ -98,268 +117,288 @@ def _scan_wallpaper_images() -> list[str]:
 #  ein beliebiges Fenster (per Fensterklasse ausgewählt) hinter alle
 #  anderen Fenster, als Live-Hintergrund.
 #
-#  KORREKTUR (siehe Chat): die allererste Version hier hat
-#  `hyprctl keyword plugin:hyprwinwrap:class ...` benutzt - das war
-#  schlicht erfunden, es gibt gar keinen hyprctl-keyword-Weg für dieses
-#  Plugin. Laut echtem README ist die Registrierung NUR über die
-#  Lua-Config möglich (`hl.plugin.hyprwinwrap.window({...})`, siehe
-#  AppWallpaper.lua). Ein Live-Toggle (während Hyprland schon läuft)
-#  geht daher nur über `hyprctl reload` (lässt Hyprland hyprland.lua
-#  und damit AppWallpaper.lua neu einlesen) statt über ein einzelnes
-#  Keyword. Ablauf pro Umschalten:
-#    1. alten gewrappten App-Prozess beenden (falls einer lief)
-#    2. Zustand nach ~/.config/hypr/HyprlandUserConfigs/appwallpaper_state.lua
-#       schreiben (gleiche Syntax wie der Rest der hyprland.lua-Welt -
-#       kein extra JSON-Parser in Lua nötig; liegt bewusst in
-#       HyprlandUserConfigs/ statt direkt in hypr/ - siehe Kommentar bei
-#       APPWALLPAPER_STATE_LUA unten)
-#    3. `hyprctl reload` - registriert (oder eben nicht, falls
-#       enabled=false) die Fensterklasse bei hyprwinwrap neu
-#    4. falls aktiviert: neuen App-Prozess starten, damit ein Fenster
-#       mit der registrierten Klasse überhaupt existiert
-#  hl.on("hyprland.start", ...) in AppWallpaper.lua startet die App
-#  zusätzlich beim ECHTEN Hyprland-Start/Login automatisch - das
-#  passiert dort bewusst NICHT bei jedem `hyprctl reload` (sonst würde
-#  reload hier in Schritt 3 die App ein zweites Mal starten).
+#  KORREKTUR (siehe Chat, Punkt 7 - mehrere gleichzeitige Instanzen):
+#  state ist jetzt eine LISTE von Einträgen ("entries") statt eines
+#  einzelnen {enabled,class,exec,monitor}-Zustands - mehrere Apps
+#  können gleichzeitig als Hintergrund laufen (z.B. eine pro Monitor).
+#  JSON unter ~/.config/TrafkTuxWidgets/ ist die Quelle der Wahrheit -
+#  Python liest/schreibt NUR diese JSON-Datei, nie mehr die Lua-Datei
+#  zurück (JSON-Listen in simplen Regexes nachzubauen wäre fragil).
+#  appwallpaper_state.lua (weiterhin unter HyprlandUserConfigs/, siehe
+#  bisherige Konvention) wird aus der JSON GENERIERT - reines
+#  Schreiben, AppWallpaper.lua ist der einzige Leser.
+#
+#  Ablauf pro neuem Eintrag (_appwallpaper_add):
+#    1. Eintrag an die JSON-Liste anhängen, Lua-Datei neu generieren
+#    2. `hyprctl reload` - registriert ALLE Einträge (auch schon
+#       laufende, erneutes Matchen ist unschädlich) bei hyprwinwrap neu
+#    3. neuen Prozess starten + Monitor-Fokus + Zentrierung
+#  Bestehende Einträge bleiben beim Hinzufügen eines neuen unberührt.
+#  hl.on("hyprland.start", ...) in AppWallpaper.lua startet beim
+#  echten Login alle Einträge der Liste automatisch.
 # ════════════════════════════════════════════════════════════
-# KORREKTUR (siehe Chat): umgesiedelt von direkt ~/.config/hypr/ nach
-# HyprlandUserConfigs/ - dieselbe Konvention wie UserDisplay.lua
-# (siehe Display.lua): alles, was reines Laufzeit-/Nutzer-spezifisches
-# Zeug ist statt versioniertem Repo-Inhalt, gehört dort rein, damit ein
-# Distro-/Repo-Update die Datei nie anfasst/überschreibt. Für
-# AppWallpaper.lua's dofile()-Pfad entsprechend mitgezogen (siehe dort).
+APPWALLPAPER_CONF_DIR = Path(HOME) / ".config" / "TrafkTuxWidgets"
+APPWALLPAPER_ENTRIES_JSON = APPWALLPAPER_CONF_DIR / "appwallpaper_entries.json"
+VLC_PATHS_CONF = APPWALLPAPER_CONF_DIR / "UserVLCPaths.json"
 APPWALLPAPER_STATE_LUA = Path(HOME) / ".config" / "hypr" / "HyprlandUserConfigs" / "appwallpaper_state.lua"
 
-# Die zwei standardmäßig unterstützten Apps (siehe Chat) + Custom als
-# dritte, freie Option - keine generischen Platzhalter mehr, sondern
-# konkret die 2 vom Nutzer genannten Programme.
-#
-# TrafkVerseScreensaver: fester Pfad, keine Benutzereingabe nötig.
-#
-# KORREKTUR (siehe Chat): die Fensterklasse ist jetzt NICHT mehr dieselbe
-# wie bei einem normalen/manuellen Start der App. TrafkVerseScreensaver.c
-# setzt standardmäßig WM_CLASS/app_id "TrafkVerseScreensaver" - mit dem
-# neuen, nur HIER verwendeten --wallpaper-Flag (siehe
-# _trafkverse_exec_cmd() unten) aber stattdessen
-# "TrafkVerseScreensaverWallpaper". Grund: AppWallpaper.lua matcht die
-# window_rule + hyprwinwrap-Registrierung rein klassenbasiert auf
-# state.class - solange die alte, gemeinsame Klasse verwendet wurde, griff
-# das bei JEDEM Fenster dieser Klasse, auch einem ganz normal/manuell
-# gestarteten Testlauf, nicht nur bei dem über diesen Knopf hier
-# gestarteten Prozess (float=true + hyprwinwraps 100%/100%-Zwang,
-# dauerhaft, solange enabled=true gesetzt blieb - das war der gemeldete
-# "warum floatet/resized das auch ohne Wallpaper-Widget nicht"-Bug). Die
-# eigene Wallpaper-Klasse stellt sicher, dass nur ein über DIESEN Knopf
-# gestarteter Prozess je gegriffen wird.
 APPWALLPAPER_TRAFKVERSE_EXEC = str(
     Path(HOME) / ".local" / "share" / "TrafkHopEntertainment" /
-    "TrafkVerseScreensaver" / "TrafkVerseScreensaver")
-APPWALLPAPER_TRAFKVERSE_CLASS_GUESS = "TrafkVerseScreensaverWallpaper"
-
-# VLC: Pfad (Datei ODER Ordner, alles was VLC abspielen kann) kommt
-# vom Nutzer, siehe _vlc_exec_cmd() weiter unten. Fensterklasse von
-# VLC ist standardmäßig "vlc" (WM_CLASS), auch unter Wayland/XWayland.
+    "TrafkVerseWallpaper" / "TrafkVerseWallpaper")
+# "...WallpaperWallpaper" ist die eigene WM_CLASS, die
+# TrafkVerseWallpaper.c NUR mit --wallpaper setzt (siehe dortiger
+# GOptWallpaperMode-Kommentar) - ein normaler/manueller Start bleibt
+# dadurch von AppWallpaper.lua's window_rule/hyprwinwrap-Registrierung
+# unberührt. Etwas unschön doppelt ("Wallpaper" + "Wallpaper"), aber
+# exakt der String, den der C-Code tatsächlich als WM_CLASS setzt -
+# falls ihr das im C nochmal umbenennt, bitte hier synchron halten.
+APPWALLPAPER_TRAFKVERSE_CLASS_BASE = "TrafkVerseWallpaperWallpaper"
 APPWALLPAPER_VLC_CLASS = "vlc"
 
-def _trafkverse_exec_cmd(width: int, height: int, muted: bool) -> str:
-    """Baut den Launch-Befehl für TrafkVerseScreensaver inkl. der
-    --width/--height/--silent CLI-Flags (siehe Chat - window_rule-
-    basiertes Resizing hat bei dieser App nicht funktioniert, da
-    hyprwinwrap das Fenster offenbar vor dem eigentlichen Resize-Apply
-    greift; die App bekommt die Zielgröße jetzt stattdessen direkt beim
-    Start mit) PLUS --wallpaper (siehe Kommentar bei
-    APPWALLPAPER_TRAFKVERSE_CLASS_GUESS oben - setzt die eigene
-    Wallpaper-WM_CLASS, damit nur dieser Launch-Pfad von der
-    window_rule/hyprwinwrap-Registrierung gegriffen wird, nicht jeder
-    manuelle/normale Start der App)."""
+def _trafkverse_exec_cmd(width: int, height: int, muted: bool, class_suffix: str = "") -> str:
+    """--width/--height/--silent/--wallpaper wie bisher, PLUS
+    --class-suffix (Punkt 7 - siehe TrafkVerseWallpaper.c,
+    GOptClassSuffix) für Mehrfachinstanzen: macht die Wallpaper-Klasse
+    pro Instanz eindeutig, sonst könnte hyprwinwrap zwei gleichzeitig
+    laufende Instanzen (z.B. je Monitor eine) nicht auseinanderhalten."""
     cmd = (
         f"{shlex.quote(APPWALLPAPER_TRAFKVERSE_EXEC)} "
         f"--width {int(width)} --height {int(height)} --wallpaper"
     )
     if muted:
         cmd += " --silent"
+    if class_suffix:
+        cmd += f" --class-suffix {shlex.quote(class_suffix)}"
     return cmd
 
-def _vlc_exec_cmd(path: str) -> str:
-    """Baut den VLC-Launch-Befehl für einen vom Nutzer eingegebenen
-    Datei- oder Ordnerpfad (VLC spielt Ordner als Playlist ab - gleicher
-    Aufruf für beide Fälle). shlex.quote() schützt vor Leerzeichen/
-    Sonderzeichen im Pfad beim späteren `bash -c`-Aufruf in
-    _appwallpaper_apply()."""
+# VLC-Medienmodi (Punkt 9: Image/Audio/Video statt nur "Start"):
+# Image/Video laufen als hyprwinwrap-Hintergrund (loop, keine
+# Bedienelemente - Punkt 6: --fullscreen blendet genau das aus).
+# Audio läuft NICHT gewrapt (kein Sinn bei fehlendem Video) und startet
+# stattdessen direkt minimiert in den System-Tray (Punkt 9 - "kein
+# winwrapper hier nötig", gleiches Minimize-Prinzip wie in
+# WaybarClicks.sh/HideAll.sh über hyprland-minimizer, nur dass VLC
+# seine eigene Qt-Tray-Integration mitbringt).
+def _vlc_exec_cmd(path: str, mode: str, muted: bool, title_tag: str = "") -> str:
+    """mode: 'image' | 'video' -> gewrapptes Loop-Vollbild ohne
+    Bedienelemente (Punkt 6). title_tag (optional, Punkt 7): setzt
+    --meta-title, damit mehrere gleichzeitige VLC-Instanzen (gleiche
+    WM_CLASS "vlc") sich über den Fenstertitel unterscheiden lassen -
+    hyprwinwrap matcht optional zusätzlich auf 'title' (siehe
+    AppWallpaper.lua). Best-effort: die exakte resultierende VLC-
+    Fenstertitel-Zeichenkette kann je nach Version/Locale leicht
+    abweichen - bei Problemen mit mehreren VLC-Instanzen gleichzeitig
+    einmal mit `hyprctl clients` die tatsächliche title/class
+    gegenchecken."""
     expanded = os.path.expanduser(path.strip())
-    return f"vlc --loop --no-video-title-show {shlex.quote(expanded)}"
+    cmd = "vlc --loop --no-video-title-show --fullscreen --no-qt-privacy-ask " \
+          "--qt-minimal-view"
+    if muted:
+        cmd += " --no-audio"
+    if title_tag:
+        cmd += f" --meta-title {shlex.quote(title_tag)}"
+    cmd += f" {shlex.quote(expanded)}"
+    return cmd
+
+def _vlc_audio_exec_cmd(path: str, muted: bool) -> str:
+    """Punkt 9, Audio-Knopf: normales VLC, kein Fullscreen/Wallpaper-
+    Modus, startet aber direkt minimiert in den System-Tray
+    (--qt-system-tray + --qt-start-minimized) - kein hyprwinwrap nötig,
+    dafür auch kein --meta-title/Entries-Tracking."""
+    expanded = os.path.expanduser(path.strip())
+    cmd = "vlc --qt-system-tray --qt-start-minimized --no-video-title-show"
+    if muted:
+        cmd += " --no-audio"
+    cmd += f" {shlex.quote(expanded)}"
+    return cmd
 
 def _guess_window_class(exec_cmd: str) -> str:
-    """Für Custom: statt eines eigenen Fensterklasse-Feldes (siehe
-    Chat - "ein einziges Textfeld") raten wir die Klasse aus dem
-    Launch-Befehl selbst - der Binary-Name OHNE Pfad ist bei den
-    meisten Apps auch die WM_CLASS/App-ID (siehe TrafkVerseScreensaver
-    und vlc oben - beide folgen genau diesem Muster). Trifft's nicht,
-    kann man's immer noch selbst mit `hyprctl clients` nachschauen und
-    den Custom-Befehl entsprechend mit --class=/--app-id= erweitern."""
+    """Für Custom: Klasse aus dem Launch-Befehl selbst geraten (Binary-
+    Name ohne Pfad). KEIN eingebauter Mehrfachinstanz-Support (Punkt 7)
+    für Custom-Befehle - wir kennen das Flag-Format fremder Programme
+    nicht, können also keine --class-suffix-artige Eindeutigkeit
+    erzwingen. Der "All Displays"-Modus ist für Custom deshalb bewusst
+    deaktiviert (siehe UI)."""
     try:
         first = shlex.split(exec_cmd.strip())[0]
     except Exception:
         first = exec_cmd.strip().split(" ", 1)[0] if exec_cmd.strip() else ""
     return os.path.basename(first)
 
-_appwallpaper_proc_pid: int | None = None  # live gestarteter App-Prozess (Process-Group-Leader)
-
 def _lua_str_escape(s: str) -> str:
-    """Minimal-Escaping für einen Lua-Double-Quote-String-Literal -
-    reicht für die hier vorkommenden Shell-Befehle/Klassen (keine
-    eingebetteten Newlines o.ä. erwartet, aber \\ und " werden trotzdem
-    sauber behandelt, falls doch mal ein Pfad mit Anführungszeichen
-    o.ä. reinrutscht)."""
+    """Minimal-Escaping für ein Lua-Double-Quote-String-Literal."""
     return s.replace("\\", "\\\\").replace('"', '\\"')
 
-def _read_appwallpaper_state() -> dict:
-    """Liest appwallpaper_state.lua wieder ein - bewusst mit simplen
-    Regexes statt eines echten Lua-Parsers, weil WIR selbst die einzige
-    Quelle dieser Datei sind (siehe _write_appwallpaper_state) und ihr
-    Format daher immer exakt bekannt ist. Bei fehlender/kaputter Datei
-    einfach Defaults (= Pictures-Modus, nichts aktiv)."""
-    defaults = {"enabled": False, "class": "", "exec": "", "monitor": ""}
+# id -> Process-Group-Leader-PID der live gestarteten Prozesse.
+_appwallpaper_pids: dict[str, int] = {}
+
+def _read_appwallpaper_entries() -> list[dict]:
     try:
-        text = APPWALLPAPER_STATE_LUA.read_text(encoding="utf-8")
+        data = json.loads(APPWALLPAPER_ENTRIES_JSON.read_text(encoding="utf-8"))
+        entries = data.get("entries", [])
+        return entries if isinstance(entries, list) else []
     except Exception:
-        return defaults
-    out = dict(defaults)
-    m = re.search(r'enabled\s*=\s*(true|false)', text)
-    if m: out["enabled"] = (m.group(1) == "true")
-    m = re.search(r'class\s*=\s*"((?:[^"\\]|\\.)*)"', text)
-    if m: out["class"] = m.group(1).replace('\\"', '"').replace("\\\\", "\\")
-    m = re.search(r'exec\s*=\s*"((?:[^"\\]|\\.)*)"', text)
-    if m: out["exec"] = m.group(1).replace('\\"', '"').replace("\\\\", "\\")
-    m = re.search(r'monitor\s*=\s*"((?:[^"\\]|\\.)*)"', text)
-    if m: out["monitor"] = m.group(1).replace('\\"', '"').replace("\\\\", "\\")
-    return out
+        return []
 
-def _write_appwallpaper_state(enabled: bool, klass: str, exec_cmd: str, monitor: str) -> None:
+def _write_appwallpaper_entries(entries: list[dict]) -> None:
+    APPWALLPAPER_CONF_DIR.mkdir(parents=True, exist_ok=True)
+    APPWALLPAPER_ENTRIES_JSON.write_text(
+        json.dumps({"entries": entries}, indent=2), encoding="utf-8")
+    _write_appwallpaper_lua(entries)
+
+def _write_appwallpaper_lua(entries: list[dict]) -> None:
+    """Generiert appwallpaper_state.lua aus der JSON-Liste (reines
+    Schreiben, Python liest diese Datei nie zurück). Eine Lua-Tabelle
+    pro Eintrag; AppWallpaper.lua iteriert darüber und registriert für
+    JEDEN Eintrag ein eigenes hl.plugin.hyprwinwrap.window(...) + eine
+    eigene float-window_rule."""
     APPWALLPAPER_STATE_LUA.parent.mkdir(parents=True, exist_ok=True)
-    content = (
-        "-- Von WidgetsDaemon.py geschrieben (Apps-Untertab im\n"
-        "-- Wallpapers-Tab) - NICHT von Hand editieren, wird überschrieben.\n"
-        "-- Wird von AppWallpaper.lua per dofile() gelesen (siehe dortiger\n"
-        "-- Kommentar).\n"
-        "return {\n"
-        f'    enabled = {"true" if enabled else "false"},\n'
-        f'    class = "{_lua_str_escape(klass)}",\n'
-        f'    exec = "{_lua_str_escape(exec_cmd)}",\n'
-        f'    monitor = "{_lua_str_escape(monitor)}",\n'
-        "}\n"
-    )
-    APPWALLPAPER_STATE_LUA.write_text(content, encoding="utf-8")
+    lines = [
+        "-- Von WidgetsDaemon.py GENERIERT (aus "
+        f"{APPWALLPAPER_ENTRIES_JSON}) - NICHT von Hand editieren.",
+        "-- Wird von AppWallpaper.lua per dofile() gelesen.",
+        "return {",
+        "    entries = {",
+    ]
+    for e in entries:
+        lines.append("        {")
+        lines.append(f'            id = "{_lua_str_escape(e.get("id",""))}",')
+        lines.append(f'            class = "{_lua_str_escape(e.get("class",""))}",')
+        lines.append(f'            title = "{_lua_str_escape(e.get("title",""))}",')
+        lines.append(f'            exec = "{_lua_str_escape(e.get("exec",""))}",')
+        lines.append(f'            monitor = "{_lua_str_escape(e.get("monitor",""))}",')
+        lines.append("        },")
+    lines.append("    },")
+    lines.append("}")
+    APPWALLPAPER_STATE_LUA.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
-def _appwallpaper_kill_live_proc() -> None:
-    global _appwallpaper_proc_pid
-    if _appwallpaper_proc_pid is not None:
+def _appwallpaper_kill_entry(entry_id: str) -> None:
+    pid = _appwallpaper_pids.pop(entry_id, None)
+    if pid is not None:
         try:
-            os.killpg(_appwallpaper_proc_pid, signal.SIGTERM)
+            os.killpg(pid, signal.SIGTERM)
         except Exception:
             pass
-        _appwallpaper_proc_pid = None
 
-def _appwallpaper_apply(enabled: bool, klass: str, exec_cmd: str, monitor: str = "") -> None:
-    """Live-Umschalten (siehe Doku-Block oben) + Persistieren für den
-    nächsten Login/Neustart. Läuft über apply_change() im Hintergrund-
-    Thread, da hier mehrere blockierende subprocess-Aufrufe drin sind."""
-    # Alten gewrappten App-Prozess in jedem Fall erst beenden (egal ob
-    # wir gerade an- oder ausschalten, oder nur die App wechseln) -
-    # sonst laufen bei mehrfachem Umschalten irgendwann mehrere
-    # Instanzen gleichzeitig, und das alte Fenster würde beim neuen
-    # `hyprctl reload` ggf. noch kurz mitgewrapt.
-    _appwallpaper_kill_live_proc()
+def _appwallpaper_kill_all() -> None:
+    for eid in list(_appwallpaper_pids):
+        _appwallpaper_kill_entry(eid)
 
-    _write_appwallpaper_state(enabled, klass, exec_cmd, monitor)
+def _appwallpaper_start_one(entry: dict) -> None:
+    """Startet den Prozess EINES Eintrags + Monitor-Fokus + Zentrierung.
+    hyprctl-reload+Plugin-Check passieren VOR dem Aufruf dieser
+    Funktion, einmal für die ganze neue Entries-Liste, nicht pro
+    Eintrag."""
+    klass = entry.get("class", "")
+    monitor = entry.get("monitor", "")
+    exec_cmd = entry.get("exec", "")
+    if not exec_cmd.strip():
+        return
+    if monitor.strip():
+        # KORREKTUR (siehe Chat): "hyprctl dispatch focusmonitor <n>"
+        # ist die ALTE, positionale hyprlang-Syntax - seit Hyprland
+        # 0.55 nimmt `hyprctl dispatch` nur noch einen einzigen
+        # Lua-Ausdruck aus dem hl.dsp.*-Namespace entgegen.
+        dispatch_expr = 'hl.dsp.focus({ monitor = "%s" })' % _lua_str_escape(monitor)
+        run_ec(["hyprctl", "dispatch", dispatch_expr])
+    try:
+        p = subprocess.Popen(
+            ["bash", "-c", exec_cmd],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            start_new_session=True)
+        _appwallpaper_pids[entry["id"]] = p.pid
+    except Exception:
+        return
+    if klass.strip():
+        # sleep(1), damit die App (insb. VLC) zuerst ihre eigene
+        # Grössenanpassung abgeschlossen hat, BEVOR zentriert wird -
+        # hl.dsp.window.center() braucht zwingend das "class:"-Präfix
+        # im Selector (siehe Chat: ohne Präfix "No floating window
+        # found", selbst bei eindeutig floatendem Fenster).
+        time.sleep(1.0)
+        sel = "class:%s" % _lua_str_escape(klass)
+        if entry.get("title", "").strip():
+            sel += ",title:%s" % _lua_str_escape(entry["title"])
+        run_ec(["hyprctl", "dispatch",
+                'hl.dsp.window.center({ window = "%s" })' % sel])
+
+def _appwallpaper_add_many(specs: list[tuple[str, str, str, str, str]]) -> list[str]:
+    """Fügt MEHRERE neue Einträge in EINEM gebündelten write+reload
+    hinzu (Punkt 7, "All Displays" - mehrere Monitore gleichzeitig),
+    statt pro Eintrag einzeln zu reloaden. specs: Liste von
+    (kind, klass, exec_cmd, monitor, title). Gibt die neuen
+    Eintrags-IDs zurück (gleiche Reihenfolge wie specs)."""
+    entries = _read_appwallpaper_entries()
+    base_n = len(entries)
+    new_ids = []
+    for i, (kind, klass, exec_cmd, monitor, title) in enumerate(specs):
+        entry_id = f"{kind}-{int(time.time()*1000)}-{base_n + i}"
+        new_ids.append(entry_id)
+        entries.append({
+            "id": entry_id, "kind": kind, "class": klass,
+            "title": title, "exec": exec_cmd, "monitor": monitor,
+        })
+    _write_appwallpaper_entries(entries)
 
     plugin_loaded = "hyprwinwrap" in run(["hyprctl", "plugin", "list"])
-    if enabled and not plugin_loaded:
+    if not plugin_loaded:
         raise RuntimeError(
             "hyprwinwrap-Plugin nicht geladen (siehe 'hyprctl plugin "
             "list') - Apps-Modus bleibt aus.")
+    run(["hyprctl", "reload"])
+    new_entries = entries[base_n:]
+    for e in new_entries:
+        _appwallpaper_start_one(e)
+    return new_ids
 
-    # Lässt Hyprland hyprland.lua (und damit AppWallpaper.lua) neu
-    # einlesen - der einzige Weg, hyprwinwrap.window(...) mit der neuen
-    # Fensterklasse neu zu registrieren (siehe Doku-Block oben, es gibt
-    # keinen hyprctl-keyword-Weg dafür).
+def _appwallpaper_add(kind: str, klass: str, exec_cmd: str, monitor: str,
+                       title: str = "") -> str:
+    """Fügt EINEN neuen Eintrag hinzu (Einzelstart, z.B. Custom - immer
+    nur ein Monitor). Für Mehrfachstarts siehe _appwallpaper_add_many()."""
+    return _appwallpaper_add_many([(kind, klass, exec_cmd, monitor, title)])[0]
+
+def _appwallpaper_remove(entry_id: str) -> None:
+    """Beendet EINEN Eintrag und entfernt ihn aus der Liste, lässt alle
+    anderen laufenden Einträge unangetastet."""
+    _appwallpaper_kill_entry(entry_id)
+    entries = [e for e in _read_appwallpaper_entries() if e.get("id") != entry_id]
+    _write_appwallpaper_entries(entries)
     run(["hyprctl", "reload"])
 
-    if enabled and exec_cmd.strip():
-        global _appwallpaper_proc_pid
-        if monitor.strip():
-            # WICHTIG: hyprwinwrap hat kein eigenes Monitor-Feld und
-            # berechnet pos_x/pos_y/size_x/size_y als Prozent des
-            # Monitors, auf dem das Fenster beim Greifen gerade sitzt.
-            # Die window_rule mit monitor=... in AppWallpaper.lua kommt
-            # dafür zu spät (siehe _trafkverse_exec_cmd-Kommentar - greift
-            # erst NACH hyprwinwrap). Neue Fenster öffnen in Hyprland
-            # standardmäßig auf dem fokussierten Monitor - also hier
-            # explizit vorher dorthin fokussieren, sonst landet die App
-            # auf dem falschen (zufällig fokussierten) Monitor und
-            # hyprwinwraps 100%/100% decken dort zwar voll ab, aber nicht
-            # den Monitor, den der Nutzer eigentlich sieht/meint.
-            #
-            # KORREKTUR (siehe Chat): "hyprctl dispatch focusmonitor
-            # <name>" ist die ALTE, positionale hyprlang-Syntax - seit
-            # Hyprland 0.55 nimmt `hyprctl dispatch` nur noch einen
-            # EINZIGEN Lua-Ausdruck aus dem hl.dsp.*-Namespace entgegen
-            # (siehe wiki.hypr.land/Configuring/Basics/Dispatchers),
-            # alles andere schlägt fehl. Der alte Aufruf lief daher
-            # jedes Mal lautlos ins Leere (run() prüft weder Exit-Code
-            # noch stderr) - das war der eigentliche Grund, warum der
-            # Monitor-Fokus nie griff. Monitor-Fokus ist jetzt Teil von
-            # hl.dsp.focus({...}) (bestätigt u.a. im Hyprland-Forum,
-            # "hl.dispatch(hl.dsp.focus({ monitor = ... }))"), als
-            # Lua-String-Literal übergeben - _lua_str_escape() schützt
-            # vor Anführungszeichen im Monitornamen.
-            dispatch_expr = 'hl.dsp.focus({ monitor = "%s" })' % _lua_str_escape(monitor)
-            _out, _err, _ec = run_ec(["hyprctl", "dispatch", dispatch_expr])
-            if _ec != 0:
-                run(["bash", "-c",
-                     "notify-send 'Hyprland' 'Monitor-Fokus für AppWallpaper fehlgeschlagen "
-                     "(hyprctl dispatch): " + (_err or _out).replace("'", "'\\''") +
-                     "' -u critical || true"])
-        try:
-            p = subprocess.Popen(
-                ["bash", "-c", exec_cmd],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                start_new_session=True)
-            _appwallpaper_proc_pid = p.pid
-        except Exception:
-            pass
+def _appwallpaper_remove_all() -> None:
+    """Beendet ALLE laufenden Einträge (z.B. beim Zurückwechseln zu
+    Pictures/einem statischen Bild)."""
+    _appwallpaper_kill_all()
+    _write_appwallpaper_entries([])
+    run(["hyprctl", "reload"])
 
-        # KORREKTUR (siehe Chat): .resize/.move per Live-Dispatch bringen
-        # nachweislich nichts (hyprwm/Hyprland#16446 - window_rule-
-        # size/move wird unter dem neuen Lua-Parser für floatende
-        # Fenster komplett ignoriert, dieselbe Einschränkung scheint
-        # auch die direkten Dispatch-Varianten zu treffen). Für
-        # TrafkVerseScreensaver liegt der Fix jetzt client-seitig in
-        # TrafkVerseScreensaver.c (SDL_SetWindowMinimumSize/MaximumSize).
-        #
-        # Für VLC (fremder Code, kein Zugriff auf die Größen-Vorgabe)
-        # bleibt die Positionierung - aber hl.dsp.window.center() nimmt
-        # nachweislich einen ANDEREN, funktionierenden Codepfad (per
-        # Nutzer-Test bestätigt: 672x378-Fenster auf HDMI-A-1 landete
-        # exakt zentriert bei [624,-729] = (1920-672)/2, -1080+(1080-
-        # 378)/2). WICHTIG: der Window-Selector MUSS das "class:"-Präfix
-        # haben - ohne Präfix meldet der Dispatcher "No floating window
-        # found", selbst bei einem eindeutig floatenden Fenster.
-        # sleep(1), damit VLC zuerst seine eigene (selbstständige)
-        # Grössenanpassung Richtung Vollbild abgeschlossen hat, BEVOR
-        # zentriert wird - Zentrieren vor diesem Wachstum würde nur die
-        # anfängliche kleine Default-Größe zentrieren und beim
-        # nachträglichen Wachstum wieder aus der Mitte rücken.
-        if klass.strip():
-            time.sleep(1.0)
-            expr = 'hl.dsp.window.center({ window = "class:%s" })' % _lua_str_escape(klass)
-            _out, _err, _ec = run_ec(["hyprctl", "dispatch", expr])
-            if _ec != 0:
-                run(["bash", "-c",
-                     "notify-send 'Hyprland' 'AppWallpaper-Zentrierung "
-                     "fehlgeschlagen: " + (_err or _out).replace("'", "'\\''") +
-                     "' -u critical || true"])
+def _read_vlc_paths() -> list[str]:
+    try:
+        data = json.loads(VLC_PATHS_CONF.read_text(encoding="utf-8"))
+        paths = data.get("paths", [])
+        return [p for p in paths if isinstance(p, str)]
+    except Exception:
+        return []
 
+def _write_vlc_paths(paths: list[str]) -> None:
+    APPWALLPAPER_CONF_DIR.mkdir(parents=True, exist_ok=True)
+    seen = set(); dedup = []
+    for p in paths:
+        if p not in seen:
+            seen.add(p); dedup.append(p)
+    VLC_PATHS_CONF.write_text(json.dumps({"paths": dedup}, indent=2), encoding="utf-8")
+
+def _add_vlc_path(path: str) -> list[str]:
+    paths = _read_vlc_paths()
+    if path not in paths:
+        paths.append(path)
+        _write_vlc_paths(paths)
+    return paths
+
+def _remove_vlc_path(path: str) -> list[str]:
+    paths = [p for p in _read_vlc_paths() if p != path]
+    _write_vlc_paths(paths)
+    return paths
 WEATHER_CONF     = Path(HOME) / ".config" / "wb-daemon" / "weather.json"
 _DEFAULT_WEATHER_LOC = {"lat": 47.8121, "lon": 16.2506, "name": "Wiener Neustadt"}
 GOLD   = "#fff495"   # "ausgewählter" Text, Pünktchen, Slider
@@ -568,6 +607,12 @@ scale value {{
 .value-lg {{ font-size: 26px; font-weight: bold; }}
 .temp-xl  {{ font-size: 26px; font-weight: bold; }}
 .caption  {{ font-size: 11px; }}
+
+/* App-Editor Such-Eingabefeld (Launcher-Tab, "Unsorted"/"All Apps") -
+   getippter Text in GOLD statt Standard-Textfarbe. */
+entry.applauncher-search, entry.applauncher-search text {{
+    color: {GOLD};
+}}
 
 /* Der kleine Punkt "•" an Kalendertagen mit Termin - eigene Klasse,
    damit er sich (unabhängig vom sonstigen Text) farblich als
@@ -4282,9 +4327,13 @@ _EFFECTS_OPACITY_ANCHORS = {
 }
 
 def _lua_bool_default(name: str) -> bool:
+    # Seit der hyprland.lua-Aufteilung (siehe Chat) leben blur/hyprglass/
+    # dynamic_cursors in HyprlandConfigs/Looks.lua, nicht mehr in der
+    # (jetzt nur noch 7 require()-Zeilen enthaltenden) hyprland.lua
+    # selbst - nur LESEN, Looks.lua ist eine System-Datei.
     pattern, fallback = _EFFECTS_LUA_ANCHORS[name]
     try:
-        txt = _hypr_lua_path().read_text()
+        txt = _hypr_read_system_config("Looks.lua")
         m = re.search(pattern, txt)
         if m:
             return m.group(1) == "true"
@@ -4295,7 +4344,7 @@ def _lua_bool_default(name: str) -> bool:
 def _lua_float_default(name: str) -> float:
     pattern, fallback = _EFFECTS_OPACITY_ANCHORS[name]
     try:
-        txt = _hypr_lua_path().read_text()
+        txt = _hypr_read_system_config("Looks.lua")
         m = re.search(pattern, txt)
         if m:
             return float(m.group(1))
@@ -5866,6 +5915,181 @@ def _khal_change_storage_path(calendar_name: str, new_dir: Path, copy_old: bool)
         return True, f"Storage location changed, events copied (originals still at {old_dir})."
     return True, "Storage location changed."
 
+# ════════════════════════════════════════════════════════════
+#  TrafkTuxWidgets/WidgetsConfig.json - gemeinsame, erweiterbare
+#  Einstellungsdatei FÜR die Widgets selbst (nicht Hyprland-Config!).
+#  Jedes Widget bekommt seine eigene Top-Level-Section darin (z.B.
+#  "clock") und liest/schreibt NUR die - andere Sections bleiben beim
+#  Speichern unberührt, falls ein anderes Widget zwischenzeitlich
+#  seine eigenen Werte reingeschrieben hat. Lebt bewusst außerhalb vom
+#  Paket/Repo, damit ein Systemupdate sie nie anfasst (gleiches Prinzip
+#  wie HyprlandUserConfigs/, nur eben für die Widgets selbst).
+# ════════════════════════════════════════════════════════════
+
+def _widgets_config_dir() -> Path:
+    return Path(HOME) / ".config" / "TrafkTuxWidgets"
+
+def _widgets_config_path() -> Path:
+    return _widgets_config_dir() / "WidgetsConfig.json"
+
+def _widgets_config_load() -> dict:
+    p = _widgets_config_path()
+    if p.is_file():
+        try:
+            data = json.loads(p.read_text())
+            if isinstance(data, dict):
+                return data
+        except Exception:
+            pass
+    return {}
+
+def _widgets_config_section(section: str) -> dict:
+    sec = _widgets_config_load().get(section)
+    return sec if isinstance(sec, dict) else {}
+
+def _widgets_config_save_section(section: str, values: dict) -> None:
+    """Merged values NUR unter dem gegebenen Top-Level-Key rein, alle
+    anderen Sections bleiben unangetastet. Legt Ordner+Datei bei Bedarf
+    an (neue Regel, siehe HyprlandUserConfigs/ - genauso hier: Widgets
+    MÜSSEN diese Datei selbst erstellen, wenn sie fehlt)."""
+    p = _widgets_config_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    data = _widgets_config_load()
+    sec = data.get(section)
+    if not isinstance(sec, dict):
+        sec = {}
+    sec.update(values)
+    data[section] = sec
+    if p.is_file():
+        backup_file(p)
+    atomic_write_text(p, json.dumps(data, indent=2) + "\n")
+
+# ── Clock-Einstellungen (erste Nutzung von WidgetsConfig.json) ──────
+_CLOCK_DEFAULTS = {"mode": "digital", "seconds": True, "milliseconds": False}
+
+def _clock_settings() -> dict:
+    cfg = dict(_CLOCK_DEFAULTS)
+    cfg.update(_widgets_config_section("clock"))
+    return cfg
+
+def _save_clock_settings(**kwargs) -> None:
+    _widgets_config_save_section("clock", kwargs)
+
+def _clock_update_interval_ms(cfg: dict) -> int:
+    if cfg.get("milliseconds"):
+        return 33    # ~30fps - braucht's für sichtbaren ms-Fortschritt
+    if cfg.get("mode") == "analog":
+        return 50    # durchgehend gleitender Sekundenzeiger statt 1Hz-Sprung
+                      # (siehe Chat: "die Animation... ist perfekt!!!!!!")
+    return 1000      # digital ohne ms: exakt im Sekundentakt reicht
+
+def _draw_analog_clock(widget: Gtk.DrawingArea, cr, cfg: dict) -> bool:
+    """Antikes Hermle-Zifferblatt als Vorbild (siehe Chat): cremefarbene
+    Scheibe, Goldrand, elegante Serifen-Ziffern 1-12, Minutenpunkte,
+    zugespitzte Zeiger mit kleinem "Auge". Sekundenzeiger 2/3 so lang wie
+    der Minutenzeiger, dünn, und bewusst ALS ERSTES gezeichnet, damit er
+    optisch unter Stunden-/Minutenzeiger liegt (genau wie beim Vorbild
+    kaum zu sehen, wenn er gerade darunter steht)."""
+    alloc = widget.get_allocation()
+    w, h = alloc.width, alloc.height
+    cx, cy = w / 2.0, h / 2.0
+    r = max(10.0, min(w, h) / 2.0 - 6)
+
+    n = datetime.now()
+    sec = n.second + n.microsecond / 1_000_000.0
+    minute = n.minute + sec / 60.0
+    hour = (n.hour % 12) + minute / 60.0
+
+    FACE = (0.965, 0.953, 0.835)      # cremefarben, ~TEXT_NORMAL #f6f3d5
+    RIM  = (1.0, 0.957, 0.584)        # GOLD #fff495
+    INK  = (0.17, 0.12, 0.06, 0.92)   # dunkles Zifferblatt-Braunschwarz
+
+    cr.set_source_rgb(*FACE)
+    cr.arc(cx, cy, r, 0, 2 * math.pi)
+    cr.fill()
+    cr.set_source_rgb(*RIM)
+    cr.set_line_width(3)
+    cr.arc(cx, cy, r - 1.5, 0, 2 * math.pi)
+    cr.stroke()
+    cr.set_line_width(1)
+    cr.arc(cx, cy, r - 6, 0, 2 * math.pi)
+    cr.stroke()
+
+    for i in range(60):
+        ang = i * math.pi / 30
+        rad = 2.3 if i % 5 == 0 else 1.4
+        x = cx + math.sin(ang) * (r - 13)
+        y = cy - math.cos(ang) * (r - 13)
+        cr.set_source_rgba(*INK)
+        cr.arc(x, y, rad, 0, 2 * math.pi)
+        cr.fill()
+
+    cr.select_font_face("serif", cairo.FontSlant.ITALIC, cairo.FontWeight.NORMAL)
+    cr.set_font_size(max(10.0, r * 0.19))
+    for i in range(1, 13):
+        label = str(i)
+        ang = i * math.pi / 6
+        tx = cx + math.sin(ang) * (r - 27)
+        ty = cy - math.cos(ang) * (r - 27)
+        ext = cr.text_extents(label)
+        cr.set_source_rgba(*INK)
+        cr.move_to(tx - ext.width / 2 - ext.x_bearing, ty - ext.height / 2 - ext.y_bearing)
+        cr.show_text(label)
+
+    def _tapered_hand(angle_deg: float, length: float, base_w: float,
+                        eye_at: float, eye_r: float):
+        ang = math.radians(angle_deg)
+        dx, dy = math.sin(ang), -math.cos(ang)
+        px, py = -dy, dx   # senkrecht zur Zeigerrichtung, für die Breite
+        tip_x, tip_y = cx + dx * length, cy + dy * length
+        cr.set_source_rgba(*INK)
+        cr.move_to(cx + px * base_w, cy + py * base_w)
+        cr.line_to(tip_x, tip_y)
+        cr.line_to(cx - px * base_w, cy - py * base_w)
+        cr.close_path()
+        cr.fill()
+        ex, ey = cx + dx * length * eye_at, cy + dy * length * eye_at
+        cr.set_line_width(1.1)
+        cr.arc(ex, ey, eye_r, 0, 2 * math.pi)
+        cr.stroke()
+
+    minute_len = r * 0.70
+    if cfg.get("seconds", True):
+        ang = math.radians(sec * 6)
+        dx, dy = math.sin(ang), -math.cos(ang)
+        sec_len = minute_len * (2.0 / 3.0)   # "2/3 so lang wie der Minutenzeiger"
+        cr.set_source_rgba(*INK)
+        cr.set_line_width(1.0)
+        cr.set_line_cap(cairo.LineCap.ROUND)
+        cr.move_to(cx, cy)
+        cr.line_to(cx + dx * sec_len, cy + dy * sec_len)
+        cr.stroke()
+
+    _tapered_hand(hour * 30, r * 0.46, 2.6, 0.62, 3.2)
+    _tapered_hand(minute * 6, minute_len, 2.0, 0.60, 2.6)
+
+    if cfg.get("milliseconds"):
+        # Eigener, schnell rotierender Millisekunden-Zeiger - macht EINE
+        # volle Umdrehung PRO Sekunde (wie das kleine 1/100s-Subzifferblatt
+        # einer Stoppuhr). GOLD auf cremefarbenem Zifferblatt hat zu wenig
+        # Kontrast (kaum sichtbar, siehe Testrender) - stattdessen Trafk-
+        # Lila (#5a3998), das sticht gegen Creme klar hervor und bleibt
+        # trotzdem klar von den dunklen Haupt-Zeigern unterscheidbar.
+        ms_ang = (n.microsecond / 1_000_000.0) * 360.0
+        ang = math.radians(ms_ang)
+        dx, dy = math.sin(ang), -math.cos(ang)
+        cr.set_source_rgba(0.353, 0.224, 0.596, 0.95)
+        cr.set_line_width(0.9)
+        cr.set_line_cap(cairo.LineCap.ROUND)
+        cr.move_to(cx, cy)
+        cr.line_to(cx + dx * r * 0.34, cy + dy * r * 0.34)
+        cr.stroke()
+
+    cr.set_source_rgba(*INK)
+    cr.arc(cx, cy, 3.0, 0, 2 * math.pi)
+    cr.fill()
+    return False
+
 def _clock_content(win: Gtk.Window) -> Gtk.Box:
     # Layout-Redesign: Wetter und Kalender waren vorher EIN langer,
     # durchgehender Stapel (Wetter-Karte + Vorschau + Datum/Zeit +
@@ -5890,14 +6114,43 @@ def _clock_content(win: Gtk.Window) -> Gtk.Box:
     # bisher klein mit im Weather-Tab (dt_row unten) - jetzt eigener,
     # eigenständiger Tab mit großer, zentrierter Anzeige.
     t0 = vbox(6); pad(t0, h=4, v=18)
+    clock_cfg = _clock_settings()
+
     time_lbl = Gtk.Label(label="--:--")
     time_lbl.get_style_context().add_class("clock-digits-huge")
     time_lbl.set_halign(Gtk.Align.CENTER)
+
+    analog_area = Gtk.DrawingArea()
+    analog_area.set_size_request(180, 180)
+    analog_area.set_halign(Gtk.Align.CENTER)
+    analog_area.set_no_show_all(True)
+    if HAS_CAIRO:
+        analog_area.connect("draw", lambda _w, cr: _draw_analog_clock(_w, cr, clock_cfg))
+
     date_lbl = Gtk.Label(label="")
     date_lbl.get_style_context().add_class("value-md")
     date_lbl.set_halign(Gtk.Align.CENTER)
+
     t0.pack_start(time_lbl, False, False, 0)
+    t0.pack_start(analog_area, False, False, 0)
     t0.pack_start(date_lbl, False, False, 0)
+
+    # Einstellungen (Digital/Analog, Sekunden, Millisekunden) leben jetzt
+    # NICHT mehr hier im Popup selbst, sondern unter Appearance &
+    # Settings → Widgets → Clock (siehe _build_widgets_clock_tab) - hier
+    # nur noch lesend anwenden, was dort eingestellt wurde.
+    def _apply_mode():
+        is_analog = clock_cfg["mode"] == "analog"
+        analog_area.set_visible(is_analog and HAS_CAIRO)
+        time_lbl.set_visible(not is_analog)
+        # FIX (siehe Chat: "Uhr resizt die Größe nicht automatisch") -
+        # Digital (schmaler Label-Text) und Analog (180x180-Fläche)
+        # brauchen unterschiedlich viel Platz, aber GTK-Fenster schrumpfen
+        # nach einer einmal größeren Allozierung von selbst NICHT wieder
+        # (bekannte GTK3-Eigenart) - genau dafür gibt's _shrink_to_fit()
+        # im Fenster-Lifecycle-Code, hier bisher schlicht nicht aufgerufen.
+        GLib.idle_add(_shrink_to_fit, win)
+    _apply_mode()
 
     # ── TAB 1: Weather ──────────────────────────────────────
     # Redesign-Liste: "Oben Mittig Was grad ist. Oben links das
@@ -6468,13 +6721,35 @@ def _clock_content(win: Gtk.Window) -> Gtk.Box:
     _update_mth()
     _build_grid(cur[0], cur[1])
 
+    timer_id = [None]
+
     def _update_time():
         n = datetime.now()
-        time_lbl.set_label(n.strftime("%H:%M"))
+        if clock_cfg["mode"] == "analog":
+            analog_area.queue_draw()
+        else:
+            fmt = "%H:%M"
+            if clock_cfg["seconds"]:
+                fmt += ":%S"
+            label = n.strftime(fmt)
+            if clock_cfg["milliseconds"]:
+                label += f".{n.microsecond // 1000:03d}"
+            time_lbl.set_label(label)
         date_lbl.set_label(n.strftime("  %A, %B %d, %Y  "))
         return True
 
-    add_timer(1000, _update_time)
+    def _retune_timer():
+        # Intervall wechselt je nach Modus/Sekunden/ms (siehe
+        # _clock_update_interval_ms) - alten Timer killen, neuen mit
+        # passendem Takt starten. GLib.source_remove() auf eine bereits
+        # entfernte Quelle würde werfen, daher try/except (siehe gleiches
+        # Muster bei _cleanup() oben im Fenster-Lifecycle-Code).
+        if timer_id[0] is not None:
+            try: GLib.source_remove(timer_id[0])
+            except Exception: pass
+        timer_id[0] = add_timer(_clock_update_interval_ms(clock_cfg), _update_time)
+
+    _retune_timer()
     _update_time()
 
     def _load_weather():
@@ -6771,61 +7046,15 @@ def _build_settings_placeholder(page: Gtk.Box, key: str, label: str, win: Gtk.Wi
 def _build_settings_network(page: Gtk.Box, key: str, label: str, win: Gtk.Window) -> None:
     page.pack_start(_network_content(win), True, True, 0)
 
-def _build_appearance_wallpapers_desktop_subtab(win: Gtk.Window) -> Gtk.Box:
-    """Untertab "Desktop" im Wallpapers-Tab (Appearance & Language) -
-    scannt beim Öffnen automatisch den Wallpapers.sh-Ordner
-    (~/.config/hypr/Wallpapers/<ratio>/, siehe _scan_wallpaper_images())
-    und zeigt JEDES gefundene Bild als Preview-Kachel. Klick auf eine
-    Kachel setzt sie sofort als Wallpaper über 'Wallpapers.sh --set'
-    (neuer Modus, siehe dortiger Kommentar) - entweder auf ALLE
-    Monitore oder nur auf den oben per Segmented-Control gewählten
-    einzelnen.
-    Umsetzt den Wunsch aus dem Chat: "über das selbe skript wie bei den
-    zufalls sachen... beim skript was hinzufügen... die wallpaper
-    sollen automatisch geladen werden, einfach beim öffnen des widgets
-    den ordner scannen und alle anzeigen (mit preview gleich dazu)".
-    Behebt nebenbei den zweiten gemeldeten Bug ("wahrscheinlich kann
-    man deswegen auch nicht das wallpaper ändern") - vorher gab es
-    NUR den Zufalls-Reroll (siehe alter screen_btn in
-    _brightness_content), keine Möglichkeit, ein bestimmtes Bild
-    gezielt auszuwählen.
-
-    War bis vor kurzem der GESAMTE Wallpapers-Tab - ist jetzt die
-    "Desktop"-Hälfte eines Untertab-Switchers, siehe
-    _build_appearance_wallpapers_tab() unten. Inhalt hier bewusst
-    unverändert gelassen (reiner Umzug in eine eigene Funktion), damit
-    nichts am funktionierenden xfce4-Wallpaper-Picker kaputtgeht."""
+def _build_wallpaper_folder_page(win: Gtk.Window, subfolder: str | None,
+                                  selected_monitor_fn) -> Gtk.Box:
+    """Eine einzelne Bilder-Kachelseite - entweder für GENAU einen
+    Unterordner (Punkt 10) oder (subfolder=None) den klassischen
+    rekursiven Gesamtscan als Fallback, falls (noch) keine Unterordner
+    existieren. Inhaltlich identisch zur vorherigen Implementierung,
+    nur um den subfolder-Parameter ergänzt."""
     outer = vbox(4)
     wallpaper_script = _resolve_wallpaper_script()
-
-    if not os.path.isfile(wallpaper_script):
-        outer.pack_start(
-            bitem(f"Wallpaper script not found in ~/.config/hypr "
-                  f"(looked for: {', '.join(_WALLPAPER_SCRIPT_CANDIDATES)})",
-                  dim=True), False, False, 0)
-        return outer
-
-    # ── Zielauswahl: alle Monitore (Default) oder ein bestimmter ────
-    mon_names = [m.get("name") for m in _hypr_monitors_live() if m.get("name")]
-    target_ctrl = _SegmentedControl()
-    target_ctrl.get_style_context().add_class("bubble")
-    target_ctrl.get_style_context().add_class("segmented")
-    target_ctrl.set_can_focus(False)
-    target_ctrl.append_text("All Displays")
-    for n in mon_names:
-        target_ctrl.append_text(n)
-    target_ctrl.set_active(0)
-    if len(mon_names) <= 1:
-        target_ctrl.set_sensitive(False)
-        target_ctrl.set_tooltip_text("Only one display connected.")
-    target_row = hbox(6)
-    target_row.set_halign(Gtk.Align.CENTER)
-    target_row.pack_start(target_ctrl.widget, False, False, 0)
-    outer.pack_start(target_row, False, False, 0)
-
-    def _selected_monitor() -> str | None:
-        idx = target_ctrl._active
-        return mon_names[idx - 1] if idx > 0 else None
 
     status_lbl = Gtk.Label(label="")
     status_lbl.get_style_context().add_class("caption")
@@ -6852,16 +7081,16 @@ def _build_appearance_wallpapers_desktop_subtab(win: Gtk.Window) -> Gtk.Box:
     _THUMB = 96
 
     def _on_pick(path: str):
-        mon = _selected_monitor()
+        mon = selected_monitor_fn()
         cmd = ["bash", wallpaper_script, "--set", path] + ([mon] if mon else [])
         in_thread(run, cmd)
         # Ein Bild auszuwählen heißt implizit "zurück zu Pictures" -
-        # kein separater Deaktivieren-Knopf im Apps-Untertab nötig
-        # (siehe Chat). Nur anstoßen, wenn Apps-Modus überhaupt aktiv
-        # war, damit wir nicht bei jedem Klick grundlos `hyprctl
-        # reload` auslösen.
-        if _read_appwallpaper_state()["enabled"]:
-            in_thread(_appwallpaper_apply, False, "", "")
+        # beendet ALLE laufenden App-Wallpaper-Instanzen (Punkt 7: jetzt
+        # potenziell mehrere gleichzeitig). Nur anstoßen, wenn überhaupt
+        # welche liefen, damit wir nicht bei jedem Klick grundlos
+        # `hyprctl reload` auslösen.
+        if _read_appwallpaper_entries():
+            in_thread(_appwallpaper_remove_all)
         status_lbl.set_label(
             f"Applied: {os.path.basename(path)}"
             + (f" → {mon}" if mon else " → all displays"))
@@ -6869,13 +7098,8 @@ def _build_appearance_wallpapers_desktop_subtab(win: Gtk.Window) -> Gtk.Box:
         GLib.timeout_add(2500, lambda: (status_lbl.hide(), False)[1])
 
     def _load_previews():
-        # GdkPixbuf.new_from_file_at_scale() ist synchrones Datei-I/O +
-        # Dekodierung - bei vielen/großen Bildern spürbar langsam, daher
-        # komplett im Hintergrund-Thread, nur der fertige Kachel-Aufbau
-        # läuft über GLib.idle_add() zurück im Main-Thread (gleiches
-        # Muster wie _load_rgb_devices() im Brightness-Widget).
         tiles = []
-        for p in _scan_wallpaper_images():
+        for p in _scan_wallpaper_images(subfolder):
             try:
                 pix = GdkPixbuf.Pixbuf.new_from_file_at_scale(
                     p, _THUMB, _THUMB, True)
@@ -6888,7 +7112,8 @@ def _build_appearance_wallpapers_desktop_subtab(win: Gtk.Window) -> Gtk.Box:
                 outer.remove(loading_lbl)
             if not tiles:
                 outer.pack_start(
-                    bitem(f"No wallpapers found in {WALLPAPER_DIR}",
+                    bitem(f"No wallpapers found in "
+                          f"{os.path.join(WALLPAPER_DIR, subfolder) if subfolder else WALLPAPER_DIR}",
                           dim=True), False, False, 0)
                 outer.show_all()
                 status_lbl.hide()
@@ -6910,171 +7135,483 @@ def _build_appearance_wallpapers_desktop_subtab(win: Gtk.Window) -> Gtk.Box:
     in_thread(_load_previews)
     return outer
 
-def _build_appearance_wallpapers_apppage_subtab(win: Gtk.Window) -> Gtk.Box:
-    """Untertab "Apps" im Wallpapers-Tab - 3 minimale Zeilen (siehe
-    Chat: komplettes Redesign, vorherige Version war viel zu textlastig
-    und voller Erklär-Labels/Separatoren/Checkboxen):
-      1. TrafkVerseScreensaver - anklickbarer Name, sonst nichts
-      2. VLC - ein Textfeld (Pfad) + Start-Knopf daneben
-      3. Custom - ein Textfeld (Befehl) + Start-Knopf daneben
-         (Fensterklasse wird aus dem Befehl geraten, siehe
-         _guess_window_class() weiter oben - kein zweites Feld nötig)
-    Jede Zeile aktiviert Apps-Modus sofort beim Draufklicken. Kein
-    separater "deaktivieren"-Knopf (siehe Chat: ein Bild in Pictures
-    anklicken schaltet automatisch zurück, siehe _on_pick() im
-    Pictures-Untertab) und kein kill_xfdesktop-Toggle mehr (unnötige
-    Komplexität laut Chat - xfdesktop bleibt immer einfach laufen)."""
-    outer = vbox(6)
+def _build_appearance_wallpapers_desktop_subtab(win: Gtk.Window) -> Gtk.Box:
+    """Untertab "Desktop"/Pictures im Wallpapers-Tab. Punkt 10: pro
+    direktem Unterordner von WALLPAPER_DIR (11/43/169/219/329/1610 aus
+    Wallpapers.sh, oder beliebige selbst angelegte) ein eigener
+    Unter-Untertab mit NUR den Bildern aus genau diesem Ordner -
+    prozedural erzeugt (_list_wallpaper_subfolders()), Name ist egal.
+    Fallback: existieren (noch) keine Unterordner, bleibt es beim alten
+    rekursiven Gesamtscan über den ganzen Baum (subfolder=None), damit
+    frisch angelegte/leere Wallpapers-Ordner nicht einfach leer
+    aussehen."""
+    outer = vbox(4)
+    wallpaper_script = _resolve_wallpaper_script()
 
-    status_lbl = Gtk.Label(label="")
-    status_lbl.get_style_context().add_class("caption")
-    status_lbl.set_opacity(0.75)
-    status_lbl.set_no_show_all(True)
-    status_lbl.hide()
+    if not os.path.isfile(wallpaper_script):
+        outer.pack_start(
+            bitem(f"Wallpaper script not found in ~/.config/hypr "
+                  f"(looked for: {', '.join(_WALLPAPER_SCRIPT_CANDIDATES)})",
+                  dim=True), False, False, 0)
+        return outer
 
+    # ── Zielauswahl: alle Monitore (Default) oder ein bestimmter -
+    # gilt für ALLE Ratio-Untertabs gemeinsam, daher hier oben, nicht
+    # pro Unterordner-Seite dupliziert. ──
+    mon_names = [m.get("name") for m in _hypr_monitors_live() if m.get("name")]
+    target_ctrl = _SegmentedControl()
+    target_ctrl.get_style_context().add_class("bubble")
+    target_ctrl.get_style_context().add_class("segmented")
+    target_ctrl.set_can_focus(False)
+    target_ctrl.append_text("All Displays")
+    for n in mon_names:
+        target_ctrl.append_text(n)
+    target_ctrl.set_active(0)
+    if len(mon_names) <= 1:
+        target_ctrl.set_sensitive(False)
+        target_ctrl.set_tooltip_text("Only one display connected.")
+    target_row = hbox(6)
+    target_row.set_halign(Gtk.Align.CENTER)
+    target_row.pack_start(target_ctrl.widget, False, False, 0)
+    outer.pack_start(target_row, False, False, 0)
+
+    def _selected_monitor() -> str | None:
+        idx = target_ctrl._active
+        return mon_names[idx - 1] if idx > 0 else None
+
+    folders = _list_wallpaper_subfolders()
+    if not folders:
+        # Fallback: kein Unterordner vorhanden - alter Gesamtscan.
+        outer.pack_start(_build_wallpaper_folder_page(win, None, _selected_monitor),
+                          True, True, 0)
+        return outer
+
+    ratio_ctrl = _SegmentedControl()
+    ratio_ctrl.get_style_context().add_class("bubble")
+    ratio_ctrl.get_style_context().add_class("segmented")
+    ratio_ctrl.set_can_focus(False)
+    for f in folders:
+        ratio_ctrl.append_text(f)
+    ratio_ctrl.set_active(0)
+    ratio_row = hbox(6)
+    ratio_row.set_halign(Gtk.Align.CENTER)
+    ratio_row.pack_start(ratio_ctrl.widget, False, False, 0)
+    outer.pack_start(ratio_row, False, False, 4)
+
+    ratio_stack = Gtk.Stack()
+    ratio_stack.set_hhomogeneous(False)
+    ratio_stack.set_vhomogeneous(False)
+    for f in folders:
+        ratio_stack.add_named(
+            _build_wallpaper_folder_page(win, f, _selected_monitor), f)
+    ratio_stack.set_visible_child_name(folders[0])
+    outer.pack_start(ratio_stack, True, True, 0)
+
+    def _on_ratio_change(_ctrl):
+        name = ratio_ctrl.get_active_text()
+        if name in folders:
+            _switch_stack(ratio_stack, win, name)
+    ratio_ctrl.connect("changed", _on_ratio_change)
+
+    return outer
+
+def _monitor_target_ctrl(allow_all: bool = True) -> tuple[_SegmentedControl, list[str]]:
+    """Gemeinsamer Monitor-Ziel-Switcher für die 3 Apps-Untertabs.
+    allow_all=True fügt "All Displays" als Index 0 ein (Punkt 7 -
+    mehrfach gleichzeitig starten, eine Instanz pro Monitor)."""
+    mon_names = [m.get("name") for m in _hypr_monitors_live() if m.get("name")]
+    ctrl = _SegmentedControl()
+    ctrl.get_style_context().add_class("bubble")
+    ctrl.get_style_context().add_class("segmented")
+    ctrl.set_can_focus(False)
+    if allow_all:
+        ctrl.append_text("All Displays")
+    for n in mon_names:
+        ctrl.append_text(n)
+    ctrl.set_active(0)
+    if len(mon_names) <= 1 and not allow_all:
+        ctrl.set_sensitive(False)
+    return ctrl, mon_names
+
+def _targets_from_ctrl(ctrl: _SegmentedControl, mon_names: list[str],
+                        allow_all: bool) -> list[str]:
+    """Löst den Monitor-Switcher in eine Liste konkreter Monitornamen
+    auf - bei "All Displays" eine pro vorhandenem Monitor (Punkt 7)."""
+    if allow_all:
+        if ctrl._active == 0:
+            return list(mon_names)
+        return [mon_names[ctrl._active - 1]] if mon_names else []
+    return [mon_names[ctrl._active]] if mon_names else []
+
+def _appwallpaper_running_box(win: Gtk.Window, on_change=None) -> tuple[Gtk.Box, "callable"]:
+    """Punkt 7: Liste aller gerade laufenden Hintergrund-App-Instanzen
+    mit je einem eigenen Stop-Knopf. on_change (Punkt 2 - Bugfix):
+    wird NACH jedem Stop zusätzlich zur eigenen _refresh() aufgerufen -
+    ohne das blieben die jeweils anderen 2 Running-Boxen (TVS/VLC/
+    Custom haben je eine eigene, ein Widget kann nur einen Parent
+    haben) nach einem Stop in einer anderen Box veraltet stehen."""
+    box = vbox(4)
+
+    def _stop(eid: str):
+        def _after(_s):
+            _refresh()
+            if on_change:
+                on_change()
+        apply_change("Apps: stop", lambda: _appwallpaper_remove(eid), on_status=_after)
+
+    def _refresh():
+        for ch in list(box.get_children()):
+            box.remove(ch)
+        entries = _read_appwallpaper_entries()
+        if not entries:
+            box.hide()
+            return
+        box.pack_start(bitem("Running now", dim=True), False, False, 0)
+        for e in entries:
+            row = hbox(6)
+            try:
+                tail = shlex.split(e.get("exec", ""))[-1]
+                tail = os.path.basename(tail)
+            except Exception:
+                tail = e.get("class", "?")
+            lbl = Gtk.Label(label=f'{e.get("kind","?")} · {tail} · {e.get("monitor") or "?"}')
+            lbl.set_xalign(0.0)
+            lbl.get_style_context().add_class("caption")
+            lbl.set_hexpand(True)
+            lbl.set_ellipsize(Pango.EllipsizeMode.MIDDLE)
+            stop_btn = btn("✕", tip="Beenden")
+            stop_btn.connect("clicked", lambda _b, eid=e["id"]: _stop(eid))
+            row.pack_start(lbl, True, True, 0)
+            row.pack_start(stop_btn, False, False, 0)
+            box.pack_start(row, False, False, 0)
+        box.show_all()
+
+    _refresh()
+    return box, _refresh
+
+def _build_apps_tvs_subtab(win: Gtk.Window, running_box: Gtk.Box, refresh_running) -> Gtk.Box:
+    """Untertab TrafkVerseWallpaper (Punkt 3: eigener Untertab statt
+    einer Zeile neben VLC/Custom)."""
+    outer = vbox(4)
+    status_lbl = Gtk.Label(label=""); status_lbl.get_style_context().add_class("caption")
+    status_lbl.set_opacity(0.75); status_lbl.set_no_show_all(True); status_lbl.hide()
     def _flash(text: str, ms: int = 2500):
-        status_lbl.set_label(text)
-        status_lbl.show()
+        status_lbl.set_label(text); status_lbl.show()
         GLib.timeout_add(ms, lambda: (status_lbl.hide(), False)[1])
 
-    # Monitor-Wahl gilt für alle 3 Zeilen (es gibt immer nur EIN
-    # gewrapptes Fenster) - hyprwinwrap selbst kann keinen Monitor
-    # auswählen (siehe Chat), daher per window_rule in AppWallpaper.lua.
-    live_mons = _hypr_monitors_live()
-    mon_names = [m.get("name") for m in live_mons if m.get("name")]
-
-    def _logical_wh(m: dict) -> tuple[int | None, int | None]:
-        w, h = m.get("width"), m.get("height")
-        if not w or not h:
-            return (None, None)
-        try:
-            scale = float(m.get("scale") or 1.0)
-        except (TypeError, ValueError):
-            scale = 1.0
-        if scale <= 0:
-            scale = 1.0
-        # hyprctl monitors -j liefert width/height PHYSISCH (Panel-
-        # Pixel), aber Hyprlands interne Fenstergeometrie (und damit
-        # hyprwinwraps size_x/size_y-Prozentrechnung) läuft in
-        # LOGISCHEN Pixeln = physisch/scale - bei scale=1.0 identisch,
-        # fällt also bei den meisten Monitoren nicht auf.
-        return (round(w / scale), round(h / scale))
-
-    mon_wh = {m.get("name"): _logical_wh(m) for m in live_mons if m.get("name")}
-    mon_ctrl = _SegmentedControl()
-    mon_ctrl.get_style_context().add_class("bubble")
-    mon_ctrl.get_style_context().add_class("segmented")
-    mon_ctrl.set_can_focus(False)
-    cur0 = _read_appwallpaper_state()
-    for n in mon_names:
-        mon_ctrl.append_text(n)
-    mon_ctrl.set_active(mon_names.index(cur0["monitor"]) if cur0["monitor"] in mon_names else 0)
-    if len(mon_names) <= 1:
-        mon_ctrl.set_sensitive(False)
-    mon_row = hbox(6)
-    mon_row.set_halign(Gtk.Align.CENTER)
+    mon_ctrl, mon_names = _monitor_target_ctrl(allow_all=True)
+    mon_row = hbox(4); mon_row.set_halign(Gtk.Align.CENTER)
     mon_row.pack_start(mon_ctrl.widget, False, False, 0)
     outer.pack_start(mon_row, False, False, 0)
 
-    def _selected_monitor() -> str:
-        return mon_names[mon_ctrl._active] if mon_names else ""
+    live_mons = _hypr_monitors_live()
+    def _logical_wh(name: str) -> tuple[int | None, int | None]:
+        m = next((m for m in live_mons if m.get("name") == name), None)
+        if not m or not m.get("width") or not m.get("height"):
+            return (None, None)
+        try:
+            scale = float(m.get("scale") or 1.0) or 1.0
+        except (TypeError, ValueError):
+            scale = 1.0
+        return (round(m["width"] / scale), round(m["height"] / scale))
 
-    def _activate(klass: str, exec_cmd: str):
-        if not klass or not exec_cmd:
-            _flash("Fehlt noch was.")
-            return
-        apply_change(f"Apps: {klass}",
-                      lambda: _appwallpaper_apply(True, klass, exec_cmd, _selected_monitor()),
-                      on_status=_flash)
-
-    # 1) TrafkVerseScreensaver - der Name selbst ist der Knopf, daneben
-    # ein Mute-Toggle (die App bekommt jetzt --width/--height/--silent
-    # als neue, rein additive CLI-Flags, siehe TrafkVerseScreensaver.c -
-    # ersetzt den window_rule-Resize-Versuch, der bei dir nicht
-    # funktioniert hat).
-    tvs_row = hbox(6)
-    tvs_btn = btn("TrafkVerseScreensaver")
+    tvs_row = hbox(4)
+    tvs_btn = btn("Start TrafkVerseWallpaper")
     tvs_btn.set_hexpand(True)
-    tvs_mute_btn = Gtk.ToggleButton(label="🔇")
-    tvs_mute_btn.get_style_context().add_class("bubble")
-    tvs_mute_btn.set_can_focus(False)
-    tvs_mute_btn.set_active("--silent" in cur0["exec"])
-    tvs_mute_btn.set_tooltip_text("Lautlos starten (--silent)")
+    tvs_mute_btn = _icon_mute_toggle()
     def _on_tvs_start(_w):
-        w, h = mon_wh.get(_selected_monitor(), (None, None))
-        if not w or not h:
-            _flash("Monitorgröße nicht ermittelbar.")
+        targets = _targets_from_ctrl(mon_ctrl, mon_names, allow_all=True)
+        if not targets:
+            _flash("Kein Monitor gefunden.")
             return
-        exec_cmd = _trafkverse_exec_cmd(w, h, tvs_mute_btn.get_active())
-        _activate(APPWALLPAPER_TRAFKVERSE_CLASS_GUESS, exec_cmd)
+        def _apply():
+            specs = []
+            for mon in targets:
+                w, h = _logical_wh(mon)
+                if not w or not h:
+                    continue
+                klass = f"{APPWALLPAPER_TRAFKVERSE_CLASS_BASE}-{mon}"
+                exec_cmd = _trafkverse_exec_cmd(w, h, tvs_mute_btn.get_active(),
+                                                 class_suffix=mon)
+                specs.append(("tvs", klass, exec_cmd, mon, ""))
+            _appwallpaper_add_many(specs)
+        apply_change(f"TrafkVerseWallpaper ({len(targets)}×)", _apply,
+                      on_status=lambda s: (_flash(s), refresh_running()))
     tvs_btn.connect("clicked", _on_tvs_start)
     tvs_row.pack_start(tvs_btn, True, True, 0)
     tvs_row.pack_start(tvs_mute_btn, False, False, 0)
     outer.pack_start(tvs_row, False, False, 0)
 
-    # 2) VLC - Pfad per Dialog (siehe _prompt_text_generic()-Docstring:
-    # Inline-Entry hier im Layer-Shell-Panel kann NIE Tastaturfokus
-    # bekommen, GtkLayerShell.KeyboardMode.NONE in make_win() verhindert
-    # das grundsaetzlich - daher echtes Gtk.Dialog statt Gtk.Entry) +
-    # Start-Knopf. _vlc_path merkt sich den zuletzt eingegebenen Pfad
-    # fuers Button-Label.
-    cur = _read_appwallpaper_state()
-    _vlc_path = [""]
-    if cur["exec"].startswith("vlc "):
-        try:
-            parts = shlex.split(cur["exec"])
-            if parts:
-                _vlc_path[0] = parts[-1]
-        except Exception:
-            pass
-    vlc_row = hbox(6)
-    vlc_path_btn = btn(_vlc_path[0] or "VLC: Datei- oder Ordnerpfad wählen…")
-    vlc_path_btn.set_hexpand(True)
-    def _on_vlc_pick(_w):
-        val = _prompt_text_generic(win, "VLC-Pfad", "Datei- oder Ordnerpfad",
-                                    initial=_vlc_path[0])
-        if val:
-            _vlc_path[0] = val
-            vlc_path_btn.set_label(val)
-    vlc_path_btn.connect("clicked", _on_vlc_pick)
-    vlc_row.pack_start(vlc_path_btn, True, True, 0)
-    vlc_start_btn = btn("Start")
-    def _on_vlc_start(_w):
-        path = _vlc_path[0].strip()
-        if not path:
-            _flash("Pfad fehlt.")
-            return
-        _activate(APPWALLPAPER_VLC_CLASS, _vlc_exec_cmd(path))
-    vlc_start_btn.connect("clicked", _on_vlc_start)
-    vlc_row.pack_start(vlc_start_btn, False, False, 0)
-    outer.pack_start(vlc_row, False, False, 0)
+    outer.pack_start(running_box, False, False, 0)
+    outer.pack_start(status_lbl, False, False, 0)
+    return outer
 
-    # 3) Custom - Befehl per Dialog, gleicher Grund wie bei VLC oben.
-    is_known = cur["exec"].startswith(APPWALLPAPER_TRAFKVERSE_EXEC) or cur["exec"].startswith("vlc ")
-    _custom_exec = [cur["exec"] if (cur["enabled"] and not is_known) else ""]
-    custom_row = hbox(6)
-    custom_exec_btn = btn(_custom_exec[0] or "Custom: Launch-Befehl wählen…")
-    custom_exec_btn.set_hexpand(True)
-    def _on_custom_pick(_w):
+_VLC_IMG_EXTS = (".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif")
+_VLC_VID_EXTS = (".mp4", ".mkv", ".webm", ".mov", ".avi", ".m4v")
+
+def _build_apps_vlc_subtab(win: Gtk.Window, running_box: Gtk.Box, refresh_running) -> Gtk.Box:
+    """Untertab VLC (Punkt 3+9, neu designt - siehe Chat: vorherige
+    Version zu groß/zu viel Abstand, Choose/Select/Remove als 3 separate
+    Zeilen war unklar). Jetzt: EIN "+ Datei"-Knopf trägt nur in die
+    Liste ein (ersetzt NICHT automatisch die Auswahl), Auswahl passiert
+    per Klick auf eine Kachel (abgedunkelt = nicht ausgewählt, voll
+    deckend = ausgewählt - kein Extra-Label nötig), Entfernen per
+    kleinem "✕" direkt auf der Kachel (Gtk.Overlay) statt eigenem
+    Knopf+Zeile. Durchgehend kompaktere Abstände (4 statt 6, keine
+    sep()-Trenner mehr)."""
+    outer = vbox(4)
+    status_lbl = Gtk.Label(label=""); status_lbl.get_style_context().add_class("caption")
+    status_lbl.set_opacity(0.75); status_lbl.set_no_show_all(True); status_lbl.hide()
+    def _flash(text: str, ms: int = 2500):
+        status_lbl.set_label(text); status_lbl.show()
+        GLib.timeout_add(ms, lambda: (status_lbl.hide(), False)[1])
+
+    _selected = [""]  # aktuell ausgewählter Pfad für Image/Audio/Video
+    _tiles: dict[str, Gtk.Widget] = {}  # path -> Kachel, für die Opacity-Markierung
+
+    top_row = hbox(4)
+    add_btn = btn("+ Datei", tip="Datei auswählen und der Liste hinzufügen")
+    top_row.pack_start(add_btn, False, False, 0)
+    outer.pack_start(top_row, False, False, 0)
+
+    scroller, scroll_inner = scroll_box(max_h=160)
+    flow = Gtk.FlowBox()
+    flow.set_valign(Gtk.Align.START)
+    flow.set_selection_mode(Gtk.SelectionMode.NONE)
+    flow.set_homogeneous(True)
+    flow.set_max_children_per_line(4)
+    flow.set_min_children_per_line(2)
+    flow.set_row_spacing(4); flow.set_column_spacing(4)
+    scroll_inner.pack_start(flow, True, True, 0)
+    outer.pack_start(scroller, False, False, 0)
+
+    _THUMB = 64
+    def _icon_name_for(path: str) -> str:
+        ext = os.path.splitext(path)[1].lower()
+        if ext in _VLC_VID_EXTS: return "video-x-generic-symbolic"
+        if ext in _VLC_IMG_EXTS: return "image-x-generic-symbolic"
+        return "audio-x-generic-symbolic"
+
+    def _mark_selected(path: str):
+        for p, t in _tiles.items():
+            t.set_opacity(1.0 if p == path else 0.5)
+
+    def _select(path: str):
+        _selected[0] = path
+        _mark_selected(path)
+
+    def _on_remove_tile(path: str):
+        if _selected[0] == path:
+            _selected[0] = ""
+        _remove_vlc_path(path)
+        _rebuild_flow()
+
+    def _rebuild_flow():
+        for ch in list(flow.get_children()):
+            flow.remove(ch)
+        _tiles.clear()
+        for p in _read_vlc_paths():
+            content_btn = Gtk.Button()
+            content_btn.get_style_context().add_class("bubble")
+            content_btn.set_can_focus(False)
+            content_btn.set_tooltip_text(p)
+            ext = os.path.splitext(p)[1].lower()
+            if ext in _VLC_IMG_EXTS:
+                try:
+                    pix = GdkPixbuf.Pixbuf.new_from_file_at_scale(p, _THUMB, _THUMB, True)
+                    content_btn.add(Gtk.Image.new_from_pixbuf(pix))
+                except Exception:
+                    content_btn.add(Gtk.Image.new_from_icon_name(_icon_name_for(p), Gtk.IconSize.DIALOG))
+            else:
+                b = vbox(1)
+                b.pack_start(Gtk.Image.new_from_icon_name(_icon_name_for(p), Gtk.IconSize.DIALOG),
+                              False, False, 0)
+                name_lbl = Gtk.Label(label=os.path.basename(p))
+                name_lbl.set_max_width_chars(12)
+                name_lbl.set_ellipsize(Pango.EllipsizeMode.MIDDLE)
+                b.pack_start(name_lbl, False, False, 0)
+                content_btn.add(b)
+            content_btn.connect("clicked", lambda _b, path=p: _select(path))
+
+            remove_btn = Gtk.Button(label="✕")
+            remove_btn.get_style_context().add_class("bubble")
+            remove_btn.set_can_focus(False)
+            remove_btn.set_tooltip_text("Aus der Liste entfernen")
+            remove_btn.set_halign(Gtk.Align.END)
+            remove_btn.set_valign(Gtk.Align.START)
+            remove_btn.connect("clicked", lambda _b, path=p: _on_remove_tile(path))
+
+            overlay = Gtk.Overlay()
+            overlay.add(content_btn)
+            overlay.add_overlay(remove_btn)
+            overlay.set_opacity(1.0 if p == _selected[0] else 0.5)
+            _tiles[p] = overlay
+            flow.add(overlay)
+        flow.show_all()
+
+    def _on_add(_w):
+        val = _prompt_file_generic(win, "VLC: Datei hinzufügen")
+        if val:
+            _add_vlc_path(val)
+            _rebuild_flow()
+            if not _selected[0]:
+                _select(val)
+    add_btn.connect("clicked", _on_add)
+    _rebuild_flow()
+
+    mon_ctrl, mon_names = _monitor_target_ctrl(allow_all=True)
+    mon_row = hbox(4); mon_row.set_halign(Gtk.Align.CENTER)
+    mon_row.pack_start(mon_ctrl.widget, False, False, 0)
+    outer.pack_start(mon_row, False, False, 0)
+
+    vlc_mute_btn = _icon_mute_toggle()  # Punkt 8
+
+    def _start_visual(mode: str):
+        path = _selected[0].strip()
+        if not path:
+            _flash("Keine Datei ausgewählt.")
+            return
+        targets = _targets_from_ctrl(mon_ctrl, mon_names, allow_all=True)
+        if not targets:
+            _flash("Kein Monitor gefunden.")
+            return
+        def _apply():
+            specs = []
+            for mon in targets:
+                title_tag = f"wpvlc-{mode}-{mon}-{int(time.time()*1000)}"
+                exec_cmd = _vlc_exec_cmd(path, mode, vlc_mute_btn.get_active(), title_tag)
+                specs.append(("vlc", APPWALLPAPER_VLC_CLASS, exec_cmd, mon, title_tag))
+            _appwallpaper_add_many(specs)
+        apply_change(f"VLC {mode} ({len(targets)}×)", _apply,
+                      on_status=lambda s: (_flash(s), refresh_running()))
+
+    def _start_audio(_w):
+        path = _selected[0].strip()
+        if not path:
+            _flash("Keine Datei ausgewählt.")
+            return
+        try:
+            subprocess.Popen(["bash", "-c", _vlc_audio_exec_cmd(path, vlc_mute_btn.get_active())],
+                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                              start_new_session=True)
+            _flash("Audio gestartet (System Tray).")
+        except Exception as e:
+            _flash(f"Fehler: {e}")
+
+    mode_row = hbox(4)
+    img_btn = btn("Image"); img_btn.connect("clicked", lambda _w: _start_visual("image"))
+    vid_btn = btn("Video"); vid_btn.connect("clicked", lambda _w: _start_visual("video"))
+    aud_btn = btn("Audio"); aud_btn.connect("clicked", _start_audio)
+    mode_row.pack_start(img_btn, True, True, 0)
+    mode_row.pack_start(vid_btn, True, True, 0)
+    mode_row.pack_start(aud_btn, True, True, 0)
+    mode_row.pack_start(vlc_mute_btn, False, False, 0)
+    outer.pack_start(mode_row, False, False, 0)
+
+    outer.pack_start(running_box, False, False, 0)
+    outer.pack_start(status_lbl, False, False, 0)
+    return outer
+
+def _build_apps_custom_subtab(win: Gtk.Window, running_box: Gtk.Box, refresh_running) -> Gtk.Box:
+    """Untertab Custom. Bewusst KEIN "All Displays" (siehe
+    _guess_window_class()-Docstring)."""
+    outer = vbox(4)
+    status_lbl = Gtk.Label(label=""); status_lbl.get_style_context().add_class("caption")
+    status_lbl.set_opacity(0.75); status_lbl.set_no_show_all(True); status_lbl.hide()
+    def _flash(text: str, ms: int = 2500):
+        status_lbl.set_label(text); status_lbl.show()
+        GLib.timeout_add(ms, lambda: (status_lbl.hide(), False)[1])
+
+    mon_ctrl, mon_names = _monitor_target_ctrl(allow_all=False)
+    mon_ctrl.widget.set_tooltip_text(
+        "Nur ein Monitor pro Custom-Befehl - keine automatische "
+        "Mehrfachinstanz-Trennung möglich.")
+    mon_row = hbox(4); mon_row.set_halign(Gtk.Align.CENTER)
+    mon_row.pack_start(mon_ctrl.widget, False, False, 0)
+    outer.pack_start(mon_row, False, False, 0)
+
+    _custom_exec = [""]
+    sel_row = hbox(4)
+    sel_display, sel_lbl = _hscroll_label("(kein Befehl gewählt)")
+    sel_row.pack_start(sel_display, True, True, 0)
+    choose_btn = btn("Befehl…")
+    sel_row.pack_start(choose_btn, False, False, 0)
+    start_btn = btn("Start")
+    sel_row.pack_start(start_btn, False, False, 0)
+    outer.pack_start(sel_row, False, False, 0)
+
+    def _on_choose(_w):
         val = _prompt_text_generic(win, "Custom-Befehl", "Launch-Befehl",
                                     initial=_custom_exec[0])
         if val:
             _custom_exec[0] = val
-            custom_exec_btn.set_label(val)
-    custom_exec_btn.connect("clicked", _on_custom_pick)
-    custom_row.pack_start(custom_exec_btn, True, True, 0)
-    custom_start_btn = btn("Start")
-    def _on_custom_start(_w):
+            sel_lbl.set_text(val)
+            sel_lbl.set_tooltip_text(val)
+    choose_btn.connect("clicked", _on_choose)
+
+    def _on_start(_w):
         exec_cmd = _custom_exec[0].strip()
         if not exec_cmd:
             _flash("Befehl fehlt.")
             return
-        _activate(_guess_window_class(exec_cmd), exec_cmd)
-    custom_start_btn.connect("clicked", _on_custom_start)
-    custom_row.pack_start(custom_start_btn, False, False, 0)
-    outer.pack_start(custom_row, False, False, 0)
+        targets = _targets_from_ctrl(mon_ctrl, mon_names, allow_all=False)
+        mon = targets[0] if targets else ""
+        klass = _guess_window_class(exec_cmd)
+        apply_change(f"Custom: {klass}",
+                      lambda: _appwallpaper_add("custom", klass, exec_cmd, mon),
+                      on_status=lambda s: (_flash(s), refresh_running()))
+    start_btn.connect("clicked", _on_start)
 
-    outer.pack_start(status_lbl, False, False, 2)
+    outer.pack_start(running_box, False, False, 0)
+    outer.pack_start(status_lbl, False, False, 0)
+    return outer
+
+def _build_appearance_wallpapers_apppage_subtab(win: Gtk.Window) -> Gtk.Box:
+    """Untertab "Apps" im Wallpapers-Tab - mit 3 Unter-Untertabs
+    TrafkVerseWallpaper / VLC / Custom (Punkt 3), gleiches
+    Switcher-Muster wie Pictures/Apps eine Ebene höher (_SegmentedControl
+    + Gtk.Stack + _switch_stack für korrektes Neuberechnen der
+    Fenstergröße). Die "laufende Instanzen"-Liste (Punkt 7) gibt es je
+    Unter-Untertab ein eigenes Widget (ein Gtk.Widget kann nur einen
+    Parent haben), synchron gehalten über _refresh_all()."""
+    outer = vbox(4)
+
+    _refresh_all_holder = [lambda: None]
+    def _refresh_all():
+        _refresh_all_holder[0]()
+    running_box_tvs, refresh_running_tvs = _appwallpaper_running_box(win, on_change=_refresh_all)
+    running_box_vlc, refresh_running_vlc = _appwallpaper_running_box(win, on_change=_refresh_all)
+    running_box_custom, refresh_running_custom = _appwallpaper_running_box(win, on_change=_refresh_all)
+    _refresh_all_holder[0] = lambda: (refresh_running_tvs(), refresh_running_vlc(), refresh_running_custom())
+
+    sub_ctrl = _SegmentedControl()
+    sub_ctrl.get_style_context().add_class("bubble")
+    sub_ctrl.get_style_context().add_class("segmented")
+    sub_ctrl.set_can_focus(False)
+    sub_ctrl.append_text("TrafkVerseWallpaper")
+    sub_ctrl.append_text("VLC")
+    sub_ctrl.append_text("Custom")
+    sub_ctrl.set_active(0)
+    sub_row = hbox(6)
+    sub_row.set_halign(Gtk.Align.CENTER)
+    sub_row.pack_start(sub_ctrl.widget, False, False, 0)
+    outer.pack_start(sub_row, False, False, 4)
+
+    sub_stack = Gtk.Stack()
+    sub_stack.set_hhomogeneous(False)
+    sub_stack.set_vhomogeneous(False)
+    sub_stack.add_named(_build_apps_tvs_subtab(win, running_box_tvs, _refresh_all), "tvs")
+    sub_stack.add_named(_build_apps_vlc_subtab(win, running_box_vlc, _refresh_all), "vlc")
+    sub_stack.add_named(_build_apps_custom_subtab(win, running_box_custom, _refresh_all), "custom")
+    sub_stack.set_visible_child_name("tvs")
+    outer.pack_start(sub_stack, True, True, 0)
+
+    def _on_sub_change(_ctrl):
+        name = {"TrafkVerseWallpaper": "tvs", "VLC": "vlc", "Custom": "custom"}.get(
+            sub_ctrl.get_active_text(), "tvs")
+        _switch_stack(sub_stack, win, name)
+    sub_ctrl.connect("changed", _on_sub_change)
+
     return outer
 
 def _build_appearance_wallpapers_tab(win: Gtk.Window) -> Gtk.Box:
@@ -7117,11 +7654,19 @@ def _build_appearance_wallpapers_tab(win: Gtk.Window) -> Gtk.Box:
     outer.pack_start(sub_stack, True, True, 0)
 
     def _on_sub_change(_ctrl):
-        sub_stack.set_visible_child_name(
+        _switch_stack(sub_stack, win,
             "appwallpaper" if sub_ctrl.get_active_text() == "Apps" else "desktop")
     sub_ctrl.connect("changed", _on_sub_change)
 
-    outer.show_all()
+    # KORREKTUR (siehe Chat): outer.show_all() hier NICHT mehr vorzeitig
+    # selbst aufrufen - diese Funktion war die einzige der 5
+    # Appearance-Unterseiten, die sich selbst show_all() gab, BEVOR sie
+    # überhaupt per stack.add_named() in den äußeren Tab-Stack gehängt
+    # wurde (siehe _build_settings_appearance). Das brachte GTKs
+    # Stack-Sichtbarkeits-Tracking durcheinander: der äußere Stack zeigte
+    # beim Öffnen Tab 4 ("Wallpapers") an, obwohl Tab 1 ("Sound") korrekt
+    # als aktiv markiert war. Der Aufrufer (toggle_widget() ->
+    # win.show_all()) zeigt ohnehin alles zum richtigen Zeitpunkt an.
     return outer
 
 def _build_settings_appearance(page: Gtk.Box, key: str, label: str, win: Gtk.Window) -> None:
@@ -7142,6 +7687,7 @@ def _build_settings_appearance(page: Gtk.Box, key: str, label: str, win: Gtk.Win
     t_look     = vbox(4)
     t_lang     = vbox(4)
     t_launcher = vbox(4)
+    t_bar      = vbox(4)
 
     # Gemeinsame Statuszeile für alle Einstellungen dieser Seite (über
     # alle 3 Tabs hinweg EINE einzige, unterhalb des Stacks, damit sie
@@ -7667,12 +8213,63 @@ def _build_settings_appearance(page: Gtk.Box, key: str, label: str, win: Gtk.Win
         hint.get_style_context().add_class("caption")
         t_launcher.pack_start(hint, False, False, 4)
 
+    # ══════════════════════════ TAB: BAR ═════════════════════════════
+    # Kein Abschnittstitel, kein Erklärtext mehr (siehe Chat) - nur noch
+    # Tooltip. Aufbau 1:1 nach dem bereits bewährten SDR-Brightness/
+    # Saturation-Slider-Muster weiter unten in dieser Datei: bsec()-Label
+    # MIT dem aktuellen Wert direkt über einem schmalen (180px statt
+    # voll-hexpand), auf show_val=False gestellten Slider - genau DAS
+    # Muster sorgt dort für richtig eingefärbten Text UND einen schmalen
+    # Regler statt GTKs eigenem (dort offenbar unstyled schwarzem)
+    # Inline-Zahlen-Rendering.
+    if not _trafktuxbar_jsonc_path().is_file():
+        bar_hint = Gtk.Label(
+            label=f"{_trafktuxbar_jsonc_path().name} not found — nothing to adjust yet.")
+        bar_hint.set_line_wrap(True)
+        bar_hint.set_opacity(0.65)
+        bar_hint.get_style_context().add_class("caption")
+        t_bar.pack_start(bar_hint, False, False, 4)
+    else:
+        overhang_lbl = bsec(f"Edge-trigger overhang: {_trafktuxbar_edge_overhang_px()}px")
+        overhang_val_widget = overhang_lbl.get_children()[0]
+        overhang_row, overhang_scale = bslider(
+            "", 5, 65, 1, _trafktuxbar_edge_overhang_px(), cb=None, show_val=False)
+        for ch in overhang_row.get_children():
+            if isinstance(ch, Gtk.Label):
+                overhang_row.remove(ch); break
+        overhang_row.set_halign(Gtk.Align.CENTER)
+        overhang_row.set_size_request(180, -1)
+        overhang_scale.set_tooltip_text(
+            "How far the invisible edge-trigger zone reaches past the screen "
+            "edge — helps reveal the bar when another monitor sits right "
+            "above/below it.")
+
+        _overhang_debounce_id = [0]
+
+        def _on_overhang_change(_s=None):
+            value = int(round(overhang_scale.get_value()))
+            overhang_val_widget.set_label(f"Edge-trigger overhang: {value}px")
+            if _overhang_debounce_id[0]:
+                GLib.source_remove(_overhang_debounce_id[0])
+            def _fire():
+                _overhang_debounce_id[0] = 0
+                ok, err = _trafktuxbar_set_edge_overhang_px(value)
+                if not ok:
+                    _flash_appearance_status(f"Error: {err}")
+                return False
+            _overhang_debounce_id[0] = GLib.timeout_add(400, _fire)
+        overhang_scale.connect("value-changed", _on_overhang_change)
+
+        t_bar.pack_start(overhang_lbl, False, False, 0)
+        t_bar.pack_start(overhang_row, False, False, 4)
+
     # ══════════════════════ Tabs zusammensetzen ══════════════════════
     stack.add_named(t_sound,    "sound")
     stack.add_named(t_look,     "look")
     stack.add_named(t_lang,     "language")
     stack.add_named(t_wall,     "wallpapers")
     stack.add_named(t_launcher, "launcher")
+    stack.add_named(t_bar,      "bar")
 
     # 2 Zeilen statt 1 lange, gleiches Muster wie beim Security-Widget
     # (siehe dort) - 5 Tabs in einer Reihe wären entweder zu breit oder
@@ -7693,7 +8290,8 @@ def _build_settings_appearance(page: Gtk.Box, key: str, label: str, win: Gtk.Win
             ("look", "Look", "preferences-desktop-theme-symbolic", tab_row_top),
             ("language", "Language", "preferences-desktop-locale-symbolic", tab_row_top),
             ("wallpapers", "Wallpapers", "preferences-desktop-wallpaper-symbolic", tab_row_bottom),
-            ("launcher", "Launcher", "system-run-symbolic", tab_row_bottom)):
+            ("launcher", "Launcher", "system-run-symbolic", tab_row_bottom),
+            ("bar", "Bar", "view-dual-symbolic", tab_row_bottom)):
         b = btn(tlabel, active=(name == "sound"))
         b.set_image(Gtk.Image.new_from_icon_name(ticon, Gtk.IconSize.BUTTON))
         b.set_always_show_image(True)
@@ -7966,13 +8564,18 @@ def _current_locale() -> str:
     return m.group(1) if m else ""
 
 def _current_kb_layout() -> str:
-    """Liest kb_layout direkt aus hyprland.lua (nicht 'localectl
-    status' - das X11-Layout dort kann vom tatsächlich in Hyprland
-    aktiven Layout abweichen, hyprland.lua ist die Quelle, die dieses
-    Widget auch SCHREIBT, also auch die richtige Quelle zum LESEN)."""
+    """Liest kb_layout aus UserInput.lua (das Widget schreibt da rein,
+    siehe _set_kb_layout()), nicht aus 'localectl status' - das X11-
+    Layout dort kann vom tatsächlich in Hyprland aktiven Layout
+    abweichen. Fällt mangels eigenem Override auf den Default aus der
+    System-Datei Devices.lua zurück (dort steht kb_layout="de")."""
     try:
-        txt = _hypr_lua_path().read_text()
-        m = re.search(r'kb_layout\s*=\s*"([^"]+)"', txt)
+        m = re.search(r'kb_layout\s*=\s*"([^"]+)"', _hypr_read_user_config("UserInput.lua"))
+        if m: return m.group(1)
+    except Exception:
+        pass
+    try:
+        m = re.search(r'kb_layout\s*=\s*"([^"]+)"', _hypr_read_system_config("Devices.lua"))
         if m: return m.group(1)
     except Exception:
         pass
@@ -7989,23 +8592,24 @@ def _set_system_locale(locale: str) -> tuple[bool, str]:
     return True, ""
 
 def _set_kb_layout(layout: str) -> tuple[bool, str]:
-    """Schreibt kb_layout direkt in hyprland.lua (Regex-Ersetzung im
-    bestehenden hl.config({ input = { kb_layout = "..." } })-Block) -
-    exakt dasselbe Muster wie das Display-Widget es für mode/scale
-    schon nutzt. Wirkt erst nach 'hyprctl reload' bzw. dem nächsten
-    Hyprland-Start - dieses Widget stößt reload NICHT automatisch an,
-    um keine laufenden Fenster/Layouts zu stören; siehe UI-Hinweis."""
-    path = _hypr_lua_path()
-    if not path.is_file():
-        return False, f"hyprland.lua not found ({path})"
+    """Schreibt kb_layout in UserInput.lua (eigener hl.config({input=...})
+    -Aufruf - Hyprland-Config ist additiv, überschreibt also nur
+    dieses eine Feld, ohne die Defaults aus Devices.lua zu verlieren).
+    Erstellt die Datei + HyprlandUserConfigs/, falls nötig. Wirkt erst
+    nach 'hyprctl reload' bzw. dem nächsten Hyprland-Start - dieses
+    Widget stößt reload NICHT automatisch an, um keine laufenden
+    Fenster/Layouts zu stören; siehe UI-Hinweis."""
     try:
-        backup_file(path)
-        txt = path.read_text()
-        new_txt, n = re.subn(r'(kb_layout\s*=\s*)"[^"]*"',
-                              rf'\1"{layout}"', txt, count=1)
-        if n == 0:
-            return False, "kb_layout line not found in hyprland.lua."
-        path.write_text(new_txt)
+        content = (
+            "-- UserInput.lua\n--\n"
+            '-- Automatisch von der "Appearance & Language"-Einstellung generiert\n'
+            "-- (WidgetsDaemon.py). Überschreibt NUR kb_layout aus Devices.lua -\n"
+            "-- Hyprland-Config ist additiv, alle anderen input-Defaults dort\n"
+            "-- bleiben unangetastet. Manuelle Änderungen hier gehen beim\n"
+            "-- nächsten Speichern verloren.\n\n"
+            f'hl.config({{ input = {{ kb_layout = "{layout}" }} }})\n'
+        )
+        _hypr_write_user_config("UserInput.lua", content)
         return True, ""
     except Exception as e:
         return False, str(e)
@@ -8021,10 +8625,52 @@ def _set_kb_layout(layout: str) -> tuple[bool, str]:
 #  erste "enabled = true/false" ersetzen, das würde z.B. genauso gut
 #  decoration.shadow.enabled oder ein anderes Plugin treffen.
 # ────────────────────────────────────────────────────────────
+def _read_user_looks_overrides() -> dict:
+    """{'dynamic_cursors_enabled': bool|None, 'shake_enabled': bool|None}
+    aus UserLooks.lua - None heißt 'kein eigener Override für dieses
+    Feld, der System-Default aus Looks.lua gilt weiter'."""
+    txt = _hypr_read_user_config("UserLooks.lua")
+    out = {"dynamic_cursors_enabled": None, "shake_enabled": None}
+    m = re.search(r'dynamic_cursors\s*=\s*\{\s*enabled\s*=\s*(true|false)', txt)
+    if m:
+        out["dynamic_cursors_enabled"] = (m.group(1) == "true")
+    m2 = re.search(r'shake\s*=\s*\{\s*enabled\s*=\s*(true|false)', txt)
+    if m2:
+        out["shake_enabled"] = (m2.group(1) == "true")
+    return out
+
+def _write_user_looks_overrides(dynamic_cursors_enabled, shake_enabled) -> str:
+    """Jeweils True/False/None - None heißt 'für dieses Feld keinen
+    eigenen Override schreiben, Looks.lua-Default bleibt gültig'. Beide
+    zusammen in einer Datei, damit das Setzen des einen Felds den
+    zuvor gespeicherten Override des anderen nicht verliert."""
+    lines = [
+        "-- UserLooks.lua", "--",
+        '-- Automatisch von der "Appearance & Language"-Einstellung generiert',
+        "-- (WidgetsDaemon.py). Überschreibt NUR die hier gesetzten Felder aus",
+        "-- Looks.lua - Hyprland-Config ist additiv. Manuelle Änderungen hier",
+        "-- gehen beim nächsten Speichern verloren.",
+        "",
+        "if hl.plugin and hl.plugin.dynamic_cursors then",
+    ]
+    if dynamic_cursors_enabled is not None:
+        v = "true" if dynamic_cursors_enabled else "false"
+        lines.append(f"    hl.config({{ plugin = {{ dynamic_cursors = {{ enabled = {v} }} }} }})")
+    if shake_enabled is not None:
+        v = "true" if shake_enabled else "false"
+        lines.append(
+            f"    hl.config({{ plugin = {{ dynamic_cursors = {{ shake = {{ enabled = {v} }} }} }} }})")
+    lines.append("end")
+    lines.append("")
+    return "\n".join(lines)
+
 def _cursor_plugin_enabled() -> bool:
+    ov = _read_user_looks_overrides()
+    if ov["dynamic_cursors_enabled"] is not None:
+        return ov["dynamic_cursors_enabled"]
     try:
-        txt = _hypr_lua_path().read_text()
-        m = re.search(r'dynamic_cursors\s*=\s*\{\s*enabled\s*=\s*(true|false)', txt)
+        m = re.search(r'dynamic_cursors\s*=\s*\{\s*enabled\s*=\s*(true|false)',
+                       _hypr_read_system_config("Looks.lua"))
         if m:
             return m.group(1) == "true"
     except Exception:
@@ -8032,9 +8678,12 @@ def _cursor_plugin_enabled() -> bool:
     return True  # Default im Grundzustand der Config
 
 def _cursor_shake_enabled() -> bool:
+    ov = _read_user_looks_overrides()
+    if ov["shake_enabled"] is not None:
+        return ov["shake_enabled"]
     try:
-        txt = _hypr_lua_path().read_text()
-        m = re.search(r'shake\s*=\s*\{\s*enabled\s*=\s*(true|false)', txt)
+        m = re.search(r'shake\s*=\s*\{\s*enabled\s*=\s*(true|false)',
+                       _hypr_read_system_config("Looks.lua"))
         if m:
             return m.group(1) == "true"
     except Exception:
@@ -8042,30 +8691,16 @@ def _cursor_shake_enabled() -> bool:
     return False  # Default im Grundzustand der Config
 
 def _set_cursor_plugin_enabled(enabled: bool) -> tuple[bool, str]:
-    """Schreibt dynamic_cursors.enabled direkt in hyprland.lua. Wirkt
-    erst nach 'hyprctl reload' bzw. dem nächsten Hyprland-Start,
-    genau wie _set_kb_layout - kein Auto-Reload aus demselben Grund
-    (siehe dortiger Kommentar)."""
-    path = _hypr_lua_path()
-    if not path.is_file():
-        return False, f"hyprland.lua not found ({path})"
+    """Schreibt dynamic_cursors.enabled in UserLooks.lua (erstellt sie
+    + HyprlandUserConfigs/, falls nötig)."""
     try:
-        backup_file(path)
-        txt = path.read_text()
-        new_txt, n = re.subn(
-            r'(dynamic_cursors\s*=\s*\{\s*enabled\s*=\s*)(true|false)',
-            rf'\g<1>{"true" if enabled else "false"}', txt, count=1)
-        if n == 0:
-            return False, "dynamic_cursors plugin block not found in hyprland.lua."
-        path.write_text(new_txt)
-        # FIX: bisher wurde NUR die Datei geschrieben (wirkt erst nach
-        # 'hyprctl reload'/Neustart) - kein Live-Apply. Jetzt zusätzlich
-        # sofort per "hyprctl eval" gegen den laufenden Lua-State
-        # anwenden, exakt dasselbe Muster wie effects_battery_enable/
-        # disable() weiter oben (siehe _hypr_eval()-Kommentar). Fehler
-        # hier werden bewusst NICHT den Rückgabewert kippen - die Datei
-        # wurde korrekt geschrieben, das ist die "Quelle der Wahrheit";
-        # schlägt nur das Live-Apply fehl, greift der neue Wert spätestens
+        ov = _read_user_looks_overrides()
+        _hypr_write_user_config("UserLooks.lua",
+                                _write_user_looks_overrides(enabled, ov["shake_enabled"]))
+        # Zusätzlich sofort per "hyprctl eval" gegen den laufenden Lua-
+        # State anwenden (Datei-Schreiben allein wirkt erst nach Reload/
+        # Neustart) - Fehler hier kippen den Rückgabewert bewusst nicht,
+        # die Datei ist die "Quelle der Wahrheit", greift spätestens
         # beim nächsten Reload.
         _hypr_eval(
             "if hl.plugin.dynamic_cursors then hl.config({ plugin = "
@@ -8077,23 +8712,10 @@ def _set_cursor_plugin_enabled(enabled: bool) -> tuple[bool, str]:
 
 def _set_cursor_shake_enabled(enabled: bool) -> tuple[bool, str]:
     """Wie _set_cursor_plugin_enabled, nur für shake.enabled."""
-    path = _hypr_lua_path()
-    if not path.is_file():
-        return False, f"hyprland.lua not found ({path})"
     try:
-        backup_file(path)
-        txt = path.read_text()
-        new_txt, n = re.subn(
-            r'(shake\s*=\s*\{\s*enabled\s*=\s*)(true|false)',
-            rf'\g<1>{"true" if enabled else "false"}', txt, count=1)
-        if n == 0:
-            return False, "shake block not found in hyprland.lua."
-        path.write_text(new_txt)
-        # FIX ("Shake-to-find geht nicht mehr"): wie bei
-        # _set_cursor_plugin_enabled() oben fehlte das Live-Apply
-        # komplett - nur die Datei wurde geändert, Hyprland bekam davon
-        # erst nach einem Reload etwas mit. Jetzt zusätzlich sofort per
-        # "hyprctl eval" gesetzt.
+        ov = _read_user_looks_overrides()
+        _hypr_write_user_config("UserLooks.lua",
+                                _write_user_looks_overrides(ov["dynamic_cursors_enabled"], enabled))
         _hypr_eval(
             "if hl.plugin.dynamic_cursors then hl.config({ plugin = "
             "{ dynamic_cursors = { shake = { enabled = " +
@@ -8409,11 +9031,17 @@ def _build_settings_display(page: Gtk.Box, key: str, label: str, win: Gtk.Window
                   dim=True), False, False, 0)
         return
 
-    lua_path = _hypr_lua_path()
+    # Seit der hyprland.lua-Aufteilung (siehe Chat) ist UserDisplay.lua
+    # (HyprlandUserConfigs/) die einzig richtige Schreib-Stelle - die alte
+    # hyprland.lua ist jetzt nur noch ein 7-zeiliger require()-Loader und
+    # enthält gar keine hl.monitor(...)-Blöcke mehr. Existiert die Datei
+    # noch nicht, legt der Save-Vorgang sie selbst an (neue Regel) - hier
+    # also nur noch ein informativer Hinweis, keine Fehlermeldung mehr.
+    lua_path = _hypr_user_config_path("UserDisplay.lua")
     if not lua_path.is_file():
         page.pack_start(
-            bitem(f"hyprland.lua not found ({lua_path}) — resolution "
-                  f"will only be set live via hyprctl, not saved permanently.", dim=True), False, False, 0)
+            bitem(f"No saved monitor setup yet — {lua_path.name} will be "
+                  f"created on first change here.", dim=True), False, False, 0)
 
     # ── Auto-Rotate (ScreenRotationDaemon) ───────────────────────────
     # Feature-Detection statt Annahme: rotiert wird nur angeboten, wenn
@@ -9300,9 +9928,24 @@ def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.W
                 return False
             waybar_restart_id[0] = GLib.timeout_add(300, _do_waybar_restart)
 
-            if lua_path.is_file():
+            if True:
+                # Seit der hyprland.lua-Aufteilung ist lua_path jetzt
+                # UserDisplay.lua (HyprlandUserConfigs/) statt der alten
+                # Monolith-Datei - die MUSS laut der neuen Regel vom
+                # Widget selbst angelegt werden, wenn sie noch nicht
+                # existiert (frische Install/erstes Speichern), statt
+                # wie bisher hier einfach stillschweigend NICHTS zu
+                # schreiben. backup_file() ist bei fehlender Datei
+                # ohnehin schon ein sicheres No-Op.
                 backup_file(lua_path)
-                txt = lua_path.read_text()
+                if lua_path.is_file():
+                    txt = lua_path.read_text()
+                else:
+                    txt = (
+                        "-- UserDisplay.lua\n--\n"
+                        "-- Dein tatsächliches Monitor-Setup. Automatisch von der\n"
+                        '-- "Display"-Einstellung generiert (WidgetsDaemon.py).\n\n'
+                    )
                 block_re = re.compile(
                     r'hl\.monitor\(\{[^}]*output\s*=\s*"' +
                     re.escape(name) + r'"[^}]*\}\)', re.S)
@@ -9378,6 +10021,7 @@ def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.W
                 txt = _repack_lua_positions(
                     txt, actual,
                     name, int(new_w_str), int(new_h_str), scale)
+                lua_path.parent.mkdir(parents=True, exist_ok=True)
                 atomic_write_text(lua_path, txt)
 
                 # Nachbar-Positionen auch live per hyprctl setzen, damit
@@ -9712,6 +10356,44 @@ def _waybar_config_paths() -> list:
         candidates.extend(sorted(base.glob("config*.json")))
     return candidates
 
+def _trafktuxbar_jsonc_path() -> Path:
+    return Path(HOME) / ".config" / "TrafkTuxBar" / "TrafkTuxBar.jsonc"
+
+def _trafktuxbar_load() -> dict:
+    p = _trafktuxbar_jsonc_path()
+    if p.is_file():
+        try:
+            return json.loads(_strip_jsonc_comments(p.read_text()))
+        except Exception:
+            pass
+    return {}
+
+def _trafktuxbar_edge_overhang_px() -> int:
+    try:
+        return int(_trafktuxbar_load().get("autohide", {}).get("edge_overhang_px", 15))
+    except Exception:
+        return 15
+
+def _trafktuxbar_set_edge_overhang_px(value: int) -> tuple[bool, str]:
+    """Patcht NUR den Zahlenwert per Regex direkt im JSONC-Rohtext, statt
+    die Datei über json.loads()+json.dumps() neu zusammenzusetzen - das
+    würde alle '//'-Kommentare killen, von denen TrafkTuxBar.jsonc
+    reichlich hat."""
+    p = _trafktuxbar_jsonc_path()
+    if not p.is_file():
+        return False, f"{p} not found"
+    try:
+        txt = p.read_text()
+        new_txt, n = re.subn(r'("edge_overhang_px"\s*:\s*)-?\d+', rf'\g<1>{value}', txt, count=1)
+        if n == 0:
+            return False, "edge_overhang_px not found in TrafkTuxBar.jsonc"
+        backup_file(p)
+        atomic_write_text(p, new_txt)
+        run_bg(["bash", "-c", "killall TrafkTuxBar; $HOME/.config/TrafkTuxBar/TrafkTuxBar &"])
+        return True, ""
+    except Exception as e:
+        return False, str(e)
+
 def _strip_jsonc_comments(text: str) -> str:
     """Entfernt // und /* */ Kommentare aus einer JSONC-Datei - ohne
     '//' oder '/*' INNERHALB von String-Literalen fälschlich als
@@ -9809,6 +10491,8 @@ SETTINGS_CATEGORIES = [
     ("calendar",   "󰃭", "Calendar",      "Weather, Time, Events"),
     ("security",   "󰦝", "Security",      "Privacy, Kill-Switches"),
     ("apps",       "󱁤", "Apps & Shortcuts", "Launcher editor, Config files"),
+    ("devices",    "", "Devices",       "Touch/Tablet-to-monitor binding"),
+    ("widgets",    "󰍹", "Widgets",       "Clock mode, seconds, milliseconds"),
 ]
 
 def _build_settings_brightness(page: Gtk.Box, key: str, label: str, win: Gtk.Window) -> None:
@@ -12956,6 +13640,1818 @@ def build_security(win: Gtk.Window):
 def _build_settings_security(page: Gtk.Box, key: str, label: str, win: Gtk.Window) -> None:
     page.pack_start(_security_content(win), True, True, 0)
 
+# ════════════════════════════════════════════════════════════
+#  APP EDITOR — Tab 1: TrafkTux App Launcher (menu.json)
+#
+#  Spiegelt die App-Quellen-Logik 1:1 aus TrafkTuxLauncher.c
+#  (get_desktop_apps/get_filtered_desktop_apps/get_path_binaries/
+#  extract_binary/strip_exec_field_codes), damit Editor und Launcher
+#  immer dieselbe Sicht auf "welche Apps gibt es" / "was ist schon
+#  einsortiert" haben. "All Packages" in menu.json ist trotz des
+#  Namens $PATH-Binaries, keine Pacman-Pakete (siehe VMODE_RUN dort).
+# ════════════════════════════════════════════════════════════
+
+_APPLAUNCHER_WRAPPER_PREFIXES = ("kitty", "sudo")
+# Binaries, die so generisch sind, dass ein exec-Match darauf NICHTS über
+# die eigentliche App aussagt (Interpreter/Runtime-Wrapper - typischerweise
+# das erste Token bei "flatpak run <id>", "python3 <script>.py", etc.).
+# Ohne diese Ausnahme reicht 1 einsortierte App mit so einem Exec, um ALLE
+# anderen Apps mit demselben Interpreter fälschlich aus "Unsorted" zu
+# werfen, weil extract_binary() nur das erste Token nimmt und Argumente
+# ignoriert - BESTÄTIGT derselbe Effekt wie in extract_binary() in
+# TrafkTuxLauncher.c (dort inzwischen mit GENERIC_BINARIES genauso
+# gefixt, Liste hier bewusst synchron gehalten - z.B. "steam" bei JEDEM
+# per Steam gestarteten Spiel-Shortcut, nicht nur bei Steam selbst).
+_APPLAUNCHER_GENERIC_BINARIES = {
+    "env", "bash", "sh", "zsh", "fish", "python", "python3", "python2",
+    "perl", "ruby", "node", "nodejs", "electron", "java", "javaw",
+    "flatpak", "snap", "appimage-run", "wine", "wine64", "wineconsole",
+    "steam", "lutris", "heroic", "bottles",
+}
+_APPLAUNCHER_SCAN_CACHE_TTL = 15  # Sekunden, wie SCAN_CACHE_TTL im Launcher
+
+def _applauncher_sys_menu_path() -> Path:
+    return Path(HOME) / ".config" / "TrafkTuxLauncher" / "AppLauncher" / "menu.json"
+
+def _applauncher_user_menu_path() -> Path:
+    # Liegt laut der neuen TrafkTuxLauncher.c-Version im selben Ordner wie
+    # menu.json (siehe ensure_user_menu_skeleton() dort).
+    return _applauncher_sys_menu_path().parent / "Usermenu.json"
+
+# Fallback, falls die Datei (noch) nicht existiert - 1:1 der mitgeshippte
+# Standard-Inhalt, damit der Editor auf einem System ohne installierten
+# TrafkTuxLauncher nicht einfach crasht.
+_APPLAUNCHER_DEFAULT_TREE = {
+    "name": "root", "type": "folder", "children": [
+        {"name": "System", "type": "folder", "icon": "computer", "children": [
+            {"name": "Xfce4 Terminal", "type": "app", "icon": "utilities-terminal", "exec": "xfce4-terminal"},
+            {"name": "Thunar", "type": "app", "icon": "system-file-manager", "exec": "thunar"},
+            {"name": "Ark", "type": "app", "icon": "ark", "exec": "ark"},
+        ]},
+        {"name": "Creation", "type": "folder", "icon": "applications-graphics", "children": [
+            {"name": "VScodium", "type": "app", "icon": "vscodium", "exec": "vscodium"},
+        ]},
+        {"name": "Utilitys", "type": "folder", "icon": "applications-accessories", "children": [
+            {"name": "Fastfetch", "type": "app", "icon": "utilities-system-monitor",
+             "exec": "xfce4-terminal --hold fastfetch"},
+        ]},
+        {"name": "Games", "type": "folder", "icon": "applications-games", "children": []},
+        {"name": "Multimedia", "type": "folder", "icon": "applications-multimedia", "children": [
+            {"name": "VLC", "type": "app", "icon": "vlc", "exec": "vlc"},
+            {"name": "Viewnior", "type": "app", "icon": "viewnior", "exec": "viewnior"},
+        ]},
+        {"name": "Social", "type": "folder", "icon": "user-available", "children": [
+            {"name": "Firefox", "type": "app", "icon": "firefox", "exec": "firefox"},
+        ]},
+        {"name": "Stores", "type": "folder", "icon": "software-center", "children": [
+            {"name": "Pamac Manager", "type": "app", "icon": "package-x-generic", "exec": "pamac-manager"},
+        ]},
+        {"name": "Settings", "type": "folder", "icon": "preferences-system", "children": []},
+        {"name": "Administration", "type": "folder", "icon": "drive-harddisk", "children": [
+            {"name": "Htop", "type": "app", "icon": "utilities-system-monitor", "exec": "xfce4-terminal Htop"},
+            {"name": "Gnome Disks", "type": "app", "icon": "gnome-disks", "exec": "gnome-disk-utility"},
+            {"name": "Fedora Media Writer", "type": "app", "icon": "mediawriter", "exec": "mediawriter"},
+        ]},
+        {"name": "Unordered Programs", "type": "special-drun-filtered", "icon": "applications-utilities"},
+        {"name": "All Programs", "type": "special-drun", "icon": "system-run"},
+        {"name": "All Packages", "type": "special-run", "icon": "package-x-generic"},
+    ],
+}
+
+def _applauncher_load_sys_tree() -> dict:
+    """menu.json - "gehört" dem System/Update-Skript. Der Editor liest das
+    nur noch (für Anzeige + Dedup), schreibt es NIE mehr - genau wie die
+    neue TrafkTuxLauncher.c das jetzt auch so vorsieht (Usermenu.json ist
+    die einzige Datei, die update-sicher eigene Einträge aufnimmt)."""
+    p = _applauncher_sys_menu_path()
+    if p.is_file():
+        try:
+            data = json.loads(p.read_text())
+            if isinstance(data, dict) and isinstance(data.get("children"), list):
+                return data
+        except Exception as e:
+            print(f"[AppEditor] {p}: invalid JSON, using bundled default ({e})", file=sys.stderr)
+    return json.loads(json.dumps(_APPLAUNCHER_DEFAULT_TREE))  # deep copy ohne extra import
+
+def _applauncher_build_user_skeleton(sys_tree: dict) -> dict:
+    """Python-Port von ensure_user_menu_skeleton() in TrafkTuxLauncher.c:
+    ein leerer Eintrag pro "echtem" Ordner (hat selbst "children") der
+    GERADE geladenen menu.json - special-drun/-filtered/-run-Einträge
+    haben kein "children" und werden dabei automatisch übersprungen."""
+    skeleton = {"name": "root", "type": "folder", "children": []}
+    for child in sys_tree.get("children", []) or []:
+        if isinstance(child.get("children"), list) and child.get("name"):
+            skeleton["children"].append({"name": child["name"], "type": "folder", "children": []})
+    return skeleton
+
+def _applauncher_load_user_tree(sys_tree: dict) -> dict:
+    """Usermenu.json - hier landen ALLE Änderungen aus dem Editor. Fehlt
+    sie (noch) - z.B. weil der Launcher in der neuen Version noch nie
+    gelaufen ist -, wird nur im Speicher ein zu menu.json passendes
+    leeres Gerüst gebaut (genau wie ensure_user_menu_skeleton() es auf
+    der Platte täte); geschrieben wird sie trotzdem erst beim Save."""
+    p = _applauncher_user_menu_path()
+    if p.is_file():
+        try:
+            data = json.loads(p.read_text())
+            if isinstance(data, dict) and isinstance(data.get("children"), list):
+                return data
+        except Exception as e:
+            print(f"[AppEditor] {p}: invalid JSON, using empty skeleton ({e})", file=sys.stderr)
+    return _applauncher_build_user_skeleton(sys_tree)
+
+def _applauncher_save_user_tree(tree: dict) -> None:
+    p = _applauncher_user_menu_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    backup_file(p)
+    atomic_write_text(p, json.dumps(tree, indent=2) + "\n")
+
+# ── Merge sys (menu.json) + user (Usermenu.json) für Anzeige/Dedup -
+# Python-Port von merge_user_node() in TrafkTuxLauncher.c. Das Ergebnis
+# ist IMMER eine frische, unabhängige Kopie (nie Original-Referenzen),
+# jeder Knoten bekommt "_source": "sys"|"user" (nur für die UI - wird
+# nie gespeichert, Speichern schreibt ausschließlich state["user_tree"]). ─
+def _applauncher_tag_source(node: dict, source: str) -> dict:
+    node["_source"] = source
+    for c in node.get("children") or []:
+        _applauncher_tag_source(c, source)
+    return node
+
+def _applauncher_merge_user_into(sys_copy: dict, user_node: dict) -> None:
+    user_children = user_node.get("children") or []
+    if not user_children:
+        return
+    sys_children = sys_copy.setdefault("children", [])
+    for uc in user_children:
+        uname = uc.get("name")
+        match = next((sc for sc in sys_children if sc.get("name") == uname), None) if uname else None
+        # WICHTIG: "children" in uc (Existenz des Keys), NICHT uc.get("children")
+        # (Wahrheitswert)! Ein frisch angelegter, noch LEERER User-Ordner hat
+        # "children": [] - das ist in Python falsy, hätte also jeden der 9
+        # Root-Ordner aus dem leeren Usermenu.json-Gerüst fälschlich als
+        # komplett NEUEN, doppelten Ordner angehängt statt ihn mit dem
+        # gleichnamigen sys-Ordner zu verschmelzen. Exakt der Bug, den
+        # json_object_has_member() in merge_user_node() (C) durch Prüfen
+        # der Key-EXISTENZ statt des Inhalts vermeidet - hier jetzt genauso.
+        if match is not None and "children" in uc:
+            _applauncher_merge_user_into(match, uc)
+        else:
+            sys_children.append(_applauncher_tag_source(json.loads(json.dumps(uc)), "user"))
+
+def _applauncher_build_merged_tree(sys_tree: dict, user_tree: dict) -> dict:
+    merged = _applauncher_tag_source(json.loads(json.dumps(sys_tree)), "sys")
+    _applauncher_merge_user_into(merged, user_tree)
+    return merged
+
+def _applauncher_name_chain(tree: dict, path: list) -> list:
+    """Namen entlang eines Index-Pfads im (gemergten) Baum, z.B.
+    ['System', 'MeinSubordner'] - Grundlage, um denselben Ort in
+    state["user_tree"] wiederzufinden/anzulegen."""
+    names = []
+    node = tree
+    for idx in path:
+        children = node.get("children") or []
+        if idx < 0 or idx >= len(children):
+            break
+        node = children[idx]
+        names.append(node.get("name", "?"))
+    return names
+
+def _applauncher_resolve_or_create_user_path(user_tree: dict, name_chain: list) -> dict:
+    """Läuft name_chain in user_tree ab und legt fehlende Zwischenordner
+    automatisch an (leer) - macht jeden im gemergten Baum sichtbaren
+    Ordner-Pfad automatisch beschreibbar in Usermenu.json, auch wenn er
+    bisher nur in menu.json existiert."""
+    node = user_tree
+    for name in name_chain:
+        children = node.setdefault("children", [])
+        match = next((c for c in children if c.get("name") == name and c.get("type") == "folder"), None)
+        if match is None:
+            match = {"name": name, "type": "folder", "children": []}
+            children.append(match)
+        node = match
+    return node
+
+# ── Baum-Navigation: Pfade sind Index-Listen, analog zur "/"-Index-
+# Pfadnotation von get_node_by_path() in TrafkTuxLauncher.c ────────────
+def _applauncher_node_at(tree: dict, path: list) -> dict | None:
+    node = tree
+    for idx in path:
+        children = node.get("children")
+        if not isinstance(children, list) or idx < 0 or idx >= len(children):
+            return None
+        node = children[idx]
+    return node
+
+def _applauncher_iter_app_nodes(tree: dict, path: list | None = None):
+    """Liefert (path, node) für jeden 'app'-Knoten im kompletten Baum."""
+    if path is None:
+        path = []
+    for i, child in enumerate(tree.get("children", []) or []):
+        cpath = path + [i]
+        if child.get("type") == "app":
+            yield cpath, child
+        elif child.get("type") == "folder":
+            yield from _applauncher_iter_app_nodes(child, cpath)
+
+def _applauncher_extract_binary(exec_str: str) -> str | None:
+    """Portierung von extract_binary() in TrafkTuxLauncher.c."""
+    if not exec_str:
+        return None
+    p = exec_str.strip()
+    if not p:
+        return None
+    again = True
+    while again:
+        again = False
+        for pre in _APPLAUNCHER_WRAPPER_PREFIXES:
+            if p[:len(pre)].lower() == pre and (len(p) == len(pre) or p[len(pre)] in " \t"):
+                p = p[len(pre):].lstrip()
+                again = True
+                break
+        low = p.lower()
+        if low.startswith("bash") and len(p) > 4 and p[4] in " \t":
+            q = p[4:].lstrip()
+            if q[:2].lower() == "-c" and len(q) > 2 and q[2] in " \t":
+                q = q[2:].lstrip()
+                if q[:1] in ("'", '"'):
+                    quote = q[0]
+                    end = q.find(quote, 1)
+                    if end != -1:
+                        p = q[1:end].lstrip()
+                        again = True
+                        continue
+    bin_part = re.split(r"[ \t\n\r]", p, maxsplit=1)[0]
+    return os.path.basename(bin_part) if bin_part else None
+
+def _applauncher_used_keys(tree: dict) -> tuple:
+    """(names, exec_binaries), beide casefolded - dieselben zwei Dedup-
+    Schlüssel wie get_filtered_desktop_apps() im Launcher."""
+    names, execs = set(), set()
+    for _path, node in _applauncher_iter_app_nodes(tree):
+        nm = (node.get("name") or "").strip().casefold()
+        if nm:
+            names.add(nm)
+        bin_ = _applauncher_extract_binary(node.get("exec") or "")
+        if bin_ and bin_.casefold() not in _APPLAUNCHER_GENERIC_BINARIES:
+            execs.add(bin_.casefold())
+    return names, execs
+
+_APPLAUNCHER_FIELD_CODE_RE = re.compile(r"%(.)")
+def _applauncher_strip_exec_field_codes(exec_str: str) -> str:
+    def _sub(m):
+        c = m.group(1)
+        if c == "%":
+            return "%"
+        if c in "fFuUickdDnNvm":
+            return ""
+        return m.group(0)
+    out = _APPLAUNCHER_FIELD_CODE_RE.sub(_sub, exec_str or "")
+    return " ".join(out.split())
+
+def _applauncher_xdg_data_dirs() -> list:
+    raw = [str(Path(HOME) / ".local" / "share")]
+    xdg_data_home = os.environ.get("XDG_DATA_HOME")
+    if xdg_data_home:
+        raw.insert(0, xdg_data_home)
+    xdg_data_dirs = os.environ.get("XDG_DATA_DIRS") or "/usr/local/share:/usr/share"
+    raw += [d for d in xdg_data_dirs.split(":") if d]
+    seen, out = set(), []
+    for d in raw:
+        if d not in seen:
+            seen.add(d); out.append(d)
+    return out
+
+def _applauncher_current_desktop_names() -> set:
+    raw = os.environ.get("XDG_CURRENT_DESKTOP") or ""
+    return {p.strip().casefold() for p in raw.split(":") if p.strip()}
+
+_applauncher_desktop_cache = {"ts": 0.0, "apps": []}
+_applauncher_path_cache = {"ts": 0.0, "apps": []}
+
+def _applauncher_scan_desktop_apps() -> list:
+    """Portierung von collect_desktop_apps_impl(): Scan über
+    XDG_DATA_DIRS/applications/*.desktop, mit demselben Cache-TTL wie
+    der Launcher selbst, damit beide ungefähr dieselbe Sicht haben."""
+    now = time.time()
+    if (now - _applauncher_desktop_cache["ts"]) < _APPLAUNCHER_SCAN_CACHE_TTL:
+        return _applauncher_desktop_cache["apps"]
+
+    current_desktop = _applauncher_current_desktop_names()
+    seen_ids: set = set()
+    out: list = []
+    for data_dir in _applauncher_xdg_data_dirs():
+        app_dir = Path(data_dir) / "applications"
+        if not app_dir.is_dir():
+            continue
+        try:
+            found = sorted(app_dir.rglob("*.desktop"))
+        except Exception:
+            continue
+        for full_path in found:
+            try:
+                rel = full_path.relative_to(app_dir)
+            except Exception:
+                continue
+            desktop_id = "-".join(rel.parts)
+            if desktop_id in seen_ids:
+                continue
+            cp = configparser.RawConfigParser(strict=False, interpolation=None)
+            try:
+                cp.read(full_path, encoding="utf-8")
+            except Exception:
+                continue
+            if not cp.has_section("Desktop Entry"):
+                continue
+            sec = cp["Desktop Entry"]
+            seen_ids.add(desktop_id)
+            if sec.get("Type", "Application") != "Application":
+                continue
+            if sec.get("Hidden", "false").strip().lower() == "true":
+                continue
+            if sec.get("NoDisplay", "false").strip().lower() == "true":
+                continue
+            only_show_in = sec.get("OnlyShowIn", "")
+            if only_show_in and current_desktop:
+                allowed = bool({x.strip().casefold() for x in only_show_in.split(";") if x.strip()}
+                                & current_desktop)
+                if not allowed:
+                    continue
+            not_show_in = sec.get("NotShowIn", "")
+            if not_show_in and current_desktop:
+                denied = bool({x.strip().casefold() for x in not_show_in.split(";") if x.strip()}
+                               & current_desktop)
+                if denied:
+                    continue
+            exec_raw = sec.get("Exec", "")
+            if not exec_raw.strip():
+                continue
+            name = sec.get("Name", "").strip() or desktop_id
+            icon = sec.get("Icon", "").strip() or "application-x-executable"
+            stripped = _applauncher_strip_exec_field_codes(exec_raw)
+            terminal = sec.get("Terminal", "false").strip().lower() == "true"
+            final_exec = f"kitty {stripped}" if terminal else stripped
+            out.append({"name": name, "icon": icon, "exec": final_exec, "sort_key": name.casefold()})
+    out.sort(key=lambda e: e["sort_key"])
+    _applauncher_desktop_cache["ts"] = now
+    _applauncher_desktop_cache["apps"] = out
+    return out
+
+def _applauncher_scan_path_binaries() -> list:
+    """Portierung von get_path_binaries() - trotz des irreführenden
+    Namens 'All Packages' in menu.json sind das $PATH-Binaries, keine
+    Pacman-Pakete (siehe VMODE_RUN in TrafkTuxLauncher.c)."""
+    now = time.time()
+    if (now - _applauncher_path_cache["ts"]) < _APPLAUNCHER_SCAN_CACHE_TTL:
+        return _applauncher_path_cache["apps"]
+    path_env = os.environ.get("PATH") or "/usr/local/bin:/usr/bin:/bin"
+    seen: set = set()
+    out: list = []
+    for d in path_env.split(":"):
+        if not d:
+            continue
+        try:
+            entries = sorted(os.listdir(d))
+        except OSError:
+            continue
+        for fname in entries:
+            if fname in seen:
+                continue
+            full = os.path.join(d, fname)
+            if os.path.isfile(full) and os.access(full, os.X_OK):
+                seen.add(fname)
+                out.append({"name": fname, "icon": "application-x-executable",
+                            "exec": f"'{full}'", "sort_key": fname.casefold()})
+    out.sort(key=lambda e: e["sort_key"])
+    _applauncher_path_cache["ts"] = now
+    _applauncher_path_cache["apps"] = out
+    return out
+
+def _applauncher_hidden_keys(user_tree: dict) -> tuple:
+    """(names, exec_binaries) aus user_tree["hidden_apps"] - Apps, die
+    über den 'Hide'-Button nie in Unsorted (weder hier noch im echten
+    Launcher, siehe get_filtered_desktop_apps() in TrafkTuxLauncher.c)
+    auftauchen sollen, OHNE irgendwo einsortiert zu sein."""
+    names, execs = set(), set()
+    for h in user_tree.get("hidden_apps", []) or []:
+        nm = (h.get("name") or "").strip().casefold()
+        if nm:
+            names.add(nm)
+        bin_ = _applauncher_extract_binary(h.get("exec") or "")
+        if bin_ and bin_.casefold() not in _APPLAUNCHER_GENERIC_BINARIES:
+            execs.add(bin_.casefold())
+    return names, execs
+
+def _applauncher_unsorted_apps(tree: dict, user_tree: dict) -> list:
+    """Portierung von get_filtered_desktop_apps(): alle Desktop-Apps,
+    MINUS die, deren Name oder exec-Binary schon irgendwo im Baum
+    verwendet wird, MINUS die, die explizit versteckt wurden."""
+    used_names, used_execs = _applauncher_used_keys(tree)
+    hidden_names, hidden_execs = _applauncher_hidden_keys(user_tree)
+    names = used_names | hidden_names
+    execs = used_execs | hidden_execs
+    out = []
+    for e in _applauncher_scan_desktop_apps():
+        if e["name"].casefold() in names:
+            continue
+        bin_ = _applauncher_extract_binary(e["exec"])
+        if bin_ and bin_.casefold() in execs:
+            continue
+        out.append(e)
+    return out
+
+def _applauncher_hidden_apps_list(user_tree: dict) -> list:
+    """Einträge für den 'Hidden'-Tab: gegen den LIVE Desktop-Scan
+    aufgelöst (aktuelles Icon/Name), mit Fallback auf die gespeicherten
+    Werte, falls die App zwischenzeitlich deinstalliert wurde."""
+    hidden_names, hidden_execs = _applauncher_hidden_keys(user_tree)
+    if not hidden_names and not hidden_execs:
+        return []
+    live_by_name = {e["name"].casefold(): e for e in _applauncher_scan_desktop_apps()}
+    out = []
+    for h in user_tree.get("hidden_apps", []) or []:
+        nm = (h.get("name") or "").strip()
+        live = live_by_name.get(nm.casefold())
+        if live:
+            out.append(dict(live))
+        else:
+            out.append({"name": nm or "?", "icon": h.get("icon") or "application-x-executable",
+                        "exec": h.get("exec", ""), "sort_key": nm.casefold()})
+    out.sort(key=lambda e: e.get("sort_key", e["name"].casefold()))
+    return out
+
+def _applauncher_custom_apps(tree: dict) -> list:
+    """App-Knoten im Baum, die über 'New Custom App' im Editor angelegt
+    wurden (markiert mit 'custom': true - ein Zusatzfeld, das
+    TrafkTuxLauncher.c schlicht ignoriert, da JSON-GLib nur die ihm
+    bekannten Member ausliest)."""
+    out = []
+    for path, node in _applauncher_iter_app_nodes(tree):
+        if node.get("custom"):
+            out.append({"name": node.get("name", ""),
+                        "icon": node.get("icon") or "application-x-executable",
+                        "exec": node.get("exec", ""), "path": path})
+    out.sort(key=lambda e: e["name"].casefold())
+    return out
+
+def _applauncher_ordered_apps(tree: dict) -> list:
+    out = []
+    for path, node in _applauncher_iter_app_nodes(tree):
+        folder_names = []
+        cur = tree
+        for idx in path[:-1]:
+            cur = cur["children"][idx]
+            folder_names.append(cur.get("name", "?"))
+        out.append({"name": node.get("name", ""),
+                    "icon": node.get("icon") or "application-x-executable",
+                    "exec": node.get("exec", ""), "path": path,
+                    "folder": " / ".join(folder_names) if folder_names else "—"})
+    out.sort(key=lambda e: (e["folder"], e["name"].casefold()))
+    return out
+
+# ── Zeilen-/Zellen-Widgets ───────────────────────────────────────────
+# KEIN Drag & Drop (mehr) - bewusst rausgeworfen (siehe Chat: "drag und
+# drop muss es auch nicht haben"): jede Zeile/jedes Icon ist stattdessen
+# ein ganz normaler Gtk.Button - klicken fügt die App/den neuen Ordner/
+# die neue Custom-App dem GERADE GEÖFFNETEN Ordner hinzu. Button statt
+# reiner Box auch deshalb, weil nur Gtk.Button von Haus aus Hover-/
+# Press-Feedback über das Theme bekommt (siehe _settings_category_row
+# weiter oben, gleiches Prinzip) - eine reine Box bekommt das NICHT.
+_APPLAUNCHER_NAME_MAX_CHARS = 24
+
+_APPLAUNCHER_TEXT_PX = 13       # Basis-Schriftgröße von .bubble.item (siehe CSS oben)
+_APPLAUNCHER_ICON_RATIO = 1.65  # Icon-Größe relativ zum Text (Wunsch: 1.65x)
+_APPLAUNCHER_ICON_PX = round(_APPLAUNCHER_TEXT_PX * _APPLAUNCHER_ICON_RATIO)     # Zeilen
+_APPLAUNCHER_ICON_PX_LG = _APPLAUNCHER_ICON_PX  # Root-Ordner-Zellen - gleiche Regel
+
+def _applauncher_icon_img(icon_name: str, px: int = _APPLAUNCHER_ICON_PX) -> Gtk.Image:
+    """Lädt IMMER exakt px×px, egal ob Theme-Icon-Name ('firefox') oder
+    absoluter Pfad. Letzteres kommt bei vielen Flatpak/AppImage/manuell
+    installierten .desktop-Dateien vor (Icon=/pfad/zu/oft-riesigem.png,
+    z.B. 512x512) - Gtk.Image.new_from_icon_name() kennt solche Pfade
+    nicht und hat dafür dann in nativer Auflösung statt der angefragten
+    Größe gerendert (der 'Icon frisst den halben Bildschirm'-Bug)."""
+    name = (icon_name or "").strip() or "application-x-executable"
+    if os.path.isabs(name):
+        try:
+            pb = GdkPixbuf.Pixbuf.new_from_file_at_scale(name, px, px, True)
+            return Gtk.Image.new_from_pixbuf(pb)
+        except Exception:
+            name = "application-x-executable"
+    img = Gtk.Image.new_from_icon_name(name, Gtk.IconSize.BUTTON)
+    img.set_pixel_size(px)  # überschreibt IconSize hart auf px, immer gleich groß
+    return img
+
+def _applauncher_folder_cell(node: dict, on_click) -> Gtk.Button:
+    b = Gtk.Button()
+    b.get_style_context().add_class("bubble")
+    b.get_style_context().add_class("item")
+    b.set_size_request(72, 60)
+    inner = vbox(2); inner.set_halign(Gtk.Align.CENTER)
+    inner.pack_start(_applauncher_icon_img(node.get("icon") or "folder", _APPLAUNCHER_ICON_PX_LG),
+                      False, False, 0)
+    lbl = Gtk.Label(label=node.get("name", "?"))
+    lbl.set_ellipsize(Pango.EllipsizeMode.END)
+    lbl.set_max_width_chars(10)
+    inner.pack_start(lbl, False, False, 0)
+    b.add(inner)
+    b.connect("clicked", lambda _b: on_click())
+    return b
+
+def _applauncher_child_row(node: dict, on_open, on_remove, on_change_icon,
+                            on_move_up, on_move_down) -> Gtk.Widget:
+    """Zeile innerhalb eines geöffneten Ordners. Icon ist IMMER sein
+    eigener kleiner Button (klicken = Icon ändern) - getrennt vom
+    Namens-Teil, weil GTK keine Buttons ineinander verschachteln kann.
+    Ordner-Namen sind zusätzlich ein klickbarer Button (navigiert rein),
+    App-Namen nur Text. Rechts: ▲▼ zum Umsortieren (statt Drag - siehe
+    Chat: "2 Pfeile, das ginge auch"), dann der ✕-Button."""
+    row = hbox(2)
+    is_folder = node.get("type") == "folder"
+    is_sys = node.get("_source") == "sys"
+    name = node.get("name", "?") + (" ›" if is_folder else "")
+    if is_sys:
+        name += "  (system)"
+    icon = node.get("icon") or ("folder" if is_folder else "application-x-executable")
+
+    if on_change_icon:
+        icon_btn: Gtk.Widget = Gtk.Button()
+        icon_btn.get_style_context().add_class("bubble")
+        icon_btn.get_style_context().add_class("item")
+        icon_btn.set_tooltip_text("Change icon")
+        icon_btn.add(_applauncher_icon_img(icon))
+        icon_btn.connect("clicked", lambda _b: on_change_icon())
+    else:
+        icon_btn = _applauncher_icon_img(icon)   # read-only (menu.json) - kein Button, kein Hover
+    row.pack_start(icon_btn, False, False, 0)
+
+    if on_open:
+        b = Gtk.Button()
+        b.get_style_context().add_class("bubble")
+        b.get_style_context().add_class("item")
+        lbl = Gtk.Label(label=name)
+        lbl.set_halign(Gtk.Align.START)
+        lbl.set_ellipsize(Pango.EllipsizeMode.END)
+        lbl.set_max_width_chars(_APPLAUNCHER_NAME_MAX_CHARS)
+        b.add(lbl)
+        b.connect("clicked", lambda _b: on_open())
+        content: Gtk.Widget = b
+    else:
+        inner = hbox(6)
+        inner.get_style_context().add_class("bubble")
+        inner.get_style_context().add_class("item")
+        pad(inner, h=6, v=3)
+        lbl = Gtk.Label(label=name)
+        lbl.set_halign(Gtk.Align.START)
+        lbl.set_ellipsize(Pango.EllipsizeMode.END)
+        lbl.set_max_width_chars(_APPLAUNCHER_NAME_MAX_CHARS)
+        inner.pack_start(lbl, True, True, 0)
+        content = inner
+
+    row.pack_start(content, True, True, 0)
+
+    # Reorder-Pfeile und ✕ gibt's NUR für user-eigene Einträge - für
+    # menu.json-Einträge (on_* ist dann None) werden sie gar nicht erst
+    # gebaut, statt sie nur ausgegraut anzuzeigen (read-only = read-only).
+    if on_move_up is not None or on_move_down is not None:
+        up = Gtk.Button.new_from_icon_name("go-up-symbolic", Gtk.IconSize.MENU)
+        up.set_relief(Gtk.ReliefStyle.NONE)
+        up.set_tooltip_text("Move up")
+        up.set_sensitive(on_move_up is not None)
+        if on_move_up:
+            up.connect("clicked", lambda _b: on_move_up())
+        row.pack_start(up, False, False, 0)
+
+        down = Gtk.Button.new_from_icon_name("go-down-symbolic", Gtk.IconSize.MENU)
+        down.set_relief(Gtk.ReliefStyle.NONE)
+        down.set_tooltip_text("Move down")
+        down.set_sensitive(on_move_down is not None)
+        if on_move_down:
+            down.connect("clicked", lambda _b: on_move_down())
+        row.pack_start(down, False, False, 0)
+
+    if on_remove:
+        rm = Gtk.Button.new_from_icon_name("list-remove-symbolic", Gtk.IconSize.MENU)
+        rm.set_relief(Gtk.ReliefStyle.NONE)
+        rm.set_tooltip_text("Unassign")
+        rm.connect("clicked", lambda _b: on_remove())
+        row.pack_start(rm, False, False, 0)
+    return row
+
+def _applauncher_source_row(entry: dict, subtitle: str | None, on_click,
+                             on_toggle_hide=None, hide_mode: str = "hide") -> Gtk.Widget:
+    """Zeile in der rechten Quell-Liste. Hauptbutton (Icon+Name) klicken
+    = der im linken Bereich gerade geöffnete Ordner bekommt diesen
+    Eintrag (bzw. im 'Hidden'-Tab: dasselbe wie der Unhide-Button).
+    on_toggle_hide, falls gesetzt, hängt rechts einen kleinen
+    Verstecken/Einblenden-Button an (eigener Button, da GTK keine
+    Buttons ineinander verschachteln kann)."""
+    row = hbox(2)
+    main = Gtk.Button()
+    main.get_style_context().add_class("bubble")
+    main.get_style_context().add_class("item")
+    inner = hbox(6); pad(inner, h=2, v=0)
+    inner.pack_start(_applauncher_icon_img(entry.get("icon")), False, False, 0)
+    txt = vbox(0)
+    lbl = Gtk.Label(label=entry.get("name", "?"))
+    lbl.set_halign(Gtk.Align.START)
+    lbl.set_ellipsize(Pango.EllipsizeMode.END)
+    lbl.set_max_width_chars(_APPLAUNCHER_NAME_MAX_CHARS)
+    txt.pack_start(lbl, False, False, 0)
+    if subtitle:
+        sub = Gtk.Label(label=subtitle)
+        sub.set_halign(Gtk.Align.START)
+        sub.set_opacity(0.6)
+        sub.set_ellipsize(Pango.EllipsizeMode.END)
+        sub.set_max_width_chars(_APPLAUNCHER_NAME_MAX_CHARS)
+        sub.get_style_context().add_class("caption")
+        txt.pack_start(sub, False, False, 0)
+    inner.pack_start(txt, True, True, 0)
+    main.add(inner)
+    main.connect("clicked", lambda _b: on_click())
+    row.pack_start(main, True, True, 0)
+
+    if on_toggle_hide:
+        hide_btn = Gtk.Button.new_from_icon_name(
+            "view-conceal-symbolic" if hide_mode == "hide" else "view-reveal-symbolic",
+            Gtk.IconSize.MENU)
+        hide_btn.set_relief(Gtk.ReliefStyle.NONE)
+        hide_btn.set_tooltip_text("Hide from Unsorted" if hide_mode == "hide" else "Unhide")
+        hide_btn.connect("clicked", lambda _b: on_toggle_hide())
+        row.pack_start(hide_btn, False, False, 0)
+    return row
+
+def _applauncher_pinned_row(icon_name: str, label: str, on_click) -> Gtk.Button:
+    b = Gtk.Button()
+    b.get_style_context().add_class("bubble")
+    b.get_style_context().add_class("item")
+    b.get_style_context().add_class("active")
+    row = hbox(4); pad(row, h=2, v=0)
+    row.pack_start(_applauncher_icon_img(icon_name), False, False, 0)
+    row.pack_start(Gtk.Label(label=label), False, False, 0)
+    b.add(row)
+    b.connect("clicked", lambda _b: on_click())
+    return b
+
+def _applauncher_known_icon_names() -> list:
+    """Icon-Namen aller gescannten Desktop-Apps (nur Theme-Namen, keine
+    absoluten Pfade - die landen eh nicht in einem durchsuchbaren Theme-
+    Icon-Grid), dedupliziert + sortiert. Das ist die "von vorhandenen
+    Apps"-Quelle für den Icon-Picker."""
+    names = set()
+    for e in _applauncher_scan_desktop_apps():
+        ic = (e.get("icon") or "").strip()
+        if ic and not os.path.isabs(ic):
+            names.add(ic)
+    return sorted(names, key=str.casefold)
+
+def _applauncher_icons_dir() -> Path:
+    return _applauncher_sys_menu_path().parent / "icons"
+
+def _applauncher_import_custom_icon(src_path: str) -> str:
+    """Kopiert ein frei gewähltes Bild (z.B. aus ~/Downloads) stabil nach
+    .../AppLauncher/icons/ und gibt den NEUEN absoluten Pfad zurück.
+    Grund: load_icon_pixbuf() in TrafkTuxLauncher.c akzeptiert zwar
+    absolute Pfade, aber eben nur absolute - verschiebt/löscht man die
+    Originaldatei später (oder synct die Config auf einen anderen
+    Rechner, wo sie unter dem Pfad gar nicht existiert), zeigt das Icon
+    nur noch den Fallback. Mit eigener Kopie im Config-Baum bleibt es
+    stabil UND wandert mit, wenn der restliche TrafkTux-Config gesynct
+    wird (gleicher Pfad relativ zu $HOME auf jeder Maschine)."""
+    src = Path(src_path)
+    icons_dir = _applauncher_icons_dir()
+    icons_dir.mkdir(parents=True, exist_ok=True)
+    dest = icons_dir / src.name
+    if dest.resolve() != src.resolve():
+        n = 1
+        while dest.exists():
+            dest = icons_dir / f"{src.stem}-{n}{src.suffix}"
+            n += 1
+        shutil.copy2(src, dest)
+    return str(dest)
+
+def _applauncher_pick_icon(parent: Gtk.Window, current: str = "") -> str | None:
+    """Icon-Auswahl-Dialog mit 2 Reitern: 'From Apps' (durchsuchbares
+    Grid aller Icon-Namen aus den gescannten .desktop-Dateien) und
+    'Custom Image' (Dateiauswahl - der volle Pfad wird direkt als Icon-
+    Wert übernommen; _applauncher_icon_img() versteht sowohl Theme-
+    Namen als auch absolute Pfade, siehe dort). Gibt den gewählten
+    Icon-Wert zurück, oder None bei Abbruch."""
+    dlg = Gtk.Dialog(title="Choose icon", transient_for=parent)
+    dlg.set_name("wb-daemon-popup")
+    dlg.set_modal(True)
+    dlg.set_keep_above(True)
+    dlg.set_type_hint(Gdk.WindowTypeHint.DIALOG)
+    dlg.set_default_size(260, 340)
+    dlg.add_buttons("Cancel", Gtk.ResponseType.CANCEL)
+    box = dlg.get_content_area()
+    result = {"icon": None}
+
+    def _choose(icon_value: str):
+        result["icon"] = icon_value
+        dlg.response(Gtk.ResponseType.OK)
+
+    # ── Reiter "From Apps" ──────────────────────────────────────────
+    search_e = Gtk.Entry(); search_e.set_placeholder_text("Search…")
+    flow = Gtk.FlowBox()
+    flow.set_selection_mode(Gtk.SelectionMode.NONE)
+    flow.set_max_children_per_line(5)
+    flow.set_homogeneous(True)
+    flow_sw = Gtk.ScrolledWindow()
+    flow_sw.set_size_request(240, 220)
+    flow_sw.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+    flow_sw.add(flow)
+    all_names = _applauncher_known_icon_names()
+
+    def _populate(filter_text: str = ""):
+        for c in list(flow.get_children()):
+            flow.remove(c)
+        ft = filter_text.strip().casefold()
+        shown = [n for n in all_names if ft in n.casefold()][:150] if ft else all_names[:150]
+        for n in shown:
+            ib = Gtk.Button()
+            ib.get_style_context().add_class("bubble")
+            ib.get_style_context().add_class("item")
+            ib.set_tooltip_text(n)
+            ib.add(_applauncher_icon_img(n, 24))
+            ib.connect("clicked", lambda _b, nn=n: _choose(nn))
+            flow.add(ib)
+        flow.show_all()
+    search_e.connect("changed", lambda _e: _populate(search_e.get_text()))
+    _populate()
+
+    from_apps_page = vbox(4)
+    from_apps_page.pack_start(search_e, False, False, 0)
+    from_apps_page.pack_start(flow_sw, True, True, 0)
+
+    # ── Reiter "Custom Image" ────────────────────────────────────────
+    custom_page = vbox(8); pad(custom_page, h=10, v=30)
+    pick_file_btn = btn("📁  Choose image file…")
+    def _on_pick_file(_b):
+        fc = Gtk.FileChooserDialog(title="Choose icon image", transient_for=dlg,
+                                    action=Gtk.FileChooserAction.OPEN)
+        fc.add_buttons("Cancel", Gtk.ResponseType.CANCEL, "Choose", Gtk.ResponseType.OK)
+        img_filter = Gtk.FileFilter(); img_filter.set_name("Images")
+        for pattern in ("*.png", "*.svg", "*.jpg", "*.jpeg", "*.xpm", "*.webp"):
+            img_filter.add_pattern(pattern)
+        fc.add_filter(img_filter)
+        fc.set_filter(img_filter)
+        resp = fc.run()
+        path = fc.get_filename() if resp == Gtk.ResponseType.OK else None
+        fc.destroy()
+        if path:
+            try:
+                stable_path = _applauncher_import_custom_icon(path)
+            except Exception:
+                stable_path = path  # Kopieren fehlgeschlagen - lieber Original als gar nichts
+            _choose(stable_path)
+    pick_file_btn.connect("clicked", _on_pick_file)
+    custom_page.pack_start(pick_file_btn, False, False, 0)
+
+    # ── Reiter-Umschalter (gleiches Muster wie die Sortier-Tabs) ─────
+    stack = Gtk.Stack()
+    stack.add_named(from_apps_page, "from_apps")
+    stack.add_named(custom_page, "custom")
+    stack.set_visible_child_name("from_apps")
+    tab_row = hbox(4); tab_row.set_halign(Gtk.Align.CENTER)
+    tab_btns = {}
+    def _switch_tab(name):
+        stack.set_visible_child_name(name)
+        for n, b in tab_btns.items():
+            ctx = b.get_style_context()
+            if n == name: ctx.add_class("active")
+            else:         ctx.remove_class("active")
+    for name, tlabel in (("from_apps", "From Apps"), ("custom", "Custom Image")):
+        b = btn(tlabel, active=(name == "from_apps"))
+        b.connect("clicked", lambda _b, n=name: _switch_tab(n))
+        tab_btns[name] = b
+        tab_row.pack_start(b, False, False, 0)
+
+    box.pack_start(tab_row, False, False, 4)
+    box.pack_start(tab_sep(), False, False, 0)
+    box.pack_start(stack, True, True, 4)
+    dlg.show_all()
+    dlg.run()
+    dlg.destroy()
+    return result["icon"]
+
+def _build_app_launcher_tab(win: Gtk.Window) -> Gtk.Box:
+    root = vbox(4); pad(root, h=4, v=6)
+
+    _sys_tree = _applauncher_load_sys_tree()
+    _user_tree = _applauncher_load_user_tree(_sys_tree)
+    state = {
+        "sys_tree": _sys_tree,      # menu.json - read-only, nie gespeichert
+        "user_tree": _user_tree,    # Usermenu.json - das wird editiert+gespeichert
+        "tree": _applauncher_build_merged_tree(_sys_tree, _user_tree),  # gemergt, nur fürs Anzeigen/Dedup
+        "dirty": False,
+        "cur_path": [],            # [] == Root-Ansicht (9 Ordner)
+        "sort_mode": "unsorted",   # unsorted | all
+        "search": "",
+    }
+
+    def _recompute_merged():
+        state["tree"] = _applauncher_build_merged_tree(state["sys_tree"], state["user_tree"])
+
+    status_lbl = Gtk.Label(label="")
+    status_lbl.get_style_context().add_class("caption")
+    status_lbl.set_opacity(0.75)
+    status_lbl.set_line_wrap(True)
+    status_lbl.set_no_show_all(True)
+    status_lbl.hide()
+
+    def _flash(text: str, ms: int = 2500):
+        status_lbl.set_label(text)
+        status_lbl.show()
+        GLib.timeout_add(ms, lambda: (status_lbl.hide(), False)[1])
+
+    # ── Kopfzeile: klickbarer Breadcrumb + Reload/Save ──────────────
+    head_row = hbox(6)
+    breadcrumb_box = hbox(2)   # wird in _refresh_breadcrumb() befüllt
+    breadcrumb_sw = Gtk.ScrolledWindow()
+    breadcrumb_sw.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.NEVER)
+    breadcrumb_sw.set_propagate_natural_height(True)
+    breadcrumb_sw.add(breadcrumb_box)
+    back_btn = Gtk.Button.new_from_icon_name("go-previous-symbolic", Gtk.IconSize.BUTTON)
+    back_btn.set_relief(Gtk.ReliefStyle.NONE)
+    back_btn.set_no_show_all(True)
+    save_btn = btn("󰆓  Save")
+    save_btn.set_sensitive(False)
+    reload_btn = Gtk.Button.new_from_icon_name("view-refresh-symbolic", Gtk.IconSize.BUTTON)
+    reload_btn.set_relief(Gtk.ReliefStyle.NONE)
+    reload_btn.set_tooltip_text("Discard unsaved changes & reload from disk")
+    head_row.pack_start(back_btn, False, False, 0)
+    head_row.pack_start(breadcrumb_sw, True, True, 0)
+    head_row.pack_start(reload_btn, False, False, 0)
+    head_row.pack_start(save_btn, False, False, 0)
+    root.pack_start(head_row, False, False, 0)
+    root.pack_start(sep(), False, False, 0)   # dünner Trenner - bleibt so
+
+    def _refresh_breadcrumb():
+        for c in breadcrumb_box.get_children():
+            breadcrumb_box.remove(c)
+        root_btn = btn("󱁤 Root")
+        root_btn.set_relief(Gtk.ReliefStyle.NONE)
+        root_btn.connect("clicked", lambda _b: _go_to([]))
+        breadcrumb_box.pack_start(root_btn, False, False, 0)
+        node = state["tree"]
+        for i, idx in enumerate(state["cur_path"]):
+            node = node["children"][idx]
+            slash = Gtk.Label(label="/")
+            slash.set_opacity(0.5)
+            breadcrumb_box.pack_start(slash, False, False, 0)
+            seg_path = state["cur_path"][:i + 1]
+            seg_btn = btn(node.get("name", "?"))
+            seg_btn.set_relief(Gtk.ReliefStyle.NONE)
+            seg_lbl = seg_btn.get_child()
+            if isinstance(seg_lbl, Gtk.Label):
+                seg_lbl.set_ellipsize(Pango.EllipsizeMode.END)
+                seg_lbl.set_max_width_chars(14)
+            seg_btn.connect("clicked", lambda _b, p=seg_path: _go_to(p))
+            breadcrumb_box.pack_start(seg_btn, False, False, 0)
+        breadcrumb_box.show_all()
+
+    def _mark_dirty():
+        state["dirty"] = True
+        save_btn.set_sensitive(True)
+        save_btn.set_label("󰆓  Save*")
+
+    # ── Linke Seite: Ordner-Grid (Root) bzw. Ordner-Inhalt (Sub) ────
+    folder_area = vbox(4)
+    folder_area_sw = Gtk.ScrolledWindow()
+    folder_area_sw.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+    folder_area_sw.set_max_content_height(230)
+    folder_area_sw.set_propagate_natural_height(True)
+    folder_area_sw.set_valign(Gtk.Align.START)
+    # Scrollbar auf die linke Seite - rechts sitzt sonst der ✕-Button
+    # jeder Zeile genau unter/neben ihr.
+    folder_area_sw.set_placement(Gtk.CornerType.TOP_RIGHT)
+    folder_area_sw.add(folder_area)
+    folder_area_sw.set_size_request(205, -1)
+
+    # ── Rechte Seite: gepinnte Create-Icons + Suche + Sortier-Tabs + Liste
+    pinned_row = hbox(4); pinned_row.set_halign(Gtk.Align.CENTER)
+    search_e = Gtk.Entry()
+    search_e.set_placeholder_text("Search apps…")
+    search_e.set_icon_from_icon_name(Gtk.EntryIconPosition.PRIMARY, "system-search-symbolic")
+    search_e.get_style_context().add_class("applauncher-search")
+    sort_row = hbox(4); sort_row.set_halign(Gtk.Align.CENTER)
+    sort_btns: dict = {}
+    list_sw, list_box = scroll_box(190)   # etwas niedriger - mehr Luft unten (Pkt. 6)
+    list_sw.set_valign(Gtk.Align.START)
+    # Harte Breiten-Grenze: ohne die wächst die Spalte mit dem längsten
+    # App-Namen mit (set_size_request auf der Box ist nur ein Minimum,
+    # kein Maximum) - zusammen mit set_max_width_chars auf den Labels
+    # in den Zeilen-Widgets sorgt das für echtes Abschneiden mit "…"
+    # statt eines immer breiter werdenden Fensters.
+    list_sw.set_size_request(280, -1)
+
+    side = hbox(8)
+    left_col = vbox(4); left_col.set_size_request(205, -1); left_col.set_valign(Gtk.Align.START)
+    right_col = vbox(3); right_col.set_size_request(280, -1); right_col.set_valign(Gtk.Align.START)
+    left_col.pack_start(folder_area_sw, False, False, 0)
+    right_col.pack_start(pinned_row, False, False, 0)
+    right_col.pack_start(search_e, False, False, 0)
+    right_col.pack_start(sort_row, False, False, 0)
+    right_col.pack_start(sep(), False, False, 0)   # dünner statt tab_sep() (Pkt. 7)
+    right_col.pack_start(list_sw, False, False, 0)
+    vsep = Gtk.Separator(orientation=Gtk.Orientation.VERTICAL)
+    vsep.set_valign(Gtk.Align.START)
+    vsep.set_size_request(-1, 320)   # stretcht nicht mehr bis ganz unten (Pkt. 6)
+    side.pack_start(left_col, True, True, 0)
+    side.pack_start(vsep, False, False, 0)
+    side.pack_start(right_col, True, True, 0)
+
+    root.pack_start(side, False, False, 0)
+    root.pack_start(status_lbl, False, False, 2)
+    bottom_spacer = Gtk.Box()
+    bottom_spacer.set_size_request(-1, 10)   # etwas Platz unten (Pkt. 6)
+    root.pack_start(bottom_spacer, False, False, 0)
+
+    # ── Dialoge ───────────────────────────────────────────────────────
+    def _icon_pick_row(dlg: Gtk.Dialog, icon_e: Gtk.Entry) -> Gtk.Box:
+        """Icon-Entry + Live-Vorschau + 'Choose...'-Button - gemeinsam
+        für den Folder- und den Custom-App-Dialog."""
+        row = hbox(6)
+        preview = Gtk.Image()
+        def _refresh_preview():
+            preview.clear()
+            img = _applauncher_icon_img(icon_e.get_text().strip() or "application-x-executable", 22)
+            # Pixbuf/Icon-Name vom frisch gebauten Image auf die feste
+            # preview-Instanz übernehmen, statt das Image im Baum zu
+            # ersetzen (einfacher als preview jedes Mal neu einzuhängen).
+            if img.get_storage_type() == Gtk.ImageType.PIXBUF:
+                preview.set_from_pixbuf(img.get_pixbuf())
+            else:
+                preview.set_from_icon_name(icon_e.get_text().strip() or "application-x-executable",
+                                            Gtk.IconSize.BUTTON)
+                preview.set_pixel_size(22)
+        icon_e.connect("changed", lambda _e: _refresh_preview())
+        pick_btn = Gtk.Button.new_with_label("Choose…")
+        def _on_pick(_b):
+            chosen = _applauncher_pick_icon(dlg, icon_e.get_text().strip())
+            if chosen:
+                icon_e.set_text(chosen)
+        pick_btn.connect("clicked", _on_pick)
+        row.pack_start(preview, False, False, 0)
+        row.pack_start(icon_e, True, True, 0)
+        row.pack_start(pick_btn, False, False, 0)
+        _refresh_preview()
+        return row
+
+    def _ask_new_folder(is_root: bool = False):
+        dlg = Gtk.Dialog(title="New folder", transient_for=win)
+        dlg.set_name("wb-daemon-popup")
+        dlg.set_modal(True)
+        dlg.set_keep_above(True)
+        dlg.set_type_hint(Gdk.WindowTypeHint.DIALOG)
+        dlg.add_buttons("Cancel", Gtk.ResponseType.CANCEL, "Create", Gtk.ResponseType.OK)
+        box = dlg.get_content_area()
+        name_e = Gtk.Entry(); name_e.set_placeholder_text("Folder name")
+        name_e.set_activates_default(True)
+        name_e.connect("activate", lambda _: dlg.response(Gtk.ResponseType.OK))
+        icon_e = Gtk.Entry(); icon_e.set_text("folder"); icon_e.set_placeholder_text("Icon")
+        box.pack_start(name_e, True, True, 4)
+        box.pack_start(_icon_pick_row(dlg, icon_e), True, True, 4)
+        # "hidden" ist nur auf Root-Ebene überhaupt relevant - TrafkTuxLauncher
+        # blendet nur dort danach gefilterte Ordner aus dem Haupt-Grid aus
+        # (siehe TrafkTuxLauncher.c-Patch: build_menu_slots, is_root-Zweig).
+        hidden_cb = None
+        if is_root:
+            hidden_cb = Gtk.CheckButton.new_with_label("Hide from launcher's root menu")
+            hidden_cb.set_tooltip_text(
+                "Stays in menu.json and still counts as \"ordered\" for Unsorted - "
+                "just never shows up as a tile in TrafkTuxLauncher itself.")
+            box.pack_start(hidden_cb, True, True, 4)
+        dlg.show_all()
+        resp = dlg.run()
+        result = None
+        if resp == Gtk.ResponseType.OK:
+            nm = name_e.get_text().strip()
+            if nm:
+                result = {"name": nm, "icon": icon_e.get_text().strip() or "folder",
+                          "hidden": bool(hidden_cb and hidden_cb.get_active())}
+        dlg.destroy()
+        return result
+
+    def _ask_custom_app():
+        dlg = Gtk.Dialog(title="New custom app", transient_for=win)
+        dlg.set_name("wb-daemon-popup")
+        dlg.set_modal(True)
+        dlg.set_keep_above(True)
+        dlg.set_type_hint(Gdk.WindowTypeHint.DIALOG)
+        dlg.add_buttons("Cancel", Gtk.ResponseType.CANCEL, "Add", Gtk.ResponseType.OK)
+        box = dlg.get_content_area()
+        name_e = Gtk.Entry(); name_e.set_placeholder_text("Name")
+        icon_e = Gtk.Entry(); icon_e.set_text("application-x-executable")
+        exec_e = Gtk.Entry(); exec_e.set_placeholder_text("Command")
+        exec_e.set_activates_default(True)
+        exec_e.connect("activate", lambda _: dlg.response(Gtk.ResponseType.OK))
+        box.pack_start(name_e, True, True, 4)
+        box.pack_start(_icon_pick_row(dlg, icon_e), True, True, 4)
+        box.pack_start(exec_e, True, True, 4)
+        dlg.show_all()
+        resp = dlg.run()
+        result = None
+        if resp == Gtk.ResponseType.OK:
+            nm = name_e.get_text().strip()
+            ex = exec_e.get_text().strip()
+            if nm and ex:
+                result = {"name": nm, "type": "app",
+                          "icon": icon_e.get_text().strip() or "application-x-executable",
+                          "exec": ex, "custom": True}
+        dlg.destroy()
+        return result
+
+    # ── Save / Reload ────────────────────────────────────────────────
+    def _on_save(_b=None):
+        try:
+            # menu.json wird NIE geschrieben - nur noch Usermenu.json,
+            # das gehört exklusiv dem Editor (menu.json "gehört" dem
+            # System/Update-Skript, siehe ensure_user_menu_skeleton() in
+            # der neuen TrafkTuxLauncher.c).
+            _applauncher_save_user_tree(state["user_tree"])
+            state["dirty"] = False
+            save_btn.set_label("󰆓  Save")
+            save_btn.set_sensitive(False)
+            # TrafkTuxLauncher lädt + mergt menu.json/Usermenu.json nur
+            # einmal beim Start in app->root und baut das Fenster danach
+            # nie neu - ohne Neustart wäre die Änderung also nie sichtbar.
+            # Exakt derselbe Befehl wie der Daemon-Autostart in hyprland.lua.
+            run_bg(["bash", "-c",
+                    "killall TrafkTuxLauncher; "
+                    "$HOME/.config/TrafkTuxLauncher/TrafkTuxLauncher --daemon &"])
+            _flash("Saved — TrafkTuxLauncher restarting…")
+        except Exception as e:
+            _flash(f"Error: {e}")
+    save_btn.connect("clicked", _on_save)
+
+    def _on_reload(_b=None):
+        state["sys_tree"] = _applauncher_load_sys_tree()
+        state["user_tree"] = _applauncher_load_user_tree(state["sys_tree"])
+        _recompute_merged()
+        state["dirty"] = False
+        state["cur_path"] = []
+        save_btn.set_label("󰆓  Save")
+        save_btn.set_sensitive(False)
+        _refresh_all()
+        _flash("Reloaded from disk")
+    reload_btn.connect("clicked", _on_reload)
+
+    # ── Drop-Logik: einen Payload (App / New-Folder / New-Custom /
+    # Move) auf einen Ziel-Ordner-Pfad anwenden ─────────────────────
+    def _apply_drop(target_path: list, payload: dict):
+        """Ziel ist immer ein Pfad im GEMERGTEN Baum (state['tree']) -
+        wird hier über den Namens-Pfad in state['user_tree'] aufgelöst
+        (und dort bei Bedarf automatisch als leerer Ordner angelegt).
+        Geschrieben wird IMMER nur user_tree, nie der gemergte Baum
+        direkt und nie sys_tree."""
+        merged_target = _applauncher_node_at(state["tree"], target_path)
+        if merged_target is None or merged_target.get("type") != "folder":
+            return
+        kind = payload.get("kind")
+        if kind == "new_folder":
+            info = _ask_new_folder(is_root=(target_path == []))
+            if not info:
+                return
+            new_node = {"name": info["name"], "type": "folder", "icon": info["icon"], "children": []}
+            if info.get("hidden"):
+                new_node["hidden"] = True
+        elif kind == "new_custom_app":
+            new_node = _ask_custom_app()
+            if not new_node:
+                return
+        elif kind == "app":
+            new_node = {"name": payload.get("name", "App"), "type": "app",
+                        "icon": payload.get("icon") or "application-x-executable",
+                        "exec": payload.get("exec", "")}
+        else:
+            return
+        name_chain = _applauncher_name_chain(state["tree"], target_path)
+        user_target = _applauncher_resolve_or_create_user_path(state["user_tree"], name_chain)
+        user_target.setdefault("children", []).append(new_node)
+        _mark_dirty()
+        _recompute_merged()
+        _refresh_all()
+
+    def _resolve_user_node(merged_path: list):
+        """Für einen Pfad im gemergten Baum, der auf einen Knoten MIT
+        "_source": "user" zeigt: liefert (user_children_list, index) in
+        state['user_tree'], damit er dort entfernt/umsortiert/geändert
+        werden kann. None, wenn der Pfad auf einen sys-Knoten zeigt
+        (menu.json-Einträge sind über den Editor nie änderbar) oder sich
+        nicht auflösen lässt."""
+        merged_node = _applauncher_node_at(state["tree"], merged_path)
+        if merged_node is None or merged_node.get("_source") != "user":
+            return None
+        parent_chain = _applauncher_name_chain(state["tree"], merged_path[:-1])
+        user_parent = _applauncher_resolve_or_create_user_path(state["user_tree"], parent_chain)
+        user_children = user_parent.setdefault("children", [])
+        for idx, uc in enumerate(user_children):
+            if (uc.get("name") == merged_node.get("name")
+                    and uc.get("type") == merged_node.get("type")
+                    and uc.get("exec") == merged_node.get("exec")):
+                return user_children, idx
+        return None
+
+    def _on_remove_user(merged_path: list):
+        resolved = _resolve_user_node(merged_path)
+        if resolved is None:
+            _flash("That's a system entry (menu.json) - can't remove it here")
+            return
+        children, idx = resolved
+        children.pop(idx)
+        _mark_dirty()
+        _recompute_merged()
+        _refresh_all()
+
+    # ── Navigation ───────────────────────────────────────────────────
+    def _go_to(path: list):
+        state["cur_path"] = path
+        _refresh_folder_area()
+
+    def _go_back():
+        if state["cur_path"]:
+            _go_to(state["cur_path"][:-1])
+    back_btn.connect("clicked", lambda _b: _go_back())
+
+    # ── "aktuell geöffneter Ordner" - zentrale Stelle für alle Klick-
+    # Aktionen rechts (Apps/Pins). Root zählt NICHT als offener Ordner. ─
+    def _require_open_folder() -> list | None:
+        if not state["cur_path"]:
+            _flash("Open one of the 9 folders first, then click an app to add it there")
+            return None
+        return list(state["cur_path"])
+
+    def _on_new_folder_clicked():
+        # Einzige Ausnahme von "erst einen Ordner öffnen": ein neuer
+        # Ordner darf auch direkt auf Root-Ebene entstehen (z.B. für
+        # einen versteckten "Unimportant"-Sammelordner, siehe Chat) -
+        # Root selbst ist im Baum ja auch nur ein ganz normaler
+        # "type": "folder"-Knoten, _apply_drop([], ...) hängt dann
+        # direkt an tree["children"] an.
+        _apply_drop(list(state["cur_path"]), {"kind": "new_folder"})
+
+    def _on_new_custom_app_clicked():
+        target = _require_open_folder()
+        if target is not None:
+            _apply_drop(target, {"kind": "new_custom_app"})
+
+    def _on_source_entry_clicked(entry: dict):
+        target = _require_open_folder()
+        if target is None:
+            return
+        _apply_drop(target, {"kind": "app", "name": entry.get("name", "App"),
+                              "icon": entry.get("icon"), "exec": entry.get("exec")})
+
+    def _move_child(merged_path: list, delta: int):
+        """Vertauscht den (user-eigenen!) Knoten an merged_path mit
+        seinem Nachbarn INNERHALB der user_tree-Kinderliste desselben
+        Ordners - sys-Einträge (menu.json) lassen sich hier nicht
+        umsortieren, daher gibt's für die auch keine Pfeile."""
+        resolved = _resolve_user_node(merged_path)
+        if resolved is None:
+            return
+        children, idx = resolved
+        j = idx + delta
+        if 0 <= j < len(children):
+            children[idx], children[j] = children[j], children[idx]
+            _mark_dirty()
+            _recompute_merged()
+            _refresh_folder_area()
+
+    def _on_change_icon(merged_path: list):
+        resolved = _resolve_user_node(merged_path)
+        if resolved is None:
+            _flash("That's a system entry (menu.json) - can't change its icon here")
+            return
+        children, idx = resolved
+        node = children[idx]
+        chosen = _applauncher_pick_icon(win, node.get("icon") or "")
+        if not chosen:
+            return
+        node["icon"] = chosen
+        _mark_dirty()
+        _recompute_merged()
+        _refresh_folder_area()
+
+    # ── Linke Seite neu aufbauen ─────────────────────────────────────
+    def _refresh_folder_area():
+        for c in folder_area.get_children():
+            folder_area.remove(c)
+        _refresh_breadcrumb()
+        back_btn.set_visible(bool(state["cur_path"]))
+
+        if not state["cur_path"]:
+            grid = Gtk.Grid(column_spacing=6, row_spacing=6)
+            grid.set_halign(Gtk.Align.CENTER)
+            col = row = 0
+            for i, child in enumerate(state["tree"].get("children", [])):
+                if child.get("type") != "folder":
+                    continue
+                cell = _applauncher_folder_cell(child, lambda p=[i]: _go_to(p))
+                grid.attach(cell, col, row, 1, 1)
+                col += 1
+                if col >= 3:
+                    col = 0; row += 1
+            folder_area.pack_start(grid, False, False, 0)
+        else:
+            node = _applauncher_node_at(state["tree"], state["cur_path"])
+            if node is None:
+                state["cur_path"] = []
+                return _refresh_folder_area()
+            kids = node.get("children", [])
+            if not kids:
+                folder_area.pack_start(bitem("Empty — click an app on the right to add it here", dim=True),
+                                        False, False, 0)
+            for i, child in enumerate(kids):
+                cpath = state["cur_path"] + [i]
+                is_user = child.get("_source") == "user"
+                row_w = _applauncher_child_row(
+                    child,
+                    on_open=(lambda p=cpath: _go_to(p)) if child.get("type") == "folder" else None,
+                    # Nur user-eigene Einträge (aus Usermenu.json) lassen
+                    # sich entfernen/umsortieren/im Icon ändern - alles
+                    # aus menu.json ist hier read-only.
+                    on_remove=(lambda p=cpath: _on_remove_user(p)) if is_user else None,
+                    on_change_icon=(lambda p=cpath: _on_change_icon(p)) if is_user else None,
+                    on_move_up=(lambda p=cpath: _move_child(p, -1)) if is_user else None,
+                    on_move_down=(lambda p=cpath: _move_child(p, 1)) if is_user else None)
+                folder_area.pack_start(row_w, False, False, 0)
+        folder_area.show_all()
+        GLib.idle_add(_shrink_to_fit, win)
+
+    # ── Rechte Seite: Unsorted/All Apps/Hidden + Namens-Suche ────────
+    _SORT_MODES = (("unsorted", "Unsorted"), ("all", "All Apps"), ("hidden", "Hidden"))
+
+    def _on_hide_app(entry: dict):
+        state["user_tree"].setdefault("hidden_apps", []).append(
+            {"name": entry.get("name", ""), "icon": entry.get("icon") or "", "exec": entry.get("exec", "")})
+        _mark_dirty()
+        _recompute_merged()
+        _refresh_list()
+
+    def _on_unhide_app(entry: dict):
+        hidden = state["user_tree"].get("hidden_apps", []) or []
+        nm = (entry.get("name") or "").strip().casefold()
+        for i, h in enumerate(hidden):
+            if (h.get("name") or "").strip().casefold() == nm:
+                hidden.pop(i)
+                break
+        _mark_dirty()
+        _recompute_merged()
+        _refresh_list()
+
+    def _switch_sort(mode: str):
+        state["sort_mode"] = mode
+        for n, b in sort_btns.items():
+            ctx = b.get_style_context()
+            if n == mode: ctx.add_class("active")
+            else:         ctx.remove_class("active")
+        _refresh_list()
+    for mkey, mlabel in _SORT_MODES:
+        b = btn(mlabel, active=(mkey == "unsorted"))
+        b.connect("clicked", lambda _b, n=mkey: _switch_sort(n))
+        sort_btns[mkey] = b
+        sort_row.pack_start(b, False, False, 0)
+
+    def _on_search_changed(_e):
+        state["search"] = search_e.get_text()
+        _refresh_list()
+    search_e.connect("changed", _on_search_changed)
+
+    new_folder_row = _applauncher_pinned_row("folder-new", "New Folder", _on_new_folder_clicked)
+    new_app_row = _applauncher_pinned_row("list-add", "New Custom App", _on_new_custom_app_clicked)
+    pinned_row.pack_start(new_folder_row, False, False, 0)
+    pinned_row.pack_start(new_app_row, False, False, 0)
+
+    def _refresh_list():
+        for c in list_box.get_children():
+            list_box.remove(c)
+        mode = state["sort_mode"]
+        if mode == "unsorted":
+            entries = _applauncher_unsorted_apps(state["tree"], state["user_tree"])
+        elif mode == "hidden":
+            entries = _applauncher_hidden_apps_list(state["user_tree"])
+        else:
+            entries = _applauncher_scan_desktop_apps()
+        needle = state["search"].strip().casefold()
+        if needle:
+            entries = [e for e in entries if needle in e["name"].casefold()]
+
+        if not entries:
+            empty_txt = "Nothing hidden" if mode == "hidden" else "Nothing here"
+            list_box.pack_start(bitem(empty_txt, dim=True), False, False, 0)
+        for e in entries[:400]:
+            if mode == "hidden":
+                row_w = _applauncher_source_row(
+                    e, None, lambda ee=e: _on_unhide_app(ee),
+                    on_toggle_hide=lambda ee=e: _on_unhide_app(ee), hide_mode="unhide")
+            else:
+                row_w = _applauncher_source_row(
+                    e, None, lambda ee=e: _on_source_entry_clicked(ee),
+                    on_toggle_hide=lambda ee=e: _on_hide_app(ee), hide_mode="hide")
+            list_box.pack_start(row_w, False, False, 0)
+        list_box.show_all()
+        GLib.idle_add(_shrink_to_fit, win)
+
+    def _refresh_all():
+        _refresh_folder_area()
+        _refresh_list()
+
+    _refresh_all()
+    return root
+
+# ════════════════════════════════════════════════════════════
+#  App Editor Tab 3: Autostart - schreibt UserAutostart.lua
+#  (HyprlandUserConfigs/, siehe _hypr_write_user_config() weiter unten).
+# ════════════════════════════════════════════════════════════
+
+_HYPR_AUTOSTART_LINE_RE = re.compile(r'hl\.exec_cmd\(\s*"((?:\\.|[^"\\])*)"\s*\)')
+
+def _hypr_lua_escape(s: str) -> str:
+    return s.replace("\\", "\\\\").replace('"', '\\"')
+
+def _hypr_parse_user_autostart(text: str) -> list:
+    text = _hypr_strip_lua_line_comments(text)
+    out = []
+    for m in _HYPR_AUTOSTART_LINE_RE.finditer(text):
+        raw = m.group(1)
+        out.append(raw.replace('\\"', '"').replace("\\\\", "\\"))
+    return out
+
+def _hypr_build_user_autostart_lua(commands: list) -> str:
+    lines = [
+        "-- UserAutostart.lua",
+        "--",
+        '-- Automatisch von der "Autostart"-Einstellung generiert (WidgetsDaemon.py).',
+        "-- Eigene Autostart-Befehle, die beim Hyprland-Start einmalig ausgeführt",
+        "-- werden. Manuelle Änderungen hier gehen beim nächsten Speichern in der",
+        "-- Autostart-Einstellung verloren.",
+        "",
+        'hl.on("hyprland.start", function()',
+    ]
+    for cmd in commands:
+        lines.append(f'    hl.exec_cmd("{_hypr_lua_escape(cmd)}")')
+    lines.append("end)")
+    lines.append("")
+    return "\n".join(lines)
+
+def _build_apps_autostart_tab(win: Gtk.Window) -> Gtk.Box:
+    root = vbox(4); pad(root, h=4, v=6)
+    state = {"commands": _hypr_parse_user_autostart(_hypr_read_user_config("UserAutostart.lua"))}
+
+    status_lbl = Gtk.Label(label="")
+    status_lbl.get_style_context().add_class("caption")
+    status_lbl.set_opacity(0.75)
+    status_lbl.set_no_show_all(True)
+    status_lbl.hide()
+    def _flash(text: str, ms: int = 2500):
+        status_lbl.set_label(text)
+        status_lbl.show()
+        GLib.timeout_add(ms, lambda: (status_lbl.hide(), False)[1])
+
+    save_btn = btn("󰆓  Save")
+    save_btn.set_sensitive(False)
+    def _mark_dirty():
+        save_btn.set_sensitive(True)
+        save_btn.set_label("󰆓  Save*")
+
+    add_row = hbox(6)
+    cmd_e = Gtk.Entry()
+    cmd_e.set_placeholder_text("Command to run at startup, e.g. nm-applet")
+    add_btn = Gtk.Button.new_from_icon_name("list-add-symbolic", Gtk.IconSize.BUTTON)
+    add_btn.set_relief(Gtk.ReliefStyle.NONE)
+    add_row.pack_start(cmd_e, True, True, 0)
+    add_row.pack_start(add_btn, False, False, 0)
+
+    list_sw, list_box = scroll_box(200)
+
+    def _refresh_list():
+        for c in list_box.get_children():
+            list_box.remove(c)
+        if not state["commands"]:
+            list_box.pack_start(bitem("No custom autostart entries yet", dim=True), False, False, 0)
+        for i, cmd in enumerate(state["commands"]):
+            row = hbox(6)
+            row.get_style_context().add_class("bubble")
+            row.get_style_context().add_class("item")
+            pad(row, h=6, v=3)
+            lbl = Gtk.Label(label=cmd)
+            lbl.set_halign(Gtk.Align.START)
+            lbl.set_ellipsize(Pango.EllipsizeMode.END)
+            lbl.set_max_width_chars(34)
+            row.pack_start(lbl, True, True, 0)
+            rm = Gtk.Button.new_from_icon_name("list-remove-symbolic", Gtk.IconSize.MENU)
+            rm.set_relief(Gtk.ReliefStyle.NONE)
+            rm.connect("clicked", lambda _b, ii=i: _on_remove(ii))
+            row.pack_start(rm, False, False, 0)
+            list_box.pack_start(row, False, False, 0)
+        list_box.show_all()
+        GLib.idle_add(_shrink_to_fit, win)
+
+    def _on_remove(idx: int):
+        if 0 <= idx < len(state["commands"]):
+            state["commands"].pop(idx)
+            _mark_dirty()
+            _refresh_list()
+
+    def _on_add(_b=None):
+        cmd = cmd_e.get_text().strip()
+        if not cmd:
+            return
+        state["commands"].append(cmd)
+        cmd_e.set_text("")
+        _mark_dirty()
+        _refresh_list()
+    add_btn.connect("clicked", _on_add)
+    cmd_e.set_activates_default(True)
+    cmd_e.connect("activate", _on_add)
+
+    def _on_save(_b=None):
+        try:
+            _hypr_write_user_config("UserAutostart.lua", _hypr_build_user_autostart_lua(state["commands"]))
+            _hypr_reload()
+            save_btn.set_sensitive(False)
+            save_btn.set_label("󰆓  Save")
+            _flash("Saved — reloading Hyprland…")
+        except Exception as e:
+            _flash(f"Error: {e}")
+    save_btn.connect("clicked", _on_save)
+
+    foot = hbox(6)
+    foot.pack_start(status_lbl, True, True, 0)
+    foot.pack_start(save_btn, False, False, 0)
+
+    root.pack_start(add_row, False, False, 0)
+    root.pack_start(sep(), False, False, 4)
+    root.pack_start(list_sw, False, False, 0)
+    root.pack_start(foot, False, False, 4)
+    _refresh_list()
+    return root
+
+def _build_settings_apps(page: Gtk.Box, key: str, label: str, win: Gtk.Window) -> None:
+    root = vbox(4)
+    stack = Gtk.Stack()
+    stack.set_transition_type(Gtk.StackTransitionType.NONE)
+    stack.set_hhomogeneous(False)
+    stack.set_vhomogeneous(False)
+
+    tab_row_top = hbox(4); tab_row_top.set_halign(Gtk.Align.CENTER)
+    tab_row_bottom = hbox(4); tab_row_bottom.set_halign(Gtk.Align.CENTER)
+    tab_btns: dict = {}
+
+    def _switch(name):
+        _switch_stack(stack, win, name)
+        for n, b in tab_btns.items():
+            ctx = b.get_style_context()
+            if n == name: ctx.add_class("active")
+            else:         ctx.remove_class("active")
+
+    def _placeholder(text: str) -> Gtk.Box:
+        b = vbox(4); pad(b, h=4, v=14)
+        b.pack_start(bitem(text, dim=True), False, False, 0)
+        return b
+
+    # Nur Tab 1 (Launcher) ist bereits fertig - 2/3/5 folgen als
+    # nächstes, 4 (Default Apps) bewusst als Platzhalter (siehe Chat:
+    # Recherche zu xdg-mime/mimeapps.list kommt zuletzt).
+    stack.add_named(_build_app_launcher_tab(win), "launcher")
+    stack.add_named(_placeholder("Bar shortcuts editor — coming next"), "bar")
+    stack.add_named(_build_apps_autostart_tab(win), "autostart")
+    stack.add_named(_placeholder("Default apps — coming last (needs its own research pass)"), "defaults")
+    stack.add_named(_placeholder("Wine/GameScope excludes — coming next"), "wine")
+
+    for name, tlabel, trow in (
+            ("launcher", "Launcher", tab_row_top), ("bar", "Bar", tab_row_top),
+            ("autostart", "Autostart", tab_row_top),
+            ("defaults", "Defaults", tab_row_bottom), ("wine", "Wine", tab_row_bottom)):
+        b = btn(tlabel, active=(name == "launcher"))
+        b.connect("clicked", lambda _b, n=name: _switch(n))
+        tab_btns[name] = b
+        trow.pack_start(b, False, False, 0)
+    stack.set_visible_child_name("launcher")
+
+    root.pack_start(tab_row_top, True, False, 2)
+    root.pack_start(tab_row_bottom, True, False, 0)
+    root.pack_start(tab_sep(), False, False, 0)
+    root.pack_start(stack, False, False, 0)
+    page.pack_start(root, True, True, 0)
+
+# ════════════════════════════════════════════════════════════
+#  HyprlandUserConfigs/ - gemeinsame Helfer
+#
+#  NEUE REGEL (siehe Chat): seit der hyprland.lua-Aufteilung in
+#  HyprlandConfigs/ (System/Paket, wird bei jedem Update überschrieben)
+#  + HyprlandUserConfigs/ (user-eigen, Update-sicher) dürfen Widgets NUR
+#  noch in HyprlandUserConfigs/ schreiben - NIE mehr in HyprlandConfigs/
+#  oder die Top-Level hyprland.lua selbst. Jede dieser User*.lua-Dateien
+#  MUSS vom jeweiligen Widget selbst angelegt werden, falls sie (noch)
+#  nicht existiert (frische Install, vor dem ersten Speichern) - nie
+#  einfach mit einem Fehler abbrechen.
+# ════════════════════════════════════════════════════════════
+
+def _hypr_configs_dir() -> Path:
+    """HyprlandConfigs/ - Teil des Pakets/Repos, wird bei jedem
+    Systemupdate überschrieben. Widgets dürfen hier NUR LESEN
+    (z.B. um einen Default-Wert zu kennen), NIE schreiben."""
+    return Path(HOME) / ".config" / "hypr" / "HyprlandConfigs"
+
+def _hypr_system_config_path(filename: str) -> Path:
+    return _hypr_configs_dir() / filename
+
+def _hypr_read_system_config(filename: str) -> str:
+    p = _hypr_system_config_path(filename)
+    if p.is_file():
+        try:
+            return p.read_text()
+        except Exception:
+            pass
+    return ""
+
+def _hypr_user_configs_dir() -> Path:
+    return Path(HOME) / ".config" / "hypr" / "HyprlandUserConfigs"
+
+def _hypr_user_config_path(filename: str) -> Path:
+    return _hypr_user_configs_dir() / filename
+
+def _hypr_read_user_config(filename: str) -> str:
+    p = _hypr_user_config_path(filename)
+    if p.is_file():
+        try:
+            return p.read_text()
+        except Exception:
+            pass
+    return ""
+
+def _hypr_write_user_config(filename: str, content: str) -> None:
+    """Erstellt HyprlandUserConfigs/ + die Datei selbst, falls nötig -
+    siehe Regel oben. Bestehender Inhalt wird vorher gesichert
+    (backup_file), nicht stillschweigend überschrieben."""
+    p = _hypr_user_config_path(filename)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    if p.is_file():
+        backup_file(p)
+    atomic_write_text(p, content)
+
+def _hypr_reload() -> None:
+    """Immer als SEPARATER Schritt NACH dem Schreiben einer User*.lua
+    aufrufen, nie hyprctl aus der Lua-Config selbst heraus (siehe die
+    ausführliche Warnung in UserDeviceOutputs.lua - Henne-Ei-Problem,
+    haengt den Compositor beim Start auf)."""
+    run_bg(["hyprctl", "reload"])
+
+# ════════════════════════════════════════════════════════════
+#  Devices-Widget - Touch-/Tablet-Geräte an den physisch richtigen
+#  Monitor binden, schreibt UserDeviceOutputs.lua (siehe die
+#  ausführliche Problem-/Fix-Beschreibung direkt in dieser Datei).
+# ════════════════════════════════════════════════════════════
+
+_HYPR_DEVICE_LINE_RE = re.compile(
+    r'hl\.device\(\{\s*name\s*=\s*"([^"]*)"\s*,\s*output\s*=\s*"([^"]*)"\s*\}\)')
+
+def _hypr_strip_lua_line_comments(text: str) -> str:
+    """Entfernt reine Kommentarzeilen (beginnen mit '--', nach optionalem
+    Whitespace) - u.a. nötig, weil die mitgelieferten Template-Dateien
+    ein hl.exec_cmd(...)/hl.device(...)-BEISPIEL als Kommentar enthalten,
+    das unser Zeilen-Regex sonst fälschlich als echten, schon
+    vorhandenen Eintrag einliest."""
+    return "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("--"))
+
+def _hypr_parse_device_outputs(text: str) -> dict:
+    """{device_name: monitor_name} aus einer bestehenden
+    UserDeviceOutputs.lua - reicht für unseren eigenen, immer gleich
+    formatierten Output, muss keine beliebige Lua-Syntax verstehen."""
+    text = _hypr_strip_lua_line_comments(text)
+    return {m.group(1): m.group(2) for m in _HYPR_DEVICE_LINE_RE.finditer(text)}
+
+def _hypr_build_device_outputs_lua(assignments: dict) -> str:
+    lines = [
+        "-- UserDeviceOutputs.lua",
+        "--",
+        "-- Automatisch von der \"Devices\"-Einstellung generiert (WidgetsDaemon.py).",
+        "-- Bindet Touch-/Tablet-Geräte an den Monitor, auf dem sie physisch sitzen",
+        "-- (sonst landen Touch-Events auf der falschen Fläche, siehe Devices.lua).",
+        "-- Manuelle Änderungen hier gehen beim nächsten Speichern in der",
+        "-- Devices-Einstellung verloren.",
+        "",
+    ]
+    for name, output in assignments.items():
+        if output:
+            lines.append(f'hl.device({{ name = "{name}", output = "{output}" }})')
+    lines.append("")
+    return "\n".join(lines)
+
+def _hypr_devices_by_category() -> tuple:
+    """(touch_devices, tablet_devices) - rohe Objekte aus 'hyprctl
+    devices -j', jeweils unter den Keys 'touch'/'tablets' (siehe
+    Kommentar in UserDeviceOutputs.lua: Schlüsselnamen können sich
+    zwischen Hyprland-Versionen unterscheiden - defensiv beide
+    möglichen Schreibweisen probieren)."""
+    data = jrun(["hyprctl", "devices", "-j"]) or {}
+    touch = data.get("touch") or data.get("touchDevices") or []
+    tablets = data.get("tablets") or data.get("tablet") or []
+    return touch, tablets
+
+def _build_settings_devices(page: Gtk.Box, key: str, label: str, win: Gtk.Window) -> None:
+    monitors = _hypr_monitors_live()
+    touch, tablets = _hypr_devices_by_category()
+    all_devices = [(d, "Touchscreen") for d in touch] + [(d, "Tablet/Stylus") for d in tablets]
+
+    intro = Gtk.Label()
+    intro.set_line_wrap(True)
+    intro.set_halign(Gtk.Align.START)
+    intro.set_justify(Gtk.Justification.LEFT)
+    intro.set_label(
+        "Hyprland behandelt alle Monitore als eine zusammenhängende Fläche. "
+        "Touch-/Tablet-Geräte arbeiten mit absoluten statt relativen Koordinaten "
+        "und werden ohne explizite Zuordnung auf diese GESAMTE Fläche gemappt, "
+        "nicht nur auf den Monitor, auf dem sie physisch sitzen. Hier jedem "
+        "Gerät seinen echten Monitor zuweisen, falls Touch-Eingaben daneben landen.")
+    intro.get_style_context().add_class("caption")
+    intro.set_opacity(0.8)
+    page.pack_start(intro, False, False, 6)
+
+    if not monitors:
+        page.pack_start(bitem("No monitors found via hyprctl (is Hyprland running?)", dim=True),
+                        False, False, 0)
+        return
+    if not all_devices:
+        page.pack_start(bitem("No touch/tablet devices found via hyprctl", dim=True), False, False, 0)
+        return
+
+    # FIX (siehe Chat, riesiger Abstand zwischen den Geräte-Zeilen): page
+    # selbst hat (wie jede Settings-Kategorie-Seite) ein größeres
+    # Standard-Spacing, gedacht für große Abschnitte, nicht für einzelne
+    # Listenzeilen. Alle anderen Tabs packen ihre Zeilen deshalb in eine
+    # EIGENE, eng gespacte vbox statt direkt auf page - hier bisher
+    # vergessen, jetzt nachgezogen.
+    list_col = vbox(4)
+
+    current = _hypr_parse_device_outputs(_hypr_read_user_config("UserDeviceOutputs.lua"))
+    mon_names = [m.get("name", "?") for m in monitors]
+
+    save_btn = btn("󰆓  Save")
+    save_btn.set_sensitive(False)
+    status_lbl = Gtk.Label(label="")
+    status_lbl.get_style_context().add_class("caption")
+    status_lbl.set_opacity(0.75)
+    status_lbl.set_no_show_all(True)
+    status_lbl.hide()
+
+    def _flash(text: str, ms: int = 2500):
+        status_lbl.set_label(text)
+        status_lbl.show()
+        GLib.timeout_add(ms, lambda: (status_lbl.hide(), False)[1])
+
+    pickers: dict = {}   # device_name -> _SegmentedControl
+
+    for dev, kind in all_devices:
+        name = dev.get("name", "?")
+        row = hbox(6)
+        row.get_style_context().add_class("bubble")
+        row.get_style_context().add_class("item")
+        pad(row, h=6, v=4)
+        txt = vbox(0)
+        name_lbl = Gtk.Label(label=name)
+        name_lbl.set_halign(Gtk.Align.START)
+        name_lbl.set_ellipsize(Pango.EllipsizeMode.MIDDLE)
+        name_lbl.set_max_width_chars(28)
+        txt.pack_start(name_lbl, False, False, 0)
+        kind_lbl = Gtk.Label(label=kind)
+        kind_lbl.set_halign(Gtk.Align.START)
+        kind_lbl.set_opacity(0.6)
+        kind_lbl.get_style_context().add_class("caption")
+        txt.pack_start(kind_lbl, False, False, 0)
+        row.pack_start(txt, True, True, 0)
+
+        ctrl = _SegmentedControl()
+        ctrl.append_text("— none —")
+        for mn in mon_names:
+            ctrl.append_text(mn)
+        cur_val = current.get(name, "")
+        ctrl.set_active((mon_names.index(cur_val) + 1) if cur_val in mon_names else 0)
+        def _on_change(_c):
+            save_btn.set_sensitive(True)
+            save_btn.set_label("󰆓  Save*")
+        ctrl.connect("changed", _on_change)
+        pickers[name] = ctrl
+        row.pack_start(ctrl.widget, False, False, 0)
+        list_col.pack_start(row, False, False, 0)
+    page.pack_start(list_col, False, False, 0)
+
+    def _on_save(_b=None):
+        try:
+            assignments = {}
+            for name, ctrl in pickers.items():
+                txt = ctrl.get_active_text()
+                if txt and txt != "— none —":
+                    assignments[name] = txt
+            _hypr_write_user_config("UserDeviceOutputs.lua", _hypr_build_device_outputs_lua(assignments))
+            _hypr_reload()
+            save_btn.set_sensitive(False)
+            save_btn.set_label("󰆓  Save")
+            _flash("Saved — reloading Hyprland…")
+        except Exception as e:
+            _flash(f"Error: {e}")
+    save_btn.connect("clicked", _on_save)
+
+    foot = hbox(6)
+    foot.pack_start(status_lbl, True, True, 0)
+    foot.pack_start(save_btn, False, False, 0)
+    page.pack_start(sep(), False, False, 6)
+    page.pack_start(foot, False, False, 0)
+
+# ════════════════════════════════════════════════════════════
+#  Widgets-Settings - Einstellungen FÜR die Widgets selbst (nicht
+#  Hyprland-Config), landen in TrafkTuxWidgets/WidgetsConfig.json (siehe
+#  _widgets_config_* weiter oben). Eigene Tab-Leiste wie bei Apps &
+#  Shortcuts, aktuell nur "Clock" - gedacht, um künftige Widgets hier
+#  dazuzuhängen, ohne die Kategorie-Struktur nochmal umzubauen.
+# ════════════════════════════════════════════════════════════
+
+def _build_widgets_clock_tab(win: Gtk.Window) -> Gtk.Box:
+    root = vbox(4); pad(root, h=4, v=10)
+    clock_cfg = _clock_settings()
+
+    root.pack_start(bsec("MODE"), False, False, 0)
+    mode_row = hbox(4); mode_row.set_halign(Gtk.Align.CENTER)
+    mode_btns: dict = {}
+
+    root.pack_start(bsec("SECONDS / MILLISECONDS"), False, False, 6)
+    opts_row = hbox(4); opts_row.set_halign(Gtk.Align.CENTER)
+    sec_btn = btn("Seconds", active=clock_cfg["seconds"])
+    ms_btn = btn("Milliseconds", active=clock_cfg["milliseconds"])
+    ms_btn.set_sensitive(clock_cfg["seconds"])
+
+    def _switch_mode(name):
+        clock_cfg["mode"] = name
+        _save_clock_settings(mode=name)
+        for n, b in mode_btns.items():
+            ctx = b.get_style_context()
+            if n == name: ctx.add_class("active")
+            else:         ctx.remove_class("active")
+    for name, mlabel in (("digital", "Digital"), ("analog", "Analog")):
+        b = btn(mlabel, active=(clock_cfg["mode"] == name))
+        b.connect("clicked", lambda _b, n=name: _switch_mode(n))
+        mode_btns[name] = b
+        mode_row.pack_start(b, False, False, 0)
+
+    def _on_sec_toggle(_b):
+        clock_cfg["seconds"] = not clock_cfg["seconds"]
+        if not clock_cfg["seconds"]:
+            clock_cfg["milliseconds"] = False   # ms ohne Sekunden ergibt nichts
+        ctx = sec_btn.get_style_context()
+        ctx.add_class("active") if clock_cfg["seconds"] else ctx.remove_class("active")
+        ms_btn.set_sensitive(clock_cfg["seconds"])
+        if not clock_cfg["seconds"]:
+            ms_btn.get_style_context().remove_class("active")
+        _save_clock_settings(seconds=clock_cfg["seconds"], milliseconds=clock_cfg["milliseconds"])
+    sec_btn.connect("clicked", _on_sec_toggle)
+
+    def _on_ms_toggle(_b):
+        clock_cfg["milliseconds"] = not clock_cfg["milliseconds"]
+        ctx = ms_btn.get_style_context()
+        ctx.add_class("active") if clock_cfg["milliseconds"] else ctx.remove_class("active")
+        _save_clock_settings(milliseconds=clock_cfg["milliseconds"])
+    ms_btn.connect("clicked", _on_ms_toggle)
+
+    opts_row.pack_start(sec_btn, False, False, 0)
+    opts_row.pack_start(ms_btn, False, False, 0)
+    root.pack_start(mode_row, False, False, 0)
+    root.pack_start(opts_row, False, False, 0)
+    return root
+
+def _build_settings_widgets(page: Gtk.Box, key: str, label: str, win: Gtk.Window) -> None:
+    root = vbox(4)
+    stack = Gtk.Stack()
+    stack.set_transition_type(Gtk.StackTransitionType.NONE)
+    stack.set_hhomogeneous(False)
+    stack.set_vhomogeneous(False)
+
+    tab_row = hbox(4); tab_row.set_halign(Gtk.Align.CENTER)
+    tab_btns: dict = {}
+
+    def _switch(name):
+        _switch_stack(stack, win, name)
+        for n, b in tab_btns.items():
+            ctx = b.get_style_context()
+            if n == name: ctx.add_class("active")
+            else:         ctx.remove_class("active")
+
+    stack.add_named(_build_widgets_clock_tab(win), "clock")
+    for name, tlabel in (("clock", "Clock"),):
+        b = btn(tlabel, active=(name == "clock"))
+        b.connect("clicked", lambda _b, n=name: _switch(n))
+        tab_btns[name] = b
+        tab_row.pack_start(b, False, False, 0)
+    stack.set_visible_child_name("clock")
+
+    root.pack_start(tab_row, True, False, 2)
+    root.pack_start(tab_sep(), False, False, 0)
+    root.pack_start(stack, False, False, 0)
+    page.pack_start(root, True, True, 0)
+
 SETTINGS_BUILDERS = {
     "display":    _build_settings_display,
     "brightness": _build_settings_brightness,
@@ -12966,6 +15462,9 @@ SETTINGS_BUILDERS = {
     "calendar":   _build_settings_calendar,
     "appearance": _build_settings_appearance,
     "security":   _build_settings_security,
+    "apps":       _build_settings_apps,
+    "devices":    _build_settings_devices,
+    "widgets":    _build_settings_widgets,
 }
 
 def build_settings(win: Gtk.Window):

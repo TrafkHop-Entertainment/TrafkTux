@@ -3229,18 +3229,32 @@ static void apps_page_changed_cb(GtkAdjustment *adj, gpointer user_data) {
  * Bedarf automatisch den Workspace). 1:1 dieselbe Dispatcher-Syntax wie
  * im alten, nachweislich funktionierenden WaybarClicks.sh. */
 static void win_click_left(gpointer ud) {
-    char *addr = ud; /* "0x..." - static Anzeigezeit, siehe rebuild() */
+    char *addr = ud;
     char cmd[160];
     g_snprintf(cmd, sizeof(cmd), "hl.dsp.focus({window='address:%s'})", addr);
     hypr_ipc_dispatch(cmd);
+
+    /* focus allein ändert nur den Tastaturfokus, nicht die Z-Order -
+     * floatende Fenster bleiben sonst optisch hinter anderen. */
+    g_snprintf(cmd, sizeof(cmd), "hl.dsp.window.alter_zorder({mode='top', window='address:%s'})", addr);
+    hypr_ipc_dispatch(cmd);
 }
 
-/* Mittelklick / 3-Finger-Tipp: Fenster schliessen. */
+/* Mittelklick / 3-Finger-Tipp: Fenster schliessen.
+ *
+ * Laeuft ueber SmartClose.sh statt eines direkten close()-Dispatches:
+ * alte Spiele in gamescope ignorieren die hoefliche Schliessen-Anfrage
+ * routinemaessig, das Fenster haengt dann nur noch gedimmt rum.
+ * SmartClose.sh eskaliert nach 2.5s automatisch auf kill() (SIGKILL),
+ * aber NUR fuer gamescope-Fenster - fuer alles andere bleibt es exakt
+ * das bisherige hoefliche close(). */
 static void win_click_middle(gpointer ud) {
     char *addr = ud;
-    char cmd[160];
-    g_snprintf(cmd, sizeof(cmd), "hl.dsp.window.close({window='address:%s'})", addr);
-    hypr_ipc_dispatch(cmd);
+    char cmd[256];
+    g_snprintf(cmd, sizeof(cmd),
+               "%s/.config/TrafkTuxScripts/SmartClose.sh '%s'",
+               g_get_home_dir(), addr);
+    run_shell(cmd);
 }
 
 /* Rechtsklick: minimieren. hyprland-minimizer wirkt auf das gerade

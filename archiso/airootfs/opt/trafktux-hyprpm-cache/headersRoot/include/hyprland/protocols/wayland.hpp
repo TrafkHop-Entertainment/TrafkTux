@@ -116,6 +116,7 @@ class CWlSurface;
 class CWlSurface;
 class CWlFixes;
 class CWlRegistry;
+class CWlRegistry;
 
 #ifndef HYPRWAYLAND_SCANNER_NO_INTERFACES
 extern const wl_interface wl_display_interface;
@@ -1492,6 +1493,7 @@ class CWlPointer {
     void sendAxisDiscrete(enum wl_pointer_axis, int32_t);
     void sendAxisValue120(enum wl_pointer_axis, int32_t);
     void sendAxisRelativeDirection(enum wl_pointer_axis, enum wl_pointer_axis_relative_direction);
+    void sendWarp(wl_fixed_t, wl_fixed_t);
     void sendEnterRaw(uint32_t, wl_resource*, wl_fixed_t, wl_fixed_t);
     void sendLeaveRaw(uint32_t, wl_resource*);
     void sendMotionRaw(uint32_t, wl_fixed_t, wl_fixed_t);
@@ -1503,6 +1505,7 @@ class CWlPointer {
     void sendAxisDiscreteRaw(enum wl_pointer_axis, int32_t);
     void sendAxisValue120Raw(enum wl_pointer_axis, int32_t);
     void sendAxisRelativeDirectionRaw(enum wl_pointer_axis, enum wl_pointer_axis_relative_direction);
+    void sendWarpRaw(wl_fixed_t, wl_fixed_t);
 
   private:
     struct {
@@ -2088,6 +2091,7 @@ class CWlFixes {
 
     void setDestroy(F<void(CWlFixes*)> &&handler);
     void setDestroyRegistry(F<void(CWlFixes*, wl_resource*)> &&handler);
+    void setAckGlobalRemove(F<void(CWlFixes*, wl_resource*, uint32_t)> &&handler);
 
     // --------------- Events --------------- //
 
@@ -2096,6 +2100,7 @@ class CWlFixes {
     struct {
         F<void(CWlFixes*)> destroy;
         F<void(CWlFixes*, wl_resource*)> destroyRegistry;
+        F<void(CWlFixes*, wl_resource*, uint32_t)> ackGlobalRemove;
     } requests;
 
     void onDestroyCalled();

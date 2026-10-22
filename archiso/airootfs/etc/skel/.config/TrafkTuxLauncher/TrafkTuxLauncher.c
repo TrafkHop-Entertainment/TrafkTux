@@ -2837,11 +2837,18 @@ static void activate_slot(App *app, Slot *s) {
     if (g_strcmp0(type, "close-prev-window") == 0) {
         char *addr = read_prev_window_addr();
         if (addr && *addr) {
-            gchar *lua = g_strdup_printf("hl.dsp.window.close({ window = \"address:%s\" })", addr);
-            gchar *lua_q = g_shell_quote(lua);
-            gchar *cmd = g_strdup_printf("hyprctl dispatch %s", lua_q);
+            /* SmartClose.sh statt eines direkten close()-Dispatches: alte
+             * Spiele in gamescope ignorieren die hoefliche Schliessen-
+             * Anfrage routinemaessig, das Fenster haengt dann nur noch
+             * gedimmt rum. Eskaliert nach 2.5s automatisch auf kill()
+             * (SIGKILL), aber NUR fuer gamescope-Fenster - fuer alles
+             * andere bleibt es exakt das bisherige hoefliche close(). */
+            gchar *addr_q = g_shell_quote(addr);
+            gchar *cmd = g_strdup_printf(
+                "%s/.config/TrafkTuxScripts/SmartClose.sh %s",
+                g_get_home_dir(), addr_q);
             exec_detached(cmd);
-            g_free(cmd); g_free(lua_q); g_free(lua);
+            g_free(cmd); g_free(addr_q);
         }
         g_free(addr);
         quit_app(app);

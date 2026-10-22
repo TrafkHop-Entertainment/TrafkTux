@@ -20,7 +20,7 @@ filename = 'hyprfocus.so'
 
 [repository]
 author = 'hyprwm'
-hash = '15569344314eeedb4b8f4f4ef6144a9f5bde045e'
+hash = 'd2427d4d15b36df40468f5a58bbd67cdba19835d'
 name = 'hyprland-plugins'
 rev = ''
 url = 'https://github.com/hyprwm/hyprland-plugins'

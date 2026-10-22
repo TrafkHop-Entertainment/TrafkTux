@@ -5,7 +5,7 @@ filename = 'dynamic-cursors.so'
 
 [repository]
 author = 'virtcode'
-hash = '5ef778ea151deb3573383d13d6e1cf7eed7336e1'
+hash = '5a224284872208b5324759d535d65061043725de'
 name = 'dynamic-cursors'
 rev = ''
 url = 'https://github.com/virtcode/hypr-dynamic-cursors'

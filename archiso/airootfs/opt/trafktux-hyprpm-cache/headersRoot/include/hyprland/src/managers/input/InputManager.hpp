@@ -60,6 +60,7 @@ struct STouchData {
     PHLLSREF                touchFocusLS;
     WP<CWLSurfaceResource>  touchFocusSurface;
     Vector2D                touchSurfaceOrigin;
+    Vector2D                lastTouchPos;
 };
 
 // The third row is always 0 0 1 and is not expected by `libinput_device_config_calibration_set_matrix`
@@ -93,6 +94,7 @@ class CInputManager {
     void               onMouseWheel(IPointer::SAxisEvent, SP<IPointer> pointer = nullptr);
     void               onPointerFrame();
     void               onKeyboardKey(const IKeyboard::SKeyEvent&, SP<IKeyboard>);
+    void               onMouseFrame();
     void               onKeyboardMod(SP<IKeyboard>);
 
     void               newKeyboard(SP<IKeyboard>);
@@ -128,6 +130,7 @@ class CInputManager {
     void               setPointerConfigs();
     void               setTouchDeviceConfigs(SP<ITouch> dev = nullptr);
     void               setTabletConfigs();
+    void               setTabletToolConfigs();
 
     void               updateCapabilities();
     void               updateKeyboardsLeds(SP<IKeyboard>);

@@ -1,0 +1,11 @@
+[hypr-kinetic-scroll]
+enabled = true
+failed = false
+filename = 'hypr-kinetic-scroll.so'
+
+[repository]
+author = 'savonovv'
+hash = '657a8a7cb1cc0a24a06e2dc0947df3e8f4e729ca'
+name = 'hypr-kinetic-scroll'
+rev = ''
+url = 'https://github.com/savonovv/hypr-kinetic-scroll'

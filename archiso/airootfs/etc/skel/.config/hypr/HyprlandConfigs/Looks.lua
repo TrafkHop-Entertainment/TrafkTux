@@ -84,7 +84,7 @@ hl.plugin.hyprbars.add_button({
     fg_color = "rgba(111111ee)",
     size = 15,
     icon = "✕",
-    action = "hyprctl dispatch 'hl.dsp.window.close()'",
+    action = "hyprctl dispatch 'hl.dsp.exec_cmd(\"~/.config/TrafkTuxScripts/SmartClose.sh\")'",
 })
 hl.plugin.hyprbars.add_button({
     bg_color = "rgba(7091E5FF)",
@@ -223,6 +223,18 @@ if hl.plugin.dynamic_cursors then
         },
     })
 end
+
+-- Eigene dynamic_cursors/shake-Overrides (z.B. von der "Appearance &
+-- Language"-Einstellung gesetzt). Lebt bewusst NICHT in HyprlandConfigs/
+-- (also nicht im Repo/Paket) - ein Systemupdate ersetzt nur hyprland.lua
+-- + HyprlandConfigs/, diese Datei bleibt unangetastet. MUSS NACH dem
+-- obigen dynamic_cursors-Block stehen - Hyprland-Config ist additiv,
+-- der Override hier ersetzt gezielt nur enabled/shake.enabled, alle
+-- anderen Felder oben (rotate/tilt/stretch/hyprcursor/...) bleiben
+-- unangetastet. pcall(dofile, ...) statt require(): siehe Begründung in
+-- Autostart.lua/Display.lua - sicher, falls die Datei (noch) nicht
+-- existiert.
+pcall(dofile, os.getenv("HOME") .. "/.config/hypr/HyprlandUserConfigs/UserLooks.lua")
 
 -- hyprfocus: Animation beim Fensterfokuswechsel
 hl.config({

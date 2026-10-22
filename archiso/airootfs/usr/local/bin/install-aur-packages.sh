@@ -29,6 +29,7 @@ PACKAGES=(
   mediawriter
   cnijfilter2
   gnome-network-displays
+  ckbcomp
 )
 
 if [[ ! -d "${REPO_DIR}" ]]; then

@@ -11,6 +11,7 @@ namespace Render {
 }
 class CDRMSyncPointState;
 class CWLCallbackResource;
+class CPresentationFeedback;
 
 enum eLockReason : uint8_t {
     LOCK_REASON_NONE  = 0,
@@ -53,18 +54,20 @@ struct SSurfaceState {
             bool acked : 1;
             bool frame : 1;
             bool fifo : 1;
+            bool presentation : 1;
         } bits;
     } updated;
 
     bool rejected = false;
 
     // initial values, copied from protocol text
-    CHLBufferReference  buffer = {};                                          // The initial surface contents are void
-    CRegion             damage, bufferDamage;                                 // The initial value for pending damage is empty
-    CRegion             opaque;                                               // The initial value for an opaque region is empty
-    CRegion             input     = CBox{{}, {INT32_MAX - 1, INT32_MAX - 1}}; // The initial value for an input region is infinite
-    wl_output_transform transform = WL_OUTPUT_TRANSFORM_NORMAL;               // A newly created surface has its buffer transformation set to normal
-    int                 scale     = 1;                                        // A newly created surface has its buffer scale set to 1
+    CHLBufferReference  buffer = {};                                  // The initial surface contents are void
+    CRegion             damage, bufferDamage;                         // The initial value for pending damage is empty
+    CRegion             opaque;                                       // The initial value for an opaque region is empty
+    CRegion             input;                                        // The initial value for an input region is infinite
+    bool                inputIsInfinite = true;                       // Tracks the input region's infinite protocol state
+    wl_output_transform transform       = WL_OUTPUT_TRANSFORM_NORMAL; // A newly created surface has its buffer transformation set to normal
+    int                 scale           = 1;                          // A newly created surface has its buffer scale set to 1
 
     // these don't have well defined initial values in the protocol, but these work
     Vector2D size, bufferSize;
@@ -75,6 +78,9 @@ struct SSurfaceState {
 
     // for wl_surface::frame callbacks.
     std::vector<SP<CWLCallbackResource>> callbacks;
+
+    // for wp_presentation feedbacks, tied to this commit.
+    std::vector<WP<CPresentationFeedback>> presentationFeedbacks;
 
     // viewporter protocol surface state
     struct {
@@ -100,10 +106,12 @@ struct SSurfaceState {
 
     // commit timing
     std::optional<Time::steady_dur> pendingTimeout;
+    std::optional<Time::steady_tp>  commitTimingTarget;
     SP<CEventLoopTimer>             timer;
 
     // helpers
     CRegion accumulateBufferDamage();       // transforms state.damage and merges it into state.bufferDamage
+    CRegion effectiveInputRegion() const;   // materializes the input region clipped to the current surface size
     void    updateFrom(SSurfaceState& ref); // updates this state based on a reference state.
     void    reset();                        // resets pending state after commit
 };

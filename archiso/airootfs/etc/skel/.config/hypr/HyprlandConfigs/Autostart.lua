@@ -15,6 +15,7 @@ hl.on("hyprland.start", function()
     hl.exec_cmd("xfdesktop")
     hl.exec_cmd("bash /usr/local/lib/trafktux/OptionalSync.sh --watch")
     hl.exec_cmd("bash ~/.config/hypr/Wallpapers.sh")
+    hl.exec_cmd("bash ~/.config/hypr/WallpaperHotplug.sh &")
     -- TrafkTuxBar ersetzt waybar (siehe TrafkTuxBar.c/.jsonc) - alte
     -- waybar-Zeile vorerst nur auskommentiert, nicht geloescht.
     -- hl.exec_cmd("killall waybar; waybar")
@@ -45,7 +46,7 @@ hl.on("hyprland.start", function()
     hl.exec_cmd("cp ~/.config/Assets/Right.png /tmp/Right.png")
     hl.exec_cmd("cp ~/.config/Assets/Left.png /tmp/Left.png")
     -- Bar.png liegt direkt in deinem TrafkTuxBar-Ordner.
-    hl.exec_cmd("cp ~/.config/TrafkTuxBar/Bar.png /tmp/Bar.png")
+    hl.exec_cmd("cp ~/.config/Assets/Bar.png /tmp/Bar.png")
     hl.exec_cmd("killall TrafkTuxBar; ~/.config/TrafkTuxBar/TrafkTuxBar &")
     -- TrafkTuxLauncher-Daemon: haelt AppLauncher- und PowerMenu-Fenster
     -- fertig gebaut & versteckt im Hintergrund, launcher_cmd/powermenu_cmd
@@ -56,6 +57,73 @@ hl.on("hyprland.start", function()
     -- Start synchron, genau wie TrafkTuxBar - selbes Wettlauf-Problem,
     -- selbe Lösung: erst kopieren, dann starten).
     hl.exec_cmd("killall TrafkTuxLauncher; ~/.config/TrafkTuxLauncher/TrafkTuxLauncher --daemon &")
+    -- ─────────────────────────────────────────────────────────────
+    -- Ehemalige systemd --user Dienste (FocusFixDaemon/ScreenRotation-
+    -- Daemon/SoundCenter/WidgetsDaemon), jetzt direkt von Hyprland
+    -- gestartet statt per `systemctl --user start ...` (siehe Chat:
+    -- der systemd-Service fuer FocusFixDaemon lief irgendwann nicht
+    -- mehr zuverlaessig an - Ursache nie restlos geklaert, der direkte
+    -- Start via hl.exec_cmd umgeht das Problem komplett).
+    --
+    -- Jede Zeile ist `killall <prozessname>; <watchdog-loop> &` - das
+    -- `killall` schuetzt wie bei TrafkTuxBar/TrafkTuxLauncher oben vor
+    -- doppelten Prozessen bei einem `hyprctl reload` (der diesen Hook
+    -- erneut feuert). Die Watchdog-Loops (`while true; do <prog>; sleep
+    -- N; done`) ersetzen das `Restart=on-failure`/`RestartSec=N` der
+    -- alten .service-Units - ohne das wuerde ein abstuerzender Daemon
+    -- einfach tot bleiben, bis zum naechsten Hyprland-Neustart. `setsid
+    -- -f bash -c '...' &` statt nacktem `&`, damit die Loop (genau wie
+    -- SwaySyncWatchdog.sh unten) in ihrer eigenen Session haengt und
+    -- nicht am `hl.exec_cmd`-Aufruf selbst klebt.
+    --
+    -- killall matcht auf den tatsaechlichen Prozessnamen, NICHT auf den
+    -- Dateinamen des Skripts - bei den beiden C-Binaries (Focus-
+    -- FixDaemon, ScreenRotationDaemon) ist das identisch, bei
+    -- WidgetsDaemon.py (laeuft unter "python3") brauchts stattdessen
+    -- `pkill -f`, sonst wird der falsche/gar kein Prozess getroffen.
+    hl.exec_cmd(
+        "killall FocusFixDaemon; "
+            .. "setsid -f bash -c 'while true; do "
+            .. "~/.config/waybar/Scripts/FocusFixDaemon; sleep 1; done' "
+            .. ">/dev/null 2>&1 &"
+    )
+    hl.exec_cmd(
+        "killall ScreenRotationDaemon; "
+            .. "setsid -f bash -c 'while true; do "
+            .. "~/.config/waybar/Scripts/ScreenRotationDaemon; sleep 2; done' "
+            .. ">/dev/null 2>&1 &"
+    )
+    -- Achtung Namensstolperfalle (siehe SoundCenter.service): der
+    -- systemd-Unit-Name war "SoundCenter", das tatsaechliche Binary
+    -- heisst aber "SoundDaemon" (~/.config/hypr/SoundDaemon) - killall
+    -- muss daher auf SoundDaemon gehen, nicht auf SoundCenter. Logging
+    -- wie bisher nach /tmp/SoundCenter.log (die alte Unit hat bewusst
+    -- an journald vorbei direkt in diese Datei geschrieben, siehe
+    -- dortiger Kommentar - ">>" statt ">" behaelt das bei einem Crash-
+    -- Neustart der Loop den bisherigen Log-Inhalt).
+    --
+    -- Die alte Unit hatte zusaetzlich Requires=/After=pipewire.service
+    -- wireplumber.service - eine Garantie, dass PipeWire schon laeuft,
+    -- BEVOR SoundDaemon startet. Das gibt es hier so nicht mehr; falls
+    -- SoundDaemon beim allerersten Start (PipeWire evtl. noch nicht
+    -- fertig hochgefahren) sofort crasht, faengt die Watchdog-Loop das
+    -- zumindest ab und startet nach 1s neu (= grob das alte
+    -- RestartSec=1-Verhalten) - sollte PipeWire bis dahin stehen, laeuft
+    -- es. Falls das in der Praxis doch mal nicht reicht, einfach ein
+    -- "sleep 2" VOR die Loop stellen.
+    hl.exec_cmd(
+        "killall SoundDaemon; "
+            .. "setsid -f bash -c 'while true; do "
+            .. "~/.config/hypr/SoundDaemon >>/tmp/SoundCenter.log 2>&1; sleep 1; done' "
+            .. ">/dev/null 2>&1 &"
+    )
+
+    hl.exec_cmd(
+    "pkill -f '[W]idgetsDaemon.py'; "
+        .. "setsid -f bash -c 'while true; do "
+        .. "/usr/bin/python3 ~/.config/waybar/Scripts/WidgetsDaemon.py; sleep 1; done' "
+        .. ">/dev/null 2>&1 &"
+    )
     -- SwaySyncWatchdog.sh statt direktem swaync-Aufruf: startet swaync wie
     -- bisher, startet es aber automatisch neu, falls es abstuerzt (siehe
     -- SwaySyncWatchdog.sh fuer Details/Stop-Befehl).
@@ -70,9 +138,16 @@ hl.on("hyprland.start", function()
     -- WaybarAutohideDaemon.service entfernt: TrafkTuxBar bringt sein
     -- eigenes Autohide mit, kein separater Daemon mehr noetig.
     -- hl.exec_cmd("systemctl --user start WidgetsDaemon.service WaybarAutohideDaemon.service FocusFixDaemon.service ScreenRotationDaemon.service SoundCenter.service")
-    hl.exec_cmd(
-        "systemctl --user start WidgetsDaemon.service FocusFixDaemon.service ScreenRotationDaemon.service SoundCenter.service"
-    )
+    -- WidgetsDaemon/ScreenRotationDaemon/SoundCenter (und vorher schon
+    -- FocusFixDaemon) laufen jetzt alle direkt ueber hl.exec_cmd weiter
+    -- oben in diesem Block (siehe Kommentar dort) statt ueber systemd --
+    -- NICHT vergessen, die zugehoerigen .service-Units per
+    -- `systemctl --user disable --now WidgetsDaemon.service
+    -- ScreenRotationDaemon.service SoundCenter.service` abzuklemmen,
+    -- sonst laufen sie zusaetzlich noch ueber graphical-session.target.
+    -- hl.exec_cmd(
+    --     "systemctl --user start WidgetsDaemon.service ScreenRotationDaemon.service SoundCenter.service"
+    -- )
     hl.exec_cmd("sudo systemctl restart trafktux-grub-theme-sync.service")
     -- Kein Daemon-Autostart mehr nötig: launcher_cmd/powermenu_cmd starten
     -- Rofi im Script-Mode jetzt bei jedem Aufruf direkt selbst.

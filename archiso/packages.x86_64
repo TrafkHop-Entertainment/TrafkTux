@@ -12,6 +12,18 @@ linux-headers
 git
 archlinux-keyring
 btrfs-progs
+mkinitcpio-archiso
+mkinitcpio-nfs-utils
+nbd
+base
+sudo
+networkmanager
+network-manager-applet
+wireless-regdb
+squashfs-tools
+smartmontools
+qt6-svg
+cryptsetup
 
 # --- Bootloader / Boot-Splash ---
 plymouth
@@ -53,6 +65,7 @@ qt5-wayland
 qt6-wayland
 ddcutil
 xfdesktop
+qt6-multimedia-ffmpeg
 
 # --- Grafik / GPU ---
 mesa
@@ -116,7 +129,7 @@ cups-pdf
 firefox
 vlc
 vlc-plugins-all
-viewnior
+okular
 gimp
 ark
 fastfetch

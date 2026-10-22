@@ -1,0 +1,11 @@
+[hyprexpo]
+enabled = true
+failed = false
+filename = 'hyprexpo.so'
+
+[repository]
+author = 'sandwichfarm'
+hash = 'e3197bf420640453d0f6eba46fece7989776cbcb'
+name = 'hyprexpo'
+rev = ''
+url = 'https://github.com/sandwichfarm/hyprexpo'

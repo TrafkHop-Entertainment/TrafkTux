@@ -282,6 +282,58 @@ hyprpaper_unload_unused() {
 }
 
 # ─────────────────────────────────────────────────────────────────
+# Nur fehlende Monitore füllen (für WallpaperHotplug.sh)
+#   Wallpapers.sh --fill-missing
+# Setzt ausschließlich für Monitore, die laut hyprpaper aktuell KEIN
+# Wallpaper haben, ein neues Zufallsbild. Bereits versorgte Monitore
+# bleiben unangetastet (kein Flackern bei Hotplug).
+# ─────────────────────────────────────────────────────────────────
+if [ "${1:-}" = "--fill-missing" ]; then
+    ensure_hyprpaper_running || exit 1
+    discover_xfconf_monitor_map || true
+    ensure_xfdesktop_transparent
+
+    # Aktive Bilder als "behalten" markieren, damit hyprpaper_unload_unused
+    # sie NICHT entlädt (sonst würden bestehende Wallpaper verschwinden).
+    mapfile -t _active_imgs < <(hyprctl hyprpaper listactive 2>/dev/null | sed 's/^[^:]*: //')
+    for img in "${_active_imgs[@]}"; do
+        [ -n "$img" ] && KEEP_IMAGES+=("$img")
+    done
+
+    # Monitore, die laut hyprpaper bereits ein Wallpaper haben
+    declare -A HAS=()
+    while IFS= read -r m; do
+        [ -n "$m" ] && HAS["$m"]=1
+    done < <(hyprctl hyprpaper listactive 2>/dev/null | awk -F': ' '{print $1}')
+
+    mapfile -t MONITORS < <(
+        hyprctl monitors -j | jq -r '.[] | [.name, (.width|tostring), (.height|tostring)] | @tsv'
+    )
+
+    for line in "${MONITORS[@]}"; do
+        IFS=$'\t' read -r MON W H <<< "$line"
+        [ -n "${HAS[$MON]:-}" ] && continue
+
+        KEY=$(ratio_key "$W" "$H")
+        IMAGE=""
+        if IMAGE="$(pick_image "$WALLPAPER_DIR/$KEY")"; then
+            :
+        elif [ "$KEY" != "$DEFAULT_RATIO" ] && IMAGE="$(pick_image "$WALLPAPER_DIR/$DEFAULT_RATIO")"; then
+            :
+        else
+            notify-send "Wallpaper" "Kein Bild für $MON ($W x $H) gefunden." 2>/dev/null
+            continue
+        fi
+
+        hyprpaper_set "$MON" "$IMAGE"
+        KEEP_IMAGES+=("$IMAGE")
+    done
+
+    hyprpaper_unload_unused
+    exit 0
+fi
+
+# ─────────────────────────────────────────────────────────────────
 # Explizite Auswahl (fürs Wallpapers-Tab in den Widgets):
 #   Wallpapers.sh --set /pfad/zum/bild.jpg [MONITORNAME]
 # ─────────────────────────────────────────────────────────────────

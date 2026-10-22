@@ -5,7 +5,7 @@ filename = 'hyprglass.so'
 
 [repository]
 author = 'hyprnux'
-hash = '22acd5db6ef73fa34cad2d5ce8b76cf37e9acaa5'
+hash = '7c574b4c7aabc3364c7aae07584d896649179b18'
 name = 'HyprGlass'
 rev = ''
 url = 'https://github.com/hyprnux/hyprglass'
