@@ -198,6 +198,48 @@ ensure_xfdesktop_transparent() {
     done
 }
 
+# ─────────────────────────────────────────────────────────────────
+# LOCK: verhindert, dass zwei Instanzen dieses Skripts gleichzeitig
+# in den hyprpaper-berührenden Teil laufen (normaler Autostart-Lauf
+# UND der "Sicherheitsnetz"-Aufruf von WallpaperHotplug.sh direkt
+# beim Boot, oder zwei schnell aufeinanderfolgende Hotplug-Events).
+#
+# Das war die Ursache fürs "Upgrade kaputt"-Problem:
+#   - Autostart.lua feuert "Wallpapers.sh" UND "WallpaperHotplug.sh &"
+#     praktisch gleichzeitig. WallpaperHotplug.sh ruft sein
+#     Sicherheitsnetz (--fill-missing) sofort auf, ohne auf den
+#     ersten Lauf zu warten.
+#   - Beide Instanzen prüfen in ensure_hyprpaper_running() parallel
+#     "läuft hyprpaper schon?" (beide sehen: nein) und starten JEDE
+#     ihre eigene hyprpaper-Instanz. Zwei hyprpaper-Prozesse rendern
+#     dann kurzzeitig parallel auf denselben Outputs - die zweite,
+#     noch leere Instanz ersetzt die erste mit einem nackten/weißen
+#     Layer. Genau das beobachtete Verhalten: ein Wallpaper wird
+#     gesetzt und nach ein paar ms durch Weiß ersetzt.
+#   - Zusätzlich gab es eine Read-Modify-Write-Race auf der
+#     KEEP_IMAGES-Statedatei in hyprpaper_unload_unused(): Lauf B
+#     entlädt ein Bild wieder, das Lauf A gerade erst gesetzt hat,
+#     weil B es beim Lesen von "listactive" noch nicht als aktiv sah.
+#     Dadurch bekamen weitere Monitore gar kein Bild mehr.
+#
+# Fix: ein flock-basierter Mutex um den gesamten restlichen Teil des
+# Skripts (außer --debug-monitors, das rein lesend ist). Alle
+# Instanzen (normaler Lauf, --fill-missing, --set) warten jetzt
+# höchstens 15s aufeinander statt sich gegenseitig zu überschreiben.
+# Dadurch läuft z.B. der Sicherheitsnetz-Aufruf von
+# WallpaperHotplug.sh einfach direkt NACH dem ersten Lauf (statt
+# gleichzeitig) und findet alle Monitore schon versorgt vor - genau
+# das gewünschte Verhalten, kein Flackern.
+# ─────────────────────────────────────────────────────────────────
+if [ "${1:-}" != "--debug-monitors" ]; then
+    LOCKFILE="${XDG_RUNTIME_DIR:-/tmp}/wb-wallpapers.lock"
+    exec 9>"$LOCKFILE"
+    if ! flock -w 15 9; then
+        notify-send "Wallpaper" "Konnte Wallpaper-Lock nicht bekommen (hängt eine andere Instanz fest?) - abgebrochen." 2>/dev/null
+        exit 1
+    fi
+fi
+
 if [ "${1:-}" = "--debug-monitors" ]; then
     echo "hyprctl monitors:"
     hyprctl monitors -j | jq -r '.[] | "  \(.name)  pos=\(.x),\(.y)  size=\(.width)x\(.height)"'

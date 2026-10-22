@@ -509,3 +509,4 @@ Still to be themed / done:
 - Wallpapers – partyheld
 - Transfer Widgets FIles to new Folder and other FIles still in old waybar folder
 - Transfer all sound related stuff in SoundCenter
+- redo trafkbubble animation for opening and closing (siehe png)
