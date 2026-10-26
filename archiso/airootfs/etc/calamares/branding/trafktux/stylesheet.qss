@@ -1,0 +1,163 @@
+/* TrafkTux - Calamares stylesheet.qss
+ *
+ * Calamares nutzt KEIN Kvantum/GTK-Theme fuer sein eigenes Fenster - per
+ * Quellcode verifiziert (CalamaresWindow.cpp:
+ *   setStyleSheet( Calamares::Branding::instance()->stylesheet() );
+ * Branding.cpp: liest dafuer AUSSCHLIESSLICH diese Datei hier,
+ * stylesheet.qss, aus dem Branding-Ordner. branding.desc's "style:"-Block
+ * (SidebarBackground usw.) steuert NUR die Sidebar-Farben (wird per
+ * QPalette gesetzt, nicht per QSS) - ohne diese Datei bleibt der Rest des
+ * Fensters (Haupt-Inhaltsflaeche, Buttons, Eingabefelder, ...) Standard-
+ * Qt-Grau/Weiss, unabhaengig davon, welches System-Theme (Kvantum, GTK,
+ * qt6ct) gerade aktiv waere - Calamares fragt die nie ab.
+ *
+ * #mainApp ist das Top-Level-Fenster selbst (per setObjectName("mainApp")
+ * in CalamaresWindow.cpp gesetzt - "Needs to match what's checked in
+ * DebugWindow", also ein offizieller, stabiler Name). #sidebarApp /
+ * #logoApp sind die Sidebar-Widgets - deren Farben kommen schon aus
+ * branding.desc's "style:"-Block (SidebarBackground/SidebarText), hier
+ * nur zur Sicherheit nochmal explizit gesetzt, falls das global per
+ * QWidget {} greifende Grundschema sie sonst ueberschreiben wuerde (QSS-
+ * ID-Selektoren sind spezifischer als Typ-Selektoren und gewinnen daher
+ * so oder so, aber explizit ist expliziter).
+ *
+ * Farben uebernommen aus branding.desc (selbe vier Werte):
+ *   SidebarBackground        #23163B
+ *   SidebarText               #fffdf5
+ *   SidebarBackgroundCurrent  #fff495
+ *   SidebarTextCurrent        #1A0D34
+ */
+
+QWidget#mainApp {
+    background-color: #1A0D34;
+}
+
+#sidebarApp, #logoApp {
+    background-color: #23163B;
+    color: #fffdf5;
+}
+
+/* Haupt-Inhaltsflaeche (Welcome/Partition/Benutzer/... Seiten) */
+QWidget {
+    background-color: #1A0D34;
+    color: #fffdf5;
+}
+
+QLabel {
+    background-color: transparent;
+}
+
+QGroupBox {
+    background-color: transparent;
+    border: 1px solid #4a3f66;
+    border-radius: 4px;
+    margin-top: 1.2em;
+    padding-top: 0.4em;
+}
+
+QGroupBox::title {
+    subcontrol-origin: margin;
+    left: 8px;
+    padding: 0 4px;
+    color: #fff495;
+}
+
+QPushButton {
+    background-color: #23163B;
+    color: #fffdf5;
+    border: 1px solid #fff495;
+    border-radius: 4px;
+    padding: 6px 16px;
+}
+
+QPushButton:hover {
+    background-color: #fff495;
+    color: #1A0D34;
+}
+
+QPushButton:pressed {
+    background-color: #e0db7a;
+    color: #1A0D34;
+}
+
+QPushButton:disabled {
+    background-color: #2d2147;
+    color: #8a8296;
+    border-color: #4a3f66;
+}
+
+QLineEdit, QComboBox, QSpinBox, QPlainTextEdit, QTextEdit, QAbstractSpinBox {
+    background-color: #2d2147;
+    color: #fffdf5;
+    border: 1px solid #4a3f66;
+    border-radius: 3px;
+    padding: 4px;
+    selection-background-color: #fff495;
+    selection-color: #1A0D34;
+}
+
+QComboBox QAbstractItemView {
+    background-color: #2d2147;
+    color: #fffdf5;
+    selection-background-color: #fff495;
+    selection-color: #1A0D34;
+}
+
+QCheckBox, QRadioButton {
+    background-color: transparent;
+    color: #fffdf5;
+}
+
+QProgressBar {
+    background-color: #2d2147;
+    border: 1px solid #4a3f66;
+    border-radius: 3px;
+    text-align: center;
+    color: #fffdf5;
+}
+
+QProgressBar::chunk {
+    background-color: #fff495;
+    border-radius: 2px;
+}
+
+QScrollBar:vertical, QScrollBar:horizontal {
+    background: #23163B;
+    border: none;
+}
+
+QScrollBar::handle {
+    background: #4a3f66;
+    border-radius: 4px;
+}
+
+QScrollBar::handle:hover {
+    background: #fff495;
+}
+
+QScrollBar::add-line, QScrollBar::sub-line {
+    background: none;
+    border: none;
+}
+
+QTreeView, QListView, QTableView {
+    background-color: #2d2147;
+    color: #fffdf5;
+    alternate-background-color: #241b3c;
+    selection-background-color: #fff495;
+    selection-color: #1A0D34;
+    border: 1px solid #4a3f66;
+}
+
+QHeaderView::section {
+    background-color: #23163B;
+    color: #fffdf5;
+    border: none;
+    padding: 4px;
+}
+
+QToolTip {
+    background-color: #fff495;
+    color: #1A0D34;
+    border: 1px solid #1A0D34;
+}

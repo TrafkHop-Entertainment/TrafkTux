@@ -24,6 +24,8 @@ squashfs-tools
 smartmontools
 qt6-svg
 cryptsetup
+rsync
+ydotool
 
 # --- Bootloader / Boot-Splash ---
 plymouth

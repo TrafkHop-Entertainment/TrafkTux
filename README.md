@@ -485,7 +485,7 @@ Change the scale (to a certain degree). Toggle HDR. Change where your other moni
 
 Still to be themed / done:
 - Calamares
-- Editor for: Rofi folders/apps, Waybar widgets/shortcuts, autostart apps, default apps: TrafkTux App Editor – mailueberfall
+- Editor for: Rofi folders/apps, Waybar widgets/shortcuts, autostart apps, default apps: TrafkTux App Edito
 
 ## Known Bugs
 
@@ -496,9 +496,18 @@ Still to be themed / done:
 - BIG STUFF
   1. Der Gamescope Wrapper geht nicht mehr, weil gamescope irgendwas hat
   2. Das System hängt sich manchmal auf
-  3. Der xfdesktop oder hyprwinwrap oder hyprpaper entziehen der apps das tastaturtippen. man will was in ner app mit der tastatur machen, aber es geht auf den desktop (man merkt es besonders mit 2 monitoren)
+  3. Der xfdesktop oder hyprwinwrap oder hyprpaper entziehen der apps das tastaturtippen. man will was in ner app mit der tastatur machen, aber es geht auf den desktop (man merkt es besonders mit 2 monitoren) ok es ist nicht wegen hyprwinwrap, ist auch ohne so.
   4. VSCodium manchmal irgendwann öffnet es sich einfach nicht mehr. das hängt irgendwie mit gamescope zusammen. hat zum gleichen zeitpunkt angefangen
 - xfdesktop can crash and there is no daemon restarting it
+- hyprlock is ass! 1. it does not scale with resolution 2. when you type in the RIGHT password, it mostoften goes green but NOTHING happens and it SOFTLOCKS you out of YOUR OWN SYSTEM and if you type in the wrong password, it goes GREEN you wait 10s ca and THEN it turns RED..... shitty thing it is
+- Widgets:
+  1. 2nd Analog clock style
+  2. Fix Weather styleing and layoutyqyq
+  3. fix normal wallpapers not applying
+  4. in display fix the bug where if you change resolution it first asks to apply forever before it actually changes it and THEN the apply pop up comes a second time (the correct time, the 1st is not supposed to be there)
+  5. processes still does not work, cpu and mem both always at 00.00% and stuff
+- Widgets and Launcher:
+  The name matcher still groups some apps together which means if one app is sorted in, other apps will not be visible anymore in unsorted.
 
 ### Other Stuff
 - Finish System Sounds - tortenboxer
@@ -506,7 +515,38 @@ Still to be themed / done:
 - Make SDDM Buttons
 - Make custom Buttons for GUI
 - Mouse cursor redesign
-- Wallpapers – partyheld
 - Transfer Widgets FIles to new Folder and other FIles still in old waybar folder
 - Transfer all sound related stuff in SoundCenter
 - redo trafkbubble animation for opening and closing (siehe png)
+- hypridle options in widgets!
+
+
+### App Editor
+
+**1. Bar Shortcuts (Tab 2) – nie gebaut**
+
+- UI fehlt komplett (nur Platzhalter)
+- Soll: Pinned-Apps-Liste analog zum Launcher-Tab, schreibt in `TrafkTuxBar.jsonc`’s `pinned`-Array unter `modules_left`
+- Braucht zusätzlich SIGHUP-Handler in `TrafkTuxBar.c` für Live-Reload (nur vorgeschlagen, nie gebaut) – sonst bräuchte jede Pin-Änderung einen kompletten Bar-Neustart
+
+**2. Default Apps (Tab 4) – nie gebaut**
+
+- Soll xdg-mime/`~/.config/mimeapps.list` verwalten
+- Offene technische Fragen vorher: mehrere mögliche `mimeapps.list`-Pfade mit unterschiedlicher Priorität, GIO-Cache-Invalidierung, Thunar-spezifisches Fehlverhalten (“nimmt zuletzt benutzte App statt echtem Default”)
+
+**3. Wine/GameScope Excludes (Tab 5) – nie gebaut**
+
+- `.desktop`-Dateien unter `~/.local/share/applications/wine/**` scannen, pro `.exe` denselben `strings <exe> | grep -qi ddraw.dll`-Check wie `GameScopeWineWrapper.sh`, Treffer in `GameScopeExcludes.txt`/`GameScopeDgvoodooExcludes.txt` ein-/austragen, dazu UI für `GameScopeWrapper.conf` (Filter/Scaler/Sharpness/altes-vs-neues dgVoodoo2)
+
+**4. Launcher-Tab (Tab 1) – zwei kleinere Lücken**
+
+- Icon/Hidden-Flag eines Root-Ordners nachträglich ändern geht nicht, nur beim Anlegen
+- App zwischen zwei Ordnern verschieben geht nur über Entfernen + Neu-Einordnen aus Unsorted, kein direktes Verschieben
+
+### Widgets-Settings → Autostart-Tab – kaputt, ein zusammenhängendes Problem
+
+**5. Autostart-Tab komplett unbrauchbar**
+
+- Ursache 1: Freitext-Eingabefeld nimmt keine Tastatureingabe an (Bubble-/Layer-Shell-Popups scheinen das bei inline `Gtk.Entry` grundsätzlich zu blockieren) → Fix: echter `Gtk.Dialog`-Popup statt Inline-Entry, Muster wie `_prompt_text_generic`
+- Ursache 2: Selbst wenn die Eingabe ginge, gäbe es keine App-Auswahlliste (wie im Launcher-Tab: Unsorted/All Apps zum Anklicken) – man müsste den exakten Befehl von Hand kennen und tippen
+- Beide gehören zusammen behoben: Dialog MIT App-Liste zum Anklicken (trägt `exec` automatisch ein) statt nacktem Textfeld

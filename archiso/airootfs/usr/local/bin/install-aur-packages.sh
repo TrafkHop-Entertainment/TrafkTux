@@ -19,6 +19,15 @@ OPT_NAME="TrafkTuxOptional"
 SYNC_DIR="/var/lib/pacman/sync"
 
 PACKAGES=(
+  # snapd/snapd-glib/libpamac-full/pamac-cli: pamac-all's volle
+  # Abhaengigkeitskette (siehe ISO.sh AUR_PACKAGES-Kommentar) - alle vier
+  # muessen hier mitgelistet werden, sonst findet "pacman -S pamac-all"
+  # sie nicht (dieses [trafktux]-Repo ist die einzige Quelle dafuer, sie
+  # sind in keinem offiziellen Repo).
+  snapd
+  snapd-glib
+  libpamac-full
+  pamac-cli
   pamac-all
   hyprshade
   hyprland-minimizer-git

@@ -50,6 +50,18 @@ CHANNEL="xfce4-desktop"
 DEFAULT_RATIO="169"
 DRY_RUN="${DRY_RUN:-0}"
 
+# ─────────────────────────────────────────────────────────────────
+# DEBUG-LOGGING (temporär, zur Diagnose des Hotplug/Lock-Problems).
+# Schreibt nach ~/.cache/wallpapers-debug.log, jede Zeile mit Zeit,
+# PID und Laufzeit seit Skriptstart (SECONDS), damit man im Log sieht,
+# WELCHER Lauf WIE LANGE wo hängt.
+# ─────────────────────────────────────────────────────────────────
+WB_LOG="$HOME/.cache/wallpapers-debug.log"
+wb_log() {
+    printf '%s PID=%s SECONDS=%s %s\n' "$(date +%T.%N)" "$$" "$SECONDS" "$1" >> "$WB_LOG"
+}
+wb_log "START args=[$*]"
+
 random_index() {
     local n="$1"
     local r
@@ -125,13 +137,18 @@ set_prop() {
 declare -gA XFKEY_FOR_MON=()
 
 discover_xfconf_monitor_map() {
+    wb_log "discover_xfconf_monitor_map: start"
     local -a hypr_lines gdk_lines
     mapfile -t hypr_lines < <(
         hyprctl monitors -j 2>/dev/null \
             | jq -r '.[] | [.name, (.x|tostring), (.y|tostring), (.width|tostring), (.height|tostring)] | @tsv'
     )
-    [ "${#hypr_lines[@]}" -eq 0 ] && return 1
+    if [ "${#hypr_lines[@]}" -eq 0 ]; then
+        wb_log "discover_xfconf_monitor_map: keine hyprctl-Monitore, abbruch"
+        return 1
+    fi
 
+    wb_log "discover_xfconf_monitor_map: starte python3/GDK-Abfrage"
     mapfile -t gdk_lines < <(python3 - <<'PYEOF' 2>/dev/null
 import gi
 gi.require_version("Gdk", "3.0")
@@ -146,7 +163,11 @@ for i in range(d.get_n_monitors()):
     print(f"{g.x}\t{g.y}\t{g.width}\t{g.height}\t{model}")
 PYEOF
     )
-    [ "${#gdk_lines[@]}" -eq 0 ] && return 1
+    wb_log "discover_xfconf_monitor_map: python3/GDK-Abfrage fertig, ${#gdk_lines[@]} Zeilen"
+    if [ "${#gdk_lines[@]}" -eq 0 ]; then
+        wb_log "discover_xfconf_monitor_map: keine GDK-Monitore, abbruch"
+        return 1
+    fi
 
     local hline
     for hline in "${hypr_lines[@]}"; do
@@ -173,6 +194,7 @@ PYEOF
             [ -n "$sanitized" ] && XFKEY_FOR_MON["$hname"]="monitor${sanitized}"
         fi
     done
+    wb_log "discover_xfconf_monitor_map: fertig, ${#XFKEY_FOR_MON[@]} Einträge in XFKEY_FOR_MON"
     [ "${#XFKEY_FOR_MON[@]}" -gt 0 ]
 }
 
@@ -186,6 +208,7 @@ resolve_xfkeys() {
 }
 
 ensure_xfdesktop_transparent() {
+    wb_log "ensure_xfdesktop_transparent: start"
     local mon xfkey
     local -a mons
     mapfile -t mons < <(hyprctl monitors -j 2>/dev/null | jq -r '.[].name')
@@ -194,8 +217,10 @@ ensure_xfdesktop_transparent() {
             local base="/backdrop/screen0/${xfkey}/workspace0"
             set_prop "$base/image-style" int 0   # 0 = Kein Bild (hyprpaper übernimmt)
             set_prop "$base/color-style" int 0   # 0 = Durchsichtig
+            wb_log "ensure_xfdesktop_transparent: $mon -> $base"
         done < <(resolve_xfkeys "$mon")
     done
+    wb_log "ensure_xfdesktop_transparent: fertig"
 }
 
 # ─────────────────────────────────────────────────────────────────
@@ -233,11 +258,38 @@ ensure_xfdesktop_transparent() {
 # ─────────────────────────────────────────────────────────────────
 if [ "${1:-}" != "--debug-monitors" ]; then
     LOCKFILE="${XDG_RUNTIME_DIR:-/tmp}/wb-wallpapers.lock"
+    wb_log "LOCKFILE=$LOCKFILE - warte auf Lock (max 15s)"
     exec 9>"$LOCKFILE"
     if ! flock -w 15 9; then
-        notify-send "Wallpaper" "Konnte Wallpaper-Lock nicht bekommen (hängt eine andere Instanz fest?) - abgebrochen." 2>/dev/null
-        exit 1
+        # ─────────────────────────────────────────────────────────
+        # FIX (Lock-Hänger nach Skript-Update): Falls der Halter ein
+        # hyprpaper ist, der noch von der alten, fehlerhaften Version
+        # stammt (fd 9 geerbt → hält den Lock bis zum Reboot), killen
+        # wir ihn und versuchen den Lock nochmal. Das macht das Skript
+        # selbstheilend, ohne dass der User rebooten muss.
+        # ─────────────────────────────────────────────────────────
+        LOCK_HOLDERS=$(fuser "$LOCKFILE" 2>/dev/null | tr -s ' ' ' ' | sed 's/^ //;s/ $//')
+        wb_log "LOCK TIMEOUT nach 15s - Halter-PIDs: ${LOCK_HOLDERS:-unbekannt (fuser fehlt?)}"
+
+        HP_PID=$(pgrep -x hyprpaper 2>/dev/null | head -n1)
+        if [ -n "$HP_PID" ] && [ -n "$LOCK_HOLDERS" ] \
+           && printf ' %s ' "$LOCK_HOLDERS" | grep -q " $HP_PID "; then
+            wb_log "hyprpaper (PID $HP_PID) hält den Lock (alter fd-9-Bug) - kille & retry"
+            pkill -9 -x hyprpaper 2>/dev/null
+            sleep 0.5
+            if ! flock -w 10 9; then
+                wb_log "Lock auch nach hyprpaper-Kill nicht bekommen - exit 1"
+                notify-send "Wallpaper" "Konnte Wallpaper-Lock nicht bekommen (hängt eine andere Instanz fest?) - abgebrochen." 2>/dev/null
+                exit 1
+            fi
+            wb_log "Lock nach hyprpaper-Kill bekommen"
+        else
+            wb_log "Lock-Halter ist nicht hyprpaper - exit 1 (manueller Eingriff nötig)"
+            notify-send "Wallpaper" "Konnte Wallpaper-Lock nicht bekommen (hängt eine andere Instanz fest?) - abgebrochen." 2>/dev/null
+            exit 1
+        fi
     fi
+    wb_log "Lock bekommen"
 fi
 
 if [ "${1:-}" = "--debug-monitors" ]; then
@@ -273,22 +325,106 @@ fi
 # komplett hierüber, nicht mehr über xfconf.
 # ─────────────────────────────────────────────────────────────────
 ensure_hyprpaper_running() {
+    wb_log "ensure_hyprpaper_running: start"
+    # FIX ("Konnte Wallpaper-Lock nicht bekommen"): pgrep -x prüft nur,
+    # ob der PROZESS existiert - nicht, ob er noch auf seinem IPC-Socket
+    # ANTWORTET. Ein hängender/abgestürzter-aber-noch-im-Prozessbaum
+    # steckender hyprpaper besteht diesen Check weiterhin, obwohl JEDER
+    # nachfolgende `hyprctl hyprpaper ...`-Aufruf dann für immer
+    # blockiert - und damit auch den flock-Mutex weiter unten für immer
+    # hält. Genau DAS war der Grund für "hängt eine andere Instanz
+    # fest?": die "andere Instanz" wartet selbst nur auf eine tote
+    # hyprpaper-Antwort. Deshalb jetzt ein echter Health-Check (kurzer
+    # Timeout) statt nur "läuft der Prozess".
     if pgrep -x hyprpaper >/dev/null 2>&1; then
-        return 0
+        # FIX (2 Bugs in der vorigen Fassung dieses Health-Checks):
+        #  1) "timeout 3 ..." ohne -k ist KEIN hartes Limit - schickt nur
+        #     SIGTERM nach 3s und wartet danach weiter, falls der Prozess
+        #     das ignoriert/nicht sofort verarbeitet (genau der Hänger-Fall,
+        #     den der Check eigentlich abfangen soll). "-k 3" erzwingt nach
+        #     weiteren 3s ein hartes SIGKILL, falls SIGTERM nicht reicht.
+        #  2) 3s sind beim Boot zu knapp: Autostart.lua startet ~15 Dienste
+        #     fast gleichzeitig (TrafkTuxBar, Launcher, Daemons, hyprctl
+        #     reload fuer Plugins, ...) - unter der Last kann ein KORREKT
+        #     laufendes hyprpaper locker mal >3s zum Antworten brauchen.
+        #     Mit nur 3s wurde ein gesundes, gerade erst gesetztes
+        #     hyprpaper vom naechsten Aufruf (z.B. Hotplug-Sicherheitsnetz)
+        #     faelschlich als "haengt" gekillt - das Wallpaper verschwand
+        #     dadurch wieder. Jetzt 6s, grosszuegiger fuer Boot-Last.
+        if timeout -k 3 6 hyprctl hyprpaper listactive >/dev/null 2>&1; then
+            wb_log "ensure_hyprpaper_running: läuft und antwortet (PID $(pgrep -x hyprpaper | tr '\n' ' '))"
+            return 0
+        fi
+        wb_log "ensure_hyprpaper_running: Prozess da, antwortet aber NICHT innerhalb 6s (rc=$?) - töte & starte neu"
+        pkill -9 -x hyprpaper 2>/dev/null
+        sleep 0.3
     fi
-    (setsid hyprpaper >/dev/null 2>&1 &) 
-    sleep 0.5
-    if pgrep -x hyprpaper >/dev/null 2>&1; then
-        return 0
-    fi
-    notify-send "Wallpaper" "hyprpaper läuft nicht und konnte nicht automatisch gestartet werden - bitte manuell prüfen (hyprpaper installiert? in hyprland.lua/systemd per exec-once eingebunden?)." 2>/dev/null || true
+
+    wb_log "ensure_hyprpaper_running: läuft nicht (oder wurde gerade als hängend beendet), starte selbst"
+    # ─────────────────────────────────────────────────────────────
+    # FIX (fd-9-Leak, das eigentliche "Upgrade kaputt"-Problem):
+    # fd 9 ist der flock-Mutex dieses Skripts. Bash setzt bei
+    # `exec 9>...` KEIN FD_CLOEXEC. Ein via `setsid hyprpaper`
+    # gestarteter Daemon erbt deshalb fd 9 - und weil flock-Locks an
+    # der "open file description" hängen (nicht am Prozess), bleibt
+    # der Lock bestehen, SOLANGE hyprpaper lebt. hyprpaper lebt bis
+    # zum Reboot. Ergebnis: jeder weitere Wallpapers.sh-Aufruf
+    # (Sicherheitsnetz von WallpaperHotplug.sh, Hotplug-Events,
+    # manuelle Rerolls) läuft 15s in den Lock-Timeout mit genau der
+    # beobachteten Meldung "hängt eine andere Instanz fest?". Deshalb
+    # hier explizit `9>&-`, damit der Daemon den fd NICHT erbt.
+    # ─────────────────────────────────────────────────────────────
+    (setsid hyprpaper </dev/null >/dev/null 2>&1 9>&- &)
+    # ─────────────────────────────────────────────────────────────
+    # FIX (Boot-Timing, das eigentliche "kein Wallpaper beim Start"-
+    # Problem): der alte Code machte nach dem Spawn nur `sleep 0.5`
+    # und EINEN Check. Beim Boot (kalter Page-Cache, Live-ISO,
+    # Hyprland noch am Hochfahren, parallele Dienste) braucht
+    # hyprpaper oft deutlich länger als 0,5s, bis es auf hyprctl
+    # antwortet - dann gab ensure_hyprpaper_running() auf, das
+    # Skript exitete 1, und es wurde NIE ein Wallpaper gesetzt. Das
+    # frisch gestartete hyprpaper lief aber weiter (mit geerbtem
+    # fd 9!) und hielt fortan den Lock → genau die Kombination aus
+    # "kein Wallpaper" + "andere Instanz hängt" beim Boot. Jetzt
+    # Retry-Loop bis ~10s, hyprpaper darf so lange hochkommen.
+    # ─────────────────────────────────────────────────────────────
+    local _hp_start=$SECONDS
+    local _hp_deadline=$((_hp_start + 10))
+    while [ "$SECONDS" -lt "$_hp_deadline" ]; do
+        if pgrep -x hyprpaper >/dev/null 2>&1 \
+           && timeout -k 2 3 hyprctl hyprpaper listactive >/dev/null 2>&1; then
+            wb_log "ensure_hyprpaper_running: nach Start oben und antwortet (nach $((SECONDS - _hp_start))s, PID $(pgrep -x hyprpaper | tr '\n' ' '))"
+            return 0
+        fi
+        sleep 0.2
+    done
+    wb_log "ensure_hyprpaper_running: FEHLGESCHLAGEN, auch nach ~10s Retry nicht erreichbar"
+    notify-send "Wallpaper" "hyprpaper läuft nicht/antwortet nicht und konnte nicht automatisch (neu) gestartet werden - bitte manuell prüfen (hyprpaper installiert? in hyprland.lua/systemd per exec-once eingebunden?)." 2>/dev/null || true
     return 1
 }
 
 hyprpaper_set() {
     local mon="$1" image="$2"
-    hyprctl hyprpaper preload "$image" >/dev/null 2>&1
-    hyprctl hyprpaper wallpaper "${mon},${image}" >/dev/null 2>&1
+    local t0 t1
+    t0=$SECONDS
+    # FIX: `timeout 10` um JEDEN hyprctl-hyprpaper-Aufruf - vorher
+    # konnte ein hängendes hyprpaper hier für immer blockieren und
+    # damit den flock-Mutex des ganzen Skripts auf ewig besetzt halten
+    # (siehe ensure_hyprpaper_running() oben für die volle Erklärung).
+    # Jetzt gibt der Aufruf spätestens nach 10s auf, der Lock wird
+    # freigegeben, und der NÄCHSTE Lauf bekommt über den Health-Check
+    # oben die Chance, hyprpaper neu zu starten statt wieder zu hängen.
+    if ! timeout -k 3 10 hyprctl hyprpaper preload "$image" >/dev/null 2>&1; then
+        wb_log "hyprpaper_set: preload $image TIMEOUT/FEHLGESCHLAGEN nach $((SECONDS - t0))s"
+        return 1
+    fi
+    t1=$SECONDS
+    wb_log "hyprpaper_set: preload $image dauerte $((t1 - t0))s"
+    if ! timeout -k 3 10 hyprctl hyprpaper wallpaper "${mon},${image}" >/dev/null 2>&1; then
+        wb_log "hyprpaper_set: wallpaper-Zuweisung $mon TIMEOUT/FEHLGESCHLAGEN nach $((SECONDS - t1))s"
+        return 1
+    fi
+    wb_log "hyprpaper_set: wallpaper-Zuweisung $mon dauerte $((SECONDS - t1))s"
 }
 
 # Nicht mehr gebrauchte, zuvor geladene Bilder wieder aus hyprpapers
@@ -317,7 +453,7 @@ hyprpaper_unload_unused() {
         for k in "${KEEP_IMAGES[@]}"; do
             [ "$img" = "$k" ] && { keep=1; break; }
         done
-        [ "$keep" = "0" ] && hyprctl hyprpaper unload "$img" >/dev/null 2>&1
+        [ "$keep" = "0" ] && timeout -k 3 10 hyprctl hyprpaper unload "$img" >/dev/null 2>&1
     done
 
     printf '%s\n' "${KEEP_IMAGES[@]}" > "$HYPRPAPER_LOADED_STATE"
@@ -331,7 +467,8 @@ hyprpaper_unload_unused() {
 # bleiben unangetastet (kein Flackern bei Hotplug).
 # ─────────────────────────────────────────────────────────────────
 if [ "${1:-}" = "--fill-missing" ]; then
-    ensure_hyprpaper_running || exit 1
+    wb_log "--fill-missing: start"
+    ensure_hyprpaper_running || { wb_log "--fill-missing: ENDE exit 1 (ensure_hyprpaper_running fehlgeschlagen)"; exit 1; }
     discover_xfconf_monitor_map || true
     ensure_xfdesktop_transparent
 
@@ -351,10 +488,15 @@ if [ "${1:-}" = "--fill-missing" ]; then
     mapfile -t MONITORS < <(
         hyprctl monitors -j | jq -r '.[] | [.name, (.width|tostring), (.height|tostring)] | @tsv'
     )
+    wb_log "--fill-missing: hyprctl meldet ${#MONITORS[@]} Monitor(e): $(printf '%s ' "${MONITORS[@]}")"
+    wb_log "--fill-missing: bereits versorgt laut hyprpaper: $(printf '%s ' "${!HAS[@]}")"
 
     for line in "${MONITORS[@]}"; do
         IFS=$'\t' read -r MON W H <<< "$line"
-        [ -n "${HAS[$MON]:-}" ] && continue
+        if [ -n "${HAS[$MON]:-}" ]; then
+            wb_log "--fill-missing: $MON übersprungen (hat schon ein Bild)"
+            continue
+        fi
 
         KEY=$(ratio_key "$W" "$H")
         IMAGE=""
@@ -363,15 +505,18 @@ if [ "${1:-}" = "--fill-missing" ]; then
         elif [ "$KEY" != "$DEFAULT_RATIO" ] && IMAGE="$(pick_image "$WALLPAPER_DIR/$DEFAULT_RATIO")"; then
             :
         else
+            wb_log "--fill-missing: $MON ($W x $H) - KEIN Bild gefunden"
             notify-send "Wallpaper" "Kein Bild für $MON ($W x $H) gefunden." 2>/dev/null
             continue
         fi
 
+        wb_log "--fill-missing: setze $MON -> $IMAGE"
         hyprpaper_set "$MON" "$IMAGE"
         KEEP_IMAGES+=("$IMAGE")
     done
 
     hyprpaper_unload_unused
+    wb_log "--fill-missing: ENDE exit 0"
     exit 0
 fi
 
@@ -380,6 +525,7 @@ fi
 #   Wallpapers.sh --set /pfad/zum/bild.jpg [MONITORNAME]
 # ─────────────────────────────────────────────────────────────────
 if [ "${1:-}" = "--set" ]; then
+    wb_log "--set: start"
     IMAGE="${2:-}"
     TARGET_MON="${3:-}"
 
@@ -408,23 +554,27 @@ if [ "${1:-}" = "--set" ]; then
         KEEP_IMAGES+=("$IMAGE")
     done
     hyprpaper_unload_unused
+    wb_log "--set: ENDE exit 0"
     exit 0
 fi
 
 # ─────────────────────────────────────────────────────────────────
 # Normaler Zufalls-Durchlauf
 # ─────────────────────────────────────────────────────────────────
+wb_log "normaler Durchlauf: start"
 mapfile -t MONITORS < <(
     hyprctl monitors -j | jq -r '.[] | [.name, (.width|tostring), (.height|tostring)] | @tsv'
 )
+wb_log "normaler Durchlauf: hyprctl meldet ${#MONITORS[@]} Monitor(e): $(printf '%s ' "${MONITORS[@]}")"
 
 if [ "${#MONITORS[@]}" -eq 0 ]; then
+    wb_log "normaler Durchlauf: ENDE exit 1 (keine Monitore)"
     notify-send "Wallpaper" "Keine Monitore von hyprctl erhalten." 2>/dev/null
     exit 1
 fi
 
 if [ "$DRY_RUN" != "1" ]; then
-    ensure_hyprpaper_running || exit 1
+    ensure_hyprpaper_running || { wb_log "normaler Durchlauf: ENDE exit 1 (ensure_hyprpaper_running fehlgeschlagen)"; exit 1; }
     discover_xfconf_monitor_map || true
     ensure_xfdesktop_transparent
 fi
@@ -441,6 +591,7 @@ for line in "${MONITORS[@]}"; do
     elif [ "$KEY" != "$DEFAULT_RATIO" ] && IMAGE="$(pick_image "$WALLPAPER_DIR/$DEFAULT_RATIO")"; then
         SRC="$DEFAULT_RATIO"
     else
+        wb_log "normaler Durchlauf: $MON ($W x $H, Ratio $KEY) - KEIN Bild gefunden"
         notify-send "Wallpaper" "Kein Bild für $MON ($W x $H, Ratio $KEY) und Fallback $DEFAULT_RATIO leer." 2>/dev/null
         continue
     fi
@@ -450,6 +601,7 @@ for line in "${MONITORS[@]}"; do
         continue
     fi
 
+    wb_log "normaler Durchlauf: setze $MON -> $IMAGE"
     hyprpaper_set "$MON" "$IMAGE"
     KEEP_IMAGES+=("$IMAGE")
 done
@@ -459,3 +611,4 @@ if [ "$DRY_RUN" = "1" ]; then
 fi
 
 hyprpaper_unload_unused
+wb_log "normaler Durchlauf: ENDE exit 0"

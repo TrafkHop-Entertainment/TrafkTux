@@ -61,6 +61,17 @@
 #   ist der dafuer vorgesehene archiso-Mechanismus.
 #
 # Aufruf:  ./ISO.sh
+#
+# BUILD-OPTIONEN (werden ganz am Anfang interaktiv abgefragt, siehe unten):
+#   1) Vorhandene, bereits gebaute AUR-Pakete (Schritt 2/5) UND bereits
+#      gebaute Hyprland-Plugins (Schritt 1/5) wiederverwenden statt bei
+#      jedem Lauf neu zu bauen (spart Zeit, siehe REUSE_EXISTING_AUR_PKGS).
+#      Schritt 1/5 wird dabei komplett uebersprungen (kein hyprpm add/
+#      update/enable, keine laufende Hyprland-Session noetig), sofern im
+#      hyprpm-Cache-Ordner bereits gebaute Plugins liegen.
+#   2) Lokale AUR-Paketdateien UND den gebauten Hyprland-Plugin-Cache nach
+#      dem ISO-Build wieder loeschen, z.B. weil einzelne Pakete zu gross
+#      fuers Git-Repo sind (siehe CLEAN_AUR_REPO_AFTER_BUILD).
 
 set -euo pipefail
 
@@ -80,6 +91,21 @@ sudo -v || die "sudo-Authentifizierung fehlgeschlagen."
 ( while true; do sudo -n -v; sleep 60; done ) &
 SUDO_KEEPALIVE_PID=$!
 
+#############################################################################
+# Build-Optionen abfragen (einmal ganz am Anfang, damit man danach nicht
+# mehr vor dem Rechner sitzen muss)
+#############################################################################
+REUSE_EXISTING_AUR_PKGS="0"
+CLEAN_AUR_REPO_AFTER_BUILD="0"
+
+echo ""
+read -rp "==> Vorhandene, bereits gebaute AUR-Pakete (Schritt 2/5) UND bereits gebaute Hyprland-Plugins (Schritt 1/5) wiederverwenden statt neu zu bauen? [j/N] " reuse_answer
+[[ "${reuse_answer,,}" =~ ^j(a)?$ ]] && REUSE_EXISTING_AUR_PKGS="1"
+
+read -rp "==> Lokale AUR-Paketdateien UND den gebauten Hyprland-Plugin-Cache (Schritt 1/5 + 2/5) nach dem ISO-Build wieder loeschen (z.B. weil einzelne Pakete zu gross fuers Git-Repo sind)? [j/N] " clean_answer
+[[ "${clean_answer,,}" =~ ^j(a)?$ ]] && CLEAN_AUR_REPO_AFTER_BUILD="1"
+echo ""
+
 declare -a CLEANUP_PATHS=()
 declare -a SUDO_CLEANUP_PATHS=()
 
@@ -93,6 +119,14 @@ declare -a SUDO_CLEANUP_PATHS=()
 # PROFILE_DIR/airootfs/ sind davon komplett unberuehrt, weil nie etwas aus
 # ihnen HERAUS verschoben wurde. Siehe BUILD_PROFILE_DIR weiter unten in
 # Schritt 4/5.
+#
+# AUSNAHME (unveraendert seit jeher, nicht Teil der obigen Regel): die
+# beiden lokalen Repo-Ordner airootfs/opt/trafktux-repo (REPO_DIR, Schritt
+# 2/5) und airootfs/opt/TrafkTuxOptional (OPTIONAL_REPO_DIR, Schritt 3/5)
+# werden WEITERHIN direkt im echten PROFILE_DIR/airootfs befuellt (nicht in
+# der Wegwerf-Kopie) - das sind bewusst dauerhaft im Projekt lebende
+# Build-Artefakte, kein "spontanes Verschieben/Verlieren" eurer eigenen
+# Dateien.
 
 # EIN einziger Exit-Trap fuer alles (sudo-Keepalive stoppen, temporaere
 # Pfade loeschen - inkl. BUILD_PROFILE_DIR). Vorher gab es zwei separate
@@ -126,6 +160,24 @@ echo "############################################################"
 
 HYPRPM_STATE_STAGE="${PROFILE_DIR}/airootfs/opt/trafktux-hyprpm-cache"
 mkdir -p "${HYPRPM_STATE_STAGE}"
+
+# REUSE_EXISTING_AUR_PKGS=1: wenn im hyprpm-Cache-Ordner schon gebaute
+# Plugins liegen (von einem frueheren Lauf - der Ordner wird NICHT von
+# diesem Skript geloescht, ausser CLEAN_AUR_REPO_AFTER_BUILD=1 war beim
+# letzten Lauf gesetzt), wird Schritt 1/5 komplett uebersprungen. Dafuer
+# muss noch nicht mal eine Hyprland-Session laufen - der hyprctl-Check
+# weiter unten passiert nur im "echten" Build-Zweig.
+HYPRPM_CACHE_REUSABLE="0"
+if [[ "${REUSE_EXISTING_AUR_PKGS}" == "1" ]] \
+    && [[ -n "$(find "${HYPRPM_STATE_STAGE}" -mindepth 2 -maxdepth 2 -name "*.so" -not -path "*/headersRoot/*" -print -quit 2>/dev/null)" ]]; then
+    HYPRPM_CACHE_REUSABLE="1"
+fi
+
+if [[ "${HYPRPM_CACHE_REUSABLE}" == "1" ]]; then
+    echo "==> Vorhandener hyprpm-Plugin-Cache in ${HYPRPM_STATE_STAGE} wird wiederverwendet, kein Rebuild (REUSE_EXISTING_AUR_PKGS=1)."
+    echo "Hyprland-Plugins uebersprungen."
+    echo ""
+else
 
 if ! hyprctl version >/dev/null 2>&1; then
     die "Es laeuft kein Hyprland. Dieses Skript muss INNERHALB einer aktiven Hyprland-Session laufen, weil hyprpm den laufenden Hyprland-Commit kennen muss, um die passenden Header zu ziehen."
@@ -229,6 +281,8 @@ sudo chown -R "$(id -u):$(id -g)" "${HYPRPM_STATE_STAGE}"
 echo "Hyprland-Plugins fertig."
 echo ""
 
+fi
+
 #############################################################################
 # 2/5: Lokales AUR-Repo (trafktux-repo)
 #############################################################################
@@ -243,6 +297,29 @@ CLEANUP_PATHS+=("${AUR_BUILD_DIR}")
 
 AUR_PACKAGES=(
   calamares
+  # libpamac-full und pamac-cli sind KEINE Split-Pakete von pamac-all,
+  # sondern eigene AUR-Pakete mit eigenem PKGBUILD (verifiziert: pamac-all
+  # und libpamac-full sind laut AUR-Forenberichten getrennte Pakete). Ohne
+  # sie hier wird pamac-all zwar gebaut und landet in der ${REPO_NAME}-DB,
+  # aber "pacman -S pamac-all" im Zielsystem (install-aur-packages.sh)
+  # bricht mit "could not satisfy dependencies" ab, weil die beiden
+  # Abhaengigkeiten in keinem Repo existieren. Muessen deshalb hier
+  # explizit mitgebaut werden, damit ihre .pkg.tar.zst ebenfalls in
+  # ${REPO_DIR} landen und von repo-add (am Ende dieses Schritts) erfasst
+  # werden - die Reihenfolge in diesem Array ist dafuer egal, da repo-add
+  # erst NACH der kompletten Schleife einmal ueber alle Paketdateien laeuft.
+  #
+  # libpamac-full seinerseits haengt an snapd + snapd-glib (ebenfalls
+  # eigene AUR-Pakete, kein offizielles Repo) - ohne die bricht der naechste
+  # "pacman -S" im Zielsystem an GENAU derselben Stelle, nur eine Ebene
+  # tiefer ("cannot resolve snapd/snapd-glib, a dependency of
+  # libpamac-full"). Bewusste Entscheidung: vollen Snap-Support mitbauen,
+  # nicht auf das schlankere "libpamac" (ohne -full, nur Flatpak)
+  # ausweichen.
+  snapd
+  snapd-glib
+  libpamac-full
+  pamac-cli
   pamac-all
   hyprshade
   hyprland-minimizer-git
@@ -260,8 +337,89 @@ mkdir -p "${REPO_DIR}" "${AUR_BUILD_DIR}"
 
 sudo pacman -S --needed --noconfirm base-devel git
 
+# --- Pacman-Sync-Datenbanken fuer das Zielsystem cachen ------------------
+# GRUND (per mkarchiso-Quellcode verifiziert, nicht geraten - siehe
+# mkarchiso, _cleanup_pacstrap_dir(), aufgerufen NACH unserem
+# customize_airootfs.sh-Hook in build()):
+#   # Delete pacman database sync cache files (*.tar.gz)
+#   find "${pacstrap_dir}/var/lib/pacman" -maxdepth 1 -type f -delete
+#   # Delete pacman database sync cache
+#   find "${pacstrap_dir}/var/lib/pacman/sync" -delete
+# mkarchiso entfernt die kompletten Pacman-Sync-Datenbanken (core.db,
+# extra.db, multilib.db, ...) aus der Live-ISO - IMMER, Standard-Verhalten,
+# nicht beeinflussbar ueber Profil-Einstellungen. Die Live-ISO (und damit
+# auch alles, was Calamares' unpackfs 1:1 aufs Zielsystem kopiert) hat also
+# NIE eigene Sync-Datenbanken. install-aur-packages.sh (laeuft als
+# shellprocess@aurinstall im Zielsystem, siehe settings.conf) braucht die
+# aber, um per "pacman -S" offizielle Abhaengigkeiten aufzuloesen - ohne
+# das: "error: failed to prepare transaction (could not find database)".
+#
+# Fix: analog zum Kernel-Problem (shellprocess@bootkernel) die aktuellen
+# Sync-Datenbanken HIER, auf dem Build-Host (der hat sie ja, das ganze
+# Skript braucht funktionierendes pacman), nach einem Pfad unter
+# airootfs/opt/ cachen, der NICHT von _cleanup_pacstrap_dir() angefasst
+# wird (die loescht nur unter var/lib/pacman/... und var/cache/pacman/pkg).
+# Calamares (shellprocess@pacmansync, laeuft VOR aurinstall, siehe
+# settings.conf) kopiert diese dann im Zielsystem nach /var/lib/pacman/sync
+# zurueck - 100% offline, kein "pacman -Sy" ueber Netzwerk noetig.
+#
+# Welche Repo-Namen gecacht werden, wird NICHT hart kodiert, sondern direkt
+# aus airootfs/etc/pacman.conf ausgelesen (das ist die /etc/pacman.conf,
+# die am Ende im Live-/Zielsystem landet) - damit passt das automatisch zu
+# euren tatsaechlich aktivierten Repos (aktuell: core-testing, core,
+# extra-testing, extra, multilib-testing, multilib), ohne das hier bei
+# jeder Pacman.conf-Aenderung von Hand nachpflegen zu muessen. "options"
+# und das eigene "${REPO_NAME}" (trafktux, wird gleich frisch erzeugt)
+# werden ausgeschlossen.
+#
+# WICHTIG: bewusst NICHT von REUSE_EXISTING_AUR_PKGS betroffen - die
+# Sync-Datenbanken sollen bei JEDEM Lauf frisch sein (sie veralten schnell,
+# und ein veraltetes core.db kann im Zielsystem auf nicht mehr existierende
+# Paketversionen zeigen).
+echo "==> Cache aktuelle Pacman-Sync-Datenbanken fuer das Zielsystem (fuer install-aur-packages.sh)..."
+PACMAN_SYNC_CACHE_DIR="${PROFILE_DIR}/airootfs/opt/trafktux-pacman-sync-cache"
+TARGET_PACMAN_CONF="${PROFILE_DIR}/airootfs/etc/pacman.conf"
+[[ -f "${TARGET_PACMAN_CONF}" ]] || die "${TARGET_PACMAN_CONF} nicht gefunden - wird gebraucht, um zu wissen, welche Pacman-Sync-Datenbanken fuers Zielsystem gecacht werden muessen."
+
+mkdir -p "${PACMAN_SYNC_CACHE_DIR}"
+rm -f "${PACMAN_SYNC_CACHE_DIR}"/*.db
+
+sudo pacman -Sy
+
+mapfile -t SYNC_REPO_NAMES < <(grep -oP '^\[\K[A-Za-z0-9_.+-]+(?=\]$)' "${TARGET_PACMAN_CONF}" | grep -vx -e 'options' -e "${REPO_NAME}")
+((${#SYNC_REPO_NAMES[@]})) || die "Keine Repo-Namen in ${TARGET_PACMAN_CONF} gefunden (ausser 'options'/'${REPO_NAME}')."
+
+for repo in "${SYNC_REPO_NAMES[@]}"; do
+    sync_src="/var/lib/pacman/sync/${repo}.db"
+    if [[ -f "${sync_src}" ]]; then
+        cp -v "${sync_src}" "${PACMAN_SYNC_CACHE_DIR}/"
+    else
+        echo "WARNUNG: ${sync_src} nicht gefunden (Repo '${repo}' auf diesem Build-Host nicht erreichbar/synchronisiert?) - wird uebersprungen. 'pacman -S' fuer dieses Repo wird im Zielsystem fehlschlagen." >&2
+    fi
+done
+echo ""
+
 for pkg in "${AUR_PACKAGES[@]}"; do
+    # REUSE_EXISTING_AUR_PKGS=1: ueberspringt den kompletten Rebuild, wenn
+    # im lokalen Repo bereits eine Paketdatei liegt, deren Name mit
+    # "<pkg>-" beginnt. HEURISTIK, kein 100%iger Treffer: funktioniert fuer
+    # alle hier gelisteten Pakete AUSSER "pamac-all" - dessen PKGBUILD baut
+    # mehrere Binaerpakete (z.B. pamac-tray-appindicator), die NICHT mit
+    # "pamac-all-" anfangen. Fuer pamac-all greift die Wiederverwendung
+    # also nicht zuverlaessig - wird im Zweifel einfach neu gebaut.
+    if [[ "${REUSE_EXISTING_AUR_PKGS}" == "1" ]]; then
+        existing_pkg="$(find "${REPO_DIR}" -maxdepth 1 -name "${pkg}-*.pkg.tar.*" -print -quit)"
+        if [[ -n "${existing_pkg}" ]]; then
+            echo "==> ${pkg}: vorhandene Paketdatei wird wiederverwendet (${existing_pkg##*/}), kein Rebuild."
+            continue
+        fi
+    fi
+
     echo "==> Baue ${pkg}..."
+    # Alte Version(en) dieses Pakets vorher entfernen, sonst sammeln sich
+    # bei jedem Rebuild mehrere pkgver-Stände im Repo an, und repo-add
+    # weiss nicht mehr, welche davon die aktuelle ist.
+    rm -f "${REPO_DIR}/${pkg}-"*.pkg.tar.* 2>/dev/null || true
     pkg_build_dir="${AUR_BUILD_DIR}/${pkg}"
     rm -rf "${pkg_build_dir}"
     git clone "https://aur.archlinux.org/${pkg}.git" "${pkg_build_dir}"
@@ -291,6 +449,12 @@ done
 # Paketnamen immer die Version aus dem zuerst gelisteten Repo, zieht
 # "hyprland" also garantiert aus dieser gepinnten Datei statt von den
 # Mirrors, egal was dort inzwischen aktuell ist.
+#
+# WICHTIG: Diese Datei wird bewusst NICHT von REUSE_EXISTING_AUR_PKGS
+# beeinflusst - sie MUSS bei jedem Lauf frisch gegen die aktuell gebauten
+# Plugin-Header (Schritt 1/5) gepinnt werden, sonst drohen wieder genau
+# die "Headers corrupted"-Probleme von vorher.
+rm -f "${REPO_DIR}/hyprland-"*.pkg.tar.* 2>/dev/null || true
 echo "==> Pinne installierte hyprland-Version fuer die ISO (muss exakt zu den Plugin-Headern aus Schritt 1/5 passen)..."
 HYPR_VER="$(pacman -Q hyprland | awk '{print $2}')"
 HYPR_PKG_FILE="$(find /var/cache/pacman/pkg -maxdepth 1 -name "hyprland-${HYPR_VER}-*.pkg.tar.*" -print -quit)"
@@ -669,6 +833,11 @@ while IFS= read -r -d '' f; do
     # koennte, ist es unschaedlich, sie einfach unangetastet zu lassen.
     [[ "${rel}" == "/opt/${REPO_NAME}-repo"/* ]] && continue
     [[ "${rel}" == "/opt/${OPTIONAL_REPO_NAME}"/* ]] && continue
+    # Pacman-Sync-DB-Cache (siehe Begruendung in Schritt 2/5) - selber
+    # Grund wie REPO_DIR/OPTIONAL_REPO_DIR: muss im Live-System an Ort und
+    # Stelle liegen bleiben, damit shellprocess@pacmansync es im
+    # Zielsystem wiederfindet (unpackfs kopiert es 1:1 mit rueber).
+    [[ "${rel}" == /opt/trafktux-pacman-sync-cache/* ]] && continue
     # WICHTIG (gefunden nach einem Boot-Fehler "Failed to start Switch Root"):
     # mkinitcpio wird NICHT von unserem customize_airootfs.sh-Hook aufgerufen,
     # sondern automatisch von pacmans eigenem Post-Install-Hook, SOBALD das
@@ -769,6 +938,30 @@ echo "############################################################"
 sudo mkarchiso -v -w "${WORK_DIR}" -C "${TMP_PACMAN_CONF}" -o "${OUT_DIR}" "${BUILD_PROFILE_DIR}"
 
 sudo rm -rf "${WORK_DIR}"
+
+# CLEAN_AUR_REPO_AFTER_BUILD=1: entfernt die lokalen AUR-Paketdateien samt
+# Repo-Datenbank aus REPO_DIR, UND den gebauten Hyprland-Plugin-Cache aus
+# HYPRPM_STATE_STAGE, NACHDEM mkarchiso beides bereits erfolgreich ins
+# Image eingebaut hat - z.B. damit einzelne grosse Pakete (vscodium-bin,
+# nvidia-Zeug & Co.) oder der (durchaus auch nicht kleine) Plugin-Cache
+# nicht dauerhaft im Git-Repo herumliegen. Betrifft NUR REPO_DIR (Schritt
+# 2/5) und HYPRPM_STATE_STAGE (Schritt 1/5); das Optional-Repo (Schritt
+# 3/5) bleibt unberuehrt, weil dessen Metapakete winzig sind und ausserdem
+# laut dessen eigenem Build-Kommentar (post-ISO von Pamac weiterverwendet
+# werden sollen).
+# Der naechste Lauf baut beides beim naechsten "Schritt 1/5"/"Schritt 2/5"
+# ohnehin neu auf (mkdir -p) - bei geloeschten Dateien greift
+# REUSE_EXISTING_AUR_PKGS dann logischerweise nicht mehr, es wird einfach
+# alles neu gebaut.
+if [[ "${CLEAN_AUR_REPO_AFTER_BUILD}" == "1" ]]; then
+    echo "==> Entferne lokale AUR-Paketdateien aus ${REPO_DIR} (CLEAN_AUR_REPO_AFTER_BUILD=1)..."
+    rm -f "${REPO_DIR}"/*.pkg.tar.* "${REPO_DIR}"/*.db* "${REPO_DIR}"/*.files* "${REPO_DIR}"/*.old 2>/dev/null || true
+
+    echo "==> Entferne gebauten Hyprland-Plugin-Cache aus ${HYPRPM_STATE_STAGE} (CLEAN_AUR_REPO_AFTER_BUILD=1)..."
+    if [[ -n "${HYPRPM_STATE_STAGE:-}" && -d "${HYPRPM_STATE_STAGE}" ]]; then
+        rm -rf "${HYPRPM_STATE_STAGE:?}"/* 2>/dev/null || true
+    fi
+fi
 
 echo ""
 echo "############################################################"

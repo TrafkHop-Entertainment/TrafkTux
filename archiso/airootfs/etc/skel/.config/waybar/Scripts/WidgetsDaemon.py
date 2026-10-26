@@ -603,10 +603,26 @@ scale value {{
 
 .icon-lg  {{ font-size: 22px; }}
 .icon-xl  {{ font-size: 34px; }}
+.icon-xxl {{ font-size: 52px; }}
 .value-md {{ font-size: 15px; font-weight: bold; }}
 .value-lg {{ font-size: 26px; font-weight: bold; }}
 .temp-xl  {{ font-size: 26px; font-weight: bold; }}
+.temp-xxl {{ font-size: 44px; font-weight: bold; }}
 .caption  {{ font-size: 11px; }}
+
+/* Wetter-Redesign: Klapp-Button für Stunden-/Tagesprognose (siehe
+   _clock_content, Weather-Tab) - dreht sein Chevron-Icon per CSS-
+   Transition, wenn .expanded gesetzt ist, statt zwei verschiedene
+   Icon-Labels je nach Zustand umzuschalten. */
+.weather-toggle {{
+    opacity: 0.75;
+}}
+.weather-toggle image {{
+    transition: 200ms ease-in-out;
+}}
+.weather-toggle.expanded image {{
+    -gtk-icon-transform: rotate(180deg);
+}}
 
 /* App-Editor Such-Eingabefeld (Launcher-Tab, "Unsorted"/"All Apps") -
    getippter Text in GOLD statt Standard-Textfarbe. */
@@ -941,6 +957,37 @@ def jrun(cmd: list) -> object:
 import concurrent.futures as _cf
 _THREAD_POOL = _cf.ThreadPoolExecutor(max_workers=4, thread_name_prefix="wb-worker")
 
+_IN_THREAD_LOG = os.path.join(os.path.expanduser("~"), ".cache", "widgets-thread-errors.log")
+
+def _in_thread_log_exception(fn, exc: BaseException) -> None:
+    try:
+        os.makedirs(os.path.dirname(_IN_THREAD_LOG), exist_ok=True)
+        with open(_IN_THREAD_LOG, "a") as f:
+            f.write(f"{datetime.now():%Y-%m-%d %H:%M:%S} in_thread({getattr(fn, '__name__', fn)}): "
+                     f"{type(exc).__name__}: {exc}\n")
+            traceback.print_exc(file=f)
+    except Exception:
+        pass
+
+def _in_thread_wrapper(fn, args):
+    try:
+        fn(*args)
+    except Exception as e:
+        # FIX: _THREAD_POOL.submit() gibt ein Future zurück, auf dem nie
+        # .result()/.exception() aufgerufen wird - jede Exception aus
+        # einem per in_thread() laufenden Callable verschwand dadurch
+        # bisher VOLLSTÄNDIG lautlos (siehe Kommentar im Processes-Tab-
+        # Code, der genau dieses Verhalten als vermuteten Grund nennt,
+        # warum ein früherer Fix dort "nicht zuverlässig funktioniert"
+        # hat - ohne sichtbaren Fehler war das nicht nachweisbar). Jetzt
+        # landet jede sonst verschluckte Exception aus JEDEM
+        # Hintergrund-Tick (System-Monitor, Prozessliste, Akku, Medien,
+        # Wetter, ...) in ~/.cache/widgets-thread-errors.log - bei einem
+        # UI-Teil, der weiterhin "0.00%"/Platzhalter zeigt, zeigt diese
+        # Datei jetzt, WARUM der jeweilige Hintergrund-Fetch nie
+        # erfolgreich durchläuft.
+        _in_thread_log_exception(fn, e)
+
 def in_thread(fn, *args):
     # Wiederverwendeter, kleiner Thread-Pool statt für JEDEN einzelnen
     # Timer-Tick (System-Monitor alle 2s, Akku alle 10s, Medien alle
@@ -953,7 +1000,7 @@ def in_thread(fn, *args):
     # reicht für dieses Projekt bei weitem (die Arbeit pro Tick ist
     # kurz: ein paar Subprozess-Aufrufe/sysfs-Reads), verhindert aber
     # die Erzeugungs-/Abbau-Kosten von hunderten kurzlebigen Threads.
-    _THREAD_POOL.submit(fn, *args)
+    _THREAD_POOL.submit(_in_thread_wrapper, fn, args)
 
 def load_css():
     p = Gtk.CssProvider()
@@ -5026,7 +5073,6 @@ def _processes_content(win: Gtk.Window) -> Gtk.Box:
     # Klickbare Spalten-Köpfe bestimmen NUR den Sortier-SCHLÜSSEL für
     # die NÄCHSTE Neusortierung - sie lösen die Liste NICHT bei jedem
     # Poll-Tick automatisch neu aus (siehe Docstring oben).
-    MAX_ROWS = 40
     hdr_row = hbox(10)
     hdr_row.set_halign(Gtk.Align.CENTER)
     name_hdr = btn("Name", active=True)
@@ -5060,7 +5106,6 @@ def _processes_content(win: Gtk.Window) -> Gtk.Box:
         status_lbl.show()
         GLib.timeout_add(ms, lambda: (status_lbl.hide(), False)[1])
 
-    _proc_cache: dict = {}    # pid -> psutil.Process, siehe Docstring oben
     _row_widgets: dict = {}   # pid -> (row_box, name_lbl, stat_lbl)
     _order: list = []         # aktuelle, STABILE Anzeige-Reihenfolge (PIDs)
     _last_data: dict = {}     # pid -> (name, cpu, mem), letzter bekannter Stand
@@ -5105,9 +5150,7 @@ def _processes_content(win: Gtk.Window) -> Gtk.Box:
                 import psutil
                 err_msg = None
                 try:
-                    proc = _proc_cache.get(p)
-                    if proc is None:
-                        proc = psutil.Process(p)
+                    proc = psutil.Process(p)
                     proc.terminate()
                     try:
                         proc.wait(timeout=3)
@@ -5134,71 +5177,87 @@ def _processes_content(win: Gtk.Window) -> Gtk.Box:
         row.pack_start(kill_b, False, False, 0)
         return row, lbl, stat_lbl
 
+    # FIX #2 (Analyse Punkt 5 - CPU/Mem bleiben dauerhaft bei 0.0%, nicht
+    # nur beim allerersten Öffnen): die vorherige Version verließ sich
+    # auf Process.cpu_percent(interval=None), was INTERN einen privaten
+    # Zustand (letzter Messzeitpunkt + letzte CPU-Zeiten) AUF DEM
+    # psutil.Process-OBJEKT SELBST speichert - korrekt nur, wenn
+    # GARANTIERT über alle Ticks hinweg exakt dasselbe Objekt für
+    # denselben PID wiederverwendet wird. _proc_cache sollte genau das
+    # sicherstellen, aber: beim ALLERERSTEN Aufruf eines "neuen" (für
+    # uns noch unbekannten) PIDs wird im Hauptloop `proc = p` gesetzt -
+    # also GENAU das frisch von DIESEM process_iter()-Durchlauf
+    # gelieferte Objekt, das selbst noch NIE zuvor cpu_percent()
+    # aufgerufen hat -> 0.0 für diesen einen Tick ist normal. Das
+    # eigentliche Problem war aber, dass bei manchen psutil-Versionen
+    # process_iter() selbst bei JEDEM Aufruf neue Objekt-Instanzen für
+    # BEREITS bekannte PIDs zurückgibt (keine interne Wiederverwendung)
+    # - zusammen mit `name` in den Spalten-Headern/Standard-Sortierung,
+    # die bei jedem 2s-Tick die kompletten Prozess-Infos neu über die
+    # ATTRS-gefilterte Iteration zieht, wurde dadurch in der Praxis auf
+    # diesem System NIE zuverlässig derselbe Python-Objekt-State
+    # zwischen zwei Ticks wiederverwendet.
+    #
+    # Fix: komplett unabhängig von psutil's eigenem cpu_percent()-
+    # Zustand - wir führen die Delta-Berechnung SELBST, nur über reine,
+    # zustandslose Werte (kumulative CPU-Sekunden aus cpu_times() +
+    # eigene Wanduhrzeit), in einem simplen {pid: (cpu_time, wall_time)}
+    # Dict, das NICHT an irgendwelche psutil-Objekt-Identität gebunden
+    # ist - egal wie viele verschiedene Process-Objekt-Instanzen psutil
+    # intern pro Tick für denselben PID erzeugt, das Ergebnis ist
+    # garantiert korrekt.
+    _cpu_state: dict = {}   # pid -> (cpu_time_total_s, wall_time_monotonic)
     _warmed_up = [False]
 
-    def _fetch() -> dict:
+    def _sample(seen_pids: set, data: dict, wall_now: float) -> None:
         import psutil
-        seen_pids = set()
-        data = {}
-
-        # FIX (Analyse Punkt 5 - Processes-Tab zeigt beim Öffnen immer
-        # 0.0%): psutil.Process.cpu_percent(interval=None) liefert beim
-        # ALLERERSTEN Aufruf für ein Process-Objekt laut Dokumentation
-        # IMMER 0.0 zurück, egal wie lange der Prozess davor schon
-        # lief - es braucht zwingend einen ZWEITEN Aufruf mit etwas
-        # Zeitabstand dazwischen. Ein früherer Versuch, das über einen
-        # separaten Vorwärm-Hintergrund-Thread + GLib.timeout_add zu
-        # lösen, hat nicht zuverlässig funktioniert - vermutlich weil
-        # in_thread()/ThreadPoolExecutor Exceptions aus einem
-        # submit()-ten Callable komplett lautlos verschluckt (niemand
-        # ruft .result() auf das Future ab), ein Fehler darin also ganz
-        # ohne jede sichtbare Fehlermeldung einfach nichts getan hätte.
-        # Jetzt stattdessen denkbar einfach UND robust: genau EINMAL,
-        # synchron, direkt hier im ohnehin schon per in_thread()
-        # laufenden Hintergrund-Thread (siehe _refresh() unten) - erst
-        # für ALLE Prozesse den Referenzpunkt setzen, kurz blockierend
-        # warten (blockiert NUR diesen Hintergrund-Thread, nicht die
-        # UI), DANACH erst die eigentliche Messung. Kein zweiter Thread,
-        # kein Timer, keine Race Condition, keine Stelle, an der ein
-        # Fehler die ganze Vorwärm-Logik unbemerkt stilllegen könnte.
-        if not _warmed_up[0]:
-            _warmed_up[0] = True
-            for p in psutil.process_iter(["pid"]):
-                pid = p.info["pid"]
-                if pid == 0:
-                    continue
-                _proc_cache[pid] = p
-                try:
-                    p.cpu_percent(interval=None)  # nur Referenzpunkt setzen
-                except (psutil.NoSuchProcess, psutil.AccessDenied):
-                    pass
-            # 350ms: genug Zeitfenster für eine brauchbare erste
-            # CPU%-Messung, kurz genug, dass die Verzögerung beim allerersten
-            # Öffnen des Tabs kaum auffällt (siehe Analyse, 300-500ms).
-            time.sleep(0.35)
-
         for p in psutil.process_iter(["pid", "name"]):
             pid = p.info["pid"]
             if pid == 0:
                 continue  # kernel/sched-Pseudoprozess, nicht killbar
             seen_pids.add(pid)
-            proc = _proc_cache.get(pid)
-            if proc is None:
-                proc = p
-                _proc_cache[pid] = proc
             try:
-                cpu = proc.cpu_percent(interval=None)
-                mem = proc.memory_percent()
-                name = proc.name()
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                ct = p.cpu_times()
+                cpu_time_total = ct.user + ct.system
+                mem = p.memory_percent()
+                name = p.info.get("name") or p.name()
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
                 continue
+
+            prev = _cpu_state.get(pid)
+            _cpu_state[pid] = (cpu_time_total, wall_now)
+            if prev is None:
+                cpu = 0.0   # noch kein vorheriger Messpunkt - normal bei neuen PIDs
+            else:
+                prev_cpu_time, prev_wall = prev
+                d_wall = wall_now - prev_wall
+                d_cpu = cpu_time_total - prev_cpu_time
+                cpu = max(0.0, (d_cpu / d_wall) * 100.0) if d_wall > 0.001 else 0.0
             data[pid] = (name, cpu, mem)
-        # Verwaiste Cache-Einträge (Prozess seitdem beendet) raus, sonst
-        # wächst _proc_cache über die Laufzeit des offenen Fensters
+
+    def _fetch() -> dict:
+        seen_pids = set()
+        data: dict = {}
+
+        if not _warmed_up[0]:
+            _warmed_up[0] = True
+            # Erster Messpunkt (alle PIDs bekommen einen Eintrag in
+            # _cpu_state, cpu wird hier noch 0.0 sein - erwartungsgemäß,
+            # siehe _sample()), danach kurz warten, dann ECHT messen -
+            # sonst zeigt der Tab erst beim ZWEITEN Poll-Tick (2s später)
+            # zum ersten Mal brauchbare Werte.
+            _sample(set(), {}, time.monotonic())
+            time.sleep(0.35)
+
+        wall_now = time.monotonic()
+        _sample(seen_pids, data, wall_now)
+
+        # Verwaiste _cpu_state-Einträge (Prozess seitdem beendet) raus,
+        # sonst wächst das Dict über die Laufzeit des offenen Fensters
         # unbegrenzt weiter.
-        for pid in list(_proc_cache):
+        for pid in list(_cpu_state):
             if pid not in seen_pids:
-                _proc_cache.pop(pid, None)
+                _cpu_state.pop(pid, None)
         return data
 
     def _apply_order():
@@ -5236,25 +5295,29 @@ def _processes_content(win: Gtk.Window) -> Gtk.Box:
         _last_data.clear()
         _last_data.update(data)
 
+        # FIX ("warum gibt's da überhaupt einen Cap???? das soll
+        # gefälligst ALLES anzeigen"): kein Cap mehr - JEDER Prozess
+        # aus `data` (= alles, was psutil liefert) bekommt eine Zeile.
+        # Die Liste steckt ohnehin in einem scroll_box(300) (siehe
+        # oben) - mehr Zeilen heißt also einfach mehr Scroll-Inhalt,
+        # kein Platzproblem. Auswahl-Logik dafür, WELCHE Prozesse
+        # reindürfen, ist damit komplett überflüssig geworden.
+        all_pids = set(data)
+
         # Verschwundene Prozesse raus - einzige Fälle, in denen sich
-        # die Liste "von selbst" verkürzt.
-        for pid in [p for p in _order if p not in data]:
+        # die Liste noch verkürzt.
+        for pid in [p for p in _order if p not in all_pids]:
             widgets = _row_widgets.pop(pid, None)
             if widgets:
                 box.remove(widgets[0])
             _order.remove(pid)
 
-        # Neue Prozesse werden UNTEN angehängt (README-Feedback), NICHT
-        # nach ihrem Sortier-Rang einsortiert - erst der nächste Klick
-        # auf einen Spalten-Header bringt sie an ihre "richtige"
-        # Position. Ein Cap verhindert, dass die Liste bei sehr vielen
-        # laufenden Prozessen unbegrenzt wächst; bereits verfolgte
-        # Prozesse bleiben davon unberührt (Positions-Stabilität geht
-        # vor striktem Cap).
+        # Neue Prozesse rein, unten angehängt (README-Feedback: nicht
+        # sofort nach Sortier-Rang einsortiert - erst der nächste
+        # Klick auf einen Spalten-Header bringt sie an ihre
+        # "richtige" Position).
         new_pids = [p for p in data if p not in _row_widgets]
         for pid in new_pids:
-            if len(_order) >= MAX_ROWS:
-                break
             name, cpu, mem = data[pid]
             row, lbl, stat_lbl = _build_row(pid, name, cpu, mem)
             _row_widgets[pid] = (row, lbl, stat_lbl)
@@ -5965,7 +6028,8 @@ def _widgets_config_save_section(section: str, values: dict) -> None:
     atomic_write_text(p, json.dumps(data, indent=2) + "\n")
 
 # ── Clock-Einstellungen (erste Nutzung von WidgetsConfig.json) ──────
-_CLOCK_DEFAULTS = {"mode": "digital", "seconds": True, "milliseconds": False}
+_CLOCK_DEFAULTS = {"mode": "digital", "seconds": True, "milliseconds": False,
+                    "analog_style": "glow"}
 
 def _clock_settings() -> dict:
     cfg = dict(_CLOCK_DEFAULTS)
@@ -5983,13 +6047,129 @@ def _clock_update_interval_ms(cfg: dict) -> int:
                       # (siehe Chat: "die Animation... ist perfekt!!!!!!")
     return 1000      # digital ohne ms: exakt im Sekundentakt reicht
 
+_ROMAN = {1: "I", 2: "II", 3: "III", 4: "IV", 5: "V", 6: "VI",
+          7: "VII", 8: "VIII", 9: "IX", 10: "X", 11: "XI", 12: "XII"}
+
 def _draw_analog_clock(widget: Gtk.DrawingArea, cr, cfg: dict) -> bool:
-    """Antikes Hermle-Zifferblatt als Vorbild (siehe Chat): cremefarbene
-    Scheibe, Goldrand, elegante Serifen-Ziffern 1-12, Minutenpunkte,
-    zugespitzte Zeiger mit kleinem "Auge". Sekundenzeiger 2/3 so lang wie
-    der Minutenzeiger, dünn, und bewusst ALS ERSTES gezeichnet, damit er
-    optisch unter Stunden-/Minutenzeiger liegt (genau wie beim Vorbild
-    kaum zu sehen, wenn er gerade darunter steht)."""
+    """Dispatcher für die 2 Analog-Stile (Settings → Widgets → Clock →
+    Style): "glow" ist der ursprüngliche, durchgehend goldene Stil mit
+    Arabischen Zahlen und Leucht-Effekt; "classic" (neu) ist eine
+    Mantel-/Reiseuhr-Optik mit cremefarbenem Zifferblatt-Ring, Römischen
+    Zahlen und schlichten, spitz zulaufenden Zeigern - angelehnt an das
+    vom Nutzer gezeigte Referenzfoto einer goldenen Tischuhr."""
+    if cfg.get("analog_style") == "classic":
+        return _draw_analog_clock_classic(widget, cr, cfg)
+    return _draw_analog_clock_glow(widget, cr, cfg)
+
+def _draw_analog_clock_classic(widget: Gtk.DrawingArea, cr, cfg: dict) -> bool:
+    """"2nd Analog clock style" - Mantel-/Carriage-Uhr-Optik: dunkler
+    Rahmen, warmes Gold-Zifferblatt, cremeweißer äußerer Ring mit
+    Römischen Ziffern und kleinen Minutenstrichen, schlichte schwarze
+    Zeiger mit kleinem Auge nahe der Basis (statt der Leucht-Technik des
+    "glow"-Stils, der hier bewusst NICHT verwendet wird - diese Uhr soll
+    matt/gedruckt wirken, nicht leuchten)."""
+    alloc = widget.get_allocation()
+    w, h = alloc.width, alloc.height
+    cx, cy = w / 2.0, h / 2.0
+    r = max(10.0, min(w, h) / 2.0 - 4)
+
+    n = datetime.now()
+    sec = n.second + n.microsecond / 1_000_000.0
+    minute = n.minute + sec / 60.0
+    hour = (n.hour % 12) + minute / 60.0
+
+    FRAME = (0.06, 0.05, 0.03, 0.95)      # fast schwarzer Rahmen
+    FACE_GOLD = (0.80, 0.65, 0.22, 1.0)   # warmes Gold-Mittelfeld
+    RING_CREAM = (0.98, 0.97, 0.93, 1.0)  # cremeweißer Ziffernring
+    INK = (0.08, 0.07, 0.06, 1.0)         # fast schwarz, für Ziffern/Zeiger
+
+    # Äußerer dunkler Rahmen
+    cr.set_source_rgba(*FRAME)
+    cr.arc(cx, cy, r, 0, 2 * math.pi)
+    cr.fill()
+
+    # Cremeweißer Ziffernring
+    ring_r = r * 0.90
+    cr.set_source_rgba(*RING_CREAM)
+    cr.arc(cx, cy, ring_r, 0, 2 * math.pi)
+    cr.fill()
+
+    # Goldenes Mittelfeld (innerhalb des Ziffernrings)
+    face_r = r * 0.68
+    cr.set_source_rgba(*FACE_GOLD)
+    cr.arc(cx, cy, face_r, 0, 2 * math.pi)
+    cr.fill()
+
+    # Minutenstriche auf dem Ziffernring, 5er-Marken etwas länger/dicker
+    for i in range(60):
+        ang = i * math.pi / 30
+        is5 = (i % 5 == 0)
+        inner = ring_r - (r * 0.065 if is5 else r * 0.035)
+        outer = ring_r - r * 0.01
+        x1, y1 = cx + math.sin(ang) * inner, cy - math.cos(ang) * inner
+        x2, y2 = cx + math.sin(ang) * outer, cy - math.cos(ang) * outer
+        cr.set_source_rgba(*INK)
+        cr.set_line_width(1.4 if is5 else 0.7)
+        cr.move_to(x1, y1); cr.line_to(x2, y2); cr.stroke()
+
+    # Römische Zahlen, zentriert auf dem Ziffernring
+    cr.select_font_face("serif", cairo.FontSlant.NORMAL, cairo.FontWeight.BOLD)
+    cr.set_font_size(max(8.0, r * 0.16))
+    num_r = ring_r - r * 0.17
+    for i in range(1, 13):
+        label = _ROMAN[i]
+        ang = i * math.pi / 6
+        tx = cx + math.sin(ang) * num_r
+        ty = cy - math.cos(ang) * num_r
+        ext = cr.text_extents(label)
+        cr.set_source_rgba(*INK)
+        cr.move_to(tx - ext.width / 2 - ext.x_bearing,
+                   ty - ext.height / 2 - ext.y_bearing)
+        cr.show_text(label)
+
+    def _plain_hand(angle_deg: float, length: float, base_w: float, eye_at: float, eye_r: float):
+        ang = math.radians(angle_deg)
+        dx, dy = math.sin(ang), -math.cos(ang)
+        px, py = -dy, dx
+        tip_x, tip_y = cx + dx * length, cy + dy * length
+        b1x, b1y = cx + px * base_w, cy + py * base_w
+        b2x, b2y = cx - px * base_w, cy - py * base_w
+        cr.set_source_rgba(*INK)
+        cr.move_to(b1x, b1y); cr.line_to(tip_x, tip_y); cr.line_to(b2x, b2y)
+        cr.close_path(); cr.fill()
+        ex, ey = cx + dx * length * eye_at, cy + dy * length * eye_at
+        cr.set_line_width(1.0)
+        cr.arc(ex, ey, eye_r, 0, 2 * math.pi)
+        cr.stroke()
+
+    minute_len = r * 0.56
+    if cfg.get("seconds", True):
+        ang = math.radians(sec * 6)
+        dx, dy = math.sin(ang), -math.cos(ang)
+        sec_len = minute_len * (2.0 / 3.0)
+        cr.set_source_rgba(*INK)
+        cr.set_line_width(0.9)
+        cr.set_line_cap(cairo.LineCap.ROUND)
+        cr.move_to(cx, cy); cr.line_to(cx + dx * sec_len, cy + dy * sec_len)
+        cr.stroke()
+
+    _plain_hand(hour * 30, r * 0.36, 2.6, 0.60, 2.6)
+    _plain_hand(minute * 6, minute_len, 1.9, 0.58, 2.1)
+
+    cr.set_source_rgba(*INK)
+    cr.arc(cx, cy, 2.2, 0, 2 * math.pi)
+    cr.fill()
+    return False
+
+def _draw_analog_clock_glow(widget: Gtk.DrawingArea, cr, cfg: dict) -> bool:
+    """Alles in Gold, transparenter Hintergrund, kein äußerer Ring mehr
+    (siehe Chat), Minuten-Zahlenring jetzt genauso kräftig wie der Rest
+    (vorher gedimmt), und ein leichtes Glühen auf allem (einfache Multi-
+    Pass-Technik: erst eine größere/breitere Version mit wenig Alpha
+    dahinter, dann die scharfe Version obendrauf - Cairo kennt keinen
+    echten Weichzeichner). Sekundenzeiger 2/3 so lang wie der
+    Minutenzeiger, dünn, bewusst ALS ERSTES gezeichnet, damit er optisch
+    unter Stunden-/Minutenzeiger liegt."""
     alloc = widget.get_allocation()
     w, h = alloc.width, alloc.height
     cx, cy = w / 2.0, h / 2.0
@@ -6000,41 +6180,67 @@ def _draw_analog_clock(widget: Gtk.DrawingArea, cr, cfg: dict) -> bool:
     minute = n.minute + sec / 60.0
     hour = (n.hour % 12) + minute / 60.0
 
-    FACE = (0.965, 0.953, 0.835)      # cremefarben, ~TEXT_NORMAL #f6f3d5
-    RIM  = (1.0, 0.957, 0.584)        # GOLD #fff495
-    INK  = (0.17, 0.12, 0.06, 0.92)   # dunkles Zifferblatt-Braunschwarz
+    GOLD = (1.0, 0.957, 0.584, 0.95)
+    GLOW = (1.0, 0.957, 0.584)
 
-    cr.set_source_rgb(*FACE)
-    cr.arc(cx, cy, r, 0, 2 * math.pi)
-    cr.fill()
-    cr.set_source_rgb(*RIM)
-    cr.set_line_width(3)
-    cr.arc(cx, cy, r - 1.5, 0, 2 * math.pi)
-    cr.stroke()
-    cr.set_line_width(1)
-    cr.arc(cx, cy, r - 6, 0, 2 * math.pi)
-    cr.stroke()
-
-    for i in range(60):
-        ang = i * math.pi / 30
-        rad = 2.3 if i % 5 == 0 else 1.4
-        x = cx + math.sin(ang) * (r - 13)
-        y = cy - math.cos(ang) * (r - 13)
-        cr.set_source_rgba(*INK)
-        cr.arc(x, y, rad, 0, 2 * math.pi)
+    def _glow_dot(x, y, radius):
+        for mult, a in ((2.6, 0.07), (1.8, 0.12)):
+            cr.set_source_rgba(*GLOW, a)
+            cr.arc(x, y, radius * mult, 0, 2 * math.pi)
+            cr.fill()
+        cr.set_source_rgba(*GOLD)
+        cr.arc(x, y, radius, 0, 2 * math.pi)
         cr.fill()
 
+    def _glow_text(label, tx, ty):
+        ext = cr.text_extents(label)
+        mx = tx - ext.width / 2 - ext.x_bearing
+        my = ty - ext.height / 2 - ext.y_bearing
+        for lw, a in ((3.0, 0.10), (1.6, 0.16)):
+            cr.move_to(mx, my)
+            cr.text_path(label)
+            cr.set_source_rgba(*GLOW, a)
+            cr.set_line_width(lw)
+            cr.stroke()
+        cr.move_to(mx, my)
+        cr.set_source_rgba(*GOLD)
+        cr.show_text(label)
+
+    def _glow_stroke_line(x1, y1, x2, y2, width):
+        for mult, a in ((4.0, 0.08), (2.2, 0.14)):
+            cr.set_source_rgba(*GLOW, a)
+            cr.set_line_width(width * mult)
+            cr.set_line_cap(cairo.LineCap.ROUND)
+            cr.move_to(x1, y1); cr.line_to(x2, y2); cr.stroke()
+        cr.set_source_rgba(*GOLD)
+        cr.set_line_width(width)
+        cr.set_line_cap(cairo.LineCap.ROUND)
+        cr.move_to(x1, y1); cr.line_to(x2, y2); cr.stroke()
+
+    # Minutenpunkte - kleiner, mit Glühen, 5er-Marken etwas betont
+    for i in range(60):
+        ang = i * math.pi / 30
+        rad = 1.5 if i % 5 == 0 else 0.9
+        x = cx + math.sin(ang) * (r - 10)
+        y = cy - math.cos(ang) * (r - 10)
+        _glow_dot(x, y, rad)
+
+    # Minuten-Zahlenring (5/10/.../60) - außen, dicht am Rand, klein,
+    # jetzt genauso sichtbar/kräftig wie die Stunden-Ziffern (vorher
+    # gedimmt - siehe Chat).
+    cr.select_font_face("serif", cairo.FontSlant.NORMAL, cairo.FontWeight.NORMAL)
+    cr.set_font_size(max(6.0, r * 0.085))
+    for i in range(12):
+        label = str(60 if i == 0 else i * 5)
+        ang = i * math.pi / 6
+        _glow_text(label, cx + math.sin(ang) * (r - 4), cy - math.cos(ang) * (r - 4))
+
+    # Stunden-Ziffern 1-12 - eleganter Serif, weiter innen, größer
     cr.select_font_face("serif", cairo.FontSlant.ITALIC, cairo.FontWeight.NORMAL)
     cr.set_font_size(max(10.0, r * 0.19))
     for i in range(1, 13):
-        label = str(i)
         ang = i * math.pi / 6
-        tx = cx + math.sin(ang) * (r - 27)
-        ty = cy - math.cos(ang) * (r - 27)
-        ext = cr.text_extents(label)
-        cr.set_source_rgba(*INK)
-        cr.move_to(tx - ext.width / 2 - ext.x_bearing, ty - ext.height / 2 - ext.y_bearing)
-        cr.show_text(label)
+        _glow_text(str(i), cx + math.sin(ang) * (r - 30), cy - math.cos(ang) * (r - 30))
 
     def _tapered_hand(angle_deg: float, length: float, base_w: float,
                         eye_at: float, eye_r: float):
@@ -6042,52 +6248,51 @@ def _draw_analog_clock(widget: Gtk.DrawingArea, cr, cfg: dict) -> bool:
         dx, dy = math.sin(ang), -math.cos(ang)
         px, py = -dy, dx   # senkrecht zur Zeigerrichtung, für die Breite
         tip_x, tip_y = cx + dx * length, cy + dy * length
-        cr.set_source_rgba(*INK)
-        cr.move_to(cx + px * base_w, cy + py * base_w)
-        cr.line_to(tip_x, tip_y)
-        cr.line_to(cx - px * base_w, cy - py * base_w)
+        b1x, b1y = cx + px * base_w, cy + py * base_w
+        b2x, b2y = cx - px * base_w, cy - py * base_w
+        for mult, a in ((2.0, 0.08), (1.35, 0.14)):
+            cr.set_source_rgba(*GLOW, a)
+            cr.move_to(cx + px * base_w * mult, cy + py * base_w * mult)
+            cr.line_to(cx + dx * length, cy + dy * length)
+            cr.line_to(cx - px * base_w * mult, cy - py * base_w * mult)
+            cr.close_path()
+            cr.fill()
+        cr.set_source_rgba(*GOLD)
+        cr.move_to(b1x, b1y); cr.line_to(tip_x, tip_y); cr.line_to(b2x, b2y)
         cr.close_path()
         cr.fill()
         ex, ey = cx + dx * length * eye_at, cy + dy * length * eye_at
+        cr.set_source_rgba(*GOLD)
         cr.set_line_width(1.1)
         cr.arc(ex, ey, eye_r, 0, 2 * math.pi)
         cr.stroke()
 
-    minute_len = r * 0.70
+    minute_len = r * 0.62
     if cfg.get("seconds", True):
         ang = math.radians(sec * 6)
         dx, dy = math.sin(ang), -math.cos(ang)
         sec_len = minute_len * (2.0 / 3.0)   # "2/3 so lang wie der Minutenzeiger"
-        cr.set_source_rgba(*INK)
-        cr.set_line_width(1.0)
-        cr.set_line_cap(cairo.LineCap.ROUND)
-        cr.move_to(cx, cy)
-        cr.line_to(cx + dx * sec_len, cy + dy * sec_len)
-        cr.stroke()
+        _glow_stroke_line(cx, cy, cx + dx * sec_len, cy + dy * sec_len, 1.0)
 
-    _tapered_hand(hour * 30, r * 0.46, 2.6, 0.62, 3.2)
-    _tapered_hand(minute * 6, minute_len, 2.0, 0.60, 2.6)
+    _tapered_hand(hour * 30, r * 0.40, 2.4, 0.62, 3.0)
+    _tapered_hand(minute * 6, minute_len, 1.8, 0.60, 2.4)
 
     if cfg.get("milliseconds"):
         # Eigener, schnell rotierender Millisekunden-Zeiger - macht EINE
         # volle Umdrehung PRO Sekunde (wie das kleine 1/100s-Subzifferblatt
-        # einer Stoppuhr). GOLD auf cremefarbenem Zifferblatt hat zu wenig
-        # Kontrast (kaum sichtbar, siehe Testrender) - stattdessen Trafk-
-        # Lila (#5a3998), das sticht gegen Creme klar hervor und bleibt
-        # trotzdem klar von den dunklen Haupt-Zeigern unterscheidbar.
+        # einer Stoppuhr). In cremeweiß statt Gold, sonst von den Haupt-
+        # Zeigern (jetzt alle Gold) kaum zu unterscheiden.
         ms_ang = (n.microsecond / 1_000_000.0) * 360.0
         ang = math.radians(ms_ang)
         dx, dy = math.sin(ang), -math.cos(ang)
-        cr.set_source_rgba(0.353, 0.224, 0.596, 0.95)
+        cr.set_source_rgba(0.965, 0.953, 0.835, 0.95)
         cr.set_line_width(0.9)
         cr.set_line_cap(cairo.LineCap.ROUND)
         cr.move_to(cx, cy)
-        cr.line_to(cx + dx * r * 0.34, cy + dy * r * 0.34)
+        cr.line_to(cx + dx * r * 0.30, cy + dy * r * 0.30)
         cr.stroke()
 
-    cr.set_source_rgba(*INK)
-    cr.arc(cx, cy, 3.0, 0, 2 * math.pi)
-    cr.fill()
+    _glow_dot(cx, cy, 2.6)
     return False
 
 def _clock_content(win: Gtk.Window) -> Gtk.Box:
@@ -6119,6 +6324,12 @@ def _clock_content(win: Gtk.Window) -> Gtk.Box:
     time_lbl = Gtk.Label(label="--:--")
     time_lbl.get_style_context().add_class("clock-digits-huge")
     time_lbl.set_halign(Gtk.Align.CENTER)
+    # FIX (siehe Chat: digitaler Platzhalter bleibt im Analog-Modus
+    # sichtbar, Uhr dadurch nicht mittig): win.show_all() setzt JEDES
+    # Kind ungeachtet eines vorherigen set_visible(False) wieder sichtbar,
+    # außer es hat zuvor set_no_show_all(True) bekommen - genau das hatte
+    # hier bisher nur analog_area, nicht time_lbl.
+    time_lbl.set_no_show_all(True)
 
     analog_area = Gtk.DrawingArea()
     analog_area.set_size_request(180, 180)
@@ -6133,7 +6344,8 @@ def _clock_content(win: Gtk.Window) -> Gtk.Box:
 
     t0.pack_start(time_lbl, False, False, 0)
     t0.pack_start(analog_area, False, False, 0)
-    t0.pack_start(date_lbl, False, False, 0)
+    # Etwas mehr Abstand zur Uhr (siehe Chat: Datum stand zu dicht/hoch dran)
+    t0.pack_start(date_lbl, False, False, 10)
 
     # Einstellungen (Digital/Analog, Sekunden, Millisekunden) leben jetzt
     # NICHT mehr hier im Popup selbst, sondern unter Appearance &
@@ -6152,59 +6364,72 @@ def _clock_content(win: Gtk.Window) -> Gtk.Box:
         GLib.idle_add(_shrink_to_fit, win)
     _apply_mode()
 
-    # ── TAB 1: Weather ──────────────────────────────────────
-    # Redesign-Liste: "Oben Mittig Was grad ist. Oben links das
-    # Location Pin Icon. Oben rechts die 2 anderen Stats" + "Unten
-    # mitte: das Wetter in den nächsten paar Stunden" + "Unten unten
-    # Mitte: die 7 Tage Prognose".
-    t1 = vbox(4); pad(t1, h=4, v=6)
+    # ── TAB 1: Weather - KOMPLETTES REDESIGN ─────────────────────────
+    # Alte Version: Pin/Icon+Temp/Stats als gleich-gewichtete 3-Spalten-
+    # Kopfzeile, GEFOLGT von Stunden- UND Tages-Prognose, beide immer
+    # vollständig ausgeklappt - macht das Fenster riesig/unübersichtlich
+    # für Infos, die man meist gar nicht braucht. Neu (Nutzer-Wunsch:
+    # "aktuelles Wetter groß zentriert, der Rest klein daneben, ggf.
+    # aufklappbar"):
+    #   1. Großes, zentriertes "Jetzt"-Icon+Temperatur+Beschreibung
+    #      ganz oben, mit einem winzigen Location-Pin direkt daneben
+    #      (nicht mehr als eigene, gleich schwere Spalte).
+    #   2. Darunter eine kompakte, EINZEILIGE Stats-Zeile (Feuchte/
+    #      Niederschlag) - klein, nicht mehr als eigener Block.
+    #   3. Stunden- UND Tagesprognose stecken jetzt BEIDE in einem
+    #      Gtk.Revealer, standardmäßig EINGEKLAPPT, über einen simplen
+    #      "Forecast ⌄"-Button auf-/zuklappbar (GTK3 Revealer animiert
+    #      das Auf-/Zuklappen selbst, kein eigener Animations-Code
+    #      nötig). _shrink_to_fit()/_switch_stack() reagieren schon auf
+    #      jede Größenänderung des Fensters, daher braucht der
+    #      Klapp-Zustand hier keine Extra-Behandlung dafür.
+    t1 = vbox(6); pad(t1, h=10, v=16)
 
-    top_row = hbox(8)
-    top_row.set_halign(Gtk.Align.FILL)
+    # -- Großes "Jetzt"-Icon+Temperatur, Beschreibung, winziger Pin --
+    now_card = vbox(4)
+    now_card.set_halign(Gtk.Align.CENTER)
 
+    icon_row = hbox(10)
+    icon_row.set_halign(Gtk.Align.CENTER)
+    icon_lbl = Gtk.Label(label="🌡️")
+    icon_lbl.get_style_context().add_class("icon-xxl")
+    temp_lbl = Gtk.Label(label="–")
+    temp_lbl.get_style_context().add_class("temp-xxl")
+    icon_row.pack_start(icon_lbl, False, False, 0)
+    icon_row.pack_start(temp_lbl, False, False, 0)
+    now_card.pack_start(icon_row, False, False, 0)
+
+    desc_row = hbox(4)
+    desc_row.set_halign(Gtk.Align.CENTER)
+    desc_lbl = Gtk.Label(label="Loading weather…")
+    desc_lbl.get_style_context().add_class("value-md")
+    desc_lbl.set_halign(Gtk.Align.CENTER)
     loc_btn = Gtk.Button(label="📍")
     loc_btn.set_relief(Gtk.ReliefStyle.NONE)
     loc_btn.get_style_context().add_class("flat")
     loc_btn.set_can_focus(False)
-    loc_btn.set_halign(Gtk.Align.START)
-    loc_btn.set_valign(Gtk.Align.START)
+    loc_btn.set_opacity(0.6)
     loc_btn.set_tooltip_text("Change location")
-    top_row.pack_start(loc_btn, False, False, 0)
+    desc_row.pack_start(desc_lbl, False, False, 0)
+    desc_row.pack_start(loc_btn, False, False, 0)
+    now_card.pack_start(desc_row, False, False, 0)
 
-    mid_box = vbox(2)
-    mid_box.set_valign(Gtk.Align.CENTER)
-    mid_box.set_halign(Gtk.Align.CENTER)
-    mid_box.set_hexpand(True)
-    icon_row = hbox(6)
-    icon_row.set_halign(Gtk.Align.CENTER)
-    icon_lbl = Gtk.Label(label="🌡️")
-    icon_lbl.get_style_context().add_class("icon-xl")
-    temp_lbl = Gtk.Label(label="–")
-    temp_lbl.get_style_context().add_class("temp-xl")
-    icon_row.pack_start(icon_lbl, False, False, 0)
-    icon_row.pack_start(temp_lbl, False, False, 0)
-    desc_lbl = Gtk.Label(label="Loading weather…")
-    desc_lbl.get_style_context().add_class("value-md")
-    desc_lbl.set_halign(Gtk.Align.CENTER)
-    mid_box.pack_start(icon_row, False, False, 0)
-    mid_box.pack_start(desc_lbl, False, False, 0)
-    top_row.pack_start(mid_box, True, True, 0)
+    t1.pack_start(now_card, False, False, 0)
 
-    stats_box = vbox(3)
-    stats_box.set_valign(Gtk.Align.START)
+    # -- kompakte, einzeilige Stats (vorher eigene Spalte) --
+    stats_row = hbox(14)
+    stats_row.set_halign(Gtk.Align.CENTER)
     hum_lbl = Gtk.Label(label="💧 –")
     hum_lbl.get_style_context().add_class("caption")
-    hum_lbl.set_halign(Gtk.Align.END)
+    hum_lbl.set_opacity(0.75)
     hum_lbl.set_tooltip_text("Humidity")
     rain_lbl = Gtk.Label(label="☔ –")
     rain_lbl.get_style_context().add_class("caption")
-    rain_lbl.set_halign(Gtk.Align.END)
+    rain_lbl.set_opacity(0.75)
     rain_lbl.set_tooltip_text("Precipitation (mm)")
-    stats_box.pack_start(hum_lbl,  False, False, 0)
-    stats_box.pack_start(rain_lbl, False, False, 0)
-    top_row.pack_start(stats_box, False, False, 0)
-
-    t1.pack_start(top_row, False, False, 0)
+    stats_row.pack_start(hum_lbl,  False, False, 0)
+    stats_row.pack_start(rain_lbl, False, False, 0)
+    t1.pack_start(stats_row, False, False, 0)
 
     def _prompt_change_location(_w=None):
         """Standort-Such-Dialog - nutzt denselben _geocode()-Helper
@@ -6282,7 +6507,36 @@ def _clock_content(win: Gtk.Window) -> Gtk.Box:
 
     loc_btn.connect("clicked", _prompt_change_location)
 
-    t1.pack_start(sep(), False, False, 2)
+    # ── Klapp-Button + Revealer: Stunden-/Tagesprognose, standardmäßig
+    # eingeklappt - genau der "klein daneben, ggf. aufklappen"-Wunsch.
+    # EIN Revealer für BEIDE Reihen (statt zwei getrennte), damit nicht
+    # extra zwischen "Stunden aufklappen" und "Tage aufklappen"
+    # unterschieden werden muss - wer die Details will, will meist
+    # eh beides sehen.
+    forecast_toggle = Gtk.Button()
+    forecast_toggle.set_relief(Gtk.ReliefStyle.NONE)
+    forecast_toggle.get_style_context().add_class("flat")
+    forecast_toggle.get_style_context().add_class("weather-toggle")
+    forecast_toggle.set_can_focus(False)
+    forecast_row = hbox(4)
+    forecast_row.set_halign(Gtk.Align.CENTER)
+    forecast_lbl = Gtk.Label(label="Forecast")
+    forecast_lbl.get_style_context().add_class("caption")
+    forecast_chevron = Gtk.Image.new_from_icon_name(
+        "pan-down-symbolic", Gtk.IconSize.MENU)
+    forecast_row.pack_start(forecast_lbl, False, False, 0)
+    forecast_row.pack_start(forecast_chevron, False, False, 0)
+    forecast_toggle.add(forecast_row)
+    t1.pack_start(forecast_toggle, False, False, 2)
+
+    forecast_revealer = Gtk.Revealer()
+    forecast_revealer.set_transition_type(
+        Gtk.RevealerTransitionType.SLIDE_DOWN)
+    forecast_revealer.set_transition_duration(200)
+    forecast_revealer.set_reveal_child(False)
+
+    forecast_inner = vbox(4)
+    forecast_inner.pack_start(sep(), False, False, 4)
 
     # ── "Unten mitte": Wetter in den nächsten paar Stunden ──────────
     _N_HOURLY = 6
@@ -6306,9 +6560,9 @@ def _clock_content(win: Gtk.Window) -> Gtk.Box:
         cell.pack_start(h_temp, False, False, 0)
         hourly_row.pack_start(cell, False, False, 0)
         hourly_slots.append((cell, h_time, h_icon, h_temp))
-    t1.pack_start(hourly_row, False, False, 0)
+    forecast_inner.pack_start(hourly_row, False, False, 0)
 
-    t1.pack_start(sep(), False, False, 2)
+    forecast_inner.pack_start(sep(), False, False, 6)
 
     # ── "Unten unten Mitte": die 7-Tage-Prognose ─────────────────────
     daily_row = hbox(4)
@@ -6331,7 +6585,24 @@ def _clock_content(win: Gtk.Window) -> Gtk.Box:
         cell.pack_start(d_temp, False, False, 0)
         daily_row.pack_start(cell, False, False, 0)
         daily_slots.append((cell, d_lbl, d_icon, d_temp))
-    t1.pack_start(daily_row, False, False, 0)
+    forecast_inner.pack_start(daily_row, False, False, 0)
+
+    forecast_revealer.add(forecast_inner)
+    t1.pack_start(forecast_revealer, False, False, 0)
+
+    def _on_forecast_toggle(_b):
+        expanded = not forecast_revealer.get_reveal_child()
+        forecast_revealer.set_reveal_child(expanded)
+        ctx = forecast_toggle.get_style_context()
+        ctx.add_class("expanded") if expanded else ctx.remove_class("expanded")
+        forecast_lbl.set_label("Forecast" if not expanded else "Less")
+        # Fenster muss nach dem Auf-/Zuklappen seine Höhe neu anpassen -
+        # Revealer ändert die alloziierte Größe nach der Transition,
+        # daher mit kleiner Verzögerung statt sofort (sonst misst
+        # _shrink_to_fit() noch die alte, eingeklappte Höhe).
+        GLib.timeout_add(forecast_revealer.get_transition_duration() + 20,
+                         lambda: (GLib.idle_add(_shrink_to_fit, win), False)[1])
+    forecast_toggle.connect("clicked", _on_forecast_toggle)
 
     # ── TAB 2: Calendar ─────────────────────────────────────
     t2 = vbox(2); pad(t2, h=6, v=4)
@@ -6784,7 +7055,8 @@ def _clock_content(win: Gtk.Window) -> Gtk.Box:
                     cell.hide()
 
             loc_tip = f'Location: {w["location"]}\nClick 📍 to change'
-            mid_box.set_tooltip_text(loc_tip)
+            now_card.set_tooltip_text(loc_tip)
+            loc_btn.set_tooltip_text(loc_tip)
         GLib.idle_add(_apply)
 
     in_thread(_load_weather)
@@ -7001,6 +7273,77 @@ def _prompt_text_generic(win: Gtk.Window, title: str, placeholder: str,
     dlg.destroy()
     return val or None
 
+def _prompt_file_generic(win: Gtk.Window, title: str,
+                          select_folder: bool = False,
+                          initial: str = "") -> str | None:
+    """Echter Datei-/Ordner-Wahldialog (Punkt 3: "der Wahldialog für
+    Pfade soll kommen, nicht nur ein schlichtes Textfeld") statt
+    _prompt_text_generic()'s freiem Textfeld. Gtk.FileChooserDialog ist
+    selbst schon ein eigenständiges Toplevel-Fenster (kein Layer-Shell-
+    Popup), bekommt also ganz normal Tastatur-/Mausfokus."""
+    action = (Gtk.FileChooserAction.SELECT_FOLDER if select_folder
+              else Gtk.FileChooserAction.OPEN)
+    dlg = Gtk.FileChooserDialog(title=title, transient_for=win, action=action)
+    dlg.set_modal(True)
+    dlg.add_buttons("Cancel", Gtk.ResponseType.CANCEL,
+                    "Select", Gtk.ResponseType.OK)
+    if initial:
+        init_path = os.path.expanduser(initial)
+        try:
+            if os.path.isdir(init_path):
+                dlg.set_current_folder(init_path)
+            elif os.path.isfile(init_path):
+                dlg.set_filename(init_path)
+            elif os.path.isdir(os.path.dirname(init_path)):
+                dlg.set_current_folder(os.path.dirname(init_path))
+        except Exception:
+            pass
+    resp = dlg.run()
+    val = dlg.get_filename() if resp == Gtk.ResponseType.OK else None
+    dlg.destroy()
+    return val
+
+_HSCROLL_PATH_WIDTH = 220   # Punkt 4: feste Anzeigebreite, darüber scrollt's
+
+def _hscroll_label(text: str = "", width: int = _HSCROLL_PATH_WIDTH
+                    ) -> tuple[Gtk.ScrolledWindow, Gtk.Label]:
+    """Punkt 4: "Eine Maximallänge der angezeigten chars bei VLC und
+    Custom mit Scrollbalken" - statt den Text per Pango zu ellipsizen
+    (Ende der Zeichenkette ginge verloren), zeigt dieses Label den
+    VOLLEN Text in einer horizontal scrollbaren, auf eine feste Breite
+    begrenzten Zeile."""
+    sw = Gtk.ScrolledWindow()
+    sw.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.NEVER)
+    sw.set_size_request(width, -1)
+    sw.set_propagate_natural_height(True)
+    lbl = Gtk.Label(label=text)
+    lbl.set_xalign(0.0)
+    lbl.set_line_wrap(False)
+    lbl.set_margin_start(6); lbl.set_margin_end(6)
+    lbl.set_margin_top(4); lbl.set_margin_bottom(4)
+    sw.add(lbl)
+    return sw, lbl
+
+def _icon_mute_toggle(tooltip_on: str = "Lautlos starten",
+                       tooltip_off: str = "Mit Ton starten") -> Gtk.ToggleButton:
+    """Punkt 5: Symbolic-Icons aus dem System-Icon-Theme statt Emoji
+    für den Mute-Knopf. Auch für den neuen VLC-Mute-Knopf (Punkt 8)
+    wiederverwendet."""
+    b = Gtk.ToggleButton()
+    b.get_style_context().add_class("bubble")
+    b.set_can_focus(False)
+    img = Gtk.Image.new_from_icon_name("audio-volume-high-symbolic", Gtk.IconSize.BUTTON)
+    b.set_image(img)
+    def _refresh(*_a):
+        active = b.get_active()
+        img.set_from_icon_name(
+            "audio-volume-muted-symbolic" if active else "audio-volume-high-symbolic",
+            Gtk.IconSize.BUTTON)
+        b.set_tooltip_text(tooltip_on if active else tooltip_off)
+    b.connect("toggled", _refresh)
+    _refresh()
+    return b
+
 def backup_file(path: Path) -> None:
     if not path.exists():
         return
@@ -7083,19 +7426,47 @@ def _build_wallpaper_folder_page(win: Gtk.Window, subfolder: str | None,
     def _on_pick(path: str):
         mon = selected_monitor_fn()
         cmd = ["bash", wallpaper_script, "--set", path] + ([mon] if mon else [])
-        in_thread(run, cmd)
-        # Ein Bild auszuwählen heißt implizit "zurück zu Pictures" -
-        # beendet ALLE laufenden App-Wallpaper-Instanzen (Punkt 7: jetzt
-        # potenziell mehrere gleichzeitig). Nur anstoßen, wenn überhaupt
-        # welche liefen, damit wir nicht bei jedem Klick grundlos
-        # `hyprctl reload` auslösen.
-        if _read_appwallpaper_entries():
-            in_thread(_appwallpaper_remove_all)
-        status_lbl.set_label(
-            f"Applied: {os.path.basename(path)}"
-            + (f" → {mon}" if mon else " → all displays"))
+        target = f" → {mon}" if mon else " → all displays"
+
+        # FIX #2 ("das Widget ist schuld - es sagt applied, hat es aber
+        # nicht"): status_lbl wurde bisher SOFORT/synchron auf
+        # "Applied: …" gesetzt, DIREKT nach dem Fire-and-forget-Start
+        # des Hintergrund-Jobs - komplett unabhängig davon, ob
+        # wallpaper_script überhaupt existierte (siehe
+        # _resolve_wallpaper_script()-Fallback, der im Notfall einen
+        # NICHT existierenden Pfad zurückgibt) oder ob `run(cmd)`
+        # tatsächlich erfolgreich war. `run()` schluckt zudem jeden
+        # Fehler/Exit-Code komplett (siehe Definition) - ein
+        # fehlschlagender Aufruf sah für den Nutzer optisch exakt
+        # gleich aus wie ein erfolgreicher. Jetzt: "Applying…" sofort,
+        # echtes "Applied"/"Error: …" (inkl. der tatsächlichen
+        # stderr-Ausgabe von Wallpapers.sh/hyprctl) erst NACHDEM der
+        # Hintergrund-Job wirklich fertig ist und mit welchem Ergebnis.
+        status_lbl.set_label(f"Applying: {os.path.basename(path)}{target}…")
         status_lbl.show()
-        GLib.timeout_add(2500, lambda: (status_lbl.hide(), False)[1])
+
+        def _apply_normal_wallpaper():
+            if _read_appwallpaper_entries():
+                _appwallpaper_remove_all()
+            # großzügiger Timeout: preload() großer Bilder in
+            # Wallpapers.sh kann je nach Dateigröße/Monitor-Anzahl
+            # durchaus > 5s dauern (der bisherige Default von run()).
+            out, err, rc = run_ec(cmd, timeout=20)
+            def _done():
+                if rc == 0:
+                    status_lbl.set_label(
+                        f"Applied: {os.path.basename(path)}{target}")
+                    GLib.timeout_add(2500, lambda: (status_lbl.hide(), False)[1])
+                else:
+                    detail = (err or out or f"exit code {rc}").strip()
+                    status_lbl.set_label(f"Error: {detail[:140]}")
+                    # Fehler bewusst stehen lassen (kein Auto-Hide) -
+                    # das war vorher der springende Punkt: ein
+                    # Fehlschlag sah genauso aus wie ein Erfolg und
+                    # verschwand nach 2.5s von selbst.
+                return False
+            GLib.idle_add(_done)
+        in_thread(_apply_normal_wallpaper)
 
     def _load_previews():
         tiles = []
@@ -10196,7 +10567,19 @@ def _build_monitor_row(mon: dict, all_monitors: list, lua_path: Path, win: Gtk.W
 
         def _on_status(text):
             _flash_status(text)
-            if pending_snapshot is not None and not text.startswith("Error"):
+            # FIX (Bug: "Keep this display setting?"-Dialog erscheint
+            # ZWEIMAL pro Res/Hz-Änderung): apply_change() ruft on_status()
+            # ZWEI Mal auf - einmal SOFORT/synchron mit "Applying…" (noch
+            # bevor der Hintergrund-Thread die Änderung überhaupt an
+            # hyprctl geschickt hat), und ein zweites Mal NACH getaner
+            # Arbeit mit "Applied"/"Error: ...". Die alte Bedingung (nur
+            # kein "Error"-Präfix) traf auf BEIDE Aufrufe zu, öffnete also
+            # schon beim ersten ("Applying…") einen Bestätigungsdialog für
+            # eine Änderung, die noch gar nicht angewendet war ("fragt
+            # ewig, bevor es sich überhaupt ändert") - gefolgt vom
+            # zweiten, tatsächlich korrekten Dialog nach "Applied". Jetzt:
+            # nur noch auf den fertigen Zustand reagieren.
+            if pending_snapshot is not None and text == "Applied":
                 _start_confirm_flow(pending_snapshot)
 
         apply_change(desc, _apply,
@@ -15260,6 +15643,13 @@ def _build_settings_devices(page: Gtk.Box, key: str, label: str, win: Gtk.Window
 
     intro = Gtk.Label()
     intro.set_line_wrap(True)
+    # FIX (siehe Chat: Devices-Tab "viel zu breit"): set_line_wrap(True)
+    # allein begrenzt die angeforderte Breite NICHT - ohne
+    # set_max_width_chars() fordert GTK trotzdem die volle einzeilige
+    # Breite dieses langen Erklärtexts an, und genau DAS hat das ganze
+    # Popup-Fenster so breit gezogen (wahrscheinlich der Hauptanteil,
+    # nicht nur die Gerätenamen).
+    intro.set_max_width_chars(44)
     intro.set_halign(Gtk.Align.START)
     intro.set_justify(Gtk.Justification.LEFT)
     intro.set_label(
@@ -15313,16 +15703,21 @@ def _build_settings_devices(page: Gtk.Box, key: str, label: str, win: Gtk.Window
         row.get_style_context().add_class("item")
         pad(row, h=6, v=4)
         txt = vbox(0)
+        # Reihenfolge getauscht (siehe Chat): zuerst GROSS, WAS es ist
+        # (Touchscreen/Tablet), der kryptische Hardware-Name klein
+        # darunter - war vorher umgekehrt und dazu mit 28 Zeichen viel
+        # zu breit zugelassen. Voller Name bleibt per Tooltip abrufbar.
+        kind_lbl = Gtk.Label(label=kind)
+        kind_lbl.set_halign(Gtk.Align.START)
+        txt.pack_start(kind_lbl, False, False, 0)
         name_lbl = Gtk.Label(label=name)
         name_lbl.set_halign(Gtk.Align.START)
         name_lbl.set_ellipsize(Pango.EllipsizeMode.MIDDLE)
-        name_lbl.set_max_width_chars(28)
+        name_lbl.set_max_width_chars(18)
+        name_lbl.set_opacity(0.6)
+        name_lbl.get_style_context().add_class("caption")
         txt.pack_start(name_lbl, False, False, 0)
-        kind_lbl = Gtk.Label(label=kind)
-        kind_lbl.set_halign(Gtk.Align.START)
-        kind_lbl.set_opacity(0.6)
-        kind_lbl.get_style_context().add_class("caption")
-        txt.pack_start(kind_lbl, False, False, 0)
+        row.set_tooltip_text(name)
         row.pack_start(txt, True, True, 0)
 
         ctrl = _SegmentedControl()
@@ -15371,18 +15766,58 @@ def _build_settings_devices(page: Gtk.Box, key: str, label: str, win: Gtk.Window
 # ════════════════════════════════════════════════════════════
 
 def _build_widgets_clock_tab(win: Gtk.Window) -> Gtk.Box:
+    # Keine Section-Header mehr (siehe Chat: "die 4 Tasten reichen doch")
+    # - stattdessen Tooltips auf den Tasten selbst.
     root = vbox(4); pad(root, h=4, v=10)
     clock_cfg = _clock_settings()
 
-    root.pack_start(bsec("MODE"), False, False, 0)
     mode_row = hbox(4); mode_row.set_halign(Gtk.Align.CENTER)
     mode_btns: dict = {}
 
-    root.pack_start(bsec("SECONDS / MILLISECONDS"), False, False, 6)
     opts_row = hbox(4); opts_row.set_halign(Gtk.Align.CENTER)
     sec_btn = btn("Seconds", active=clock_cfg["seconds"])
+    sec_btn.set_tooltip_text("Show seconds on the digital clock and the analog second hand")
     ms_btn = btn("Milliseconds", active=clock_cfg["milliseconds"])
+    ms_btn.set_tooltip_text("Show milliseconds — needs Seconds enabled")
     ms_btn.set_sensitive(clock_cfg["seconds"])
+
+    # ── 2. Analog-Stil ("2nd Analog clock style") ───────────────────
+    # Nur relevant/sichtbar im Analog-Modus. "classic" ist die neue,
+    # Carriage-Clock-Optik mit Römischen Ziffern (siehe Referenzfoto);
+    # "glow" ist der bisherige, durchgehend goldene Leucht-Stil. Vor
+    # _switch_mode() deklariert, damit _switch_mode() style_row direkt
+    # ein-/ausblenden kann, ohne nachträglich Signal-Handler umbauen zu
+    # müssen.
+    # FIX (immer noch nicht sichtbar trotz show_all()-Fix): statt
+    # weiter mit no_show_all()/set_visible() gegen GTKs Sichtbarkeits-
+    # Eigenheiten anzukämpfen (zwei Versuche, zwei Bugs), ist die Zeile
+    # jetzt EINFACH IMMER sichtbar - unabhängig vom Digital/Analog-
+    # Modus. Weniger "clever", aber garantiert sichtbar: kein
+    # no_show_all, kein bedingtes set_visible, keine Möglichkeit mehr,
+    # dass genau DAS wieder kaputtgeht. Ein kleines Caption-Label
+    # darunter erklärt, dass die Wahl nur im Analog-Modus wirkt.
+    style_row = hbox(4); style_row.set_halign(Gtk.Align.CENTER)
+    style_btns: dict = {}
+
+    def _switch_style(name):
+        clock_cfg["analog_style"] = name
+        _save_clock_settings(analog_style=name)
+        for n, b in style_btns.items():
+            ctx = b.get_style_context()
+            if n == name: ctx.add_class("active")
+            else:         ctx.remove_class("active")
+    for name, slabel, tip in (("glow", "Glow", "Glowing gold face, Arabic numerals"),
+                              ("classic", "Classic", "Carriage-clock face, Roman numerals")):
+        b = btn(slabel, active=(clock_cfg.get("analog_style", "glow") == name))
+        b.set_tooltip_text(tip)
+        b.connect("clicked", lambda _b, n=name: _switch_style(n))
+        style_btns[name] = b
+        style_row.pack_start(b, False, False, 0)
+
+    style_hint = Gtk.Label(label="(used in Analog mode)")
+    style_hint.get_style_context().add_class("caption")
+    style_hint.set_opacity(0.55)
+    style_hint.set_halign(Gtk.Align.CENTER)
 
     def _switch_mode(name):
         clock_cfg["mode"] = name
@@ -15391,8 +15826,10 @@ def _build_widgets_clock_tab(win: Gtk.Window) -> Gtk.Box:
             ctx = b.get_style_context()
             if n == name: ctx.add_class("active")
             else:         ctx.remove_class("active")
-    for name, mlabel in (("digital", "Digital"), ("analog", "Analog")):
+    for name, mlabel, tip in (("digital", "Digital", "Plain HH:MM(:SS.mmm) text"),
+                              ("analog", "Analog", "Clock face with hands")):
         b = btn(mlabel, active=(clock_cfg["mode"] == name))
+        b.set_tooltip_text(tip)
         b.connect("clicked", lambda _b, n=name: _switch_mode(n))
         mode_btns[name] = b
         mode_row.pack_start(b, False, False, 0)
@@ -15419,6 +15856,8 @@ def _build_widgets_clock_tab(win: Gtk.Window) -> Gtk.Box:
     opts_row.pack_start(sec_btn, False, False, 0)
     opts_row.pack_start(ms_btn, False, False, 0)
     root.pack_start(mode_row, False, False, 0)
+    root.pack_start(style_row, False, False, 0)
+    root.pack_start(style_hint, False, False, 0)
     root.pack_start(opts_row, False, False, 0)
     return root
 

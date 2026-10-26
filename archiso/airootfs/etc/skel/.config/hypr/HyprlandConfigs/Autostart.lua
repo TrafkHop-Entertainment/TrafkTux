@@ -14,8 +14,22 @@ hl.on("hyprland.start", function()
     )
     hl.exec_cmd("xfdesktop")
     hl.exec_cmd("bash /usr/local/lib/trafktux/OptionalSync.sh --watch")
+    -- LIVE-ONLY: legt auf dem Live-Medium einen Desktop-/Launcher-Eintrag
+    -- "TrafkTux installieren" an (Icon + Exec=calamares). Das Skript
+    -- selbst prueft intern (USER=liveuser + /run/archiso/bootmnt), dass es
+    -- auf einem fertig installierten System ein No-Op ist - trotzdem
+    -- bewusst klar benannt, damit hier niemand versehentlich denkt, das
+    -- liefe auch auf dem Zielsystem. Aufraeumen nach erfolgreicher
+    -- Installation siehe settings.conf (shellprocess@liveshortcutcleanup).
+    hl.exec_cmd("bash /usr/local/lib/trafktux/LiveInstallerShortcut.sh")
     hl.exec_cmd("bash ~/.config/hypr/Wallpapers.sh")
-    hl.exec_cmd("bash ~/.config/hypr/WallpaperHotplug.sh &")
+    -- setsid -f, damit der Hotplug-Listener (socat-Pipe, läuft dauerhaft)
+    -- nicht an der hl.exec_cmd-Aufrufsession hängt und vorzeitig stirbt -
+    -- gleiches Muster/gleicher Grund wie bei FocusFixDaemon & Co. weiter
+    -- unten. pkill -f davor, falls dieser Hook doch mal doppelt feuert
+    -- (z.B. durch hyprctl reload), damit sich keine Listener ansammeln.
+    hl.exec_cmd("pkill -f '[W]allpaperHotplug.sh'")
+    hl.exec_cmd("setsid -f bash ~/.config/hypr/WallpaperHotplug.sh >/dev/null 2>&1 &")
     -- TrafkTuxBar ersetzt waybar (siehe TrafkTuxBar.c/.jsonc) - alte
     -- waybar-Zeile vorerst nur auskommentiert, nicht geloescht.
     -- hl.exec_cmd("killall waybar; waybar")
@@ -111,6 +125,7 @@ hl.on("hyprland.start", function()
     -- RestartSec=1-Verhalten) - sollte PipeWire bis dahin stehen, laeuft
     -- es. Falls das in der Praxis doch mal nicht reicht, einfach ein
     -- "sleep 2" VOR die Loop stellen.
+
     hl.exec_cmd(
         "killall SoundDaemon; "
             .. "setsid -f bash -c 'while true; do "
@@ -118,12 +133,17 @@ hl.on("hyprland.start", function()
             .. ">/dev/null 2>&1 &"
     )
 
+    hl.exec_cmd("pkill -f '[W]idgetsDaemon.py'")
+    -- DEBUG (temporaer, siehe Chat): stderr/stdout jetzt nach
+    -- /tmp/WidgetsDaemon.log statt /dev/null, damit ein evtl. Absturz/
+    -- Traceback beim naechsten Test sichtbar ist. Nach Diagnose wieder auf
+    -- ">/dev/null 2>&1" zurueckstellen, wenn's laeuft.
     hl.exec_cmd(
-    "pkill -f '[W]idgetsDaemon.py'; "
-        .. "setsid -f bash -c 'while true; do "
-        .. "/usr/bin/python3 ~/.config/waybar/Scripts/WidgetsDaemon.py; sleep 1; done' "
-        .. ">/dev/null 2>&1 &"
+        "setsid -f bash -c 'while true; do "
+            .. "/usr/bin/python3 ~/.config/waybar/Scripts/WidgetsDaemon.py; sleep 1; done' "
+            .. ">>/tmp/WidgetsDaemon.log 2>&1 &"
     )
+
     -- SwaySyncWatchdog.sh statt direktem swaync-Aufruf: startet swaync wie
     -- bisher, startet es aber automatisch neu, falls es abstuerzt (siehe
     -- SwaySyncWatchdog.sh fuer Details/Stop-Befehl).

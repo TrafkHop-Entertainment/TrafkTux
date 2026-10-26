@@ -408,30 +408,14 @@ trap ForceKillEverything TERM INT HUP
 ) &
 WatchdogPid=$!
 
-# gamescope reports itself as "ready" (and sets DISPLAY/WAYLAND_DISPLAY for
-# this child) slightly before its own nested Xwayland socket is actually
-# accepting connections. Wine's X11 driver tries to connect essentially
-# immediately on startup - if it loses that race, it silently sits waiting
-# with no window ever created and no useful error. Confirmed cause of
-# "Wine hangs under gamescope but works fine standalone" (2026-10-17
-# debugging session). Fix: actively poll the socket ourselves for up to a
-# few seconds before ever handing off to Wine - fail-safe: if nothing
-# answers in time, fall through and let Wine try anyway rather than block
-# the launch entirely.
-if [ -n "${DISPLAY:-}" ]; then
-    WaitedForX=0
-    while [ "$WaitedForX" -lt 50 ]; do
-        if command -v xdpyinfo >/dev/null 2>&1; then
-            xdpyinfo -display "$DISPLAY" >/dev/null 2>&1 && break
-        else
-            SocketNum="${DISPLAY#:}"
-            SocketNum="${SocketNum%%.*}"
-            [ -S "/tmp/.X11-unix/X$SocketNum" ] && break
-        fi
-        sleep 0.1
-        WaitedForX=$((WaitedForX + 1))
-    done
-fi
+# NOTE (2026-10-19): the X-wait loop that used to sit here is removed.
+# It was built around a theory (gamescope's own Xwayland socket not
+# ready yet when Wine connects) that turned out to be wrong - the real
+# cause of that night's hang was us accidentally killing Hyprland's own
+# Xwayland with an overly broad `pkill Xwayland`, not a race here. The
+# loop's own timing changes are suspected of contributing to a newer,
+# separate "xwm: waylandres but no win" issue, so it's gone until/unless
+# actual evidence says otherwise.
 
 # Run the actual game command.
 "$@" &

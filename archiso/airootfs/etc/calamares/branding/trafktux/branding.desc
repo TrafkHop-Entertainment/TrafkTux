@@ -24,9 +24,18 @@ images:
   productWelcome: "welcome.png"
 
 slideshow: "show.qml"
+slideshowAPI: 2
 
+# WICHTIG: Diese vier Namen (PascalCase!) sind die EINZIGEN, die Calamares
+# 3.4.2 tatsaechlich erkennt - direkt aus dem Branding::StyleEntry-Enum in
+# src/libcalamaresui/Branding.cpp verifiziert (validateStyleEntries baut
+# seine Vergleichsliste per QMetaEnum::valueToKey() aus genau diesem Enum).
+# Die vorherige Version mit lowercase-Namen ("sidebarBackground" usw.) kam
+# aus einer AELTEREN Calamares-Doku/Version und wird hier als "Unknown
+# branding *style* entry" verworfen - bitte NICHT wieder auf lowercase
+# aendern.
 style:
-  sidebarBackground:      "#23163B"
-  sidebarText:            "#fffdf5"
-  sidebarTextSelect:      "#1A0D34"
-  sidebarTextHighlight:   "#fff495"
+  SidebarBackground:         "#23163B"
+  SidebarText:               "#fffdf5"
+  SidebarBackgroundCurrent:  "#fff495"
+  SidebarTextCurrent:        "#1A0D34"
