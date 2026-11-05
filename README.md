@@ -85,7 +85,7 @@ We have not tested TrafkTux on many machines. Therefore this is only an estimati
 
 - A CPU + GPU less than 15 years old
 - 2 GB of RAM
-- 16 GB of storage space
+- 12 GB of storage space (right after a complete installation, it takes up ~ 7.5GIB - ~ 11.8GIB – how you want to count it ig)
 
 This should be enough to run the OS – you will not run any browser though.
 
@@ -95,7 +95,7 @@ This should be enough to run the OS – you will not run any browser though.
 - 8 GB RAM
 - ≥ 64 GB of storage
 
-With something like this you can use the system pretty well.
+With something like this you can use the system "pretty" well.
 
 ### Recommended Specs
 
@@ -486,6 +486,9 @@ Change the scale (to a certain degree). Toggle HDR. Change where your other moni
 Still to be themed / done:
 - Calamares
 - Editor for: Rofi folders/apps, Waybar widgets/shortcuts, autostart apps, default apps: TrafkTux App Edito
+- In the Launcher:
+  1. update pre installed applications
+  2. make it so that some applications are hidden pre installed ones ofc without user config.
 
 ## Known Bugs
 
@@ -508,6 +511,9 @@ Still to be themed / done:
   5. processes still does not work, cpu and mem both always at 00.00% and stuff
 - Widgets and Launcher:
   The name matcher still groups some apps together which means if one app is sorted in, other apps will not be visible anymore in unsorted.
+- HYPRLAND:
+  1. hyprland sagt es wird ohne umgebungsvariable gestartet, was aber nicht stimmen sollte
+  2. hyprgrass meldet beim hyprland systemstart, dass es deaktiviert ist (gute 10-12 Mal btw)... ES IST NICHT DEAKTIVIERT.....
 
 ### Other Stuff
 - Finish System Sounds - tortenboxer
@@ -519,6 +525,27 @@ Still to be themed / done:
 - Transfer all sound related stuff in SoundCenter
 - redo trafkbubble animation for opening and closing (siehe png)
 - hypridle options in widgets!
+- LAUNCHER:
+  1. scrolling with the mouse should scroll the pages
+  2. 2 new sorting options: 1. Size on Disk – sorts all apps in its size – scans from the root directory of the application the data. stored in a file and only updated when a new app gets added and stuff. 2. play time – 3. point
+  3. Play Time:
+     Every app will be tracked on how long it was open for. This will be system wide!!!!!!!!!!!!! NOT ONLY LAUNCHER!!!!! every app will get this. maybe also system processes if every everything should be tracked. or only applications that have a .desktop entry. no. everything. not everything has a .desktop entry! THIS is a GREAT feature!
+- HYPRLAND SYSTEM SHOULD BE CONTROLLABLE WITH ANY CONTROLLER!!!!
+  So: it should automaticly recognise any controler. if possible not map the keys to keyboard but instead new keybinds for controller specificly. if if possible also support sddm login with controller – risky option: A toggle in settings that turns on controller mode – turns password completely off! no sddm password i mean. normal sudo should still work and stuff. on screen keyboard – but on touch, gamepad. might need another on screen keyboard app for that. or right stick for mouse and then you could use the already there on screen keyboard! yes thats it! but no sddm login if activated! Good feature – should be implemented.
+  Controlls if keyboard mapped:
+  WASD = left stick
+  Mouse = right stick
+  A = space
+  B = X
+  Start = Enter
+  Select = ESCAPE
+  L2 R2 =Mouse down Left Right
+  R3 = Middle mouse
+  L1 R1 = q e
+  HOME = sudo – steam.... needs to be deactivated controler whise.
+  dpad = arrow keys
+  L3 = Shift? idunno
+  Y X = ?????
 
 
 ### App Editor

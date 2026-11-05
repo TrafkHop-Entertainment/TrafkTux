@@ -37,6 +37,12 @@
           "type": "app",
           "icon": "vscodium",
           "exec": "vscodium"
+        },
+        {
+          "name": "Gimp",
+          "type": "app",
+          "icon": "gimp",
+          "exec": "gimp"
         }
       ]
     },
@@ -71,10 +77,10 @@
           "exec": "vlc"
         },
         {
-          "name": "Viewnior",
+          "name": "Okular",
           "type": "app",
-          "icon": "viewnior",
-          "exec": "viewnior"
+          "icon": "okular",
+          "exec": "okular"
         }
       ]
     },

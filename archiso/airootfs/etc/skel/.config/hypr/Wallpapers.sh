@@ -405,7 +405,7 @@ ensure_hyprpaper_running() {
 
 hyprpaper_set() {
     local mon="$1" image="$2"
-    local t0 t1
+    local t0 t1 t2 rc
     t0=$SECONDS
     # FIX: `timeout 10` um JEDEN hyprctl-hyprpaper-Aufruf - vorher
     # konnte ein hängendes hyprpaper hier für immer blockieren und
@@ -414,17 +414,40 @@ hyprpaper_set() {
     # Jetzt gibt der Aufruf spätestens nach 10s auf, der Lock wird
     # freigegeben, und der NÄCHSTE Lauf bekommt über den Health-Check
     # oben die Chance, hyprpaper neu zu starten statt wieder zu hängen.
-    if ! timeout -k 3 10 hyprctl hyprpaper preload "$image" >/dev/null 2>&1; then
-        wb_log "hyprpaper_set: preload $image TIMEOUT/FEHLGESCHLAGEN nach $((SECONDS - t0))s"
-        return 1
-    fi
+    # FIX (Regression vom letzten Patch): hyprctl hyprpaper preload/
+    # wallpaper gibt auf diesem System offenbar öfter einen Fehlercode
+    # zurück, OBWOHL der Befehl tatsächlich durchläuft (siehe Log: rc!=0
+    # nach 0s, nicht nach echten 10s - also kein Hänger, sondern ein
+    # unzuverlässiger Rückgabewert). Die alte Version hat den Rückgabewert
+    # schlicht ignoriert und lief deshalb all die Monate. Jetzt: nur noch
+    # abbrechen, wenn die Laufzeit nahe am vollen Timeout liegt (= ECHTER
+    # Hänger) - ein sofortiger (<halbe Timeoutdauer) Fehlercode wird nur
+    # geloggt, der Ablauf läuft trotzdem normal weiter (= altes Verhalten,
+    # plus Hänger-Schutz bleibt für den eigentlichen Hangfall erhalten).
+    timeout -k 3 10 hyprctl hyprpaper preload "$image" >/dev/null 2>&1
+    rc=$?
     t1=$SECONDS
-    wb_log "hyprpaper_set: preload $image dauerte $((t1 - t0))s"
-    if ! timeout -k 3 10 hyprctl hyprpaper wallpaper "${mon},${image}" >/dev/null 2>&1; then
-        wb_log "hyprpaper_set: wallpaper-Zuweisung $mon TIMEOUT/FEHLGESCHLAGEN nach $((SECONDS - t1))s"
-        return 1
+    if [ "$rc" -ne 0 ]; then
+        if [ "$((t1 - t0))" -ge 8 ]; then
+            wb_log "hyprpaper_set: preload $image ECHTES TIMEOUT nach $((t1 - t0))s (rc=$rc) - abbruch"
+            return 1
+        fi
+        wb_log "hyprpaper_set: preload $image meldete rc=$rc nach $((t1 - t0))s - kein echter Hänger, ignoriere und mache weiter"
+    else
+        wb_log "hyprpaper_set: preload $image dauerte $((t1 - t0))s"
     fi
-    wb_log "hyprpaper_set: wallpaper-Zuweisung $mon dauerte $((SECONDS - t1))s"
+    timeout -k 3 10 hyprctl hyprpaper wallpaper "${mon},${image}" >/dev/null 2>&1
+    rc=$?
+    t2=$SECONDS
+    if [ "$rc" -ne 0 ]; then
+        if [ "$((t2 - t1))" -ge 8 ]; then
+            wb_log "hyprpaper_set: wallpaper-Zuweisung $mon ECHTES TIMEOUT nach $((t2 - t1))s (rc=$rc) - abbruch"
+            return 1
+        fi
+        wb_log "hyprpaper_set: wallpaper-Zuweisung $mon meldete rc=$rc nach $((t2 - t1))s - kein echter Hänger, ignoriere"
+    else
+        wb_log "hyprpaper_set: wallpaper-Zuweisung $mon dauerte $((t2 - t1))s"
+    fi
 }
 
 # Nicht mehr gebrauchte, zuvor geladene Bilder wieder aus hyprpapers

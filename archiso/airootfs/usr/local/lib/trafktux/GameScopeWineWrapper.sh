@@ -447,6 +447,7 @@ chmod +x "$LaunchScript"
 trap 'rm -f "$LaunchScript"' EXIT
 
 export GameScopeWrapperActive="1"
+
 # Disables gamescope's Vulkan WSI interception layer for the wrapped game.
 # Confirmed root cause of a real crash (Paradise Beach, and likely other
 # titles using less common texture formats): gamescope's WSI hook chokes
@@ -464,6 +465,7 @@ if [ "$ForceWindowsFullscreen" = "true" ]; then
     ExtraGamescopeFlags+=("--force-windows-fullscreen")
 fi
 gamescope \
+    --backend sdl \
     -W "$OutputWidth" -H "$OutputHeight" \
     -F "$Filter" -S "$Scaler" --fsr-sharpness "$Sharpness" \
     -b \

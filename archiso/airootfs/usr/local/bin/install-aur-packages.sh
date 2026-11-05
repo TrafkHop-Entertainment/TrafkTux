@@ -38,6 +38,9 @@ PACKAGES=(
   mediawriter
   cnijfilter2
   gnome-network-displays
+  # ckbcomp: reines AUR-Paket (existiert in KEINEM offiziellen Repo - "target
+  # not found" beim pacstrap-Versuch ueber alle core/extra/multilib bestaetigt
+  # das), muss also hier bleiben und aus dem lokalen trafktux-Repo kommen.
   ckbcomp
 )
 
@@ -59,18 +62,47 @@ if [[ -f "${OPT_DIR}/${OPT_NAME}.db.tar.gz" ]]; then
     cp -f "${OPT_DIR}/${OPT_NAME}.db.tar.gz" "${SYNC_DIR}/${OPT_NAME}.db"
 fi
 
-# Temporaere Config = die echte Ziel-Config + [trafktux] ganz hinten
+# Temporaere Config = die echte Ziel-Config + [trafktux], aber VOR
+# core/extra/multilib eingefuegt (nicht einfach ans Ende angehaengt).
+#
+# BUGFIX (siehe Chat): "ckbcomp" existiert sowohl als offizielles
+# Arch-Paket (core/extra - Calamares selbst sucht danach, siehe
+# "ckbcomp not found" Warnung im Log) ALS AUCH als eigener Eintrag in
+# unserer PACKAGES-Liste/trafktux-Repo. Stand [trafktux] hinter
+# core/extra/multifa, hat pacman bei diesem Namenskonflikt immer die
+# ZUERST gelistete Quelle gewaehlt (also extra statt trafktux) - und
+# extra hat im Zielsystem absichtlich keinen Server konfiguriert (100%
+# offline), daher "no servers configured for repository: extra". Gleiches
+# Muster/gleicher Grund wie bei ISO.sh's "[trafktux] steht ABSICHTLICH vor
+# core/extra"-Kommentar fuer den Build-Host - hier fehlte das bisher.
+#
+# Fix: den [trafktux]-Block per awk VOR die erste Repo-Sektion nach
+# [options] einfuegen (statt stumpf anzuhaengen), damit trafktux bei jedem
+# Namenskonflikt mit einem offiziellen Paket IMMER gewinnt.
 TMP_CONF="$(mktemp)"
 trap 'rm -f "${TMP_CONF}"' EXIT
-cp -f /etc/pacman.conf "${TMP_CONF}"
-cat >> "${TMP_CONF}" <<EOF
-
+TRAFKTUX_BLOCK="
 [${REPO_NAME}]
 SigLevel = Optional TrustAll
 Server = file://${REPO_DIR}
-EOF
+"
+awk -v block="${TRAFKTUX_BLOCK}" '
+    /^\[/ && $0 !~ /^\[options\]/ && !inserted { print block; inserted = 1 }
+    { print }
+' /etc/pacman.conf > "${TMP_CONF}"
+# Absicherung, falls /etc/pacman.conf wider Erwarten nur [options] enthielte
+grep -q "^\[${REPO_NAME}\]" "${TMP_CONF}" || printf '%s\n' "${TRAFKTUX_BLOCK}" >> "${TMP_CONF}"
 
 echo "==> Installiere Zusatzpakete aus lokalem Repo (${REPO_NAME})..."
-pacman --config "${TMP_CONF}" -S --noconfirm --needed "${PACKAGES[@]}"
+# --overwrite: pamac-all/libpamac-full/pamac-cli stammen alle aus demselben
+# Upstream-Quellbaum (pamac) und werden als separate AUR-Pakete gebaut -
+# dabei landen vereinzelt dieselben generischen Icon-Dateien
+# (/usr/share/icons/hicolor/.../system-software-install.svg,
+# pamac-tray-*.svg usw.) in mehreren dieser Pakete gleichzeitig. pacman
+# bricht normalerweise bei "exists in filesystem"-Konflikten komplett ab,
+# obwohl die Datei inhaltlich dieselbe ist (keine echte Inkompatibilitaet,
+# nur eine unsaubere Paket-Aufteilung im AUR). --overwrite laesst pacman
+# solche Dateien stattdessen einfach ueberschreiben statt abzubrechen.
+pacman --config "${TMP_CONF}" -S --noconfirm --needed --overwrite '*' "${PACKAGES[@]}"
 
 echo "==> AUR-Zusatzpakete fertig installiert (offline, aus lokalem Repo)."

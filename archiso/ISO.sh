@@ -330,6 +330,11 @@ AUR_PACKAGES=(
   mediawriter
   cnijfilter2
   gnome-network-displays
+  # ckbcomp: reines AUR-Paket, existiert in KEINEM offiziellen Repo (core/
+  # extra/multilib) - per pacstrap-Log bestaetigt ("target not found:
+  # ckbcomp" trotz voll synchronisierter core/extra/multilib-DBs). Gehoert
+  # also hier rein (lokal bauen + aus [trafktux] installieren) und NICHT in
+  # packages.x86_64.
   ckbcomp
 )
 
@@ -454,7 +459,19 @@ done
 # beeinflusst - sie MUSS bei jedem Lauf frisch gegen die aktuell gebauten
 # Plugin-Header (Schritt 1/5) gepinnt werden, sonst drohen wieder genau
 # die "Headers corrupted"-Probleme von vorher.
-rm -f "${REPO_DIR}/hyprland-"*.pkg.tar.* 2>/dev/null || true
+#
+# BUGFIX (siehe Chat): "${REPO_DIR}/hyprland-"*.pkg.tar.* war als Glob zu
+# breit - Paketdateinamen starten einfach mit dem Paketnamen, und
+# "hyprland-minimizer-git-0.1.0...-x86_64.pkg.tar.zst" FAENGT ebenfalls
+# mit "hyprland-" an. Das hat das gerade frisch gebaute
+# hyprland-minimizer-git (und dessen -debug-Paket) hier wieder geloescht,
+# NOCH BEVOR repo-add (unten) lief - Ergebnis: Paket nie in der
+# Repo-Datenbank, "pacman -S" im Zielsystem meldet "target not found:
+# hyprland-minimizer-git", obwohl die Build-Ausgabe weiter oben "Erfolg"
+# zeigte. Fix: nur Dateien loeschen, bei denen auf "hyprland-" direkt eine
+# Ziffer folgt (= eine echte Versionsnummer wie "0.56.2-4") - "minimizer"
+# faengt mit einem Buchstaben an und matcht damit nicht mehr.
+rm -f "${REPO_DIR}/hyprland-"[0-9]*.pkg.tar.* 2>/dev/null || true
 echo "==> Pinne installierte hyprland-Version fuer die ISO (muss exakt zu den Plugin-Headern aus Schritt 1/5 passen)..."
 HYPR_VER="$(pacman -Q hyprland | awk '{print $2}')"
 HYPR_PKG_FILE="$(find /var/cache/pacman/pkg -maxdepth 1 -name "hyprland-${HYPR_VER}-*.pkg.tar.*" -print -quit)"
@@ -728,6 +745,38 @@ if [[ ! -d "${HYPRPM_STATE_STAGE}" ]] || [[ -z "$(ls -A "${HYPRPM_STATE_STAGE}" 
     echo "HINWEIS: ${HYPRPM_STATE_STAGE} ist leer - ISO wird ohne Hyprland-Plugins gebaut." >&2
 fi
 
+# --- GRUB-Theme nach /opt staged (ueberlebt mkarchiso's /boot-Bereinigung) --
+# GRUND (per mkarchiso-Quellcode verifiziert, nicht geraten - siehe
+# _cleanup_pacstrap_dir() in mkarchiso):
+#   # Delete all files in /boot
+#   [[ -d "${pacstrap_dir}/boot" ]] && _unshare find "${pacstrap_dir}/boot" -mindepth 1 -delete
+# mkarchiso LEERT /boot in der airootfs IMMER komplett (nachdem Kernel/
+# Initramfs separat rausgezogen wurden, s. shellprocess-bootkernel.conf) -
+# und zwar NACH customize_airootfs.sh, also unabhaengig davon, dass das
+# Late-Overlay unser airootfs/boot/grub/themes/trafktux/ zu dem Zeitpunkt
+# schon korrekt an Ort und Stelle liegen hat. Das Theme wuerde also bei
+# JEDEM Build wieder spurlos verschwinden (live UND installiert), egal was
+# ISO.sh/customize_airootfs.sh vorher damit machen.
+#
+# Fix: eine ZUSAETZLICHE Kopie nach airootfs/opt/trafktux-grub-theme (statt
+# den Theme-Ordner aus /boot/grub/themes/trafktux/ zu verschieben - der
+# bleibt dort unveraendert im Repo liegen, rein als Dev-Ablage). /opt/ wird
+# von der Bereinigung oben NICHT angefasst, ueberlebt also normal bis ins
+# fertige Live-/Zielsystem. shellprocess@grubtheme (siehe settings.conf)
+# kopiert das auf dem Zielsystem danach einmalig zurueck nach
+# /boot/grub/themes/trafktux/ (dort landet auch trafktux-grub-theme-
+# sync.sh's spaetere Bucket-Auswahl - das Skript bleibt unveraendert).
+GRUB_THEME_SRC_DIR="${PROFILE_DIR}/airootfs/boot/grub/themes/trafktux"
+GRUB_THEME_STAGE_DIR="${PROFILE_DIR}/airootfs/opt/trafktux-grub-theme"
+if [[ -d "${GRUB_THEME_SRC_DIR}" ]]; then
+    echo "==> Staged GRUB-Theme nach ${GRUB_THEME_STAGE_DIR} (ueberlebt mkarchiso's /boot-Bereinigung)..."
+    rm -rf "${GRUB_THEME_STAGE_DIR}"
+    mkdir -p "${GRUB_THEME_STAGE_DIR}"
+    cp -a "${GRUB_THEME_SRC_DIR}/." "${GRUB_THEME_STAGE_DIR}/"
+else
+    echo "HINWEIS: ${GRUB_THEME_SRC_DIR} nicht gefunden - ISO wird ohne eigenes GRUB-Theme gebaut." >&2
+fi
+
 # --- Wegwerf-Kopie des kompletten Profils --------------------------------
 # NEUE REGEL (seit Boot-Debugging-Panik): PROFILE_DIR/airootfs/ wird NIE
 # WIEDER verschoben/veraendert. Stattdessen bauen wir hier eine komplette
@@ -833,6 +882,10 @@ while IFS= read -r -d '' f; do
     # koennte, ist es unschaedlich, sie einfach unangetastet zu lassen.
     [[ "${rel}" == "/opt/${REPO_NAME}-repo"/* ]] && continue
     [[ "${rel}" == "/opt/${OPTIONAL_REPO_NAME}"/* ]] && continue
+    # GRUB-Theme-Staging (siehe Begruendung bei GRUB_THEME_STAGE_DIR, Schritt
+    # 4/5) - aus demselben Grund wie REPO_DIR/OPTIONAL_REPO_DIR unangetastet
+    # lassen, kein Late-Overlay-Umweg noetig.
+    [[ "${rel}" == /opt/trafktux-grub-theme/* ]] && continue
     # Pacman-Sync-DB-Cache (siehe Begruendung in Schritt 2/5) - selber
     # Grund wie REPO_DIR/OPTIONAL_REPO_DIR: muss im Live-System an Ort und
     # Stelle liegen bleiben, damit shellprocess@pacmansync es im

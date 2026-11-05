@@ -43,6 +43,7 @@ Presentation
     // Seitenverhaeltnis nicht exakt uebereinstimmen) wird das Bild bei
     // Bedarf gestaucht/gestreckt, dafuer bleiben aber nie Raender stehen.
     Slide {
+        anchors.fill: parent
 
         Image {
             id: background1
@@ -52,6 +53,7 @@ Presentation
         }
     }
     Slide {
+        anchors.fill: parent
 
         Image {
             id: background2
@@ -61,6 +63,7 @@ Presentation
         }
     }
     Slide {
+        anchors.fill: parent
 
         Image {
             id: background3
@@ -70,6 +73,7 @@ Presentation
         }
     }
     Slide {
+        anchors.fill: parent
 
         Image {
             id: background4
@@ -79,6 +83,7 @@ Presentation
         }
     }
     Slide {
+        anchors.fill: parent
 
         Image {
             id: background5
@@ -88,6 +93,7 @@ Presentation
         }
     }
     Slide {
+        anchors.fill: parent
 
         Image {
             id: background6

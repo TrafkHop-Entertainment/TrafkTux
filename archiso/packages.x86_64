@@ -26,6 +26,7 @@ qt6-svg
 cryptsetup
 rsync
 ydotool
+libdvdcss
 
 # --- Bootloader / Boot-Splash ---
 plymouth
@@ -192,15 +193,47 @@ wine-mono
 gamemode
 xdotool
 
+# --- Offizielle Abhaengigkeiten der AUR/trafktux-Zusatzpakete ---
+# (snapd, libpamac-full, openrgb-gui, usw. brauchen diese offiziellen Pakete
+# auf dem Zielsystem. Da install-aur-packages.sh offline laeuft, muessen sie
+# hier stehen, damit pacstrap sie schon beim ISO-Bau mit reinpackt.)
+apparmor
+archlinux-appstream-data
+bind
+dbus-glib
+dnsmasq
+dnssec-anchors
+glib2-devel
+gst-plugin-pipewire
+gst-plugins-ugly
+gst-rtsp-server
+jemalloc
+libmaxminddb
+libportal-gtk4
+liburcu
+openrgb
+python-legacy-cgi
+python-more-itertools
+gumbo-parser
+litehtml
+qt6-imageformats
+qt6-tools
+
 # ====================================================================
-# Werden NICHT hier gelistet und NICHT vorgebaut - Calamares baut und
-# installiert diese waehrend der Installation live per yay (braucht
-# Internet auf dem Zielsystem), siehe:
+# Werden NICHT hier gelistet und NICHT vorgebaut - sind reine AUR-Pakete
+# (existieren in KEINEM offiziellen Repo) und werden stattdessen vorab im
+# lokalen [trafktux]-Repo gebaut (build-local-repo.sh) und offline per
+# install-aur-packages.sh installiert, siehe:
 #   airootfs/usr/local/bin/install-aur-packages.sh
 #   airootfs/etc/calamares/modules/shellprocess-aurinstall.conf
 #
+#  ckbcomp
 #  xwaylandvideobridge
 #  pamac-all
+#  pamac-cli
+#  libpamac-full
+#  snapd
+#  snapd-glib
 #  hyprshade
 #  hyprland-minimizer-git
 #  wvkbd

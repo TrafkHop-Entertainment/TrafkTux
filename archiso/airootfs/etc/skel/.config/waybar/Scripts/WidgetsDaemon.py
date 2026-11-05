@@ -6047,7 +6047,11 @@ def _clock_update_interval_ms(cfg: dict) -> int:
                       # (siehe Chat: "die Animation... ist perfekt!!!!!!")
     return 1000      # digital ohne ms: exakt im Sekundentakt reicht
 
-_ROMAN = {1: "I", 2: "II", 3: "III", 4: "IV", 5: "V", 6: "VI",
+# "IIII" statt "IV" für die 4 - keine Zahlen-Schwäche, sondern die
+# klassische Uhrmacher-Konvention auf praktisch jedem Zifferblatt mit
+# Römischen Ziffern (Big Ben eingeschlossen) - meist aus optischer
+# Symmetrie-/Gleichgewichtsgründen gegenüber der "VIII".
+_ROMAN = {1: "I", 2: "II", 3: "III", 4: "IIII", 5: "V", 6: "VI",
           7: "VII", 8: "VIII", 9: "IX", 10: "X", 11: "XI", 12: "XII"}
 
 def _draw_analog_clock(widget: Gtk.DrawingArea, cr, cfg: dict) -> bool:
@@ -6062,103 +6066,183 @@ def _draw_analog_clock(widget: Gtk.DrawingArea, cr, cfg: dict) -> bool:
     return _draw_analog_clock_glow(widget, cr, cfg)
 
 def _draw_analog_clock_classic(widget: Gtk.DrawingArea, cr, cfg: dict) -> bool:
-    """"2nd Analog clock style" - Mantel-/Carriage-Uhr-Optik: dunkler
-    Rahmen, warmes Gold-Zifferblatt, cremeweißer äußerer Ring mit
-    Römischen Ziffern und kleinen Minutenstrichen, schlichte schwarze
-    Zeiger mit kleinem Auge nahe der Basis (statt der Leucht-Technik des
-    "glow"-Stils, der hier bewusst NICHT verwendet wird - diese Uhr soll
-    matt/gedruckt wirken, nicht leuchten)."""
+    """"2nd Analog clock style", NEU gemacht (siehe Chat - erster
+    Versuch hatte schwarzen Rahmen/weißen Ring statt des Glow-Looks der
+    übrigen Widgets, Standard-Zeiger statt verzierter Form, und IV
+    statt der auf Zifferblättern üblichen IIII). Jetzt: exakt dieselbe
+    Leucht-Technik wie _draw_analog_clock_glow() (transparenter
+    Hintergrund, Mehrfach-Pass-Glühen, dieselbe GOLD/GLOW-Palette -
+    "das ist der Style der ganzen Widgets"), aber mit Römischen Ziffern
+    (inkl. IIII) und verzierten Zeigern (Rauten-Fenster im Schaft +
+    kurzer Gegengewicht-Schwanz hinterm Drehpunkt) statt der schlichten
+    arabischen Variante - angelehnt an die Reiseuhr-Zeiger aus dem
+    Referenzfoto."""
     alloc = widget.get_allocation()
     w, h = alloc.width, alloc.height
     cx, cy = w / 2.0, h / 2.0
-    r = max(10.0, min(w, h) / 2.0 - 4)
+    r = max(10.0, min(w, h) / 2.0 - 6)
 
     n = datetime.now()
     sec = n.second + n.microsecond / 1_000_000.0
     minute = n.minute + sec / 60.0
     hour = (n.hour % 12) + minute / 60.0
 
-    FRAME = (0.06, 0.05, 0.03, 0.95)      # fast schwarzer Rahmen
-    FACE_GOLD = (0.80, 0.65, 0.22, 1.0)   # warmes Gold-Mittelfeld
-    RING_CREAM = (0.98, 0.97, 0.93, 1.0)  # cremeweißer Ziffernring
-    INK = (0.08, 0.07, 0.06, 1.0)         # fast schwarz, für Ziffern/Zeiger
+    GOLD = (1.0, 0.957, 0.584, 0.95)
+    GLOW = (1.0, 0.957, 0.584)
 
-    # Äußerer dunkler Rahmen
-    cr.set_source_rgba(*FRAME)
-    cr.arc(cx, cy, r, 0, 2 * math.pi)
-    cr.fill()
+    def _glow_dot(x, y, radius):
+        for mult, a in ((2.6, 0.07), (1.8, 0.12)):
+            cr.set_source_rgba(*GLOW, a)
+            cr.arc(x, y, radius * mult, 0, 2 * math.pi)
+            cr.fill()
+        cr.set_source_rgba(*GOLD)
+        cr.arc(x, y, radius, 0, 2 * math.pi)
+        cr.fill()
 
-    # Cremeweißer Ziffernring
-    ring_r = r * 0.90
-    cr.set_source_rgba(*RING_CREAM)
-    cr.arc(cx, cy, ring_r, 0, 2 * math.pi)
-    cr.fill()
+    def _glow_text(label, tx, ty):
+        ext = cr.text_extents(label)
+        mx = tx - ext.width / 2 - ext.x_bearing
+        my = ty - ext.height / 2 - ext.y_bearing
+        for lw, a in ((3.0, 0.10), (1.6, 0.16)):
+            cr.move_to(mx, my)
+            cr.text_path(label)
+            cr.set_source_rgba(*GLOW, a)
+            cr.set_line_width(lw)
+            cr.stroke()
+        cr.move_to(mx, my)
+        cr.set_source_rgba(*GOLD)
+        cr.show_text(label)
 
-    # Goldenes Mittelfeld (innerhalb des Ziffernrings)
-    face_r = r * 0.68
-    cr.set_source_rgba(*FACE_GOLD)
-    cr.arc(cx, cy, face_r, 0, 2 * math.pi)
-    cr.fill()
-
-    # Minutenstriche auf dem Ziffernring, 5er-Marken etwas länger/dicker
-    for i in range(60):
-        ang = i * math.pi / 30
-        is5 = (i % 5 == 0)
-        inner = ring_r - (r * 0.065 if is5 else r * 0.035)
-        outer = ring_r - r * 0.01
-        x1, y1 = cx + math.sin(ang) * inner, cy - math.cos(ang) * inner
-        x2, y2 = cx + math.sin(ang) * outer, cy - math.cos(ang) * outer
-        cr.set_source_rgba(*INK)
-        cr.set_line_width(1.4 if is5 else 0.7)
+    def _glow_stroke_line(x1, y1, x2, y2, width):
+        for mult, a in ((4.0, 0.08), (2.2, 0.14)):
+            cr.set_source_rgba(*GLOW, a)
+            cr.set_line_width(width * mult)
+            cr.set_line_cap(cairo.LineCap.ROUND)
+            cr.move_to(x1, y1); cr.line_to(x2, y2); cr.stroke()
+        cr.set_source_rgba(*GOLD)
+        cr.set_line_width(width)
+        cr.set_line_cap(cairo.LineCap.ROUND)
         cr.move_to(x1, y1); cr.line_to(x2, y2); cr.stroke()
 
-    # Römische Zahlen, zentriert auf dem Ziffernring
-    cr.select_font_face("serif", cairo.FontSlant.NORMAL, cairo.FontWeight.BOLD)
-    cr.set_font_size(max(8.0, r * 0.16))
-    num_r = ring_r - r * 0.17
+    # Minutenpunkte, wie im Glow-Stil
+    for i in range(60):
+        ang = i * math.pi / 30
+        rad = 1.5 if i % 5 == 0 else 0.9
+        x = cx + math.sin(ang) * (r - 10)
+        y = cy - math.cos(ang) * (r - 10)
+        _glow_dot(x, y, rad)
+
+    # FIX ("die Zahlen sind nicht richtig gedreht und zu groß"): kleiner
+    # (r*0.185 -> r*0.145) und NORMAL statt BOLD - ein fett angefordertes
+    # "serif" kann je nach installierter Schriftart synthetisch schräg
+    # verzerrt werden, wenn kein echter Bold-Schnitt vorhanden ist, was
+    # wie "falsch gedreht" aussehen kann.
+    cr.select_font_face("serif", cairo.FontSlant.NORMAL, cairo.FontWeight.NORMAL)
+    cr.set_font_size(max(8.0, r * 0.145))
     for i in range(1, 13):
         label = _ROMAN[i]
         ang = i * math.pi / 6
-        tx = cx + math.sin(ang) * num_r
-        ty = cy - math.cos(ang) * num_r
-        ext = cr.text_extents(label)
-        cr.set_source_rgba(*INK)
-        cr.move_to(tx - ext.width / 2 - ext.x_bearing,
-                   ty - ext.height / 2 - ext.y_bearing)
-        cr.show_text(label)
+        _glow_text(label, cx + math.sin(ang) * (r - 26), cy - math.cos(ang) * (r - 26))
 
-    def _plain_hand(angle_deg: float, length: float, base_w: float, eye_at: float, eye_r: float):
+    # FIX ("VIEL zu dick, KOMPLETT FALSCH"): die vorherige Wellenband-
+    # Kette sah in der großen, sauberen matplotlib-Vorschau gut aus,
+    # ist aber bei der TATSÄCHLICHEN kleinen Render-Größe des Widgets
+    # (inkl. Antialiasing + weicher Glüh-Halo) zu einem dicken,
+    # detaillosen Wurm verschwommen - zu viel feine Geometrie für zu
+    # wenig Pixel. Jetzt stattdessen dieselbe bewährte, einfache Form
+    # wie beim Pendeluhr-Stil (schlanke Verjüngung + Zier-Schlaufe),
+    # der laut Rückmeldung tatsächlich zuverlässig funktioniert - lieber
+    # zuverlässig schlicht als bei jeder Größe kaputt.
+    def _ornate_hand(angle_deg: float, length: float, base_w: float,
+                      tip_w: float, eye_at: float, eye_r: float):
         ang = math.radians(angle_deg)
         dx, dy = math.sin(ang), -math.cos(ang)
         px, py = -dy, dx
         tip_x, tip_y = cx + dx * length, cy + dy * length
-        b1x, b1y = cx + px * base_w, cy + py * base_w
-        b2x, b2y = cx - px * base_w, cy - py * base_w
-        cr.set_source_rgba(*INK)
-        cr.move_to(b1x, b1y); cr.line_to(tip_x, tip_y); cr.line_to(b2x, b2y)
-        cr.close_path(); cr.fill()
+
+        def _build_path(bw, tw):
+            cr.move_to(cx + px * bw, cy + py * bw)
+            cr.line_to(tip_x + px * tw, tip_y + py * tw)
+            cr.line_to(tip_x - px * tw, tip_y - py * tw)
+            cr.line_to(cx - px * bw, cy - py * bw)
+            cr.close_path()
+
+        for mult, a in ((2.0, 0.08), (1.35, 0.14)):
+            cr.set_source_rgba(*GLOW, a)
+            _build_path(base_w * mult, tip_w * mult)
+            cr.fill()
+        cr.set_source_rgba(*GOLD)
+        _build_path(base_w, tip_w)
+        cr.fill()
+
         ex, ey = cx + dx * length * eye_at, cy + dy * length * eye_at
-        cr.set_line_width(1.0)
+        cr.set_source_rgba(*GOLD)
+        cr.set_line_width(1.1)
         cr.arc(ex, ey, eye_r, 0, 2 * math.pi)
         cr.stroke()
 
-    minute_len = r * 0.56
+    # FIX ("wo ist das Zahnrad? warum ist da ein Plus?"): 2 gekreuzte
+    # Linien lesen sich bei jeder Größe zuverlässig als "+", nicht als
+    # Stern/Zierpunkt. Jetzt ein echter 4-zackiger Stern als gefülltes
+    # Polygon (4 lange + 4 kurze Zacken im Wechsel).
+    star_cx = cx
+    star_cy = cy - max(0.0, r - 26) * 0.45
+    star_r_out = r * 0.075
+    star_r_in = r * 0.028
+    for mult, a in ((2.2, 0.08), (1.5, 0.14)):
+        cr.set_source_rgba(*GLOW, a)
+        for i in range(8):
+            rad = (star_r_out if i % 2 == 0 else star_r_in) * mult
+            ang2 = i * math.pi / 4
+            px_, py_ = star_cx + math.sin(ang2) * rad, star_cy - math.cos(ang2) * rad
+            (cr.line_to if i else cr.move_to)(px_, py_)
+        cr.close_path(); cr.fill()
+    cr.set_source_rgba(*GOLD)
+    for i in range(8):
+        rad = star_r_out if i % 2 == 0 else star_r_in
+        ang2 = i * math.pi / 4
+        px_, py_ = star_cx + math.sin(ang2) * rad, star_cy - math.cos(ang2) * rad
+        (cr.line_to if i else cr.move_to)(px_, py_)
+    cr.close_path(); cr.fill()
+
+    minute_len = r * 0.90
+    hour_len = r * 0.70
     if cfg.get("seconds", True):
         ang = math.radians(sec * 6)
         dx, dy = math.sin(ang), -math.cos(ang)
-        sec_len = minute_len * (2.0 / 3.0)
-        cr.set_source_rgba(*INK)
+        sec_len = minute_len * 0.80
+        _glow_stroke_line(cx, cy, cx + dx * sec_len, cy + dy * sec_len, 0.7)
+
+    _ornate_hand(hour * 30, hour_len, max(1.1, r * 0.016), max(0.5, r * 0.007), 0.60, max(2.2, r * 0.045))
+    _ornate_hand(minute * 6, minute_len, max(0.8, r * 0.012), max(0.4, r * 0.005), 0.58, max(1.8, r * 0.038))
+
+    if cfg.get("milliseconds"):
+        ms_ang = (n.microsecond / 1_000_000.0) * 360.0
+        ang = math.radians(ms_ang)
+        dx, dy = math.sin(ang), -math.cos(ang)
+        cr.set_source_rgba(0.965, 0.953, 0.835, 0.95)
         cr.set_line_width(0.9)
         cr.set_line_cap(cairo.LineCap.ROUND)
-        cr.move_to(cx, cy); cr.line_to(cx + dx * sec_len, cy + dy * sec_len)
+        cr.move_to(cx, cy)
+        cr.line_to(cx + dx * r * 0.30, cy + dy * r * 0.30)
         cr.stroke()
 
-    _plain_hand(hour * 30, r * 0.36, 2.6, 0.60, 2.6)
-    _plain_hand(minute * 6, minute_len, 1.9, 0.58, 2.1)
-
-    cr.set_source_rgba(*INK)
-    cr.arc(cx, cy, 2.2, 0, 2 * math.pi)
-    cr.fill()
+    # FIX ("ich sehe... nichts... wo sind die 2 Kreise"): die Ringe
+    # hatten feste Pixel-Radien (3.4/1.6) OHNE Glühen - bei der
+    # tatsächlichen Render-Größe/Kompression praktisch unsichtbar.
+    # Jetzt relativ zu r skaliert UND mit Glühen wie alles andere auf
+    # dem Zifferblatt, damit sie bei jeder Widget-Größe sichtbar
+    # bleiben.
+    for ring_r, lw in ((r * 0.052, max(1.0, r * 0.013)), (r * 0.024, max(0.8, r * 0.010))):
+        for mult, a in ((2.2, 0.10), (1.5, 0.16)):
+            cr.set_source_rgba(*GLOW, a)
+            cr.set_line_width(lw * mult)
+            cr.arc(cx, cy, ring_r, 0, 2 * math.pi)
+            cr.stroke()
+        cr.set_source_rgba(*GOLD)
+        cr.set_line_width(lw)
+        cr.arc(cx, cy, ring_r, 0, 2 * math.pi)
+        cr.stroke()
     return False
 
 def _draw_analog_clock_glow(widget: Gtk.DrawingArea, cr, cfg: dict) -> bool:
@@ -6217,13 +6301,28 @@ def _draw_analog_clock_glow(widget: Gtk.DrawingArea, cr, cfg: dict) -> bool:
         cr.set_line_cap(cairo.LineCap.ROUND)
         cr.move_to(x1, y1); cr.line_to(x2, y2); cr.stroke()
 
-    # Minutenpunkte - kleiner, mit Glühen, 5er-Marken etwas betont
+    # FIX ("die größeren Punkte bei den 5 Minuten... sollten nicht
+    # größer sein"): alle Minutenpunkte jetzt gleich groß - vorher
+    # waren die 5er-Marken (1.5) größer als die restlichen (0.9), was
+    # zusammen mit den Ziffern unruhig/unlesbar wirkte.
     for i in range(60):
         ang = i * math.pi / 30
-        rad = 1.5 if i % 5 == 0 else 0.9
         x = cx + math.sin(ang) * (r - 10)
         y = cy - math.cos(ang) * (r - 10)
-        _glow_dot(x, y, rad)
+        _glow_dot(x, y, 1.1)
+
+    # FIX ("einen kleinen dünnen Rand hinzufügen... der die Uhr
+    # komplett umrundet"): dünner durchgehender Ring kurz außerhalb des
+    # Minutenpunkt-Kreises.
+    for mult, a in ((2.2, 0.08), (1.5, 0.13)):
+        cr.set_source_rgba(*GLOW, a)
+        cr.set_line_width(1.0 * mult)
+        cr.arc(cx, cy, r - 2, 0, 2 * math.pi)
+        cr.stroke()
+    cr.set_source_rgba(*GOLD)
+    cr.set_line_width(1.0)
+    cr.arc(cx, cy, r - 2, 0, 2 * math.pi)
+    cr.stroke()
 
     # Minuten-Zahlenring (5/10/.../60) - außen, dicht am Rand, klein,
     # jetzt genauso sichtbar/kräftig wie die Stunden-Ziffern (vorher
@@ -6242,40 +6341,126 @@ def _draw_analog_clock_glow(widget: Gtk.DrawingArea, cr, cfg: dict) -> bool:
         ang = i * math.pi / 6
         _glow_text(str(i), cx + math.sin(ang) * (r - 30), cy - math.cos(ang) * (r - 30))
 
+    # "Pendeluhr"-Umbau Punkt 4 ("DAS Erkennungsfeature"): 3 kleine
+    # Löcher/Ösen wie am Zifferblatt der Referenz-Pendeluhr - hier als
+    # nicht gefüllte, glühende Ringe (wie ein kleines Guckloch), nicht
+    # als Volltreffer/Punkt. Positionen grob nach Foto: eine links und
+    # eine rechts auf halber Höhe (gespiegelt), eine weiter unten,
+    # näher am Zentrum als an der 6.
+    for hole_ang, hole_rr in ((255, 0.42), (105, 0.42), (180, 0.27)):
+        a = math.radians(hole_ang)
+        hx, hy = cx + math.sin(a) * r * hole_rr, cy - math.cos(a) * r * hole_rr
+        hole_r = max(1.6, r * 0.045)
+        for mult, al in ((2.4, 0.08), (1.6, 0.13)):
+            cr.set_source_rgba(*GLOW, al)
+            cr.set_line_width(0.8 * mult)
+            cr.arc(hx, hy, hole_r, 0, 2 * math.pi)
+            cr.stroke()
+        cr.set_source_rgba(*GOLD)
+        cr.set_line_width(0.8)
+        cr.arc(hx, hy, hole_r, 0, 2 * math.pi)
+        cr.stroke()
+
+    # Punkt 3: Schriftzug oben - NICHT der Markenname vom Foto (nicht
+    # nachgebaut/nicht unser Produkt), sondern "Pendel", weil's eine
+    # Pendeluhr ist. Gleiche Position wie die Marke im Referenzfoto:
+    # zwischen der XII/"12" und der Nabe.
+    # Position relativ zum tatsächlichen Abstand der "12" vom Zentrum
+    # (r - 30, siehe Stunden-Ziffern oben) statt einem festen r-Anteil -
+    # bei kleinen Widget-Größen (kleines r) würde sonst "Pendel" direkt
+    # auf der "12" landen, da r-30 dann sehr klein wird.
+    cr.select_font_face("serif", cairo.FontSlant.ITALIC, cairo.FontWeight.NORMAL)
+    cr.set_font_size(max(7.0, r * 0.11))
+    _glow_text("Pendel", cx, cy - max(0.0, r - 30) * 0.45)
+
     def _tapered_hand(angle_deg: float, length: float, base_w: float,
-                        eye_at: float, eye_r: float):
+                        tip_w: float, eye_at: float, eye_r: float):
+        """KOMPLETT NEU (siehe Chat - der vorherige Versuch mit sehr
+        dünnem Schaft + Auge sah wie 3 lose Kreise statt wie Zeiger
+        aus, erst durch eine matplotlib-Vorschau sichtbar geworden).
+        Deutlich kräftigerer Schaft (base_w/tip_w größer als vorher)
+        mit klar sichtbarer Zier-Schlaufe weiter außen (eye_at höher) -
+        das war in der Vorschau die Version, die tatsächlich wie ein
+        Breguet-Zeiger aussah."""
         ang = math.radians(angle_deg)
         dx, dy = math.sin(ang), -math.cos(ang)
-        px, py = -dy, dx   # senkrecht zur Zeigerrichtung, für die Breite
+        px, py = -dy, dx
         tip_x, tip_y = cx + dx * length, cy + dy * length
-        b1x, b1y = cx + px * base_w, cy + py * base_w
-        b2x, b2y = cx - px * base_w, cy - py * base_w
-        for mult, a in ((2.0, 0.08), (1.35, 0.14)):
-            cr.set_source_rgba(*GLOW, a)
-            cr.move_to(cx + px * base_w * mult, cy + py * base_w * mult)
-            cr.line_to(cx + dx * length, cy + dy * length)
-            cr.line_to(cx - px * base_w * mult, cy - py * base_w * mult)
+
+        def _build_path(bw, tw):
+            cr.move_to(cx + px * bw, cy + py * bw)
+            cr.line_to(tip_x + px * tw, tip_y + py * tw)
+            cr.line_to(tip_x - px * tw, tip_y - py * tw)
+            cr.line_to(cx - px * bw, cy - py * bw)
             cr.close_path()
+
+        # FIX ("Zeiger sollen minimal leuchten, damit sie von den
+        # Zahlen abstehen"): Alpha der Glüh-Pässe leicht angehoben
+        # (0.08/0.14 -> 0.12/0.20) - immer noch dezent, aber sichtbar.
+        for mult, a in ((2.0, 0.12), (1.35, 0.20)):
+            cr.set_source_rgba(*GLOW, a)
+            _build_path(base_w * mult, tip_w * mult)
             cr.fill()
         cr.set_source_rgba(*GOLD)
-        cr.move_to(b1x, b1y); cr.line_to(tip_x, tip_y); cr.line_to(b2x, b2y)
-        cr.close_path()
+        _build_path(base_w, tip_w)
         cr.fill()
+
         ex, ey = cx + dx * length * eye_at, cy + dy * length * eye_at
         cr.set_source_rgba(*GOLD)
         cr.set_line_width(1.1)
         cr.arc(ex, ey, eye_r, 0, 2 * math.pi)
         cr.stroke()
 
-    minute_len = r * 0.62
-    if cfg.get("seconds", True):
-        ang = math.radians(sec * 6)
+    def _simple_second_hand(angle_deg: float, length: float, width: float,
+                             tail_len: float, tail_r: float):
+        """FIX ("sollte 1/2 bis 1/3 so groß und ROT sein, ein kleiner
+        roter Plastikzeiger"): jetzt in Rot statt Gold, mit eigener
+        (dezenterer) Glüh-Farbe statt der GOLD/GLOW-Palette des Rests -
+        genau der Look eines kleinen roten Kunststoff-Sekundenzeigers
+        auf einer ansonsten goldenen Pendeluhr. Länge wird von der
+        Aufrufstelle aus bestimmt (dort jetzt ~0.40x statt 0.85x des
+        Minutenzeigers)."""
+        RED = (0.95, 0.20, 0.20)
+        RED_A = (0.95, 0.20, 0.20, 0.95)
+        ang = math.radians(angle_deg)
         dx, dy = math.sin(ang), -math.cos(ang)
-        sec_len = minute_len * (2.0 / 3.0)   # "2/3 so lang wie der Minutenzeiger"
-        _glow_stroke_line(cx, cy, cx + dx * sec_len, cy + dy * sec_len, 1.0)
+        x1, y1 = cx - dx * tail_len, cy - dy * tail_len
+        x2, y2 = cx + dx * length, cy + dy * length
+        for mult, a in ((2.6, 0.10), (1.6, 0.16)):
+            cr.set_source_rgba(*RED, a)
+            cr.set_line_width(width * mult)
+            cr.set_line_cap(cairo.LineCap.ROUND)
+            cr.move_to(x1, y1); cr.line_to(x2, y2); cr.stroke()
+        cr.set_source_rgba(*RED_A)
+        cr.set_line_width(width)
+        cr.set_line_cap(cairo.LineCap.ROUND)
+        cr.move_to(x1, y1); cr.line_to(x2, y2); cr.stroke()
+        for mult, a in ((2.6, 0.08), (1.8, 0.13)):
+            cr.set_source_rgba(*RED, a)
+            cr.arc(x1, y1, tail_r * mult, 0, 2 * math.pi)
+            cr.fill()
+        cr.set_source_rgba(*RED_A)
+        cr.arc(x1, y1, tail_r, 0, 2 * math.pi)
+        cr.fill()
 
-    _tapered_hand(hour * 30, r * 0.40, 2.4, 0.62, 3.0)
-    _tapered_hand(minute * 6, minute_len, 1.8, 0.60, 2.4)
+    # FIX, diesmal an den Pixel-Koordinaten des Referenzfotos vermessen
+    # (siehe Chat): Minutenzeiger reicht dort fast bis zum äußeren
+    # Minuten-Strichring (~r*0.97), der Stundenzeiger bis ~r*0.73 -
+    # beide vorher DEUTLICH zu kurz (r*0.42/r*0.62 - das war der
+    # Hauptgrund, warum die Zeiger wie lose Kreise statt wie Zeiger
+    # aussahen). Auch der Schaft ist am Foto viel dünner, als die
+    # vorherige "kräftigere" Version - echte antike Zeigerwerke sind
+    # sehr schlank, nicht kräftig.
+    minute_len = r * 0.93
+    hour_len = r * 0.71
+    if cfg.get("seconds", True):
+        # FIX: 1/2 bis 1/3 der vorherigen Länge (0.85 -> 0.40 des
+        # Minutenzeigers).
+        sec_len = minute_len * 0.40
+        _simple_second_hand(sec * 6, sec_len, 0.6, minute_len * 0.12, max(1.0, r * 0.022))
+
+    _tapered_hand(hour * 30, hour_len, max(0.9, r * 0.013), max(0.4, r * 0.006), 0.70, max(2.2, r * 0.050))
+    _tapered_hand(minute * 6, minute_len, max(0.7, r * 0.010), max(0.3, r * 0.0045), 0.69, max(1.8, r * 0.045))
 
     if cfg.get("milliseconds"):
         # Eigener, schnell rotierender Millisekunden-Zeiger - macht EINE
@@ -6332,7 +6517,9 @@ def _clock_content(win: Gtk.Window) -> Gtk.Box:
     time_lbl.set_no_show_all(True)
 
     analog_area = Gtk.DrawingArea()
-    analog_area.set_size_request(180, 180)
+    # FIX ("beide Uhren sind so klein, können ruhig größer sein"):
+    # 180x180 -> 230x230.
+    analog_area.set_size_request(230, 230)
     analog_area.set_halign(Gtk.Align.CENTER)
     analog_area.set_no_show_all(True)
     if HAS_CAIRO:
@@ -15806,8 +15993,14 @@ def _build_widgets_clock_tab(win: Gtk.Window) -> Gtk.Box:
             ctx = b.get_style_context()
             if n == name: ctx.add_class("active")
             else:         ctx.remove_class("active")
-    for name, slabel, tip in (("glow", "Glow", "Glowing gold face, Arabic numerals"),
-                              ("classic", "Classic", "Carriage-clock face, Roman numerals")):
+    # Label-Namen aktualisiert ("änder da den Namen in den Settings
+    # auch dazu"): der interne Schlüssel bleibt "glow"/"classic"
+    # (keine Migration bereits gespeicherter Settings nötig), nur die
+    # angezeigten Button-Texte sind jetzt passender - "glow" ist jetzt
+    # optisch eine Pendeluhr (3 Löcher, "Pendel"-Schriftzug, Breguet-
+    # artige Zeiger), "classic" ist die goldene Reise-/Carriage-Uhr.
+    for name, slabel, tip in (("glow", "Pendulum", "Pendulum-clock face, Arabic numerals, 3 regulation holes"),
+                              ("classic", "Carriage", "Carriage-clock face, Roman numerals")):
         b = btn(slabel, active=(clock_cfg.get("analog_style", "glow") == name))
         b.set_tooltip_text(tip)
         b.connect("clicked", lambda _b, n=name: _switch_style(n))
