@@ -492,23 +492,16 @@ Still to be themed / done:
 
 ## Known Bugs
 
-- The ISO doesn't currently boot – since the distro is still in development, this is a minor issue that will be fixed soon. Some grub permission problem or something
 - The HideAll feature does not work correctly with the app backgrounds. if one is active, the script will become very slow and you will be transported to the hidden workspace of the hidden apps, wich does not happen without it. the script fails to send the background image app into the other workspace – it should ignore it instead.
 - The navigation also does not work correctly with apps as wallpapers as they block... idk it does not work correctly
 - Die Background app still registers in the bar as a normal app
 - BIG STUFF
-  1. Der Gamescope Wrapper geht nicht mehr, weil gamescope irgendwas hat
-  2. Das System hängt sich manchmal auf
-  3. Der xfdesktop oder hyprwinwrap oder hyprpaper entziehen der apps das tastaturtippen. man will was in ner app mit der tastatur machen, aber es geht auf den desktop (man merkt es besonders mit 2 monitoren) ok es ist nicht wegen hyprwinwrap, ist auch ohne so.
-  4. VSCodium manchmal irgendwann öffnet es sich einfach nicht mehr. das hängt irgendwie mit gamescope zusammen. hat zum gleichen zeitpunkt angefangen
+  1. Der xfdesktop oder hyprwinwrap oder hyprpaper entziehen der apps das tastaturtippen. man will was in ner app mit der tastatur machen, aber es geht auf den desktop (man merkt es besonders mit 2 monitoren) ok es ist nicht wegen hyprwinwrap, ist auch ohne so.
 - xfdesktop can crash and there is no daemon restarting it
 - hyprlock is ass! 1. it does not scale with resolution 2. when you type in the RIGHT password, it mostoften goes green but NOTHING happens and it SOFTLOCKS you out of YOUR OWN SYSTEM and if you type in the wrong password, it goes GREEN you wait 10s ca and THEN it turns RED..... shitty thing it is
 - Widgets:
-  1. 2nd Analog clock style
-  2. Fix Weather styleing and layoutyqyq
-  3. fix normal wallpapers not applying
-  4. in display fix the bug where if you change resolution it first asks to apply forever before it actually changes it and THEN the apply pop up comes a second time (the correct time, the 1st is not supposed to be there)
-  5. processes still does not work, cpu and mem both always at 00.00% and stuff
+	- the gaming mode does not glow when active!
+	- with right click you should be able to go back. With that i mean go back to the settings widget – which is the main widget. and when you right click on the main widget it should close it (like clicking on the taskbar). Before implemented, please check for any right click interactions if there even are any (do not think so)
 - Widgets and Launcher:
   The name matcher still groups some apps together which means if one app is sorted in, other apps will not be visible anymore in unsorted.
 - HYPRLAND:

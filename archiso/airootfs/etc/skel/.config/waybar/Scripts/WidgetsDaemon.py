@@ -679,6 +679,10 @@ button.bubble.active {{
     color: {GOLD};
     font-weight: bold;
     text-shadow: 0 0 4px {GOLD}, 0 0 10px {GOLD};
+    /* text-shadow wirkt NUR auf Text - Symbol-Icons (z.B. Gaming-Mode-
+       und Battery-Saver-Button) brauchen -gtk-icon-shadow, sonst
+       leuchten sie im aktiven Zustand nicht. */
+    -gtk-icon-shadow: 0 0 4px {GOLD}, 0 0 10px {GOLD};
 }}
 /* NUR für den "Dark Theme"-Umschalter in Appearance & Language (Look-
    Tab): wenn Dark-Mode aktiv ist, ein eigener lila Glow statt des
@@ -690,6 +694,7 @@ button.bubble.active {{
 button.bubble.active.theme-glow-dark {{
     color: #9C81CF;
     text-shadow: 0 0 4px #7554B3, 0 0 10px #7554B3;
+    -gtk-icon-shadow: 0 0 4px #7554B3, 0 0 10px #7554B3;
 }}
 button.bubble.title {{
     padding: 8px 22px;
@@ -1017,6 +1022,11 @@ _open: dict[str, Gtk.Window] = {}
 _timers_by_win: dict[Gtk.Window, list] = {}
 _cleanup_by_win: dict[Gtk.Window, object] = {}
 _current_win: list = [None]
+# Rechtsklick-"Zurück": Fenster -> Funktion, die True liefert, wenn sie
+# gerade selbst eine Ebene zurück navigiert hat (z.B. Settings-Unterseite
+# -> Hub). Liefert sie False/ist keine registriert, schließt der
+# Rechtsklick das Widget (wie ein Klick auf sein Taskbar-Icon).
+_right_click_back: dict = {}
 
 # ────────────────────────────────────────────────────────────
 #  Animation state (Pünktchen + Popup-Grow + Crossfade)
@@ -1720,6 +1730,30 @@ def make_win(name: str) -> Gtk.Window:
     _cleanup_by_win[win] = _cleanup
     win.connect("destroy", _cleanup)
     win.connect("focus-out-event", lambda w, e: _cleanup())
+
+    # Rechtsklick: erst "eine Ebene zurück" (falls das Widget das kann,
+    # siehe _right_click_back), sonst Widget schließen. Es gab vorher
+    # KEINE andere Rechtsklick-Belegung (der Rechtsklick auf Kalendertage
+    # wurde schon früher entfernt) - kein Konflikt. Kinder, die Button 3
+    # selbst verarbeiten (z.B. das Kontextmenü eines Gtk.Entry), geben
+    # True zurück und erreichen dieses Fenster-Event gar nicht erst.
+    def _on_win_button_press(w, ev):
+        if ev.button != 3:
+            return False
+        back = _right_click_back.get(w)
+        try:
+            if back and back():
+                return True
+        except Exception:
+            pass
+        if _open.get(name) is w:
+            _open.pop(name, None)
+            _fade_out_and_close(name, w)
+            _play_sound("Close")
+        return True
+    win.add_events(Gdk.EventMask.BUTTON_PRESS_MASK)
+    win.connect("button-press-event", _on_win_button_press)
+    win.connect("destroy", lambda w: _right_click_back.pop(w, None))
     return win
 
 # ════════════════════════════════════════════════════════════
@@ -4744,7 +4778,14 @@ def _akku_content(win: Gtk.Window) -> Gtk.Box:
 
     gm_btn = Gtk.Button.new_from_icon_name("input-gaming-symbolic", Gtk.IconSize.BUTTON)
     gm_btn.set_tooltip_text("Gaming Mode: performance profile + CPU boost off")
+    # BUGFIX (Known Bug "Gaming Mode glüht nicht"): new_from_icon_name()
+    # setzt NICHT die Klasse "bubble" - die Glow-Regel heißt aber
+    # "button.bubble.active", "active" allein reichte also nie.
+    gm_btn.get_style_context().add_class("bubble")
+    gm_btn.set_can_focus(False)
     fx_btn = Gtk.Button.new_from_icon_name("battery-good-symbolic", Gtk.IconSize.BUTTON)
+    fx_btn.get_style_context().add_class("bubble")
+    fx_btn.set_can_focus(False)
     fx_btn.set_tooltip_text(
         "Save power: turn off animations, blur, shadow, hyprglass & cursor effects")
     gm_fx_row.pack_start(gm_btn, False, False, 0)
@@ -6066,17 +6107,17 @@ def _draw_analog_clock(widget: Gtk.DrawingArea, cr, cfg: dict) -> bool:
     return _draw_analog_clock_glow(widget, cr, cfg)
 
 def _draw_analog_clock_classic(widget: Gtk.DrawingArea, cr, cfg: dict) -> bool:
-    """"2nd Analog clock style", NEU gemacht (siehe Chat - erster
-    Versuch hatte schwarzen Rahmen/weißen Ring statt des Glow-Looks der
-    übrigen Widgets, Standard-Zeiger statt verzierter Form, und IV
-    statt der auf Zifferblättern üblichen IIII). Jetzt: exakt dieselbe
-    Leucht-Technik wie _draw_analog_clock_glow() (transparenter
-    Hintergrund, Mehrfach-Pass-Glühen, dieselbe GOLD/GLOW-Palette -
-    "das ist der Style der ganzen Widgets"), aber mit Römischen Ziffern
-    (inkl. IIII) und verzierten Zeigern (Rauten-Fenster im Schaft +
-    kurzer Gegengewicht-Schwanz hinterm Drehpunkt) statt der schlichten
-    arabischen Variante - angelehnt an die Reiseuhr-Zeiger aus dem
-    Referenzfoto."""
+    """"2nd Analog clock style" ("Reiseuhr"), angelehnt an das vom
+    Nutzer gezeigte Referenzfoto einer goldenen Reise-/Tischuhr: exakt
+    dieselbe Leucht-Technik wie _draw_analog_clock_glow() (transparenter
+    Hintergrund, Mehrfach-Pass-Glühen, dieselbe GOLD/GLOW-Palette),
+    aber mit Römischen Ziffern (inkl. IIII), die wie auf dem Foto RADIAL
+    zum Zentrum rotiert sind; das Zahlenband liegt zwischen 2 Ringen;
+    ein kleines Zahnrad-Ornament sitzt zwischen XII und der Nabe; die
+    Zeiger sind eine Kette aus hohlen, zur Spitze hin kleiner werdenden
+    Oval-Gliedern (_chain_oval_hand) statt schlichter arabischer
+    Zeiger; der Sekundenzeiger ist derselbe rote Strich wie bei der
+    Pendeluhr."""
     alloc = widget.get_allocation()
     w, h = alloc.width, alloc.height
     cx, cy = w / 2.0, h / 2.0
@@ -6099,10 +6140,19 @@ def _draw_analog_clock_classic(widget: Gtk.DrawingArea, cr, cfg: dict) -> bool:
         cr.arc(x, y, radius, 0, 2 * math.pi)
         cr.fill()
 
-    def _glow_text(label, tx, ty):
+    def _glow_text(label, tx, ty, angle=0.0):
+        """FIX ("die fucking Zahlen sind noch immer nicht rotiert wie
+        im Bild"): neuer optionaler Rotations-Winkel - dreht den Text
+        um seinen eigenen Mittelpunkt (tx, ty), damit die Ziffern wie
+        auf dem Referenzfoto RADIAL zum Zentrum stehen (bei 12 Uhr
+        aufrecht, bei 3 Uhr um 90° gedreht usw.), statt immer
+        waagerecht zu bleiben."""
         ext = cr.text_extents(label)
-        mx = tx - ext.width / 2 - ext.x_bearing
-        my = ty - ext.height / 2 - ext.y_bearing
+        mx = -ext.width / 2 - ext.x_bearing
+        my = -ext.height / 2 - ext.y_bearing
+        cr.save()
+        cr.translate(tx, ty)
+        cr.rotate(angle)
         for lw, a in ((3.0, 0.10), (1.6, 0.16)):
             cr.move_to(mx, my)
             cr.text_path(label)
@@ -6112,24 +6162,29 @@ def _draw_analog_clock_classic(widget: Gtk.DrawingArea, cr, cfg: dict) -> bool:
         cr.move_to(mx, my)
         cr.set_source_rgba(*GOLD)
         cr.show_text(label)
+        cr.restore()
 
-    def _glow_stroke_line(x1, y1, x2, y2, width):
-        for mult, a in ((4.0, 0.08), (2.2, 0.14)):
-            cr.set_source_rgba(*GLOW, a)
-            cr.set_line_width(width * mult)
-            cr.set_line_cap(cairo.LineCap.ROUND)
-            cr.move_to(x1, y1); cr.line_to(x2, y2); cr.stroke()
-        cr.set_source_rgba(*GOLD)
-        cr.set_line_width(width)
-        cr.set_line_cap(cairo.LineCap.ROUND)
-        cr.move_to(x1, y1); cr.line_to(x2, y2); cr.stroke()
+    # FIX ("DIE PUNKTE STIMMEN GAR NICHT, DIE SIND AUF DER FALSCHEN
+    # SEITE"): am Referenzfoto mit Pixelmessung nachgeprüft (Zentrum +
+    # mehrere Winkel abgetastet) - die Minutenpunkte liegen dort
+    # INNERHALB der Römischen Ziffern (zwischen Ziffern und dem
+    # inneren Goldkreis), NICHT außerhalb Richtung Rand, wie es vorher
+    # im Code war (r-10, also weiter außen als die Ziffern bei r-26).
+    # Gemessene Verhältnisse zum Gesamtradius: Innenring ~0.66r,
+    # Punkte ~0.72r, Ziffern ~0.80r, Außenring ~r - in GENAU dieser
+    # Reihenfolge von innen nach außen.
+    TICK_R = r * 0.72
+    NUM_R = r * 0.80
+    INNER_RING_R = r * 0.66
+    # FIX ("Ringe sind besser, aber der äußere ist zu weit entfernt"):
+    # von r-2 (ganz am Rand) auf r*0.90 nach innen gezogen.
+    OUTER_RING_R = r * 0.90
 
-    # Minutenpunkte, wie im Glow-Stil
     for i in range(60):
         ang = i * math.pi / 30
         rad = 1.5 if i % 5 == 0 else 0.9
-        x = cx + math.sin(ang) * (r - 10)
-        y = cy - math.cos(ang) * (r - 10)
+        x = cx + math.sin(ang) * TICK_R
+        y = cy - math.cos(ang) * TICK_R
         _glow_dot(x, y, rad)
 
     # FIX ("die Zahlen sind nicht richtig gedreht und zu groß"): kleiner
@@ -6142,79 +6197,178 @@ def _draw_analog_clock_classic(widget: Gtk.DrawingArea, cr, cfg: dict) -> bool:
     for i in range(1, 13):
         label = _ROMAN[i]
         ang = i * math.pi / 6
-        _glow_text(label, cx + math.sin(ang) * (r - 26), cy - math.cos(ang) * (r - 26))
+        _glow_text(label, cx + math.sin(ang) * NUM_R, cy - math.cos(ang) * NUM_R, angle=ang)
 
-    # FIX ("VIEL zu dick, KOMPLETT FALSCH"): die vorherige Wellenband-
-    # Kette sah in der großen, sauberen matplotlib-Vorschau gut aus,
-    # ist aber bei der TATSÄCHLICHEN kleinen Render-Größe des Widgets
-    # (inkl. Antialiasing + weicher Glüh-Halo) zu einem dicken,
-    # detaillosen Wurm verschwommen - zu viel feine Geometrie für zu
-    # wenig Pixel. Jetzt stattdessen dieselbe bewährte, einfache Form
-    # wie beim Pendeluhr-Stil (schlanke Verjüngung + Zier-Schlaufe),
-    # der laut Rückmeldung tatsächlich zuverlässig funktioniert - lieber
-    # zuverlässig schlicht als bei jeder Größe kaputt.
-    def _ornate_hand(angle_deg: float, length: float, base_w: float,
-                      tip_w: float, eye_at: float, eye_r: float):
+    # FIX ("DIE RINGE DER REISEUHR STIMMEN NICHT IM GERINGSTEN"): auf
+    # dem Referenzfoto sitzt das römische Zahlenband zwischen 2
+    # Kreislinien - eine knapp außerhalb der Minutenpunkte (am Rand)
+    # und eine knapp innerhalb der Ziffern (zum Zahnrad hin). Radien
+    # jetzt wie oben an der Fotomessung ausgerichtet (0.60r -> 0.66r),
+    # statt geschätzt.
+    for ring_r in (OUTER_RING_R, INNER_RING_R):
+        for mult, a in ((2.2, 0.08), (1.5, 0.13)):
+            cr.set_source_rgba(*GLOW, a)
+            cr.set_line_width(1.0 * mult)
+            cr.arc(cx, cy, ring_r, 0, 2 * math.pi)
+            cr.stroke()
+        cr.set_source_rgba(*GOLD)
+        cr.set_line_width(1.0)
+        cr.arc(cx, cy, ring_r, 0, 2 * math.pi)
+        cr.stroke()
+
+    # FIX ("Zeiger stimmen noch immer nicht, Form + nicht verbunden"):
+    # am ausgerichteten, maßstabsgleichen Foto-Vergleich nachgemessen -
+    # die Zeiger der Reiseuhr sind KEINE Ellipsen-Kette, sondern ein
+    # VERDREHTES BAND: 3 spitze Linsen-Schlaufen (2 sinusförmige
+    # Stränge, die sich an Knotenpunkten kreuzen und danach die Seite
+    # wechseln), die zur Spitze hin kleiner werden, danach eine dünne
+    # Klinge. Weil beide Stränge an den Knoten GEMEINSAM durchlaufen,
+    # sind die Glieder konstruktionsbedingt lückenlos verbunden (vorher
+    # nur überlappende Einzel-Ovale). Maße in Foto-Pixeln (Nabe = 0).
+    _BRAID_MIN = dict(photo_len=315.0, nodes=[52, 122, 178, 222],
+                      H=[17.5, 13.0, 8.0], blade_hw=4.4)
+    _BRAID_HOUR = dict(photo_len=218.0, nodes=[39, 95, 135, 167],
+                       H=[16.0, 12.0, 8.0], blade_hw=4.8)
+    DIM = (0.60, 0.52, 0.27, 0.95)
+
+    # FIX ("Zeiger leuchten noch zu wenig"): kräftiger, weicher Glow -
+    # viele breiter werdende, leise Striche desselben Pfads (statt
+    # zweier schwacher Halos).
+    def _glow_levels(core_w, g, n_lv=10, A=0.18, power=1.8):
+        out = []
+        for k in range(n_lv, 0, -1):
+            t = k / n_lv
+            a = A * (1 - t) ** power
+            if a > 0.001:
+                out.append((core_w + 2 * g * t, a))
+        return out
+
+    def _braid_hand(angle_deg: float, length: float, spec: dict, glow_g: float):
+        s = length / spec["photo_len"]
         ang = math.radians(angle_deg)
         dx, dy = math.sin(ang), -math.cos(ang)
         px, py = -dy, dx
-        tip_x, tip_y = cx + dx * length, cy + dy * length
 
-        def _build_path(bw, tw):
-            cr.move_to(cx + px * bw, cy + py * bw)
-            cr.line_to(tip_x + px * tw, tip_y + py * tw)
-            cr.line_to(tip_x - px * tw, tip_y - py * tw)
-            cr.line_to(cx - px * bw, cy - py * bw)
+        def P(u, v):
+            return (cx + dx * u * s + px * v * s, cy + dy * u * s + py * v * s)
+
+        nodes = spec["nodes"]
+        H = spec["H"]
+        sw = 8.4 * s
+        neck_w = 6.4 * s
+
+        def strand_pts(sign0):
+            pts = []
+            for i in range(len(nodes) - 1):
+                a, b = nodes[i], nodes[i + 1]
+                sgn = sign0 * (1 if i % 2 == 0 else -1)
+                n_s = 22
+                for k in range(0 if i == 0 else 1, n_s + 1):
+                    t = k / n_s
+                    pts.append(P(a + (b - a) * t,
+                                 sgn * H[i] * math.sin(math.pi * t) ** 0.92))
+            return pts
+
+        strand_a = strand_pts(+1)
+        strand_b = strand_pts(-1)
+        tip = spec["photo_len"]
+        last = nodes[-1]
+        hw = spec["blade_hw"]
+        tp = tip - 16
+        blade = [P(last - 3, -hw), P(tp, -hw * 0.75), P(tip, 0),
+                 P(tp, hw * 0.75), P(last - 3, hw)]
+
+        def path_neck():
+            cr.move_to(*P(0, 0))
+            cr.line_to(*P(nodes[0] + 2, 0))
+
+        def path_strand(pts):
+            for i, p in enumerate(pts):
+                (cr.line_to if i else cr.move_to)(*p)
+
+        def path_blade():
+            for i, p in enumerate(blade):
+                (cr.line_to if i else cr.move_to)(*p)
             cr.close_path()
 
-        for mult, a in ((2.0, 0.08), (1.35, 0.14)):
+        cr.set_line_cap(cairo.LineCap.ROUND)
+        cr.set_line_join(cairo.LineJoin.ROUND)
+        for wdt, a in _glow_levels(sw, glow_g):
             cr.set_source_rgba(*GLOW, a)
-            _build_path(base_w * mult, tip_w * mult)
-            cr.fill()
+            cr.set_line_width(wdt)
+            path_strand(strand_a); cr.stroke()
+            path_strand(strand_b); cr.stroke()
+        for wdt, a in _glow_levels(neck_w, glow_g):
+            cr.set_source_rgba(*GLOW, a)
+            cr.set_line_width(wdt)
+            path_neck(); cr.stroke()
+        for wdt, a in _glow_levels(2.0 * s, glow_g):
+            cr.set_source_rgba(*GLOW, a)
+            cr.set_line_width(wdt)
+            path_blade(); cr.stroke()
         cr.set_source_rgba(*GOLD)
-        _build_path(base_w, tip_w)
+        cr.set_line_width(neck_w); path_neck(); cr.stroke()
+        cr.set_line_width(sw)
+        path_strand(strand_a); cr.stroke()
+        path_strand(strand_b); cr.stroke()
+        path_blade(); cr.fill_preserve()
+        cr.set_line_width(1.0); cr.stroke()
+
+    # FIX ("ZAHNRAD NICHT KOMISCHER STERN DER LEUCHTET"): das Ornament
+    # ist am Foto winzig (~0.04r statt wie bei mir 0.065r) und leuchtet
+    # dort nicht. Jetzt ein kleines, scharfes Zahnrad OHNE Glow-Halo:
+    # 8 Zähne (kurze, spitz zulaufende Trapez-Zähne) + Nabenloch.
+    def _ornament(gx, gy, r_out, teeth=8):
+        step = 2 * math.pi / teeth
+        r_in = r_out * 0.60
+        base_half = step * 0.30
+        tip_half = step * 0.10
+        first = True
+        for i in range(teeth):
+            a = i * step
+            for ang2, rr in ((a - base_half, r_in), (a - tip_half, r_out),
+                             (a + tip_half, r_out), (a + base_half, r_in)):
+                x = gx + math.sin(ang2) * rr
+                y = gy - math.cos(ang2) * rr
+                (cr.line_to if not first else cr.move_to)(x, y)
+                first = False
+            va = a + step / 2
+            cr.line_to(gx + math.sin(va) * r_in * 0.97, gy - math.cos(va) * r_in * 0.97)
+        cr.close_path()
+        cr.set_source_rgba(*GOLD)
+        cr.fill()
+        cr.set_source_rgba(0.06, 0.07, 0.16, 1.0)
+        cr.arc(gx, gy, r_out * 0.26, 0, 2 * math.pi)
         cr.fill()
 
-        ex, ey = cx + dx * length * eye_at, cy + dy * length * eye_at
-        cr.set_source_rgba(*GOLD)
-        cr.set_line_width(1.1)
-        cr.arc(ex, ey, eye_r, 0, 2 * math.pi)
-        cr.stroke()
+    _ornament(cx, cy - NUM_R * 0.45, r * 0.04)
 
-    # FIX ("wo ist das Zahnrad? warum ist da ein Plus?"): 2 gekreuzte
-    # Linien lesen sich bei jeder Größe zuverlässig als "+", nicht als
-    # Stern/Zierpunkt. Jetzt ein echter 4-zackiger Stern als gefülltes
-    # Polygon (4 lange + 4 kurze Zacken im Wechsel).
-    star_cx = cx
-    star_cy = cy - max(0.0, r - 26) * 0.45
-    star_r_out = r * 0.075
-    star_r_in = r * 0.028
-    for mult, a in ((2.2, 0.08), (1.5, 0.14)):
-        cr.set_source_rgba(*GLOW, a)
-        for i in range(8):
-            rad = (star_r_out if i % 2 == 0 else star_r_in) * mult
-            ang2 = i * math.pi / 4
-            px_, py_ = star_cx + math.sin(ang2) * rad, star_cy - math.cos(ang2) * rad
-            (cr.line_to if i else cr.move_to)(px_, py_)
-        cr.close_path(); cr.fill()
-    cr.set_source_rgba(*GOLD)
-    for i in range(8):
-        rad = star_r_out if i % 2 == 0 else star_r_in
-        ang2 = i * math.pi / 4
-        px_, py_ = star_cx + math.sin(ang2) * rad, star_cy - math.cos(ang2) * rad
-        (cr.line_to if i else cr.move_to)(px_, py_)
-    cr.close_path(); cr.fill()
-
+    # Hand-Längen am Foto nachgemessen: Stundenzeiger ~0.68x des
+    # Minutenzeigers (vorher 0.78x).
     minute_len = r * 0.90
-    hour_len = r * 0.70
+    hour_len = r * 0.64
+    # FIX ("das Ding hat keinen Sekundenzeiger, nimm doch einfach den
+    # von der anderen Uhr"): derselbe rote, zentrierte Strich wie bei
+    # der Pendeluhr.
     if cfg.get("seconds", True):
+        sec_len = minute_len * 0.45
+        RED = (0.95, 0.20, 0.20)
+        RED_A = (0.95, 0.20, 0.20, 0.95)
         ang = math.radians(sec * 6)
         dx, dy = math.sin(ang), -math.cos(ang)
-        sec_len = minute_len * 0.80
-        _glow_stroke_line(cx, cy, cx + dx * sec_len, cy + dy * sec_len, 0.7)
+        x2, y2 = cx + dx * sec_len, cy + dy * sec_len
+        for mult, a in ((2.6, 0.10), (1.6, 0.16)):
+            cr.set_source_rgba(*RED, a)
+            cr.set_line_width(0.6 * mult)
+            cr.set_line_cap(cairo.LineCap.ROUND)
+            cr.move_to(cx, cy); cr.line_to(x2, y2); cr.stroke()
+        cr.set_source_rgba(*RED_A)
+        cr.set_line_width(0.6)
+        cr.set_line_cap(cairo.LineCap.ROUND)
+        cr.move_to(cx, cy); cr.line_to(x2, y2); cr.stroke()
 
-    _ornate_hand(hour * 30, hour_len, max(1.1, r * 0.016), max(0.5, r * 0.007), 0.60, max(2.2, r * 0.045))
-    _ornate_hand(minute * 6, minute_len, max(0.8, r * 0.012), max(0.4, r * 0.005), 0.58, max(1.8, r * 0.038))
+    _braid_hand(hour * 30, hour_len, _BRAID_HOUR, r * 0.032)
+    _braid_hand(minute * 6, minute_len, _BRAID_MIN, r * 0.032)
 
     if cfg.get("milliseconds"):
         ms_ang = (n.microsecond / 1_000_000.0) * 360.0
@@ -6227,22 +6381,33 @@ def _draw_analog_clock_classic(widget: Gtk.DrawingArea, cr, cfg: dict) -> bool:
         cr.line_to(cx + dx * r * 0.30, cy + dy * r * 0.30)
         cr.stroke()
 
-    # FIX ("ich sehe... nichts... wo sind die 2 Kreise"): die Ringe
-    # hatten feste Pixel-Radien (3.4/1.6) OHNE Glühen - bei der
-    # tatsächlichen Render-Größe/Kompression praktisch unsichtbar.
-    # Jetzt relativ zu r skaliert UND mit Glühen wie alles andere auf
-    # dem Zifferblatt, damit sie bei jeder Widget-Größe sichtbar
-    # bleiben.
-    for ring_r, lw in ((r * 0.052, max(1.0, r * 0.013)), (r * 0.024, max(0.8, r * 0.010))):
-        for mult, a in ((2.2, 0.10), (1.5, 0.16)):
-            cr.set_source_rgba(*GLOW, a)
-            cr.set_line_width(lw * mult)
-            cr.arc(cx, cy, ring_r, 0, 2 * math.pi)
-            cr.stroke()
-        cr.set_source_rgba(*GOLD)
-        cr.set_line_width(lw)
-        cr.arc(cx, cy, ring_r, 0, 2 * math.pi)
-        cr.stroke()
+    # FIX ("die Mitte der beiden Uhren stimmt wieder nicht"): Nabe nach
+    # Foto: dicker Außenring (Lünette) + innen eine hellere,
+    # gezahnte Metallscheibe mit kleinem Mittelpunkt - Scheibe grenzt
+    # direkt an den Ring (KEINE dunkle Lücke/Kontur), Glow stufenlos.
+    pivot_r = max(3.0, r * 0.082)
+    N_GLOW_STEPS = 9
+    for s_ in range(N_GLOW_STEPS, 0, -1):
+        st = s_ / N_GLOW_STEPS
+        a = 0.20 * (1 - st) ** 2
+        cr.set_source_rgba(*GLOW, a)
+        cr.arc(cx, cy, pivot_r * (1 + 1.8 * st * st), 0, 2 * math.pi)
+        cr.fill()
+    cr.set_source_rgba(*GOLD)
+    cr.arc(cx, cy, pivot_r, 0, 2 * math.pi)
+    cr.fill()
+    ri = pivot_r * 0.62
+    teeth_h = 26
+    cr.set_source_rgba(*DIM)
+    for i in range(teeth_h * 2):
+        a = i * math.pi / teeth_h
+        rr = ri if i % 2 == 0 else ri * 0.92
+        (cr.line_to if i else cr.move_to)(cx + math.sin(a) * rr, cy - math.cos(a) * rr)
+    cr.close_path()
+    cr.fill()
+    cr.set_source_rgba(0.80, 0.70, 0.36, 0.95)
+    cr.arc(cx, cy, ri * 0.22, 0, 2 * math.pi)
+    cr.fill()
     return False
 
 def _draw_analog_clock_glow(widget: Gtk.DrawingArea, cr, cfg: dict) -> bool:
@@ -6301,14 +6466,28 @@ def _draw_analog_clock_glow(widget: Gtk.DrawingArea, cr, cfg: dict) -> bool:
         cr.set_line_cap(cairo.LineCap.ROUND)
         cr.move_to(x1, y1); cr.line_to(x2, y2); cr.stroke()
 
+    # FIX ("der Rand ist viel zu nah, der klippt ja in die Zahlen, da
+    # sollte ein Abstand sein"): vorher lagen Rand (r-2), Minutenpunkte
+    # (r-10) UND der Minuten-Zahlenring (r-4) praktisch übereinander -
+    # der Zahlenring (r-4) war sogar WEITER AUSSEN als die Punkte
+    # (r-10), also direkt am/im Rand. Jetzt alle 4 Radien als fester
+    # Prozentsatz von r mit klarem Luft-Abstand dazwischen, und in der
+    # richtigen Reihenfolge von außen nach innen: Rand > Punkte >
+    # Minutenzahlen > Stundenziffern. Skaliert dadurch auch sauber auf
+    # jede Widget-Größe, statt bei bestimmten Größen zu kollidieren.
+    RING_R = r - 2
+    TICK_R = r * 0.93
+    LABEL_R = r * 0.84
+    HOUR_R = r * 0.68
+
     # FIX ("die größeren Punkte bei den 5 Minuten... sollten nicht
     # größer sein"): alle Minutenpunkte jetzt gleich groß - vorher
     # waren die 5er-Marken (1.5) größer als die restlichen (0.9), was
     # zusammen mit den Ziffern unruhig/unlesbar wirkte.
     for i in range(60):
         ang = i * math.pi / 30
-        x = cx + math.sin(ang) * (r - 10)
-        y = cy - math.cos(ang) * (r - 10)
+        x = cx + math.sin(ang) * TICK_R
+        y = cy - math.cos(ang) * TICK_R
         _glow_dot(x, y, 1.1)
 
     # FIX ("einen kleinen dünnen Rand hinzufügen... der die Uhr
@@ -6317,29 +6496,28 @@ def _draw_analog_clock_glow(widget: Gtk.DrawingArea, cr, cfg: dict) -> bool:
     for mult, a in ((2.2, 0.08), (1.5, 0.13)):
         cr.set_source_rgba(*GLOW, a)
         cr.set_line_width(1.0 * mult)
-        cr.arc(cx, cy, r - 2, 0, 2 * math.pi)
+        cr.arc(cx, cy, RING_R, 0, 2 * math.pi)
         cr.stroke()
     cr.set_source_rgba(*GOLD)
     cr.set_line_width(1.0)
-    cr.arc(cx, cy, r - 2, 0, 2 * math.pi)
+    cr.arc(cx, cy, RING_R, 0, 2 * math.pi)
     cr.stroke()
 
-    # Minuten-Zahlenring (5/10/.../60) - außen, dicht am Rand, klein,
-    # jetzt genauso sichtbar/kräftig wie die Stunden-Ziffern (vorher
-    # gedimmt - siehe Chat).
+    # Minuten-Zahlenring (5/10/.../60) - jetzt klar INNERHALB der
+    # Minutenpunkte (vorher fälschlich außerhalb, direkt am Rand).
     cr.select_font_face("serif", cairo.FontSlant.NORMAL, cairo.FontWeight.NORMAL)
     cr.set_font_size(max(6.0, r * 0.085))
     for i in range(12):
         label = str(60 if i == 0 else i * 5)
         ang = i * math.pi / 6
-        _glow_text(label, cx + math.sin(ang) * (r - 4), cy - math.cos(ang) * (r - 4))
+        _glow_text(label, cx + math.sin(ang) * LABEL_R, cy - math.cos(ang) * LABEL_R)
 
     # Stunden-Ziffern 1-12 - eleganter Serif, weiter innen, größer
     cr.select_font_face("serif", cairo.FontSlant.ITALIC, cairo.FontWeight.NORMAL)
     cr.set_font_size(max(10.0, r * 0.19))
     for i in range(1, 13):
         ang = i * math.pi / 6
-        _glow_text(str(i), cx + math.sin(ang) * (r - 30), cy - math.cos(ang) * (r - 30))
+        _glow_text(str(i), cx + math.sin(ang) * HOUR_R, cy - math.cos(ang) * HOUR_R)
 
     # "Pendeluhr"-Umbau Punkt 4 ("DAS Erkennungsfeature"): 3 kleine
     # Löcher/Ösen wie am Zifferblatt der Referenz-Pendeluhr - hier als
@@ -6366,82 +6544,108 @@ def _draw_analog_clock_glow(widget: Gtk.DrawingArea, cr, cfg: dict) -> bool:
     # Pendeluhr ist. Gleiche Position wie die Marke im Referenzfoto:
     # zwischen der XII/"12" und der Nabe.
     # Position relativ zum tatsächlichen Abstand der "12" vom Zentrum
-    # (r - 30, siehe Stunden-Ziffern oben) statt einem festen r-Anteil -
+    # (HOUR_R, siehe Stunden-Ziffern oben) statt einem festen r-Anteil -
     # bei kleinen Widget-Größen (kleines r) würde sonst "Pendel" direkt
-    # auf der "12" landen, da r-30 dann sehr klein wird.
+    # auf der "12" landen, da HOUR_R dann sehr klein wird.
     cr.select_font_face("serif", cairo.FontSlant.ITALIC, cairo.FontWeight.NORMAL)
     cr.set_font_size(max(7.0, r * 0.11))
-    _glow_text("Pendel", cx, cy - max(0.0, r - 30) * 0.45)
+    _glow_text("Pendel", cx, cy - HOUR_R * 0.45)
 
     def _tapered_hand(angle_deg: float, length: float, base_w: float,
-                        tip_w: float, eye_at: float, eye_r: float):
-        """KOMPLETT NEU (siehe Chat - der vorherige Versuch mit sehr
-        dünnem Schaft + Auge sah wie 3 lose Kreise statt wie Zeiger
-        aus, erst durch eine matplotlib-Vorschau sichtbar geworden).
-        Deutlich kräftigerer Schaft (base_w/tip_w größer als vorher)
-        mit klar sichtbarer Zier-Schlaufe weiter außen (eye_at höher) -
-        das war in der Vorschau die Version, die tatsächlich wie ein
-        Breguet-Zeiger aussah."""
+                        eye_at: float, eye_r: float):
+        """FIX ("warum sind die am Anfang dicker als am Ende? die
+        werden nicht dünner - VOR den Kreisen [gleich dick], NACH den
+        Kreisen werden sie zu einer SPITZE"): der Schaft lief vorher
+        über die GESAMTE Länge gleichmäßig von base_w auf tip_w zu -
+        ein einziger durchgehender Keil. Jetzt 2 Segmente: von der
+        Nabe bis zur Zier-Öse KONSTANT breit (base_w, kein zweiter
+        Breitenwert mehr nötig dafür), danach von der Öse bis zur
+        Spitze auf einen echten Punkt zulaufend (die Spitze ist ein
+        einzelner Punkt, kein schmales Rechteck mehr - daher entfällt
+        der frühere tip_w-Parameter komplett).
+
+        FIX ("die Ringe der Pendeluhrzeiger sind noch immer zu dünn"):
+        am Referenzfoto nachgemessen ist die Ringwand ungefähr 2.2x so
+        breit wie der Zeigerschaft selbst - vorher war die Linienbreite
+        ein fixer Wert (1.1px), der bei normalen Widget-Größen wie ein
+        Haardraht wirkte statt wie der kräftige Metallring auf dem Foto.
+
+        FIX ("nur die runden Dinger in der Mitte leuchten, die Zeiger
+        nicht"): zusätzlich zum Form-Halo jetzt ein "Glow-Tube" aus
+        weichen, runden Glühflecken ENTLANG des ganzen Schafts (wie
+        Neonröhren-Licht) - vorher war der Zeiger-Halo nur eine
+        geringfügig breitere Kopie der Schaft-Form selbst und ging
+        gegen den eigenen massiven Kern optisch unter."""
         ang = math.radians(angle_deg)
         dx, dy = math.sin(ang), -math.cos(ang)
         px, py = -dy, dx
+        eye_x, eye_y = cx + dx * length * eye_at, cy + dy * length * eye_at
         tip_x, tip_y = cx + dx * length, cy + dy * length
 
-        def _build_path(bw, tw):
+        def _build_path(bw):
             cr.move_to(cx + px * bw, cy + py * bw)
-            cr.line_to(tip_x + px * tw, tip_y + py * tw)
-            cr.line_to(tip_x - px * tw, tip_y - py * tw)
+            cr.line_to(eye_x + px * bw, eye_y + py * bw)
+            cr.line_to(tip_x, tip_y)
+            cr.line_to(eye_x - px * bw, eye_y - py * bw)
             cr.line_to(cx - px * bw, cy - py * bw)
             cr.close_path()
 
-        # FIX ("Zeiger sollen minimal leuchten, damit sie von den
-        # Zahlen abstehen"): Alpha der Glüh-Pässe leicht angehoben
-        # (0.08/0.14 -> 0.12/0.20) - immer noch dezent, aber sichtbar.
-        for mult, a in ((2.0, 0.12), (1.35, 0.20)):
+        # FIX ("Zeiger leuchten noch zu wenig" / Glow stufenlos): der Glow
+        # entsteht jetzt aus vielen immer breiter werdenden, leisen
+        # Strichen DESSELBEN Zeiger-Umrisses (inkl. Ring) - deutlich
+        # kräftiger als vorher, aber ohne sichtbare Stufen.
+        g_ext = r * 0.034
+        n_lv = 10
+        ring_lw = max(1.1, base_w * 1.9)
+        cr.set_line_join(cairo.LineJoin.ROUND)
+        cr.set_line_cap(cairo.LineCap.ROUND)
+        for k in range(n_lv, 0, -1):
+            t = k / n_lv
+            a = 0.18 * (1 - t) ** 1.8
+            if a < 0.001:
+                continue
             cr.set_source_rgba(*GLOW, a)
-            _build_path(base_w * mult, tip_w * mult)
-            cr.fill()
+            cr.set_line_width(2 * base_w + 2 * g_ext * t)
+            _build_path(base_w)
+            cr.stroke()
+            cr.set_line_width(ring_lw + 2 * g_ext * t)
+            cr.arc(eye_x, eye_y, eye_r, 0, 2 * math.pi)
+            cr.stroke()
         cr.set_source_rgba(*GOLD)
-        _build_path(base_w, tip_w)
+        _build_path(base_w)
         cr.fill()
-
-        ex, ey = cx + dx * length * eye_at, cy + dy * length * eye_at
+        # FIX ("die Ringe sind jetzt zu dick"): 2.4x -> 1.9x der
+        # Schaftbreite.
         cr.set_source_rgba(*GOLD)
-        cr.set_line_width(1.1)
-        cr.arc(ex, ey, eye_r, 0, 2 * math.pi)
+        cr.set_line_width(ring_lw)
+        cr.arc(eye_x, eye_y, eye_r, 0, 2 * math.pi)
         cr.stroke()
 
-    def _simple_second_hand(angle_deg: float, length: float, width: float,
-                             tail_len: float, tail_r: float):
-        """FIX ("sollte 1/2 bis 1/3 so groß und ROT sein, ein kleiner
-        roter Plastikzeiger"): jetzt in Rot statt Gold, mit eigener
-        (dezenterer) Glüh-Farbe statt der GOLD/GLOW-Palette des Rests -
-        genau der Look eines kleinen roten Kunststoff-Sekundenzeigers
-        auf einer ansonsten goldenen Pendeluhr. Länge wird von der
-        Aufrufstelle aus bestimmt (dort jetzt ~0.40x statt 0.85x des
-        Minutenzeigers)."""
+    def _simple_second_hand(angle_deg: float, length: float, width: float):
+        """FIX ("der rote Zeiger hat da nix hinten, der ist einfach
+        ein roter Strich" / "der ist nichtmal mittig"): der Schwanz
+        (tail_len) + Gegengewicht-Kreis hinter dem Drehpunkt ist komplett
+        weg - genau DAS hat den Strich optisch aus der Mitte verschoben,
+        weil die Linie dadurch nicht AB der Nabe, sondern von einem
+        Punkt dahinter gezeichnet wurde. Jetzt eine reine, zentrierte
+        Linie von der Nabe (cx, cy) bis zur Spitze, sonst nichts -
+        den Drehpunkt selbst deckt der gemeinsame Nabenpunkt
+        (_glow_dot(cx, cy, ...) ganz am Ende der Funktion) ab, wie bei
+        den anderen beiden Zeigern auch."""
         RED = (0.95, 0.20, 0.20)
         RED_A = (0.95, 0.20, 0.20, 0.95)
         ang = math.radians(angle_deg)
         dx, dy = math.sin(ang), -math.cos(ang)
-        x1, y1 = cx - dx * tail_len, cy - dy * tail_len
         x2, y2 = cx + dx * length, cy + dy * length
         for mult, a in ((2.6, 0.10), (1.6, 0.16)):
             cr.set_source_rgba(*RED, a)
             cr.set_line_width(width * mult)
             cr.set_line_cap(cairo.LineCap.ROUND)
-            cr.move_to(x1, y1); cr.line_to(x2, y2); cr.stroke()
+            cr.move_to(cx, cy); cr.line_to(x2, y2); cr.stroke()
         cr.set_source_rgba(*RED_A)
         cr.set_line_width(width)
         cr.set_line_cap(cairo.LineCap.ROUND)
-        cr.move_to(x1, y1); cr.line_to(x2, y2); cr.stroke()
-        for mult, a in ((2.6, 0.08), (1.8, 0.13)):
-            cr.set_source_rgba(*RED, a)
-            cr.arc(x1, y1, tail_r * mult, 0, 2 * math.pi)
-            cr.fill()
-        cr.set_source_rgba(*RED_A)
-        cr.arc(x1, y1, tail_r, 0, 2 * math.pi)
-        cr.fill()
+        cr.move_to(cx, cy); cr.line_to(x2, y2); cr.stroke()
 
     # FIX, diesmal an den Pixel-Koordinaten des Referenzfotos vermessen
     # (siehe Chat): Minutenzeiger reicht dort fast bis zum äußeren
@@ -6457,10 +6661,10 @@ def _draw_analog_clock_glow(widget: Gtk.DrawingArea, cr, cfg: dict) -> bool:
         # FIX: 1/2 bis 1/3 der vorherigen Länge (0.85 -> 0.40 des
         # Minutenzeigers).
         sec_len = minute_len * 0.40
-        _simple_second_hand(sec * 6, sec_len, 0.6, minute_len * 0.12, max(1.0, r * 0.022))
+        _simple_second_hand(sec * 6, sec_len, 0.6)
 
-    _tapered_hand(hour * 30, hour_len, max(0.9, r * 0.013), max(0.4, r * 0.006), 0.70, max(2.2, r * 0.050))
-    _tapered_hand(minute * 6, minute_len, max(0.7, r * 0.010), max(0.3, r * 0.0045), 0.69, max(1.8, r * 0.045))
+    _tapered_hand(hour * 30, hour_len, max(0.8, r * 0.0112), 0.70, max(2.2, r * 0.050))
+    _tapered_hand(minute * 6, minute_len, max(0.6, r * 0.0088), 0.69, max(1.8, r * 0.045))
 
     if cfg.get("milliseconds"):
         # Eigener, schnell rotierender Millisekunden-Zeiger - macht EINE
@@ -6477,7 +6681,36 @@ def _draw_analog_clock_glow(widget: Gtk.DrawingArea, cr, cfg: dict) -> bool:
         cr.line_to(cx + dx * r * 0.30, cy + dy * r * 0.30)
         cr.stroke()
 
-    _glow_dot(cx, cy, 2.6)
+    # FIX ("wo ist das in der Mitte für die 2 Zeiger? Das sehe ich
+    # nicht"): der alte Nabenpunkt war nur 2.6px fix, unabhängig von
+    # der Widget-Größe, und in GOLD - also fast genauso hell/groß wie
+    # die Zeiger selbst, die dort ohnehin schon zusammenlaufen. Dadurch
+    # ging er optisch komplett unter. Jetzt ein klar sichtbarer, mit r
+    # mitskalierender Nabenknauf.
+    # FIX ("beim Kreis in der Mitte ist ein schwarzer Rand oder eine
+    # Lücke -> weg"): der dunkle Kontur-Strich ist komplett entfernt.
+    # FIX ("der Glow in der Mitte ist stufenhaft statt flüssig"):
+    # 2 harte Halo-Stufen durch einen feinen, quadratisch
+    # abklingenden Verlauf über mehrere Stufen ersetzt.
+    # FIX ("die Mitte der beiden Uhren stimmt wieder nicht"): am Foto
+    # nachgemessen ist die Nabe eine GROSSE dunkle Scheibe (Radius
+    # ~0.078r - ich hatte nur 0.052r) mit einem kleinen helleren Stift
+    # darin (jetzt exakt mittig). Jetzt genauso: große Scheibe + kleiner,
+    # dunklerer Stift (invertierte Helligkeit), ohne Kontur/Lücke.
+    pivot_r = max(3.0, r * 0.078)
+    N_GLOW_STEPS = 9
+    for s_ in range(N_GLOW_STEPS, 0, -1):
+        st = s_ / N_GLOW_STEPS
+        a = 0.20 * (1 - st) ** 2
+        cr.set_source_rgba(*GLOW, a)
+        cr.arc(cx, cy, pivot_r * (1 + 1.8 * st * st), 0, 2 * math.pi)
+        cr.fill()
+    cr.set_source_rgba(*GOLD)
+    cr.arc(cx, cy, pivot_r, 0, 2 * math.pi)
+    cr.fill()
+    cr.set_source_rgba(0.60, 0.52, 0.27, 0.95)
+    cr.arc(cx, cy, pivot_r * 0.34, 0, 2 * math.pi)
+    cr.fill()
     return False
 
 def _clock_content(win: Gtk.Window) -> Gtk.Box:
@@ -14729,7 +14962,7 @@ def _applauncher_folder_cell(node: dict, on_click) -> Gtk.Button:
     return b
 
 def _applauncher_child_row(node: dict, on_open, on_remove, on_change_icon,
-                            on_move_up, on_move_down) -> Gtk.Widget:
+                            on_move_up, on_move_down, on_move_to=None) -> Gtk.Widget:
     """Zeile innerhalb eines geöffneten Ordners. Icon ist IMMER sein
     eigener kleiner Button (klicken = Icon ändern) - getrennt vom
     Namens-Teil, weil GTK keine Buttons ineinander verschachteln kann.
@@ -14783,6 +15016,15 @@ def _applauncher_child_row(node: dict, on_open, on_remove, on_change_icon,
     # Reorder-Pfeile und ✕ gibt's NUR für user-eigene Einträge - für
     # menu.json-Einträge (on_* ist dann None) werden sie gar nicht erst
     # gebaut, statt sie nur ausgegraut anzuzeigen (read-only = read-only).
+    # Direktes Verschieben in einen anderen Ordner (statt Entfernen +
+    # Neu-Einordnen aus Unsorted) - nur für user-eigene Apps.
+    if on_move_to is not None:
+        mv = Gtk.Button.new_from_icon_name("folder-symbolic", Gtk.IconSize.MENU)
+        mv.set_relief(Gtk.ReliefStyle.NONE)
+        mv.set_tooltip_text("Move to another folder…")
+        mv.connect("clicked", lambda _b: on_move_to())
+        row.pack_start(mv, False, False, 0)
+
     if on_move_up is not None or on_move_down is not None:
         up = Gtk.Button.new_from_icon_name("go-up-symbolic", Gtk.IconSize.MENU)
         up.set_relief(Gtk.ReliefStyle.NONE)
@@ -15047,11 +15289,20 @@ def _build_app_launcher_tab(win: Gtk.Window) -> Gtk.Box:
     back_btn.set_no_show_all(True)
     save_btn = btn("󰆓  Save")
     save_btn.set_sensitive(False)
+    # Nur sichtbar, wenn gerade ein user-eigener Root-Ordner offen ist:
+    # Icon + "hidden"-Flag nachträglich ändern (ging vorher nur beim
+    # Anlegen). Systemordner (menu.json) bleiben read-only - der Launcher
+    # ignoriert beim Mergen Icon/hidden von Usermenu.json-Stubs.
+    edit_folder_btn = Gtk.Button.new_from_icon_name("document-edit-symbolic", Gtk.IconSize.BUTTON)
+    edit_folder_btn.set_relief(Gtk.ReliefStyle.NONE)
+    edit_folder_btn.set_tooltip_text("Edit this folder (icon / hidden)")
+    edit_folder_btn.set_no_show_all(True)
     reload_btn = Gtk.Button.new_from_icon_name("view-refresh-symbolic", Gtk.IconSize.BUTTON)
     reload_btn.set_relief(Gtk.ReliefStyle.NONE)
     reload_btn.set_tooltip_text("Discard unsaved changes & reload from disk")
     head_row.pack_start(back_btn, False, False, 0)
     head_row.pack_start(breadcrumb_sw, True, True, 0)
+    head_row.pack_start(edit_folder_btn, False, False, 0)
     head_row.pack_start(reload_btn, False, False, 0)
     head_row.pack_start(save_btn, False, False, 0)
     root.pack_start(head_row, False, False, 0)
@@ -15233,6 +15484,88 @@ def _build_app_launcher_tab(win: Gtk.Window) -> Gtk.Box:
         dlg.destroy()
         return result
 
+    def _ask_edit_folder(node: dict):
+        """Icon + (nur Root-Ebene) hidden-Flag eines user-eigenen Ordners
+        nachträglich ändern. Gibt {"icon", "hidden"} zurück oder None."""
+        dlg = Gtk.Dialog(title=f"Edit folder: {node.get('name', '?')}", transient_for=win)
+        dlg.set_name("wb-daemon-popup")
+        dlg.set_modal(True)
+        dlg.set_keep_above(True)
+        dlg.set_type_hint(Gdk.WindowTypeHint.DIALOG)
+        dlg.add_buttons("Cancel", Gtk.ResponseType.CANCEL, "Apply", Gtk.ResponseType.OK)
+        box = dlg.get_content_area()
+        icon_e = Gtk.Entry(); icon_e.set_text(node.get("icon") or "folder")
+        icon_e.set_placeholder_text("Icon")
+        box.pack_start(_icon_pick_row(dlg, icon_e), True, True, 4)
+        hidden_cb = Gtk.CheckButton.new_with_label("Hide from launcher's root menu")
+        hidden_cb.set_active(bool(node.get("hidden")))
+        hidden_cb.set_tooltip_text(
+            "Stays in Usermenu.json and still counts as \"ordered\" for Unsorted - "
+            "just never shows up as a tile in TrafkTuxLauncher itself.")
+        box.pack_start(hidden_cb, True, True, 4)
+        dlg.show_all()
+        resp = dlg.run()
+        result = None
+        if resp == Gtk.ResponseType.OK:
+            result = {"icon": icon_e.get_text().strip() or "folder",
+                      "hidden": hidden_cb.get_active()}
+        dlg.destroy()
+        return result
+
+    def _folder_choices() -> list:
+        """Alle Ordner des gemergten Baums als (merged_path, 'A / B')."""
+        out = []
+        def _walk(node, path, names):
+            for i, c in enumerate(node.get("children") or []):
+                if c.get("type") != "folder":
+                    continue
+                cp = path + [i]
+                cn = names + [c.get("name", "?")]
+                out.append((cp, " / ".join(cn)))
+                _walk(c, cp, cn)
+        _walk(state["tree"], [], [])
+        return out
+
+    def _ask_target_folder(exclude_path: list):
+        """Liste aller Ordner zum Anklicken - gibt den merged_path des
+        gewählten Ziels zurück (None bei Abbruch). Der aktuelle Ordner
+        selbst wird nicht angeboten."""
+        dlg = Gtk.Dialog(title="Move to folder", transient_for=win)
+        dlg.set_name("wb-daemon-popup")
+        dlg.set_modal(True)
+        dlg.set_keep_above(True)
+        dlg.set_type_hint(Gdk.WindowTypeHint.DIALOG)
+        dlg.set_default_size(280, 340)
+        dlg.add_buttons("Cancel", Gtk.ResponseType.CANCEL)
+        picked = {"path": None}
+        lst = vbox(2)
+        sw = Gtk.ScrolledWindow()
+        sw.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        sw.set_min_content_height(260)
+        sw.add(lst)
+        def _choose(pth):
+            picked["path"] = pth
+            dlg.response(Gtk.ResponseType.OK)
+        for pth, label in _folder_choices():
+            if pth == exclude_path:
+                continue
+            b = Gtk.Button()
+            b.set_relief(Gtk.ReliefStyle.NONE)
+            b.get_style_context().add_class("bubble")
+            b.get_style_context().add_class("item")
+            lb = Gtk.Label(label=label)
+            lb.set_halign(Gtk.Align.START)
+            lb.set_ellipsize(Pango.EllipsizeMode.START)
+            lb.set_max_width_chars(34)
+            b.add(lb)
+            b.connect("clicked", lambda _b, pp=pth: _choose(pp))
+            lst.pack_start(b, False, False, 0)
+        dlg.get_content_area().pack_start(sw, True, True, 4)
+        dlg.show_all()
+        dlg.run()
+        dlg.destroy()
+        return picked["path"]
+
     # ── Save / Reload ────────────────────────────────────────────────
     def _on_save(_b=None):
         try:
@@ -15405,12 +15738,60 @@ def _build_app_launcher_tab(win: Gtk.Window) -> Gtk.Box:
         _recompute_merged()
         _refresh_folder_area()
 
+    def _on_edit_current_folder(_b=None):
+        path = list(state["cur_path"])
+        resolved = _resolve_user_node(path)
+        if resolved is None:
+            _flash("That's a system folder (menu.json) - can't edit it here")
+            return
+        children, idx = resolved
+        node = children[idx]
+        info = _ask_edit_folder(node)
+        if not info:
+            return
+        node["icon"] = info["icon"]
+        if len(path) == 1:   # "hidden" gibt's nur auf Root-Ebene
+            if info["hidden"]:
+                node["hidden"] = True
+            else:
+                node.pop("hidden", None)
+        _mark_dirty()
+        _recompute_merged()
+        _refresh_all()
+    edit_folder_btn.connect("clicked", _on_edit_current_folder)
+
+    def _on_move_app_to_folder(merged_path: list):
+        """App (user-eigen) direkt in einen anderen Ordner verschieben,
+        ohne den Umweg über Unsorted."""
+        resolved = _resolve_user_node(merged_path)
+        if resolved is None:
+            _flash("That's a system entry (menu.json) - can't move it here")
+            return
+        target = _ask_target_folder(merged_path[:-1])
+        if target is None:
+            return
+        # Namens-Kette des Ziels VOR dem Entfernen bestimmen (basiert auf
+        # dem noch unveränderten gemergten Baum).
+        name_chain = _applauncher_name_chain(state["tree"], target)
+        children, idx = resolved
+        node = children.pop(idx)
+        user_target = _applauncher_resolve_or_create_user_path(state["user_tree"], name_chain)
+        user_target.setdefault("children", []).append(node)
+        _mark_dirty()
+        _recompute_merged()
+        _refresh_all()
+        _flash(f"Moved \"{node.get('name', '?')}\" to {' / '.join(name_chain)}")
+
     # ── Linke Seite neu aufbauen ─────────────────────────────────────
     def _refresh_folder_area():
         for c in folder_area.get_children():
             folder_area.remove(c)
         _refresh_breadcrumb()
         back_btn.set_visible(bool(state["cur_path"]))
+        # Edit-Button: nur in einem geöffneten, user-eigenen Ordner.
+        _cur_node = (_applauncher_node_at(state["tree"], state["cur_path"])
+                     if state["cur_path"] else None)
+        edit_folder_btn.set_visible(bool(_cur_node and _cur_node.get("_source") == "user"))
 
         if not state["cur_path"]:
             grid = Gtk.Grid(column_spacing=6, row_spacing=6)
@@ -15446,7 +15827,9 @@ def _build_app_launcher_tab(win: Gtk.Window) -> Gtk.Box:
                     on_remove=(lambda p=cpath: _on_remove_user(p)) if is_user else None,
                     on_change_icon=(lambda p=cpath: _on_change_icon(p)) if is_user else None,
                     on_move_up=(lambda p=cpath: _move_child(p, -1)) if is_user else None,
-                    on_move_down=(lambda p=cpath: _move_child(p, 1)) if is_user else None)
+                    on_move_down=(lambda p=cpath: _move_child(p, 1)) if is_user else None,
+                    on_move_to=(lambda p=cpath: _on_move_app_to_folder(p))
+                        if (is_user and child.get("type") == "app") else None)
                 folder_area.pack_start(row_w, False, False, 0)
         folder_area.show_all()
         GLib.idle_add(_shrink_to_fit, win)
@@ -15567,6 +15950,91 @@ def _hypr_build_user_autostart_lua(commands: list) -> str:
     lines.append("")
     return "\n".join(lines)
 
+def _prompt_autostart_command(parent: Gtk.Window, existing: list) -> str | None:
+    """Dialog zum Hinzufügen eines Autostart-Eintrags (löst die beiden
+    Ursachen des kaputten Autostart-Tabs, siehe README):
+
+    1) Eingabe: echtes eigenständiges Gtk.Dialog-Toplevel statt Inline-
+       Gtk.Entry im Layer-Shell-Popup (KeyboardMode.NONE -> dort bekommt
+       ein Entry nie Tastaturfokus). Gleiches Muster wie
+       _prompt_text_generic()/_applauncher_pick_icon().
+    2) Auswahl: durchsuchbare Liste ALLER installierten Apps (derselbe
+       .desktop-Scan wie der Launcher-Tab). Klick auf eine App trägt
+       ihren Exec-Befehl automatisch ins Befehlsfeld ein; das Feld
+       bleibt editierbar (z.B. für Argumente) und ist zugleich der Weg
+       für Befehle ohne .desktop-Datei.
+
+    Bereits eingetragene Befehle werden in der Liste ausgeblendet.
+    Gibt den Befehl zurück oder None bei Abbruch/leerer Eingabe."""
+    dlg = Gtk.Dialog(title="Add autostart entry", transient_for=parent)
+    dlg.set_name("wb-daemon-popup")
+    dlg.set_modal(True)
+    dlg.set_keep_above(True)
+    dlg.set_type_hint(Gdk.WindowTypeHint.DIALOG)
+    dlg.set_default_size(320, 440)
+    dlg.add_buttons("Cancel", Gtk.ResponseType.CANCEL,
+                    "Add", Gtk.ResponseType.OK)
+    dlg.set_default_response(Gtk.ResponseType.OK)
+    box = dlg.get_content_area()
+
+    taken = {c.strip() for c in existing}
+    apps = [a for a in _applauncher_scan_desktop_apps()
+            if a["exec"].strip() not in taken]
+
+    search_e = Gtk.SearchEntry()
+    search_e.set_placeholder_text("Search installed apps…")
+    list_box = vbox(2)
+    list_sw = Gtk.ScrolledWindow()
+    list_sw.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+    list_sw.set_min_content_height(250)
+    list_sw.add(list_box)
+
+    cmd_e = Gtk.Entry()
+    cmd_e.set_placeholder_text("…or type a command, e.g. nm-applet")
+    cmd_e.set_activates_default(True)
+
+    def _populate(filter_text: str = ""):
+        for c in list_box.get_children():
+            list_box.remove(c)
+        ft = filter_text.strip().casefold()
+        shown = [a for a in apps if not ft or ft in a["name"].casefold()
+                 or ft in a["exec"].casefold()]
+        for a in shown[:200]:
+            b = Gtk.Button()
+            b.set_relief(Gtk.ReliefStyle.NONE)
+            b.get_style_context().add_class("bubble")
+            b.get_style_context().add_class("item")
+            row = hbox(8)
+            row.pack_start(_applauncher_icon_img(a["icon"]), False, False, 0)
+            lbl = Gtk.Label(label=a["name"])
+            lbl.set_halign(Gtk.Align.START)
+            lbl.set_ellipsize(Pango.EllipsizeMode.END)
+            lbl.set_max_width_chars(30)
+            row.pack_start(lbl, True, True, 0)
+            b.add(row)
+            b.set_tooltip_text(a["exec"])
+            # Klick = Befehl ins (editierbare) Feld eintragen, NICHT
+            # sofort hinzufügen - so lassen sich Argumente noch ergänzen.
+            b.connect("clicked", lambda _b, ex=a["exec"]: (
+                cmd_e.set_text(ex), cmd_e.grab_focus(), cmd_e.set_position(-1)))
+            list_box.pack_start(b, False, False, 0)
+        if not shown:
+            list_box.pack_start(bitem("No matching apps", dim=True), False, False, 0)
+        list_box.show_all()
+    search_e.connect("search-changed", lambda _e: _populate(search_e.get_text()))
+    _populate()
+
+    box.pack_start(search_e, False, False, 4)
+    box.pack_start(list_sw, True, True, 4)
+    box.pack_start(sep(), False, False, 2)
+    box.pack_start(cmd_e, False, False, 6)
+    dlg.show_all()
+    search_e.grab_focus()
+    resp = dlg.run()
+    val = cmd_e.get_text().strip() if resp == Gtk.ResponseType.OK else None
+    dlg.destroy()
+    return val or None
+
 def _build_apps_autostart_tab(win: Gtk.Window) -> Gtk.Box:
     root = vbox(4); pad(root, h=4, v=6)
     state = {"commands": _hypr_parse_user_autostart(_hypr_read_user_config("UserAutostart.lua"))}
@@ -15587,12 +16055,12 @@ def _build_apps_autostart_tab(win: Gtk.Window) -> Gtk.Box:
         save_btn.set_sensitive(True)
         save_btn.set_label("󰆓  Save*")
 
+    # Kein Inline-Entry mehr (nimmt im Layer-Shell-Popup keine Tastatur
+    # an) - stattdessen ein Dialog mit App-Liste, siehe
+    # _prompt_autostart_command().
     add_row = hbox(6)
-    cmd_e = Gtk.Entry()
-    cmd_e.set_placeholder_text("Command to run at startup, e.g. nm-applet")
-    add_btn = Gtk.Button.new_from_icon_name("list-add-symbolic", Gtk.IconSize.BUTTON)
-    add_btn.set_relief(Gtk.ReliefStyle.NONE)
-    add_row.pack_start(cmd_e, True, True, 0)
+    add_row.set_halign(Gtk.Align.CENTER)
+    add_btn = btn("＋  Add app / command…")
     add_row.pack_start(add_btn, False, False, 0)
 
     list_sw, list_box = scroll_box(200)
@@ -15627,16 +16095,13 @@ def _build_apps_autostart_tab(win: Gtk.Window) -> Gtk.Box:
             _refresh_list()
 
     def _on_add(_b=None):
-        cmd = cmd_e.get_text().strip()
-        if not cmd:
+        cmd = _prompt_autostart_command(win, state["commands"])
+        if not cmd or cmd in state["commands"]:
             return
         state["commands"].append(cmd)
-        cmd_e.set_text("")
         _mark_dirty()
         _refresh_list()
     add_btn.connect("clicked", _on_add)
-    cmd_e.set_activates_default(True)
-    cmd_e.connect("activate", _on_add)
 
     def _on_save(_b=None):
         try:
@@ -15659,6 +16124,542 @@ def _build_apps_autostart_tab(win: Gtk.Window) -> Gtk.Box:
     root.pack_start(foot, False, False, 4)
     _refresh_list()
     return root
+
+# ════════════════════════════════════════════════════════════
+#  App Editor Tab 5: Wine / GameScope
+#
+#  Verwaltet die drei Dateien, die GameScopeWineWrapper.sh bei JEDEM
+#  Wine-Start frisch einliest (Änderungen wirken also sofort, kein
+#  Neustart nötig):
+#    ~/.config/hypr/GameScopeWrapper.conf             (KEY=VALUE)
+#    ~/.config/hypr/GameScopeExcludes.txt             (.exe -> ohne gamescope)
+#    ~/.config/hypr/GameScopeDgvoodooExcludes.txt     (.exe -> ohne dgVoodoo2)
+#  Die Spielliste kommt aus ~/.local/share/applications/wine/**.desktop;
+#  pro Eintrag wird - wie im Wrapper - die .lnk aufgelöst, um den echten
+#  .exe-Namen zu bekommen, und derselbe DDRAW.DLL-Check gemacht
+#  (`strings -a <exe> | grep -qi ddraw.dll`, hier als Byte-Suche).
+# ════════════════════════════════════════════════════════════
+
+_WINE_CONF_DEFAULTS = {
+    "Enabled": "true", "Filter": "nearest", "Scaler": "fit",
+    "Sharpness": "2", "ForceWindowsFullscreen": "false", "DgvoodooVersion": "old",
+}
+_WINE_FILTERS = ("linear", "nearest", "fsr", "nis", "pixel")
+_WINE_SCALERS = ("auto", "integer", "fit", "fill", "stretch")
+# Dieselbe Liste wie UtilityList im Wrapper - die werden NIE gewrappt,
+# also hat ein Exclude dafür keinen Sinn.
+_WINE_UTILITIES = {"winecfg.exe", "regedit.exe", "wineboot.exe", "explorer.exe",
+                   "taskmgr.exe", "uninstaller.exe", "eject.exe", "control.exe",
+                   "notepad.exe", "wordpad.exe", "cmd.exe", "winefile.exe"}
+
+def _wine_cfg_dir() -> Path:
+    base = os.environ.get("XDG_CONFIG_HOME") or str(Path(HOME) / ".config")
+    return Path(base) / "hypr"
+def _wine_conf_path() -> Path:      return _wine_cfg_dir() / "GameScopeWrapper.conf"
+def _wine_gs_exclude_path() -> Path: return _wine_cfg_dir() / "GameScopeExcludes.txt"
+def _wine_dg_exclude_path() -> Path: return _wine_cfg_dir() / "GameScopeDgvoodooExcludes.txt"
+def _wine_desktop_dir() -> Path:
+    return Path(HOME) / ".local" / "share" / "applications" / "wine"
+
+_wine_backed_up: set = set()
+def _wine_backup_once(path: Path) -> None:
+    """backup_file() legt bei jedem Aufruf ein neues Timestamp-Backup an -
+    bei Toggles wäre das Spam, daher nur 1x pro Datei und Daemon-Lauf."""
+    if str(path) not in _wine_backed_up:
+        _wine_backed_up.add(str(path))
+        backup_file(path)
+
+_WINE_CONF_LINE_RE = re.compile(r'^\s*([A-Za-z_][A-Za-z0-9_]*)=(.*?)\s*$')
+
+def _wine_conf_read() -> dict:
+    vals = dict(_WINE_CONF_DEFAULTS)
+    try:
+        text = _wine_conf_path().read_text(encoding="utf-8")
+    except Exception:
+        return vals
+    for line in text.splitlines():
+        if line.lstrip().startswith("#"):
+            continue
+        m = _WINE_CONF_LINE_RE.match(line)
+        if not m or m.group(1) not in vals:
+            continue
+        v = m.group(2).strip()
+        if len(v) >= 2 and v[0] == v[-1] and v[0] in "\"'":
+            v = v[1:-1]
+        else:
+            v = re.split(r"\s+#", v, maxsplit=1)[0].strip()   # Shell: unquoted + " #..." = Kommentar
+        vals[m.group(1)] = v        # wie beim Shell-source: letzte Zuweisung gewinnt
+    return vals
+
+def _wine_conf_write(key: str, value: str) -> None:
+    """Ersetzt NUR die Zeile(n) `key=...` in-place (Kommentare und Rest
+    der Datei bleiben unangetastet); fehlt der Key, wird er angehängt."""
+    path = _wine_conf_path()
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+        existed = True
+    except FileNotFoundError:
+        existed = False
+        lines = ["# GameScopeWrapper.conf",
+                 "# Geschrieben vom App Editor (Wine-Tab). Plain KEY=VALUE, wird von",
+                 "# GameScopeWineWrapper.sh per `source` eingelesen.", ""]
+    pat = re.compile(r'^\s*' + re.escape(key) + r'=')
+    found = False
+    for i, l in enumerate(lines):
+        if pat.match(l):
+            lines[i] = f"{key}={value}"
+            found = True
+    if not found:
+        lines.append(f"{key}={value}")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if existed:
+        _wine_backup_once(path)
+    atomic_write_text(path, "\n".join(lines) + "\n")
+
+def _wine_list_has(path: Path, exe: str) -> bool:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except Exception:
+        return False
+    low = exe.lower()
+    for l in text.splitlines():
+        s = l.strip()
+        if s and not s.startswith("#") and s.lower() == low:
+            return True
+    return False
+
+def _wine_list_set(path: Path, exe: str, on: bool) -> None:
+    """Trägt exe (Basename) in eine Exclude-Liste ein bzw. aus. Kommentare
+    und alle anderen Zeilen bleiben erhalten. Wichtig: der Wrapper liest
+    mit `IFS= read -r` und vergleicht die Zeile EXAKT - deshalb wird der
+    Name ohne Leerraum drumherum geschrieben."""
+    if _wine_list_has(path, exe) == on:
+        return
+    low = exe.lower()
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+        existed = True
+    except FileNotFoundError:
+        lines, existed = [], False
+    kept = [l for l in lines
+            if (not l.strip()) or l.strip().startswith("#") or l.strip().lower() != low]
+    if on:
+        kept.append(exe)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if existed:
+        _wine_backup_once(path)
+    atomic_write_text(path, "\n".join(kept) + "\n")
+
+# ── .desktop -> echte .exe auflösen ───────────────────────────────────
+_WINE_PREFIX_RE = re.compile(r'WINEPREFIX=(?:"([^"]+)"|(\S+))')
+_WINE_TARGET_WIN_RE = re.compile(r'([A-Za-z]:\\[^"\n]*?\.(?:lnk|exe))(?=["\s]|$)', re.I)
+_WINE_TARGET_UNIX_RE = re.compile(r'(?:^|[\s"])(/[^"\s]+?\.(?:lnk|exe))(?=["\s]|$)', re.I)
+# Nackter Dateiname ohne Pfad (z.B. `wine winecfg.exe`) - wie im Wrapper
+# zählt der als Launch-Target (wichtig, damit Utilities erkannt+ausgefiltert werden).
+_WINE_TARGET_BARE_RE = re.compile(r'(?:^|[\s"])([^\s"/\\:]+\.(?:lnk|exe))(?=["\s]|$)', re.I)
+
+def _wine_unescape_exec(s: str) -> str:
+    # Wine schreibt Backslashes im Exec= mehrfach escaped (C:\\\\users\\\\...),
+    # Leerzeichen als "\ " - beides zurück auf normale Form bringen.
+    s = re.sub(r'\\{2,}', r'\\', s)
+    return s.replace('\\ ', ' ')
+
+def _wine_resolve_ci(base: Path, rel: str):
+    """Windows ist case-insensitiv, Linux nicht - Pfad Komponente für
+    Komponente ohne Beachtung der Groß-/Kleinschreibung auflösen."""
+    cur = base
+    for part in [p for p in rel.split("/") if p]:
+        direct = cur / part
+        if direct.exists():
+            cur = direct
+            continue
+        try:
+            match = next((c for c in cur.iterdir() if c.name.lower() == part.lower()), None)
+        except Exception:
+            return None
+        if match is None:
+            return None
+        cur = match
+    return cur
+
+def _wine_win_to_unix(prefix: Path, winpath: str):
+    m = re.match(r'^([A-Za-z]):[\\/]*(.*)$', winpath)
+    if not m:
+        return None
+    drive, rel = m.group(1).lower(), m.group(2).replace("\\", "/")
+    bases = [prefix / "drive_c"] if drive == "c" else [prefix / "dosdevices" / f"{drive}:", prefix / "drive_c"]
+    for base in bases:
+        r = _wine_resolve_ci(base, rel)
+        if r is not None:
+            return r
+    return None
+
+def _wine_lnk_target(path: Path):
+    """Ziel-Pfad (Windows-Stil) aus einer .lnk lesen - derselbe Parser wie
+    im Wrapper (LinkInfo -> LocalBasePath)."""
+    import struct
+    try:
+        data = path.read_bytes()
+        if len(data) < 76 or data[0:4] != b"\x4c\x00\x00\x00":
+            return None
+        flags = struct.unpack_from("<I", data, 20)[0]
+        offset = 76
+        if flags & 0x1:     # HasLinkTargetIDList
+            offset += 2 + struct.unpack_from("<H", data, offset)[0]
+        if flags & 0x2:     # HasLinkInfo
+            li = offset
+            li_flags = struct.unpack_from("<I", data, li + 8)[0]
+            if li_flags & 0x1:
+                start = li + struct.unpack_from("<I", data, li + 16)[0]
+                end = data.index(b"\x00", start)
+                return data[start:end].decode("latin-1")
+    except Exception:
+        return None
+    return None
+
+_wine_ddraw_cache: dict = {}
+def _wine_exe_uses_ddraw(path) -> "bool | None":
+    """Entspricht `strings -a <exe> | grep -qi ddraw.dll` (Byte-Suche in
+    Blöcken mit Überlappung, ohne die ganze Datei in den RAM zu laden).
+    None = Datei nicht lesbar."""
+    if path is None:
+        return None
+    try:
+        st = os.stat(path)
+    except Exception:
+        return None
+    key = (str(path), st.st_mtime_ns, st.st_size)
+    if key in _wine_ddraw_cache:
+        return _wine_ddraw_cache[key]
+    needle = b"ddraw.dll"
+    found = False
+    try:
+        with open(path, "rb") as f:
+            tail = b""
+            while True:
+                chunk = f.read(4 * 1024 * 1024)
+                if not chunk:
+                    break
+                buf = (tail + chunk).lower()
+                if needle in buf:
+                    found = True
+                    break
+                tail = buf[-(len(needle) - 1):]
+    except Exception:
+        return None
+    _wine_ddraw_cache[key] = found
+    return found
+
+def _wine_entry_from_desktop(desktop: Path):
+    cp = configparser.RawConfigParser(strict=False, interpolation=None)
+    try:
+        cp.read(desktop, encoding="utf-8")
+    except Exception:
+        return None
+    if not cp.has_section("Desktop Entry"):
+        return None
+    sec = cp["Desktop Entry"]
+    if sec.get("Type", "Application") != "Application":
+        return None
+    if sec.get("Hidden", "false").strip().lower() == "true":
+        return None
+    exec_raw = sec.get("Exec", "")
+    if not exec_raw.strip():
+        return None
+    exec_s = _wine_unescape_exec(exec_raw)
+    prefix = Path(os.path.expanduser("~/.wine"))
+    pm = _WINE_PREFIX_RE.search(exec_s)
+    if pm:
+        prefix = Path(os.path.expandvars(os.path.expanduser(pm.group(1) or pm.group(2))))
+    stripped = _WINE_PREFIX_RE.sub(" ", exec_s)
+
+    target = None
+    m = (_WINE_TARGET_WIN_RE.search(stripped) or _WINE_TARGET_UNIX_RE.search(stripped)
+         or _WINE_TARGET_BARE_RE.search(stripped))
+    if m:
+        target = m.group(1)
+
+    exe_name, exe_path = None, None
+    if target:
+        is_win = bool(re.match(r'^[A-Za-z]:', target))
+        if target.lower().endswith(".lnk"):
+            lnk = _wine_win_to_unix(prefix, target) if is_win else Path(target)
+            if lnk is not None and Path(lnk).is_file():
+                tw = _wine_lnk_target(Path(lnk))
+                if tw:
+                    exe_path = _wine_win_to_unix(prefix, tw)
+                    exe_name = exe_path.name if exe_path is not None \
+                        else Path(tw.replace("\\", "/")).name
+        else:
+            exe_path = _wine_win_to_unix(prefix, target) if is_win else Path(target)
+            exe_name = (exe_path.name if exe_path is not None
+                        else Path(target.replace("\\", "/")).name)
+    if exe_name and exe_name.lower() in _WINE_UTILITIES:
+        return None
+    return {"name": sec.get("Name", "").strip() or desktop.stem,
+            "exe": exe_name, "exe_path": exe_path, "desktop": str(desktop)}
+
+def _wine_scan_games() -> list:
+    """Alle Wine-.desktop-Einträge (ohne Wine-Utilities), pro .exe nur
+    einmal (dasselbe Spiel hat oft Desktop- UND Startmenü-Eintrag).
+    ddraw ist True/False/None (None = exe nicht auffindbar/lesbar)."""
+    base = _wine_desktop_dir()
+    out, seen_exe = [], set()
+    if not base.is_dir():
+        return out
+    try:
+        files = sorted(base.rglob("*.desktop"))
+    except Exception:
+        return out
+    for f in files:
+        e = _wine_entry_from_desktop(f)
+        if e is None:
+            continue
+        if e["exe"]:
+            k = e["exe"].lower()
+            if k in seen_exe:
+                continue
+            seen_exe.add(k)
+        e["ddraw"] = _wine_exe_uses_ddraw(e["exe_path"]) if e["exe_path"] else None
+        out.append(e)
+    out.sort(key=lambda e: e["name"].casefold())
+    return out
+
+def _build_apps_wine_tab(win: Gtk.Window) -> Gtk.Box:
+    root = vbox(4); pad(root, h=4, v=6)
+    state = {"cfg": _wine_conf_read(), "timer": None}
+
+    status_lbl = Gtk.Label(label="")
+    status_lbl.get_style_context().add_class("caption")
+    status_lbl.set_opacity(0.75)
+    status_lbl.set_line_wrap(True)
+    status_lbl.set_no_show_all(True)
+    status_lbl.hide()
+    def _flash(text: str, ms: int = 2200):
+        status_lbl.set_label(text)
+        status_lbl.show()
+        GLib.timeout_add(ms, lambda: (status_lbl.hide(), False)[1])
+
+    def _save_key(key: str, value: str) -> bool:
+        try:
+            _wine_conf_write(key, value)
+            state["cfg"][key] = value
+            _flash("Saved — applies to the next Wine launch")
+            return True
+        except Exception as e:
+            _flash(f"Error: {e}")
+            return False
+
+    def _set_active(b: Gtk.Button, on: bool):
+        ctx = b.get_style_context()
+        if on: ctx.add_class("active")
+        else:  ctx.remove_class("active")
+
+    # ── Globale Einstellungen ────────────────────────────────────────
+    enabled_btn = btn("")
+    games_box_holder = vbox(2)      # wird unten befüllt; bei Enabled=false ausgegraut
+
+    def _refresh_enabled():
+        on = state["cfg"].get("Enabled", "true") == "true"
+        enabled_btn.set_label("Gamescope for Wine:  On" if on else "Gamescope for Wine:  Off")
+        _set_active(enabled_btn, on)
+        games_box_holder.set_sensitive(on)
+    def _on_enabled(_b):
+        on = state["cfg"].get("Enabled", "true") == "true"
+        if _save_key("Enabled", "false" if on else "true"):
+            _refresh_enabled()
+    enabled_btn.connect("clicked", _on_enabled)
+
+    filter_ctrl = _SegmentedControl()
+    for f in _WINE_FILTERS:
+        filter_ctrl.append_text(f)
+    cur_f = state["cfg"].get("Filter", "nearest")
+    filter_ctrl.set_active(_WINE_FILTERS.index(cur_f) if cur_f in _WINE_FILTERS else 1)
+
+    scaler_ctrl = _SegmentedControl()
+    for sc in _WINE_SCALERS:
+        scaler_ctrl.append_text(sc)
+    cur_s = state["cfg"].get("Scaler", "fit")
+    scaler_ctrl.set_active(_WINE_SCALERS.index(cur_s) if cur_s in _WINE_SCALERS else 2)
+
+    try:
+        sharp_val = max(0, min(20, int(float(state["cfg"].get("Sharpness", "2")))))
+    except ValueError:
+        sharp_val = 2
+    def _on_sharp_changed(scale):
+        v = str(int(round(scale.get_value())))
+        if state["timer"]:
+            GLib.source_remove(state["timer"])
+        # Entprellen: pro Ziehen eine Schreib-Aktion, nicht pro Pixel.
+        state["timer"] = GLib.timeout_add(
+            450, lambda: (state.__setitem__("timer", None), _save_key("Sharpness", v), False)[2])
+    sharp_row, sharp_scale = bslider("✦", 0, 20, 1, sharp_val, _on_sharp_changed)
+    sharp_hint = Gtk.Label(label="0 = sharpest, 20 = softest — only used with fsr / nis")
+    sharp_hint.get_style_context().add_class("caption"); sharp_hint.set_opacity(0.6)
+
+    def _refresh_sharp():
+        usable = state["cfg"].get("Filter") in ("fsr", "nis")
+        sharp_row.set_sensitive(usable)
+        sharp_hint.set_opacity(0.6 if usable else 0.35)
+    def _on_filter(_c):
+        v = filter_ctrl.get_active_text()
+        if v and _save_key("Filter", v):
+            _refresh_sharp()
+    filter_ctrl.connect("changed", _on_filter)
+    def _on_scaler(_c):
+        v = scaler_ctrl.get_active_text()
+        if v:
+            _save_key("Scaler", v)
+    scaler_ctrl.connect("changed", _on_scaler)
+
+    force_btn = btn("")
+    def _refresh_force():
+        on = state["cfg"].get("ForceWindowsFullscreen", "false") == "true"
+        force_btn.set_label("Force windows fullscreen:  " + ("On" if on else "Off"))
+        _set_active(force_btn, on)
+    def _on_force(_b):
+        on = state["cfg"].get("ForceWindowsFullscreen", "false") == "true"
+        if _save_key("ForceWindowsFullscreen", "false" if on else "true"):
+            _refresh_force()
+    force_btn.connect("clicked", _on_force)
+    force_btn.set_tooltip_text(
+        "Treats every window inside gamescope as fullscreen. Does NOT fix games that\n"
+        "render into a small fixed window (use dgVoodoo2 for those). Default: off.")
+
+    dgv_ctrl = _SegmentedControl()
+    for v in ("old", "new"):
+        dgv_ctrl.append_text(v)
+    dgv_ctrl.set_active(1 if state["cfg"].get("DgvoodooVersion", "old") == "new" else 0)
+    dgv_ctrl.set_tooltip_text(
+        "old = much older dgVoodoo2 build, more reliable for ~20+ year old games\n"
+        "new = latest build, for less ancient DirectDraw titles")
+    def _on_dgv(_c):
+        v = dgv_ctrl.get_active_text()
+        if v:
+            _save_key("DgvoodooVersion", v)
+    dgv_ctrl.connect("changed", _on_dgv)
+
+    def _caption(text: str) -> Gtk.Label:
+        l = Gtk.Label(label=text)
+        l.get_style_context().add_class("caption"); l.set_opacity(0.75)
+        return l
+
+    root.pack_start(enabled_btn, False, False, 0)
+    root.pack_start(_caption("Upscale filter"), False, False, 0)
+    root.pack_start(filter_ctrl.widget, False, False, 0)
+    root.pack_start(_caption("Scaler"), False, False, 0)
+    root.pack_start(scaler_ctrl.widget, False, False, 0)
+    root.pack_start(sharp_row, False, False, 0)
+    root.pack_start(sharp_hint, False, False, 0)
+    root.pack_start(force_btn, False, False, 2)
+    root.pack_start(_caption("dgVoodoo2 version (for DirectDraw games)"), False, False, 0)
+    root.pack_start(dgv_ctrl.widget, False, False, 0)
+    root.pack_start(sep(), False, False, 4)
+
+    # ── Spieleliste ──────────────────────────────────────────────────
+    head = hbox(6)
+    head.pack_start(bsec("Wine games"), True, True, 0)
+    rescan_btn = Gtk.Button.new_from_icon_name("view-refresh-symbolic", Gtk.IconSize.BUTTON)
+    rescan_btn.set_relief(Gtk.ReliefStyle.NONE)
+    rescan_btn.set_tooltip_text("Rescan ~/.local/share/applications/wine")
+    head.pack_start(rescan_btn, False, False, 0)
+    root.pack_start(head, False, False, 0)
+    root.pack_start(_caption("Gamescope off = launch this game through raw Wine.\n"
+                             "dgVoodoo off = never inject dgVoodoo2 (only games importing DDRAW.DLL)."),
+                    False, False, 2)
+
+    list_sw, list_box = scroll_box(220)
+    games_box_holder.pack_start(list_sw, False, False, 0)
+    root.pack_start(games_box_holder, False, False, 0)
+    root.pack_start(status_lbl, False, False, 2)
+
+    def _render(entries: list):
+        for c in list_box.get_children():
+            list_box.remove(c)
+        if not entries:
+            list_box.pack_start(
+                bitem("No Wine games found in ~/.local/share/applications/wine", dim=True),
+                False, False, 0)
+        gs_path, dg_path = _wine_gs_exclude_path(), _wine_dg_exclude_path()
+        for e in entries:
+            row = hbox(4)
+            row.get_style_context().add_class("bubble")
+            row.get_style_context().add_class("item")
+            pad(row, h=6, v=3)
+            lbl = Gtk.Label(label=e["name"])
+            lbl.set_halign(Gtk.Align.START)
+            lbl.set_ellipsize(Pango.EllipsizeMode.END)
+            lbl.set_max_width_chars(16)
+            lbl.set_tooltip_text(e["exe"] or "Could not resolve the .exe of this entry")
+            row.pack_start(lbl, True, True, 0)
+
+            if not e["exe"]:
+                dim = Gtk.Label(label="exe not found")
+                dim.get_style_context().add_class("caption"); dim.set_opacity(0.5)
+                row.pack_start(dim, False, False, 0)
+                list_box.pack_start(row, False, False, 0)
+                continue
+
+            st = {"gs_off": _wine_list_has(gs_path, e["exe"]),
+                  "dg_off": _wine_list_has(dg_path, e["exe"])}
+            gs_b = btn("Gamescope"); gs_b.get_style_context().add_class("compact-btn")
+            dg_b = btn("dgVoodoo");  dg_b.get_style_context().add_class("compact-btn")
+            ddraw = e.get("ddraw")
+
+            def _refresh(st=st, gs_b=gs_b, dg_b=dg_b, ddraw=ddraw):
+                _set_active(gs_b, not st["gs_off"])
+                dg_usable = bool(ddraw) and not st["gs_off"]
+                dg_b.set_sensitive(dg_usable)
+                _set_active(dg_b, dg_usable and not st["dg_off"])
+                if ddraw is False:
+                    dg_b.set_tooltip_text("No DDRAW.DLL import detected - dgVoodoo2 is never injected here")
+                elif ddraw is None:
+                    dg_b.set_tooltip_text("Could not read the .exe to check for DDRAW.DLL")
+                elif st["gs_off"]:
+                    dg_b.set_tooltip_text("Gamescope is off for this game - dgVoodoo2 is skipped too")
+                else:
+                    dg_b.set_tooltip_text("DirectDraw game: dgVoodoo2 gets injected unless switched off")
+            gs_b.set_tooltip_text("On = runs inside gamescope. Off = raw Wine (skips gamescope entirely)")
+            _refresh()
+
+            def _toggle(which: str, exe=e["exe"], st=st, refresh=_refresh):
+                new_off = not st[which]
+                path = gs_path if which == "gs_off" else dg_path
+                try:
+                    _wine_list_set(path, exe, new_off)
+                    st[which] = new_off
+                    refresh()
+                    _flash("Saved — applies to the next launch")
+                except Exception as ex:
+                    _flash(f"Error: {ex}")
+            gs_b.connect("clicked", lambda _b, f=_toggle: f("gs_off"))
+            dg_b.connect("clicked", lambda _b, f=_toggle: f("dg_off"))
+            row.pack_start(gs_b, False, False, 0)
+            row.pack_start(dg_b, False, False, 0)
+            list_box.pack_start(row, False, False, 0)
+        list_box.show_all()
+        GLib.idle_add(_shrink_to_fit, win)
+        return False
+
+    def _rescan(_b=None):
+        for c in list_box.get_children():
+            list_box.remove(c)
+        list_box.pack_start(bitem("Scanning…", dim=True), False, False, 0)
+        list_box.show_all()
+        def _worker():
+            try:
+                entries = _wine_scan_games()
+            except Exception as ex:
+                print(f"[AppEditor/Wine] scan failed: {ex}", file=sys.stderr)
+                entries = []
+            GLib.idle_add(_render, entries)
+        in_thread(_worker)
+    rescan_btn.connect("clicked", _rescan)
+
+    _refresh_enabled(); _refresh_force(); _refresh_sharp()
+    _rescan()
+    return root
+
 
 def _build_settings_apps(page: Gtk.Box, key: str, label: str, win: Gtk.Window) -> None:
     root = vbox(4)
@@ -15690,7 +16691,7 @@ def _build_settings_apps(page: Gtk.Box, key: str, label: str, win: Gtk.Window) -
     stack.add_named(_placeholder("Bar shortcuts editor — coming next"), "bar")
     stack.add_named(_build_apps_autostart_tab(win), "autostart")
     stack.add_named(_placeholder("Default apps — coming last (needs its own research pass)"), "defaults")
-    stack.add_named(_placeholder("Wine/GameScope excludes — coming next"), "wine")
+    stack.add_named(_build_apps_wine_tab(win), "wine")
 
     for name, tlabel, trow in (
             ("launcher", "Launcher", tab_row_top), ("bar", "Bar", tab_row_top),
@@ -16233,6 +17234,16 @@ def build_settings(win: Gtk.Window):
     hub.pack_start(tab_sep(), False, False, 0)
     hub.pack_start(hub_stack, False, False, 0)
     stack.add_named(hub, "hub")
+
+    # Rechtsklick in einer Settings-Unterseite -> zurück zum Hub (die
+    # Seiten bleiben im Stack gebaut, ungespeicherte Zustände gehen
+    # also nicht verloren). Im Hub selbst: False -> Widget schließt.
+    def _settings_right_click_back() -> bool:
+        if stack.get_visible_child_name() in (None, "hub"):
+            return False
+        _switch_stack(stack, win, "hub")
+        return True
+    _right_click_back[win] = _settings_right_click_back
 
     # Kein Apply/Discard mehr: jede Einstellung wird sofort beim
     # Auswählen übernommen (siehe apply_change()) - das Settings-Fenster

@@ -44,6 +44,34 @@ if [[ -f /opt/trafktux-late-overlay.tar ]]; then
 fi
 
 #############################################################################
+# 1b) Executable-Bits fuer eigene Helper-Skripte erzwingen
+#############################################################################
+# GRUND: mkarchiso kopiert airootfs/ IMMER zuerst mit "cp -af
+# --no-preserve=ownership,mode" (_make_custom_airootfs() in mkarchiso,
+# s.o./per Quellcode verifiziert) - das wirft den Modus (inkl. +x!) fuer
+# JEDE Datei weg, die NICHT ueber den Late-Overlay-Tar-Umweg (Block 1 oben)
+# lief UND NICHT explizit in profiledef.sh's file_permissions-Map steht.
+# Fuer Dateien direkt unter airootfs/usr/local/bin/ ist das meistens kein
+# Problem, weil die ueblicherweise schon in profiledef.sh gelistet sind -
+# aber GameScopeWineWrapper.sh liegt bewusst unter usr/local/lib/trafktux/
+# (die wine/wine64-Symlinks in usr/local/bin/ zeigen nur darauf), und dieser
+# Pfad ist NICHT ueber den gleichen file_permissions-Eintrag abgedeckt wie
+# usr/local/bin/ - das Skript kam dadurch ohne +x im fertigen Image an, der
+# Symlink selbst war korrekt, aber hinter ihm stand eine nicht-ausfuehrbare
+# Datei, also lief "wine"/"wine64" effektiv nie durch den Wrapper.
+# Statt das in profiledef.sh nachzupflegen (und das Risiko einzugehen, dass
+# der naechste neue Helper dort wieder vergessen wird), hier stattdessen
+# robust UND unabhaengig von profiledef.sh: alles, was ohnehin als Skript/
+# Helper gedacht ist, bekommt sein +x direkt hier zurueck.
+chmod +x /usr/local/lib/trafktux/GameScopeWineWrapper.sh 2>/dev/null || true
+if [[ -d /usr/local/bin ]]; then
+    find /usr/local/bin -maxdepth 1 -type f -exec chmod +x {} +
+fi
+if [[ -d /usr/local/lib/trafktux ]]; then
+    find /usr/local/lib/trafktux -maxdepth 1 -type f -exec chmod +x {} +
+fi
+
+#############################################################################
 # 2) Live-User anlegen
 #############################################################################
 # Ohne eigenen User zeigt SDDM beim Booten niemanden zum Einloggen an (root
