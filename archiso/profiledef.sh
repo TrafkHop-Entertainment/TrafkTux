@@ -31,6 +31,8 @@ file_permissions=(
 
   ["/usr/local/lib/trafktux/SystemUpdate.sh"]="0:0:755"
 
+  ["/usr/local/bin/hyprlock"]="0:0:755"
+
   ["/etc/sudoers.d/00-sudo-timeout"]="0:0:0440"
 
   # Calamares-Starter + Skripte

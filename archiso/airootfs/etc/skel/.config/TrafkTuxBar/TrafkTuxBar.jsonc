@@ -149,24 +149,6 @@
             "type": "button_row",
             "visible_count": 3,
             "items": [
-                {
-                    "id": "shortcut-kitty",
-                    "icon": "utilities-terminal-symbolic",
-                    "tooltip": "Xfce4 Terminal",
-                    "on_click": "setsid xfce4-terminal && bash ~/.config/hypr/soundctl.sh click &"
-                },
-                {
-                    "id": "shortcut-thunar",
-                    "icon": "system-file-manager-symbolic",
-                    "tooltip": "Thunar",
-                    "on_click": "setsid thunar && bash ~/.config/hypr/soundctl.sh click &"
-                },
-                {
-                    "id": "shortcut-firefox",
-                    "icon": "firefox",
-                    "tooltip": "Firefox",
-                    "on_click": "setsid firefox && bash ~/.config/hypr/soundctl.sh click &"
-                }
             ]
         }
     ],
@@ -205,36 +187,6 @@
             "type": "widget_grid",
             "visible_count": 3,
             "items": [
-                {
-                    "id": "volume",
-                    "icon": "audio-volume-high-symbolic",
-                    "tooltip": "Volume & Audio",
-                    "on_click": "socat - UNIX-CONNECT:/tmp/wb-daemon.sock <<< volume"
-                },
-                {
-                    "id": "network",
-                    "icon": "network-wireless-symbolic",
-                    "tooltip": "Netzwerk / Wi-Fi",
-                    "on_click": "socat - UNIX-CONNECT:/tmp/wb-daemon.sock <<< network"
-                },
-                {
-                    "id": "bluetooth",
-                    "icon": "bluetooth-symbolic",
-                    "tooltip": "Bluetooth",
-                    "on_click": "socat - UNIX-CONNECT:/tmp/wb-daemon.sock <<< bluetooth"
-                },
-                {
-                    "id": "brightness",
-                    "icon": "display-brightness-symbolic",
-                    "tooltip": "Helligkeit & Nachtlicht",
-                    "on_click": "socat - UNIX-CONNECT:/tmp/wb-daemon.sock <<< brightness"
-                },
-                {
-                    "id": "akku",
-                    "icon": "battery-good-symbolic",
-                    "tooltip": "Akku-Info",
-                    "on_click": "socat - UNIX-CONNECT:/tmp/wb-daemon.sock <<< akku"
-                },
                 {
                     "id": "osk",
                     "icon": "input-keyboard-symbolic",

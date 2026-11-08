@@ -124,6 +124,8 @@ SENSITIVE_PREFIXES=(
     "etc/mkinitcpio.d"
     "boot/grub/themes"
     "etc/sddm.conf.d"
+    "etc/modules-load.d/uinput.conf"
+    "etc/udev/rules.d/60-trafkpad.rules"
 )
 
 # ---------------------------------------------------------------------
@@ -445,6 +447,7 @@ if [[ $DRY_RUN -eq 0 && $WITH_FULL -eq 1 && $SENSITIVE_COPIED -gt 0 ]]; then
     # tatsaechlich angeschlossenen Monitor zu korrigieren und grub.cfg
     # entsprechend neu zu bauen.
     echo "Starte trafktux-grub-theme-sync.service, um Bucket/GRUB_GFXMODE zu pruefen..."
+    sudo systemctl daemon-reload
     sudo systemctl restart trafktux-grub-theme-sync.service
 fi
 
@@ -458,12 +461,9 @@ if [[ $DRY_RUN -eq 0 ]]; then
     # der fehlgeschlagene restart einfach still durch, daher ist das
     # nie aufgefallen - genau das Symptom "kompiliert+gesynct, aber
     # trotzdem noch die alte Binary aktiv".
-    systemctl --user restart \
-        ScreenRotationDaemon.service \
-        WidgetsDaemon.service \
-        WaybarAutohideDaemon.service \
-        FocusFixDaemon.service
 fi
+
+echo "FERTIG! Alles würde erfolgreich(?) gesynct!"
 
 echo ""
 echo "Tipp: mit '--dry-run' kannst du vorher unverbindlich schauen, was passieren wuerde."

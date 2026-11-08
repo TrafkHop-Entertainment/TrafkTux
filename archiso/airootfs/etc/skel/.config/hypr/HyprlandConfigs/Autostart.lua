@@ -133,6 +133,23 @@ hl.on("hyprland.start", function()
             .. ">/dev/null 2>&1 &"
     )
 
+    -- TrafkPad (Controller -> Tastatur/Maus fuers ganze OS, siehe
+    -- ~/.config/TrafkTuxPad/). Standard: AN beim Boot. Ob es wirklich
+    -- genutzt wird, steuert ~/.config/TrafkTuxPad/TrafkPad.conf
+    -- (enabled / start_active) - angelegt von Widgets > Settings >
+    -- Controller. Fehlt die Datei, laeuft der Daemon mit Standardwerten (AN).
+    -- Bewusst KEIN "pkill -f ...Loop" im selben Aufruf: die Kommandozeile
+    -- dieser Shell enthaelt den Loop-Namen selbst, pkill -f wuerde sie
+    -- also mit abschiessen, bevor die Loop startet. Beim Boot gibt es
+    -- keine alte Loop; der Daemon hat zusaetzlich einen Single-Instance-
+    -- Check (eine zweite Loop wuerde nur alle 2s ins Leere starten).
+    hl.exec_cmd(
+        "killall TrafkPad; "
+            .. "setsid -f bash -c 'while true; do "
+            .. "~/.config/TrafkTuxPad/TrafkPad >>/tmp/TrafkPad.log 2>&1; sleep 2; done' TrafkPadLoop "
+            .. ">/dev/null 2>&1 &"
+    )
+
     hl.exec_cmd("pkill -f '[W]idgetsDaemon.py'")
     -- DEBUG (temporaer, siehe Chat): stderr/stdout jetzt nach
     -- /tmp/WidgetsDaemon.log statt /dev/null, damit ein evtl. Absturz/

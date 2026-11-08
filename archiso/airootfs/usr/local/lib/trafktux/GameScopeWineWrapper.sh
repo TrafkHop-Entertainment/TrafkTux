@@ -76,6 +76,101 @@ if [ -n "${GameScopeWrapperActive:-}" ]; then
     exec "$RealBin" "$@"
 fi
 
+# --- First launch: create the user config files if they are missing -------
+# GameScopeWrapper.conf and the two exclude lists are NOT shipped with the
+# system: a system update would overwrite them and wipe the user's settings
+# and excludes. The wrapper creates them itself with the defaults below (same
+# idea as the launcher/bar creating their own user files); the Widgets (App
+# Editor > Wine) only edit them afterwards. Never overwrites an existing
+# file, and a failure here (read-only home, ...) is harmless: the defaults
+# set further down apply anyway.
+create_default_config_files() {
+    mkdir -p "$ConfigDir" 2>/dev/null || return 0
+    if [ ! -e "$ConfigFile" ]; then
+        cat > "$ConfigFile" 2>/dev/null <<'EOF_WRAPPER_CONF'
+# GameScopeWrapper.conf
+#
+# Lives at ~/.config/hypr/GameScopeWrapper.conf
+# Created by GameScopeWineWrapper.sh on the first Wine launch (not shipped
+# with the system, so an update never overwrites your settings). Edited by
+# the Widgets (App Editor > Wine); editing by hand works too.
+# Sourced directly as shell variables by GameScopeWineWrapper.sh, so it
+# has to stay plain KEY=VALUE (no spaces around "=", quote values with
+# spaces).
+
+# Master switch. "false" disables gamescope-wrapping for every single
+# Wine launch, globally, immediately (no restart needed).
+Enabled=true
+
+# Upscaler filter. One of: linear | nearest | fsr | nis | pixel
+# nearest = crisp/pixelated retro look, no blur (recommended for old games)
+Filter=nearest
+
+# Scaler mode. One of: auto | integer | fit | fill | stretch
+# fit    = keep aspect ratio, use as much of the screen as possible (default)
+# integer = pixel-perfect whole-number scaling, may leave larger black bars
+# stretch = fill the whole screen, ignores original aspect ratio
+Scaler=fit
+
+# FSR/NIS sharpness, 0 (max sharpening) - 20 (min). Ignored unless
+# Filter=fsr or Filter=nis.
+Sharpness=2
+
+# Forces every window inside the gamescope session to be treated as
+# fullscreen, even if the game itself never requests a real fullscreen
+# mode-switch. Tested in isolation: does NOT fix games that render into a
+# small fixed window (confirmed on Moorhuhn Remake). Defaults off.
+ForceWindowsFullscreen=false
+
+# Which dgVoodoo2 build to inject into detected DirectDraw games: old | new
+# "old" (default) is a considerably older dgVoodoo2 release - tested more
+# reliable for these specific ~20+ year old games (newer builds target much
+# more recent titles and can crash on very old ones). "new" pulls in the
+# latest dgVoodoo2 features/fixes, useful for less ancient DirectDraw
+# titles where "old" might lack support. Switch per game via
+# GameScopeDgvoodooExcludes.txt is not needed for this - just override
+# DgvoodooVersion here, or exclude the game from injection entirely below.
+DgvoodooVersion=old
+EOF_WRAPPER_CONF
+    fi
+    if [ ! -e "$ExcludeFile" ]; then
+        cat > "$ExcludeFile" 2>/dev/null <<'EOF_GS_EXCLUDES'
+# GameScopeExcludes.txt
+#
+# Lives at ~/.config/hypr/GameScopeExcludes.txt
+# Created by GameScopeWineWrapper.sh on first launch; edited by the Widgets (App Editor > Wine).
+# One .exe basename per line, case-insensitive. Lines starting with "#"
+# are ignored. Any game listed here always launches through raw Wine,
+# skipping gamescope entirely - useful for titles that fight with nested
+# compositors (weird raw-input handling, multi-monitor setups, games
+# that already scale correctly on their own, etc).
+#
+# Example:
+# SomeBrokenGame.exe
+EOF_GS_EXCLUDES
+    fi
+    if [ ! -e "$DgvoodooExcludeFile" ]; then
+        cat > "$DgvoodooExcludeFile" 2>/dev/null <<'EOF_DG_EXCLUDES'
+# GameScopeDgvoodooExcludes.txt
+#
+# Lives at ~/.config/hypr/GameScopeDgvoodooExcludes.txt
+# Created by GameScopeWineWrapper.sh on first launch; edited by the Widgets (App Editor > Wine).
+# One .exe basename per line, case-insensitive. Lines starting with "#"
+# are ignored. Any game listed here NEVER gets dgVoodoo2 auto-injected,
+# even if it imports DDRAW.DLL - for titles that already do a real
+# fullscreen mode-switch and work fine on their own (gamescope scales them
+# natively), where forcing dgVoodoo2 in can actively break them.
+#
+# Confirmed needed for:
+# Moorhuhn.exe
+
+Moorhuhn.exe
+EOF_DG_EXCLUDES
+    fi
+    return 0
+}
+create_default_config_files
+
 # --- Load config (plain KEY=VALUE, sourced as shell vars) ---------------
 # This file is meant to be written by the Widgets settings hub - keep it
 # boring shell-var syntax so nothing fancy is needed to edit it.

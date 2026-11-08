@@ -94,29 +94,9 @@
 
 static const char *WRAPPER_PREFIXES[] = { "kitty", "sudo", NULL };
 
-/* Binaries, die so generisch sind, dass ein exec-Match darauf NICHTS ueber
- * die eigentliche App aussagt (Interpreter/Runtime-/Meta-Launcher - z.B.
- * "steam" bei JEDEM Spiel-Shortcut, "python3 <script>.py", "flatpak run
- * <id>"). Ohne diese Ausnahme reicht 1 einsortierte App mit so einem exec
- * (z.B. "Steam" selbst), um ALLE anderen Apps mit demselben Erst-Token
- * faelschlich aus "Unordered Programs" zu werfen, weil extract_binary()
- * nur das erste Token nimmt und Argumente/IDs ignoriert. Siehe App-Editor
- * -Chat: exakt dasselbe Problem wurde dort zuerst mit Steam-Spielen
- * gefunden und hier 1:1 nachgezogen. */
-static const char *GENERIC_BINARIES[] = {
-    "env", "bash", "sh", "zsh", "fish", "python", "python3", "python2",
-    "perl", "ruby", "node", "nodejs", "electron", "java", "javaw",
-    "flatpak", "snap", "appimage-run", "wine", "wine64", "wineconsole",
-    "steam", "lutris", "heroic", "bottles", NULL
-};
-
-static gboolean is_generic_binary(const char *bin) {
-    if (!bin) return FALSE;
-    for (int i = 0; GENERIC_BINARIES[i]; i++) {
-        if (g_ascii_strcasecmp(bin, GENERIC_BINARIES[i]) == 0) return TRUE;
-    }
-    return FALSE;
-}
+/* (Frueher stand hier eine GENERIC_BINARIES-Ausnahmeliste fuer "steam",
+ * "python3", "flatpak" ... - ueberfluessig, seit der Dedup-Schluessel in
+ * get_filtered_desktop_apps() der GANZE Befehl ist, siehe exec_key().) */
 
 /* =========================================================================
  * exec_detached / play_sound / cleanup - 1:1 aus dem Original übernommen
@@ -457,7 +437,9 @@ static gint app_entry_cmp(gconstpointer a, gconstpointer b) {
                           B->sort_key ? B->sort_key : B->name);
 }
 
-static char* extract_binary(const char *exec_str) {
+/* Schaelt Wrapper-Prefixe (kitty/sudo) und `bash -c '...'` ab und liefert den
+ * eigentlichen Befehl SAMT Argumenten (neu allokiert, g_free). */
+static char* unwrap_exec(const char *exec_str) {
     if (!exec_str || !*exec_str) return NULL;
     char *copy = g_strdup(exec_str);
     char *p = copy;
@@ -489,8 +471,12 @@ static char* extract_binary(const char *exec_str) {
                     char *end = strchr(q, quote);
                     if (end) {
                         *end = '\0';
+                        /* BUGFIX: vorher g_free(copy); copy = g_strdup(q); - q zeigt
+                         * in den gerade freigegebenen Puffer (Use-after-free).
+                         * Erst duplizieren, dann den alten Puffer freigeben. */
+                        char *inner = g_strdup(q);
                         g_free(copy);
-                        copy = g_strdup(q);
+                        copy = inner;
                         p = copy;
                         while (*p && g_ascii_isspace(*p)) p++;
                         again = 1;
@@ -501,16 +487,11 @@ static char* extract_binary(const char *exec_str) {
         }
     }
 
-    char *space = strpbrk(p, " \t\n\r");
-    if (space) *space = '\0';
-    char *bin = g_path_get_basename(p);
+    char *result = g_strdup(p);
     g_free(copy);
-    if (is_generic_binary(bin)) {
-        g_free(bin);
-        return NULL;   /* generischer Interpreter/Meta-Launcher - kein Match-Signal */
-    }
-    return bin;
+    return result;
 }
+
 
 static char* strip_exec_field_codes(const char *exec_str) {
     if (!exec_str) return g_strdup("");
@@ -541,6 +522,46 @@ static char* strip_exec_field_codes(const char *exec_str) {
     char *result = g_strdup(collapsed->str);
     g_string_free(collapsed, TRUE);
     return result;
+}
+
+/* Dedup-Schluessel fuer "ist diese App schon einsortiert/versteckt?" - der
+ * GANZE Befehl statt nur des ersten Tokens: Feldcodes (%U, %f ...) weg,
+ * Wrapper abgeschaelt, erstes Token auf den Basename, casefold.
+ *
+ * Warum nicht mehr nur das Binary: viele voellig verschiedene Apps teilen
+ * sich eins (libreoffice --writer/--calc, xfce4-terminal --hold fastfetch,
+ * brave --app=<PWA>, steam steam://rungameid/N ...). Ein einziger
+ * einsortierter Eintrag hat dadurch ALLE anderen aus "Unordered Programs"
+ * geworfen. Weiterhin als Duplikat erkannt: `thunar %U` == `thunar` ==
+ * `/usr/bin/thunar`. Muss mit _applauncher_exec_key() im WidgetsDaemon.py
+ * synchron bleiben. Rueckgabe: neu allokiert (g_free) oder NULL. */
+static char* exec_key(const char *exec_str) {
+    if (!exec_str || !*exec_str) return NULL;
+    char *stripped = strip_exec_field_codes(exec_str);
+    char *un = unwrap_exec(stripped);
+    g_free(stripped);
+    if (!un) return NULL;
+    char **tok = g_strsplit_set(un, " \t\r\n", -1);
+    g_free(un);
+    GString *out = g_string_new(NULL);
+    gboolean first = TRUE;
+    for (int i = 0; tok[i]; i++) {
+        if (!*tok[i]) continue;
+        if (out->len) g_string_append_c(out, ' ');
+        if (first) {
+            char *b = g_path_get_basename(tok[i]);
+            g_string_append(out, b);
+            g_free(b);
+            first = FALSE;
+        } else {
+            g_string_append(out, tok[i]);
+        }
+    }
+    g_strfreev(tok);
+    if (!out->len) { g_string_free(out, TRUE); return NULL; }
+    char *key = g_utf8_casefold(out->str, -1);
+    g_string_free(out, TRUE);
+    return key;
 }
 
 static GPtrArray* get_xdg_data_dirs(void) {
@@ -768,12 +789,8 @@ static GPtrArray* get_filtered_desktop_apps(JsonObject *root) {
                 }
                 const char *exec_str = json_object_get_string_member(child, "exec");
                 if (exec_str && *exec_str) {
-                    char *bin = extract_binary(exec_str);
-                    if (bin) {
-                        gchar *lower = g_utf8_casefold(bin, -1);
-                        g_hash_table_add(used_execs, lower);
-                        g_free(bin);
-                    }
+                    char *key = exec_key(exec_str);
+                    if (key) g_hash_table_add(used_execs, key);   /* Hash uebernimmt Besitz */
                 }
             }
         }
@@ -799,11 +816,8 @@ static GPtrArray* get_filtered_desktop_apps(JsonObject *root) {
             if (json_object_has_member(h, "exec")) {
                 const char *exec_str = json_object_get_string_member(h, "exec");
                 if (exec_str && *exec_str) {
-                    char *bin = extract_binary(exec_str);
-                    if (bin) {
-                        g_hash_table_add(used_execs, g_utf8_casefold(bin, -1));
-                        g_free(bin);
-                    }
+                    char *key = exec_key(exec_str);
+                    if (key) g_hash_table_add(used_execs, key);   /* Hash uebernimmt Besitz */
                 }
             }
         }
@@ -813,15 +827,12 @@ static GPtrArray* get_filtered_desktop_apps(JsonObject *root) {
     for (guint i = 0; i < all->len; i++) {
         AppEntry *e = g_ptr_array_index(all, i);
         gchar *name_lower = g_utf8_casefold(e->name, -1);
-        char *bin = extract_binary(e->exec);
+        char *key = exec_key(e->exec);
         gboolean found = (g_hash_table_lookup(used_names, name_lower) != NULL);
-        if (!found && bin) {
-            gchar *bin_lower = g_utf8_casefold(bin, -1);
-            found = (g_hash_table_lookup(used_execs, bin_lower) != NULL);
-            g_free(bin_lower);
-        }
+        if (!found && key)
+            found = (g_hash_table_lookup(used_execs, key) != NULL);
         g_free(name_lower);
-        g_free(bin);
+        g_free(key);
         if (!found) {
             AppEntry *copy = g_new0(AppEntry, 1);
             copy->name = g_strdup(e->name);

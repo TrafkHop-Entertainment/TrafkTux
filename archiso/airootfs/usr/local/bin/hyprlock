@@ -1,0 +1,4 @@
+#!/bin/sh
+# Wrapper: ueberspringt hyprlock, wenn in Settings > Controller > Login deaktiviert.
+[ -e "${XDG_CONFIG_HOME:-$HOME/.config}/hypr/hyprlock_disabled" ] && exit 0
+exec /usr/bin/hyprlock "$@"

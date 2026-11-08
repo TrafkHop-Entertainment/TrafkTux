@@ -28,8 +28,10 @@
 #include <errno.h>
 #include <glib-unix.h>
 #include <glib.h>
+#include <glib/gstdio.h>
 #include <glob.h>
 #include <math.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -286,6 +288,285 @@ static void parse_module_array(JsonObject *root, const char *key, GPtrArray *out
     }
 }
 
+/* ═══════════════ User-Overlay: Userbar.jsonc ═══════════════════════════
+ *
+ * TrafkTuxBar.jsonc ist der System-Standard und wird bei Updates ersetzt.
+ * Persoenliche Aenderungen (gepinnte Shortcuts, Widget-Auswahl und
+ * -Reihenfolge ...) stehen deshalb in einer EIGENEN Datei daneben -
+ * Userbar.jsonc -, die die BAR SELBST anlegt, falls sie fehlt (gleiches
+ * Prinzip wie Usermenu.json beim TrafkTuxLauncher).
+ *
+ * Beim ersten Anlegen wird die Datei mit dem aktuellen System-Standard der
+ * ZWEI veraenderbaren Module befuellt: "pinned" (die gepinnten Apps) und
+ * "other-widgets" (alle Widgets des Grids). Das Settings-Widget und die
+ * festen Module (Launcher, Power, Uhr, Tray ...) stehen bewusst NICHT
+ * darin - sie sollen sich nicht entfernen lassen. Was in der Datei steht,
+ * ersetzt den System-Standard dieser Module; neue Standard-Widgets eines
+ * Updates erscheinen dadurch nicht automatisch (Datei loeschen = beim
+ * naechsten Start frisch aus dem Standard).
+ *
+ * Der App Editor der Widgets schreibt nur noch hinein und schickt ein
+ * SIGHUP; die Bar laeuft aber auch komplett ohne Widgets - sie wartet auf
+ * nichts und bricht auch nie ab, wenn die Datei fehlt oder kaputt ist
+ * (dann gilt einfach der System-Standard).
+ *
+ * Format (alles optional):
+ *   "modules": { "<modul-id>": { <Felder> } }
+ *       Jedes genannte Feld ERSETZT das gleichnamige Feld des Moduls
+ *       (z.B. "items", "visible_count"). id/type lassen sich nicht aendern.
+ *       Zusaetzlich fuer Module mit "items" (button_row / widget_grid):
+ *         "hidden_items": ["osk"]            -> diese Items ausblenden
+ *         "item_order":   ["volume","akku"]  -> diese zuerst, in dieser
+ *                                               Reihenfolge, der Rest dahinter
+ *       Beides wirkt auf die Items des Systems - neue Items eines Updates
+ *       tauchen also trotzdem auf.
+ *   alle anderen Schluessel (ausser "version"): ueberschreiben den
+ *       Systemwert; Objekte (z.B. "autohide") werden Feld fuer Feld
+ *       zusammengefuehrt, alles andere ersetzt.
+ */
+#define USER_BAR_FILE "Userbar.jsonc"
+
+static const char USER_BAR_HEADER[] =
+    "// Userbar.jsonc - DEINE persoenlichen Bar-Einstellungen.\n"
+    "//\n"
+    "// Diese Datei legt TrafkTuxBar selbst an (aus dem System-Standard, siehe\n"
+    "// TrafkTuxBar.jsonc) und ueberschreibt sie nie. Sie enthaelt die zwei\n"
+    "// veraenderbaren Bereiche der Bar:\n"
+    "//   \"pinned\"        = die gepinnten Apps links\n"
+    "//   \"other-widgets\" = die Widgets rechts (Lautstaerke, WLAN, ...)\n"
+    "// Das Settings-Widget und die festen Module sind absichtlich nicht dabei.\n"
+    "//\n"
+    "// Was hier steht, ERSETZT den System-Standard dieser Bereiche. Bearbeiten:\n"
+    "// App Editor (Widgets > Apps & Shortcuts > Bar) oder von Hand - danach\n"
+    "// `pkill -HUP -x TrafkTuxBar`. Datei loeschen = beim naechsten Start der\n"
+    "// Bar wieder frisch aus dem Standard. Weitere Schluessel auf oberster Ebene\n"
+    "// (z.B. \"autohide\": { \"enabled\": false }) ueberschreiben Systemwerte.\n";
+
+static JsonObject *find_module_by_id(JsonObject *root, const char *id);   /* s.u. */
+
+/* Uebernimmt "visible_count" und "items" des System-Moduls <id> in "mods". */
+static void add_module_defaults(JsonObject *mods, JsonObject *root, const char *id) {
+    JsonObject *m = find_module_by_id(root, id);
+    if (!m) return;
+    JsonObject *entry = json_object_new();
+    if (json_object_has_member(m, "visible_count"))
+        json_object_set_member(entry, "visible_count",
+                               json_node_copy(json_object_get_member(m, "visible_count")));
+    if (json_object_has_member(m, "items"))
+        json_object_set_member(entry, "items", json_node_copy(json_object_get_member(m, "items")));
+    JsonNode *en = json_node_new(JSON_NODE_OBJECT);
+    json_node_take_object(en, entry);
+    json_object_set_member(mods, id, en);
+}
+
+/* Legt Userbar.jsonc an, falls sie fehlt - befuellt mit dem System-Standard
+ * von "pinned" und "other-widgets" (siehe Kopfkommentar). "root" ist dabei
+ * der System-Baum VOR dem Anwenden des Overlays. */
+static void ensure_user_bar_file(const char *path, JsonObject *root) {
+    if (g_file_test(path, G_FILE_TEST_EXISTS)) return;
+    char *dir = g_path_get_dirname(path);
+    g_mkdir_with_parents(dir, 0755);
+    g_free(dir);
+
+    JsonObject *mods = json_object_new();
+    add_module_defaults(mods, root, "pinned");
+    add_module_defaults(mods, root, "other-widgets");
+    JsonObject *top = json_object_new();
+    json_object_set_int_member(top, "version", 1);
+    JsonNode *mn = json_node_new(JSON_NODE_OBJECT);
+    json_node_take_object(mn, mods);
+    json_object_set_member(top, "modules", mn);
+    JsonNode *rn = json_node_new(JSON_NODE_OBJECT);
+    json_node_take_object(rn, top);
+
+    JsonGenerator *gen = json_generator_new();
+    json_generator_set_pretty(gen, TRUE);
+    json_generator_set_indent(gen, 4);
+    json_generator_set_root(gen, rn);       /* kopiert den Knoten */
+    gsize body_len = 0;
+    char *body = json_generator_to_data(gen, &body_len);
+    char *content = g_strconcat(USER_BAR_HEADER, body ? body : "{}", "\n", NULL);
+
+    GError *err = NULL;
+    if (g_file_set_contents(path, content, -1, &err)) {
+        g_message("[config] %s neu angelegt (aus dem System-Standard).", path);
+    } else {
+        g_printerr("[config] Konnte %s nicht anlegen: %s\n", path, err ? err->message : "?");
+        g_clear_error(&err);
+    }
+    g_free(content);
+    g_free(body);
+    g_object_unref(gen);
+    json_node_unref(rn);
+}
+
+static JsonObject *find_module_by_id(JsonObject *root, const char *id) {
+    static const char *const keys[] = { "modules_left", "modules_center", "modules_right", NULL };
+    for (int k = 0; keys[k]; k++) {
+        if (!json_object_has_member(root, keys[k])) continue;
+        JsonNode *n = json_object_get_member(root, keys[k]);
+        if (!JSON_NODE_HOLDS_ARRAY(n)) continue;
+        JsonArray *arr = json_node_get_array(n);
+        for (guint i = 0; i < json_array_get_length(arr); i++) {
+            JsonObject *mo = json_array_get_object_element(arr, i);
+            if (mo && g_strcmp0(jstr(mo, "id", NULL), id) == 0) return mo;
+        }
+    }
+    return NULL;
+}
+
+static JsonArray *member_array(JsonObject *o, const char *key) {
+    if (!json_object_has_member(o, key)) return NULL;
+    JsonNode *n = json_object_get_member(o, key);
+    return JSON_NODE_HOLDS_ARRAY(n) ? json_node_get_array(n) : NULL;
+}
+
+static gboolean string_array_contains(JsonArray *a, const char *s) {
+    if (!a || !s) return FALSE;
+    for (guint i = 0; i < json_array_get_length(a); i++) {
+        JsonNode *n = json_array_get_element(a, i);
+        if (JSON_NODE_HOLDS_VALUE(n) && g_strcmp0(json_node_get_string(n), s) == 0) return TRUE;
+    }
+    return FALSE;
+}
+
+/* hidden_items / item_order auf die "items" eines Moduls anwenden. */
+static void apply_item_filters(JsonObject *mo, JsonObject *ov) {
+    JsonArray *items = member_array(mo, "items");
+    JsonArray *hidden = member_array(ov, "hidden_items");
+    JsonArray *order = member_array(ov, "item_order");
+    if (!items || (!hidden && !order)) return;
+
+    guint n = json_array_get_length(items);
+    gboolean *used = g_new0(gboolean, n ? n : 1);
+    JsonArray *out = json_array_new();
+
+    /* 1. Items in der Reihenfolge von item_order */
+    if (order) {
+        for (guint o = 0; o < json_array_get_length(order); o++) {
+            JsonNode *wn = json_array_get_element(order, o);
+            if (!JSON_NODE_HOLDS_VALUE(wn)) continue;
+            const char *want = json_node_get_string(wn);
+            if (!want) continue;
+            for (guint i = 0; i < n; i++) {
+                if (used[i]) continue;
+                JsonObject *io = json_array_get_object_element(items, i);
+                const char *id = io ? jstr(io, "id", NULL) : NULL;
+                if (id && g_strcmp0(id, want) == 0) {
+                    used[i] = TRUE;
+                    if (!string_array_contains(hidden, id))
+                        json_array_add_element(out, json_node_copy(json_array_get_element(items, i)));
+                    break;
+                }
+            }
+        }
+    }
+    /* 2. alle uebrigen in der Original-Reihenfolge */
+    for (guint i = 0; i < n; i++) {
+        if (used[i]) continue;
+        JsonObject *io = json_array_get_object_element(items, i);
+        const char *id = io ? jstr(io, "id", NULL) : NULL;
+        if (id && string_array_contains(hidden, id)) continue;
+        json_array_add_element(out, json_node_copy(json_array_get_element(items, i)));
+    }
+    g_free(used);
+
+    /* "items" ersetzen - der alte Knoten (und damit "items") ist danach weg,
+     * wird unten nicht mehr angefasst. */
+    JsonNode *nn = json_node_new(JSON_NODE_ARRAY);
+    json_node_take_array(nn, out);
+    json_object_set_member(mo, "items", nn);
+}
+
+static void apply_module_overrides(JsonObject *root, JsonObject *mods) {
+    GList *ids = json_object_get_members(mods);
+    for (GList *l = ids; l; l = l->next) {
+        const char *id = l->data;
+        JsonNode *ovn = json_object_get_member(mods, id);
+        if (!JSON_NODE_HOLDS_OBJECT(ovn)) continue;
+        JsonObject *ov = json_node_get_object(ovn);
+        JsonObject *mo = find_module_by_id(root, id);
+        if (!mo) {
+            g_message("[config] Userbar: Modul '%s' gibt es nicht - Eintrag ignoriert.", id);
+            continue;
+        }
+        GList *fields = json_object_get_members(ov);
+        for (GList *f = fields; f; f = f->next) {
+            const char *name = f->data;
+            if (g_strcmp0(name, "hidden_items") == 0 || g_strcmp0(name, "item_order") == 0 ||
+                g_strcmp0(name, "id") == 0 || g_strcmp0(name, "type") == 0)
+                continue;
+            json_object_set_member(mo, name, json_node_copy(json_object_get_member(ov, name)));
+        }
+        g_list_free(fields);
+        apply_item_filters(mo, ov);
+    }
+    g_list_free(ids);
+}
+
+static void merge_user_overlay(JsonObject *root, JsonObject *user) {
+    GList *keys = json_object_get_members(user);
+    for (GList *l = keys; l; l = l->next) {
+        const char *k = l->data;
+        if (g_strcmp0(k, "version") == 0) continue;
+        JsonNode *uv = json_object_get_member(user, k);
+        if (g_strcmp0(k, "modules") == 0) {
+            if (JSON_NODE_HOLDS_OBJECT(uv)) apply_module_overrides(root, json_node_get_object(uv));
+            continue;
+        }
+        JsonNode *sv = json_object_has_member(root, k) ? json_object_get_member(root, k) : NULL;
+        if (sv && JSON_NODE_HOLDS_OBJECT(sv) && JSON_NODE_HOLDS_OBJECT(uv)) {
+            JsonObject *so = json_node_get_object(sv);
+            JsonObject *uo = json_node_get_object(uv);
+            GList *members = json_object_get_members(uo);
+            for (GList *m = members; m; m = m->next)
+                json_object_set_member(so, m->data,
+                                       json_node_copy(json_object_get_member(uo, m->data)));
+            g_list_free(members);
+        } else {
+            json_object_set_member(root, k, json_node_copy(uv));
+        }
+    }
+    g_list_free(keys);
+}
+
+/* Legt Userbar.jsonc bei Bedarf an und legt sie ueber "root". Jeder Fehler
+ * (Datei unlesbar, JSON kaputt) wird nur protokolliert - dann gilt der
+ * System-Standard. */
+static void apply_user_overlay(JsonObject *root, const char *config_dir) {
+    char *upath = g_build_filename(config_dir, USER_BAR_FILE, NULL);
+    ensure_user_bar_file(upath, root);   /* root = System-Standard, noch ohne Overlay */
+
+    char *raw = NULL;
+    gsize len = 0;
+    GError *err = NULL;
+    if (!g_file_get_contents(upath, &raw, &len, &err)) {
+        g_printerr("[config] Kann %s nicht lesen: %s - System-Standard gilt.\n",
+                   upath, err ? err->message : "?");
+        g_clear_error(&err);
+        g_free(upath);
+        return;
+    }
+    char *clean = strip_jsonc_comments(raw);
+    g_free(raw);
+
+    JsonParser *parser = json_parser_new();
+    if (!json_parser_load_from_data(parser, clean, -1, &err)) {
+        g_printerr("[config] JSON-Fehler in %s: %s - Datei wird ignoriert, System-Standard gilt.\n",
+                   upath, err ? err->message : "?");
+        g_clear_error(&err);
+    } else {
+        JsonNode *rn = json_parser_get_root(parser);
+        if (rn && JSON_NODE_HOLDS_OBJECT(rn))
+            merge_user_overlay(root, json_node_get_object(rn));
+        else
+            g_printerr("[config] %s: Wurzel ist kein Objekt - ignoriert.\n", upath);
+    }
+    g_object_unref(parser);
+    g_free(clean);
+    g_free(upath);
+}
+
 BarConfig *config_load(const char *path) {
     GError *err = NULL;
     char *raw = NULL;
@@ -314,6 +595,11 @@ BarConfig *config_load(const char *path) {
 
     BarConfig *cfg = g_new0(BarConfig, 1);
     cfg->config_dir = g_path_get_dirname(path);
+
+    /* User-Overlay (Userbar.jsonc) ueber den System-Standard legen - siehe
+     * Block oberhalb von config_load(). Aendert nur den JSON-Baum, alles
+     * Weitere (Auslesen in BarConfig) laeuft unveraendert. */
+    apply_user_overlay(root, cfg->config_dir);
 
     cfg->position = g_strdup(jstr(root, "position", "bottom"));
     cfg->height = jint(root, "height", 45);
@@ -4840,7 +5126,7 @@ static gboolean enable_screen_alpha(GtkWidget *widget) {
  * (siehe main()). Damit ist zweifelsfrei nachpruefbar, welcher Build
  * tatsaechlich laeuft, statt es zu raten - bitte bei jedem Testlauf
  * die BUILD-Zeile mit posten. */
-#define TB_BUILD_TAG "2026-09-redesign-fix6-follow-cursor-monitor"
+#define TB_BUILD_TAG "2026-11-userbar-overlay-sighup-reload"
 
 static gboolean on_window_click_probe(GtkWidget *widget, GdkEventButton *ev, gpointer user_data) {
     (void)widget; (void)user_data;
@@ -4877,6 +5163,57 @@ static gboolean canary_heartbeat(gpointer user_data) {
     return G_SOURCE_CONTINUE;
 }
 
+/* ── Live-Reload per SIGHUP ─────────────────────────────────────────────
+ * Der App Editor (Widgets) schreibt Userbar.jsonc und schickt danach
+ * `pkill -HUP -x TrafkTuxBar`. Die Bar liest die Konfiguration dann NICHT
+ * stueckweise neu ein (Tray, Module, Autohide, Layer-Shell haengen an der
+ * Config), sondern startet sich in-place neu: execv() auf das eigene Binary
+ * mit denselben Argumenten. Gleiche PID, die Konfiguration wird komplett
+ * frisch geladen, es bleibt kein halb-umgebauter Zustand uebrig.
+ *
+ * Sicherheitsnetz: VORHER wird die neue Konfiguration probeweise geladen.
+ * Scheitert das (System-Datei kaputt), laeuft die Bar einfach unveraendert
+ * weiter - ein Tippfehler legt die Bar also nie lahm. (Eine kaputte
+ * Userbar.jsonc allein scheitert nie: sie wird ignoriert, siehe
+ * apply_user_overlay().)
+ *
+ * SIGHUP-Schutz beim Start: Die Standardaktion von SIGHUP ist "Prozess
+ * beenden". Deshalb steht SIGHUP in main() VOR gtk_init() auf SIG_IGN, und
+ * erst nach dem Aufbau der Bar ersetzt dieser Handler das. Ein Handler wird
+ * bei execv() aber auf die Standardaktion ZURUECKGESETZT (nur SIG_IGN bleibt
+ * erhalten) - deshalb wird SIGHUP direkt vor dem execv() noch einmal auf
+ * SIG_IGN gestellt. Sonst koennte ein zweites SIGHUP in den ersten
+ * Millisekunden der neuen Instanz diese toeten. Schlaegt execv() fehl,
+ * wird der Handler wiederhergestellt. */
+static char *g_self_exe = NULL;            /* Pfad des laufenden Binaries (beim Start gemerkt) */
+static char *g_cfg_path_resolved = NULL;   /* wie in main() aufgeloest - fuer die Probe-Ladung */
+static char *g_cfg_arg = NULL;             /* argv[1], nur falls die Bar mit explizitem Pfad lief */
+
+static gboolean on_sighup_reload(gpointer user_data) {
+    (void)user_data;
+    if (!g_self_exe || !g_cfg_path_resolved) return G_SOURCE_CONTINUE;
+    BarConfig *probe = config_load(g_cfg_path_resolved);
+    if (!probe) {
+        g_printerr("[reload] SIGHUP: neue Konfiguration nicht ladbar - Bar laeuft unveraendert weiter.\n");
+        return G_SOURCE_CONTINUE;
+    }
+    config_free(probe);
+    g_message("[reload] SIGHUP: lade Konfiguration neu (Neustart per execv, gleiche PID).");
+    char *args[3] = { g_self_exe, g_cfg_arg, NULL };   /* g_cfg_arg == NULL -> Liste endet hier */
+
+    struct sigaction ign, saved;
+    memset(&ign, 0, sizeof(ign));
+    ign.sa_handler = SIG_IGN;
+    sigemptyset(&ign.sa_mask);
+    sigaction(SIGHUP, &ign, &saved);    /* SIG_IGN ueberlebt das execv(), ein Handler nicht */
+    execv(g_self_exe, args);
+    int exec_errno = errno;
+    sigaction(SIGHUP, &saved, NULL);    /* nur erreicht, wenn execv() gescheitert ist */
+    g_printerr("[reload] execv(%s) fehlgeschlagen: %s - Bar laeuft unveraendert weiter.\n",
+               g_self_exe, g_strerror(exec_errno));
+    return G_SOURCE_CONTINUE;
+}
+
 int main(int argc, char **argv) {
     g_message("[debug] TrafkTuxBar BUILD=" TB_BUILD_TAG " startet (PID %d)", getpid());
     gint64 t_start_us = g_get_monotonic_time();
@@ -4909,6 +5246,17 @@ int main(int argc, char **argv) {
     /* MUSS vor gtk_init() passieren - siehe Kommentar an
      * block_realtime_signals_early() selbst. */
     block_realtime_signals_early();
+
+    /* Live-Reload (siehe on_sighup_reload): SIGHUP bis dahin ignorieren und
+     * den eigenen Pfad merken, solange das Binary garantiert noch unter
+     * diesem Namen existiert (nach einem Neu-Kompilieren haengt an
+     * /proc/self/exe sonst " (deleted)" - das wird hier abgeschnitten). */
+    signal(SIGHUP, SIG_IGN);
+    g_self_exe = g_file_read_link("/proc/self/exe", NULL);
+    if (g_self_exe && g_str_has_suffix(g_self_exe, " (deleted)"))
+        g_self_exe[strlen(g_self_exe) - strlen(" (deleted)")] = '\0';
+    if (!g_self_exe) g_self_exe = g_strdup(argv[0]);
+
     gtk_init(&argc, &argv);
 
     char *config_path = NULL;
@@ -4918,6 +5266,8 @@ int main(int argc, char **argv) {
         config_path = g_build_filename(g_get_user_config_dir(), "TrafkTuxBar", "TrafkTuxBar.jsonc", NULL);
     }
 
+    g_cfg_path_resolved = g_strdup(config_path);
+    if (argc > 1) g_cfg_arg = g_strdup(argv[1]);
     BarConfig *cfg = config_load(config_path);
     g_free(config_path);
     if (!cfg) {
@@ -5048,6 +5398,9 @@ int main(int argc, char **argv) {
               (g_get_monotonic_time() - t_start_us) / 1000.0);
 
     app.autohide = tb_autohide_start(GTK_WINDOW(window), cfg);
+
+    /* Ab hier darf ein SIGHUP die Bar neu laden (siehe on_sighup_reload). */
+    g_unix_signal_add(SIGHUP, on_sighup_reload, NULL);
 
     g_signal_connect(window, "destroy", G_CALLBACK(gtk_main_quit), NULL);
     gtk_main();

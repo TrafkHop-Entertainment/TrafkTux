@@ -27,6 +27,8 @@ cryptsetup
 rsync
 ydotool
 libdvdcss
+libevdev
+libnotify
 
 # --- Bootloader / Boot-Splash ---
 plymouth

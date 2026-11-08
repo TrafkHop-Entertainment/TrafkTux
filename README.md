@@ -151,6 +151,7 @@ Our shortcuts are designed with a gamer in mind. Everything can be done with the
 | Super + Alt + ^ | Minimize App |
 | Super + Ctrl + ^ | Pin App (Picture-in-Picture) |
 | Super + Alt + Tab | Toggle Waybar visibility |
+| Super + Shift + Tab | Open Settings widget at the mouse pointer (then WASD / Enter / Q·E tabs / X back / Esc close) |
 | Super + Print | Screenshot (region → clipboard) |
 | Super + Shift + Print | Screenshot (region → save as PNG) |
 | Super + H | Hide/show all Windows |
@@ -166,6 +167,28 @@ Our shortcuts are designed with a gamer in mind. Everything can be done with the
 | Super + Ctrl + Tab | Workspace Overview (Hyprexpo) |
 
 Laptop media keys (Volume, Brightness, Play/Pause/Next/Prev) also work out of the box.
+
+### Controller mode (TrafkPad)
+
+Any gamepad = keyboard + mouse for the whole OS (daemon: `~/.config/TrafkTuxPad/TrafkPad`, started from Autostart.lua, config: `~/.config/TrafkTuxPad/TrafkPad.conf`, managed by Settings → Controller). Default: ON. Toggle: hold **L1 + R1 + Select + Start** for 1 s (rumble + notification). While OFF, pads are not grabbed (games see them normally) and only the combo is watched. Disable the Home button in Steam.
+
+| Pad | Result |
+| --- | --- |
+| Left stick / D-pad | W A S D (or arrows, setting) / arrow keys |
+| Right stick | Mouse |
+| A / B / Start / Select | Space / X / Enter / Esc |
+| L1 / R1 / L3 | Q / E / Shift |
+| L2 / R2 / R3 | Left / right / middle click |
+| Home + right stick | Scroll (4 directions) |
+| Home + L2 / R2 | Super + left / right click (move / resize windows) |
+| Home + A / B / X / Y | Terminal / File manager / Fullscreen / Hide all |
+| Home + D-pad up / down | Launcher / Power menu |
+| Home + D-pad left / right | Settings at pointer / Workspace overview |
+| Home + L1 / R1 | Previous / next workspace |
+| Home + Start / Select | Screenshot / lock Bar autohide |
+| Home + left stick | Focus window (like Super + WASD) |
+
+The Home-layer keys are F13–F24 and only bound while controller mode is ON (Controls.lua, section 4).
 
 ### Touchscreen
 

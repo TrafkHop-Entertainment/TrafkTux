@@ -5410,6 +5410,302 @@ def _processes_content(win: Gtk.Window) -> Gtk.Box:
     _refresh()
     return root
 
+# ════════════════════════════════════════════════════════════
+#  Idle / hypridle (Settings > Battery > Tab "Idle")
+#
+#  Der Widgets-Daemon ist jetzt der EINZIGE Besitzer von hypridle:
+#    - er erzeugt die Config (update-sicher unter HyprlandUserConfigs/,
+#      NICHT mehr im Archiso-Skel),
+#    - er startet hypridle beim Daemon-Start (_hypridle_boot() in main()),
+#      `hl.exec_cmd("hypridle")` in Autostart.lua entfällt dafür,
+#    - er startet hypridle neu, sobald im Tab etwas geändert wird
+#      (hypridle liest seine Config nur beim Start).
+#  hypridle läuft in einer eigenen Session (start_new_session) und
+#  überlebt damit einen Neustart/Absturz des Widgets-Daemons.
+# ════════════════════════════════════════════════════════════
+_HYPRIDLE_CONF = Path(HOME) / ".config" / "hypr" / "HyprlandUserConfigs" / "hypridle.conf"
+# (key, Anzeigename, on-timeout, on-resume, Default-Minuten)
+_HYPRIDLE_ACTIONS = (
+    ("screen_off", "Turn off screen", "hyprctl dispatch dpms off", "hyprctl dispatch dpms on", 5),
+    ("lock",       "Lock screen",     "loginctl lock-session",     "",                         10),
+    ("suspend",    "Suspend",         "systemctl suspend",         "",                         15),
+)
+_hypridle_lock = threading.Lock()
+_hypridle_backed_up = [False]
+
+def _hypridle_defaults() -> dict:
+    return {"enabled": True, "respect_inhibit": True, "lock_on_sleep": True,
+            "actions": {k: {"on": True, "min": m} for k, _l, _c, _r, m in _HYPRIDLE_ACTIONS}}
+
+def _hypridle_classify(cmd: str):
+    c = cmd.lower()
+    if "dpms off" in c:
+        return "screen_off"
+    if "lock-session" in c or "hyprlock" in c:
+        return "lock"
+    if "suspend" in c:
+        return "suspend"
+    return None
+
+def _hypridle_render(cfg: dict) -> str:
+    L = ["# hypridle.conf - verwaltet vom Widgets-Daemon (Settings > Battery > Idle).",
+         "# Zeiten/Listener werden beim Speichern im Tab neu geschrieben; manuelle",
+         "# Änderungen daran gehen dabei verloren.",
+         f"# trafktux-idle: {'on' if cfg['enabled'] else 'off'}",
+         "",
+         "general {",
+         "    lock_cmd          = pidof hyprlock || hyprlock"]
+    if cfg["lock_on_sleep"]:
+        L.append("    before_sleep_cmd  = loginctl lock-session")
+    L += ["    after_sleep_cmd   = hyprctl dispatch dpms on",
+          f"    ignore_dbus_inhibit    = {'false' if cfg['respect_inhibit'] else 'true'}",
+          "    ignore_systemd_inhibit = false",
+          "}", ""]
+    meta = {k: (c, r) for k, _l, c, r, _m in _HYPRIDLE_ACTIONS}
+    active = [(cfg["actions"][k]["min"], k) for k in meta if cfg["actions"][k]["on"]]
+    for minutes, k in sorted(active):
+        on_cmd, resume = meta[k]
+        L += ["listener {",
+              f"    timeout    = {int(minutes) * 60}                          # {int(minutes)} min",
+              f"    on-timeout = {on_cmd}"]
+        if resume:
+            L.append(f"    on-resume  = {resume}")
+        L += ["}", ""]
+    return "\n".join(L)
+
+def _hypridle_load(path: Path = None) -> dict:
+    """Liest eine hypridle.conf zurück in das Tab-Modell. Fehlt die Datei,
+    gelten die Defaults. Existiert sie, gilt eine Aktion nur dann als
+    aktiv, wenn ein passender listener{} darin steht."""
+    path = path or _HYPRIDLE_CONF
+    cfg = _hypridle_defaults()
+    try:
+        text = path.read_text(encoding="utf-8")
+    except Exception:
+        return cfg
+    m = re.search(r'#\s*trafktux-idle:\s*(on|off)', text)
+    cfg["enabled"] = (m.group(1) != "off") if m else True
+    for k in cfg["actions"]:
+        cfg["actions"][k]["on"] = False
+    def _kv(block: str) -> dict:
+        d = {}
+        for line in block.splitlines():
+            mm = re.match(r'^\s*([\w-]+)\s*=\s*(.*?)\s*(?:#.*)?$', line)
+            if mm:
+                d[mm.group(1)] = mm.group(2)
+        return d
+    for bm in re.finditer(r'(\w+)\s*\{(.*?)\}', text, re.S):
+        name, kv = bm.group(1), _kv(bm.group(2))
+        if name == "general":
+            cfg["respect_inhibit"] = kv.get("ignore_dbus_inhibit", "false").lower() != "true"
+            cfg["lock_on_sleep"] = "before_sleep_cmd" in kv
+        elif name == "listener":
+            key = _hypridle_classify(kv.get("on-timeout", ""))
+            try:
+                secs = int(kv.get("timeout", "0"))
+            except ValueError:
+                secs = 0
+            if key and secs > 0:
+                cfg["actions"][key] = {"on": True, "min": max(1, round(secs / 60))}
+    return cfg
+
+def _hypridle_save(cfg: dict) -> None:
+    _HYPRIDLE_CONF.parent.mkdir(parents=True, exist_ok=True)
+    if _HYPRIDLE_CONF.exists() and not _hypridle_backed_up[0]:
+        _hypridle_backed_up[0] = True
+        backup_file(_HYPRIDLE_CONF)
+    atomic_write_text(_HYPRIDLE_CONF, _hypridle_render(cfg))
+
+def _hypridle_running() -> bool:
+    try:
+        return subprocess.run(["pgrep", "-x", "hypridle"], stdout=subprocess.DEVNULL,
+                              stderr=subprocess.DEVNULL, timeout=3).returncode == 0
+    except Exception:
+        return False
+
+def _hypridle_start() -> bool:
+    exe = shutil.which("hypridle")
+    if not exe:
+        print("[Idle] hypridle is not installed", file=sys.stderr)
+        return False
+    try:
+        subprocess.Popen([exe, "-c", str(_HYPRIDLE_CONF)], stdin=subprocess.DEVNULL,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         start_new_session=True)
+        return True
+    except Exception as ex:
+        print(f"[Idle] could not start hypridle: {ex}", file=sys.stderr)
+        return False
+
+def _hypridle_stop() -> None:
+    try:
+        subprocess.run(["pkill", "-x", "hypridle"], stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL, timeout=3)
+    except Exception:
+        pass
+    for _ in range(15):          # bis zu ~1,5 s auf das Ende warten
+        if not _hypridle_running():
+            return
+        time.sleep(0.1)
+
+def _hypridle_apply(cfg: dict) -> tuple:
+    """Config ist bereits geschrieben -> hypridle neu starten (bzw. nur
+    stoppen, wenn das Idle-Management aus ist). Blockiert kurz, daher
+    immer aus einem Thread aufrufen. Gibt (ok, Meldung) zurück."""
+    with _hypridle_lock:
+        _hypridle_stop()
+        if not cfg["enabled"]:
+            return True, "Idle management off — hypridle stopped"
+        if not shutil.which("hypridle"):
+            return False, "hypridle is not installed"
+        if not _hypridle_start():
+            return False, "Could not start hypridle"
+        time.sleep(0.4)
+        if _hypridle_running():
+            return True, "Applied — hypridle restarted"
+        return False, "hypridle exited right away - check the config"
+
+def _hypridle_boot() -> None:
+    """Beim Daemon-Start: Config mit den Standardwerten anlegen, falls sie
+    noch nicht existiert, und hypridle starten, falls es noch nicht läuft. Läuft es schon (Daemon-Neustart), bleibt es
+    unangetastet."""
+    try:
+        if not _HYPRIDLE_CONF.exists():
+            _hypridle_save(_hypridle_defaults())
+        cfg = _hypridle_load()
+        with _hypridle_lock:
+            if cfg["enabled"] and not _hypridle_running():
+                _hypridle_start()
+    except Exception as ex:
+        print(f"[Idle] boot failed: {ex}", file=sys.stderr)
+
+def _idle_content(win: Gtk.Window) -> Gtk.Box:
+    root = vbox(4); pad(root, h=4, v=6)
+    state = {"cfg": _hypridle_load(), "timer": None}
+
+    status_lbl = Gtk.Label(label="")
+    status_lbl.get_style_context().add_class("caption")
+    status_lbl.set_opacity(0.75)
+    status_lbl.set_line_wrap(True)
+    status_lbl.set_no_show_all(True)
+    status_lbl.hide()
+    def _flash(text: str, ms: int = 3000):
+        status_lbl.set_label(text)
+        status_lbl.show()
+        GLib.timeout_add(ms, lambda: (status_lbl.hide(), False)[1])
+        return False
+
+    def _commit(_=None):
+        state["timer"] = None
+        cfg = json.loads(json.dumps(state["cfg"]))
+        def _work():
+            try:
+                _hypridle_save(cfg)
+                _ok, msg = _hypridle_apply(cfg)
+            except Exception as ex:
+                msg = f"Error: {ex}"
+            GLib.idle_add(_flash, msg)
+        in_thread(_work)
+        return False
+    def _schedule():
+        # Entprellen: hypridle wird erst ~0,8 s nach der letzten Änderung
+        # neu gestartet, nicht bei jedem Slider-Pixel.
+        if state["timer"]:
+            GLib.source_remove(state["timer"])
+        state["timer"] = GLib.timeout_add(800, _commit)
+
+    def _set_active(b, on):
+        ctx = b.get_style_context()
+        if on: ctx.add_class("active")
+        else:  ctx.remove_class("active")
+    def _caption(text):
+        l = Gtk.Label(label=text)
+        l.get_style_context().add_class("caption"); l.set_opacity(0.7)
+        l.set_line_wrap(True)
+        return l
+
+    body = vbox(6)     # alles außer dem Master-Schalter (bei "Off" ausgegraut)
+
+    # ── Master ───────────────────────────────────────────────────────
+    master_btn = btn("")
+    def _refresh_master():
+        on = state["cfg"]["enabled"]
+        master_btn.set_label("Idle management:  " + ("On" if on else "Off"))
+        _set_active(master_btn, on)
+        body.set_sensitive(on)
+    def _on_master(_b):
+        state["cfg"]["enabled"] = not state["cfg"]["enabled"]
+        _refresh_master(); _schedule()
+    master_btn.connect("clicked", _on_master)
+
+    # ── Aktionen: Schalter + Minuten ────────────────────────────────
+    for key, label, _c, _r, _m in _HYPRIDLE_ACTIONS:
+        a = state["cfg"]["actions"][key]
+        block = vbox(2)
+        tog = btn("")
+        min_lbl = Gtk.Label(label=" min")
+        sl_row, sl = bslider("󰔟", 1, 120, 1, a["min"], None, suffix_lbl=min_lbl)
+        def _refresh_action(key=key, label=label, tog=tog, sl_row=sl_row):
+            on = state["cfg"]["actions"][key]["on"]
+            tog.set_label(f"{label}:  " + ("On" if on else "Off"))
+            _set_active(tog, on)
+            sl_row.set_sensitive(on)
+        def _on_tog(_b, key=key, refresh=_refresh_action):
+            ac = state["cfg"]["actions"][key]
+            ac["on"] = not ac["on"]
+            refresh(); _schedule()
+        def _on_sl(scale, key=key):
+            state["cfg"]["actions"][key]["min"] = int(round(scale.get_value()))
+            _schedule()
+        tog.connect("clicked", _on_tog)
+        sl.connect("value-changed", _on_sl)       # erst NACH dem Setzen des Startwerts
+        _refresh_action()
+        block.pack_start(tog, False, False, 0)
+        block.pack_start(sl_row, False, False, 0)
+        body.pack_start(block, False, False, 2)
+
+    body.pack_start(sep(), False, False, 4)
+
+    # ── Allgemeine Optionen ─────────────────────────────────────────
+    sleep_btn = btn("")
+    def _refresh_sleep():
+        on = state["cfg"]["lock_on_sleep"]
+        sleep_btn.set_label("Lock before sleep:  " + ("On" if on else "Off"))
+        _set_active(sleep_btn, on)
+    def _on_sleep(_b):
+        state["cfg"]["lock_on_sleep"] = not state["cfg"]["lock_on_sleep"]
+        _refresh_sleep(); _schedule()
+    sleep_btn.connect("clicked", _on_sleep)
+    sleep_btn.set_tooltip_text("Lock the session whenever the system goes to sleep (lid close, manual suspend, …)")
+
+    inhibit_btn = btn("")
+    def _refresh_inhibit():
+        on = state["cfg"]["respect_inhibit"]
+        inhibit_btn.set_label("Stay awake while media plays:  " + ("On" if on else "Off"))
+        _set_active(inhibit_btn, on)
+    def _on_inhibit(_b):
+        state["cfg"]["respect_inhibit"] = not state["cfg"]["respect_inhibit"]
+        _refresh_inhibit(); _schedule()
+    inhibit_btn.connect("clicked", _on_inhibit)
+    inhibit_btn.set_tooltip_text("Respect inhibit requests from video players, browsers etc.\n"
+                                 "Off = idle actions fire even during a video.")
+    _refresh_sleep(); _refresh_inhibit()
+    body.pack_start(sleep_btn, False, False, 0)
+    body.pack_start(inhibit_btn, False, False, 0)
+    body.pack_start(_caption("Times are minutes without input. Changes are applied by "
+                             "restarting hypridle (about a second after your last change)."),
+                    False, False, 4)
+
+    root.pack_start(master_btn, False, False, 0)
+    root.pack_start(body, False, False, 0)
+    if not shutil.which("hypridle"):
+        warn = _caption("hypridle is not installed — nothing will happen until it is.")
+        root.pack_start(warn, False, False, 2)
+    root.pack_start(status_lbl, False, False, 2)
+    _refresh_master()
+    return root
+
+
 def _akku_and_sysmon_content(win: Gtk.Window) -> Gtk.Box:
     """Zwei-Tab-Fenster: Battery (nur falls _battery_present(), also
     nur auf Laptops) + System Monitor (IMMER, unabhängig vom Akku -
@@ -5426,6 +5722,8 @@ def _akku_and_sysmon_content(win: Gtk.Window) -> Gtk.Box:
     default_tab = "battery" if has_bat else "system"
     if has_bat:
         stack.add_named(_akku_content(win), "battery")
+    # Idle-Tab (hypridle-Optionen): keine Timer/Polling, daher direkt bauen.
+    stack.add_named(_idle_content(win), "idle")
 
     # System-Tab wird LAZY gebaut - erst wenn tatsächlich draufgeklickt
     # wird, nicht sofort beim Öffnen des Fensters. Der System-Monitor
@@ -5488,7 +5786,7 @@ def _akku_and_sysmon_content(win: Gtk.Window) -> Gtk.Box:
             else:         ctx.remove_class("active")
 
     tabs = ([("battery", "󰁹  Battery")] if has_bat else []) + \
-           [("system", "󰍹  System"), ("processes", "󰆧  Processes")]
+           [("system", "󰍹  System"), ("processes", "󰆧  Processes"), ("idle", "󰒲  Idle")]
     for name, label in tabs:
         b = btn(label, active=(name == default_tab))
         b.connect("clicked", lambda _b, n=name: _switch(n))
@@ -11172,27 +11470,34 @@ def _trafktuxbar_load() -> dict:
     return {}
 
 def _trafktuxbar_edge_overhang_px() -> int:
+    """Aktueller Wert: Userbar.jsonc (autohide.edge_overhang_px) hat Vorrang vor
+    dem System-Standard in TrafkTuxBar.jsonc - genau so legt die Bar beide
+    übereinander."""
     try:
+        user = _bar_read_json(_BAR_USER_CONF)
+        if isinstance(user, dict) and isinstance(user.get("autohide"), dict):
+            v = user["autohide"].get("edge_overhang_px")
+            if isinstance(v, (int, float)):
+                return int(v)
         return int(_trafktuxbar_load().get("autohide", {}).get("edge_overhang_px", 15))
     except Exception:
         return 15
 
 def _trafktuxbar_set_edge_overhang_px(value: int) -> tuple[bool, str]:
-    """Patcht NUR den Zahlenwert per Regex direkt im JSONC-Rohtext, statt
-    die Datei über json.loads()+json.dumps() neu zusammenzusetzen - das
-    würde alle '//'-Kommentare killen, von denen TrafkTuxBar.jsonc
-    reichlich hat."""
-    p = _trafktuxbar_jsonc_path()
-    if not p.is_file():
-        return False, f"{p} not found"
+    """Schreibt den Wert in die User-Datei der Bar (Userbar.jsonc, Schlüssel
+    "autohide": {"edge_overhang_px": N}) - NICHT mehr in TrafkTuxBar.jsonc:
+    das ist der System-Standard, den ein Update ersetzt. Die Bar legt "autohide"
+    Feld für Feld über den Standard. Danach lädt sich die Bar per SIGHUP neu
+    (siehe _bar_reload_soon), statt hart beendet und neu gestartet zu werden."""
     try:
-        txt = p.read_text()
-        new_txt, n = re.subn(r'("edge_overhang_px"\s*:\s*)-?\d+', rf'\g<1>{value}', txt, count=1)
-        if n == 0:
-            return False, "edge_overhang_px not found in TrafkTuxBar.jsonc"
-        backup_file(p)
-        atomic_write_text(p, new_txt)
-        run_bg(["bash", "-c", "killall TrafkTuxBar; $HOME/.config/TrafkTuxBar/TrafkTuxBar &"])
+        data = _bar_user_read()
+        ah = data.get("autohide")
+        if not isinstance(ah, dict):
+            ah = {}
+        ah["edge_overhang_px"] = int(value)
+        data["autohide"] = ah
+        _bar_user_write(data)
+        _bar_reload_soon()
         return True, ""
     except Exception as e:
         return False, str(e)
@@ -14448,29 +14753,15 @@ def _build_settings_security(page: Gtk.Box, key: str, label: str, win: Gtk.Windo
 #
 #  Spiegelt die App-Quellen-Logik 1:1 aus TrafkTuxLauncher.c
 #  (get_desktop_apps/get_filtered_desktop_apps/get_path_binaries/
-#  extract_binary/strip_exec_field_codes), damit Editor und Launcher
+#  unwrap_exec/exec_key/strip_exec_field_codes), damit Editor und Launcher
 #  immer dieselbe Sicht auf "welche Apps gibt es" / "was ist schon
 #  einsortiert" haben. "All Packages" in menu.json ist trotz des
 #  Namens $PATH-Binaries, keine Pacman-Pakete (siehe VMODE_RUN dort).
 # ════════════════════════════════════════════════════════════
 
 _APPLAUNCHER_WRAPPER_PREFIXES = ("kitty", "sudo")
-# Binaries, die so generisch sind, dass ein exec-Match darauf NICHTS über
-# die eigentliche App aussagt (Interpreter/Runtime-Wrapper - typischerweise
-# das erste Token bei "flatpak run <id>", "python3 <script>.py", etc.).
-# Ohne diese Ausnahme reicht 1 einsortierte App mit so einem Exec, um ALLE
-# anderen Apps mit demselben Interpreter fälschlich aus "Unsorted" zu
-# werfen, weil extract_binary() nur das erste Token nimmt und Argumente
-# ignoriert - BESTÄTIGT derselbe Effekt wie in extract_binary() in
-# TrafkTuxLauncher.c (dort inzwischen mit GENERIC_BINARIES genauso
-# gefixt, Liste hier bewusst synchron gehalten - z.B. "steam" bei JEDEM
-# per Steam gestarteten Spiel-Shortcut, nicht nur bei Steam selbst).
-_APPLAUNCHER_GENERIC_BINARIES = {
-    "env", "bash", "sh", "zsh", "fish", "python", "python3", "python2",
-    "perl", "ruby", "node", "nodejs", "electron", "java", "javaw",
-    "flatpak", "snap", "appimage-run", "wine", "wine64", "wineconsole",
-    "steam", "lutris", "heroic", "bottles",
-}
+# (Früher stand hier eine GENERIC_BINARIES-Ausnahmeliste - überflüssig, seit
+# der Dedup-Schlüssel der GANZE Befehl ist, siehe _applauncher_exec_key().)
 _APPLAUNCHER_SCAN_CACHE_TTL = 15  # Sekunden, wie SCAN_CACHE_TTL im Launcher
 
 def _applauncher_sys_menu_path() -> Path:
@@ -14657,8 +14948,10 @@ def _applauncher_iter_app_nodes(tree: dict, path: list | None = None):
         elif child.get("type") == "folder":
             yield from _applauncher_iter_app_nodes(child, cpath)
 
-def _applauncher_extract_binary(exec_str: str) -> str | None:
-    """Portierung von extract_binary() in TrafkTuxLauncher.c."""
+def _applauncher_unwrap_exec(exec_str: str) -> str | None:
+    """Portierung des Wrapper-Auspackens aus unwrap_exec() in TrafkTuxLauncher.c:
+    schält Prefixe (kitty/sudo) und `bash -c '...'` ab und liefert den
+    eigentlichen Befehl samt Argumenten."""
     if not exec_str:
         return None
     p = exec_str.strip()
@@ -14684,8 +14977,30 @@ def _applauncher_extract_binary(exec_str: str) -> str | None:
                         p = q[1:end].lstrip()
                         again = True
                         continue
-    bin_part = re.split(r"[ \t\n\r]", p, maxsplit=1)[0]
-    return os.path.basename(bin_part) if bin_part else None
+    return p or None
+
+def _applauncher_exec_key(exec_str: str) -> str | None:
+    """Dedup-Schlüssel für "ist diese App schon einsortiert/versteckt?"
+    (Gegenstück zu exec_key() im Launcher): der GANZE Befehl statt nur
+    des ersten Tokens - Feldcodes (%U, %f ...) weg, Wrapper abgeschält,
+    erstes Token auf den Basename, Whitespace normalisiert, casefold.
+
+    Warum nicht mehr nur das Binary: viele völlig verschiedene Apps teilen
+    sich eins (libreoffice --writer/--calc, xfce4-terminal --hold fastfetch,
+    brave --app=<PWA>, steam steam://rungameid/N ...). Ein einziger
+    einsortierter Eintrag hat dadurch ALLE anderen aus Unsorted geworfen;
+    dafür gab es die GENERIC_BINARIES-Ausnahmeliste, die immer nur Einzel-
+    fälle abdeckte. Mit dem vollen Befehl gibt es keine Fehlmatches mehr
+    und die Liste ist überflüssig. Weiterhin als Duplikat erkannt:
+    `thunar %U` == `thunar` == `/usr/bin/thunar`."""
+    un = _applauncher_unwrap_exec(_applauncher_strip_exec_field_codes(exec_str or ""))
+    if not un:
+        return None
+    toks = un.split()
+    if not toks:
+        return None
+    toks[0] = os.path.basename(toks[0])
+    return " ".join(toks).casefold()
 
 def _applauncher_used_keys(tree: dict) -> tuple:
     """(names, exec_binaries), beide casefolded - dieselben zwei Dedup-
@@ -14695,9 +15010,9 @@ def _applauncher_used_keys(tree: dict) -> tuple:
         nm = (node.get("name") or "").strip().casefold()
         if nm:
             names.add(nm)
-        bin_ = _applauncher_extract_binary(node.get("exec") or "")
-        if bin_ and bin_.casefold() not in _APPLAUNCHER_GENERIC_BINARIES:
-            execs.add(bin_.casefold())
+        key = _applauncher_exec_key(node.get("exec") or "")
+        if key:
+            execs.add(key)
     return names, execs
 
 _APPLAUNCHER_FIELD_CODE_RE = re.compile(r"%(.)")
@@ -14840,9 +15155,9 @@ def _applauncher_hidden_keys(user_tree: dict) -> tuple:
         nm = (h.get("name") or "").strip().casefold()
         if nm:
             names.add(nm)
-        bin_ = _applauncher_extract_binary(h.get("exec") or "")
-        if bin_ and bin_.casefold() not in _APPLAUNCHER_GENERIC_BINARIES:
-            execs.add(bin_.casefold())
+        key = _applauncher_exec_key(h.get("exec") or "")
+        if key:
+            execs.add(key)
     return names, execs
 
 def _applauncher_unsorted_apps(tree: dict, user_tree: dict) -> list:
@@ -14857,8 +15172,8 @@ def _applauncher_unsorted_apps(tree: dict, user_tree: dict) -> list:
     for e in _applauncher_scan_desktop_apps():
         if e["name"].casefold() in names:
             continue
-        bin_ = _applauncher_extract_binary(e["exec"])
-        if bin_ and bin_.casefold() in execs:
+        key = _applauncher_exec_key(e["exec"])
+        if key and key in execs:
             continue
         out.append(e)
     return out
@@ -15950,9 +16265,9 @@ def _hypr_build_user_autostart_lua(commands: list) -> str:
     lines.append("")
     return "\n".join(lines)
 
-def _prompt_autostart_command(parent: Gtk.Window, existing: list) -> str | None:
-    """Dialog zum Hinzufügen eines Autostart-Eintrags (löst die beiden
-    Ursachen des kaputten Autostart-Tabs, siehe README):
+def _app_picker_dialog(parent: Gtk.Window, title: str, taken_execs: list,
+                       ok_label: str = "Add") -> dict | None:
+    """Gemeinsamer Dialog "App auswählen" (Autostart-Tab und Bar-Tab):
 
     1) Eingabe: echtes eigenständiges Gtk.Dialog-Toplevel statt Inline-
        Gtk.Entry im Layer-Shell-Popup (KeyboardMode.NONE -> dort bekommt
@@ -15964,22 +16279,26 @@ def _prompt_autostart_command(parent: Gtk.Window, existing: list) -> str | None:
        bleibt editierbar (z.B. für Argumente) und ist zugleich der Weg
        für Befehle ohne .desktop-Datei.
 
-    Bereits eingetragene Befehle werden in der Liste ausgeblendet.
-    Gibt den Befehl zurück oder None bei Abbruch/leerer Eingabe."""
-    dlg = Gtk.Dialog(title="Add autostart entry", transient_for=parent)
+    Bereits verwendete Befehle (taken_execs) werden in der Liste
+    ausgeblendet. Rückgabe: {"name", "icon", "exec"} oder None bei
+    Abbruch/leerer Eingabe. Wurde eine App aus der Liste gewählt (und der
+    Befehl danach nur ergänzt), kommen Name und Icon von ihr; bei einem
+    frei getippten Befehl ist der Name das erste Wort und das Icon generisch."""
+    dlg = Gtk.Dialog(title=title, transient_for=parent)
     dlg.set_name("wb-daemon-popup")
     dlg.set_modal(True)
     dlg.set_keep_above(True)
     dlg.set_type_hint(Gdk.WindowTypeHint.DIALOG)
     dlg.set_default_size(320, 440)
     dlg.add_buttons("Cancel", Gtk.ResponseType.CANCEL,
-                    "Add", Gtk.ResponseType.OK)
+                    ok_label, Gtk.ResponseType.OK)
     dlg.set_default_response(Gtk.ResponseType.OK)
     box = dlg.get_content_area()
 
-    taken = {c.strip() for c in existing}
+    taken = {c.strip() for c in taken_execs}
     apps = [a for a in _applauncher_scan_desktop_apps()
             if a["exec"].strip() not in taken]
+    picked = {"app": None}
 
     search_e = Gtk.SearchEntry()
     search_e.set_placeholder_text("Search installed apps…")
@@ -15992,6 +16311,12 @@ def _prompt_autostart_command(parent: Gtk.Window, existing: list) -> str | None:
     cmd_e = Gtk.Entry()
     cmd_e.set_placeholder_text("…or type a command, e.g. nm-applet")
     cmd_e.set_activates_default(True)
+
+    def _pick(app: dict):
+        picked["app"] = app
+        cmd_e.set_text(app["exec"])
+        cmd_e.grab_focus()
+        cmd_e.set_position(-1)
 
     def _populate(filter_text: str = ""):
         for c in list_box.get_children():
@@ -16015,8 +16340,7 @@ def _prompt_autostart_command(parent: Gtk.Window, existing: list) -> str | None:
             b.set_tooltip_text(a["exec"])
             # Klick = Befehl ins (editierbare) Feld eintragen, NICHT
             # sofort hinzufügen - so lassen sich Argumente noch ergänzen.
-            b.connect("clicked", lambda _b, ex=a["exec"]: (
-                cmd_e.set_text(ex), cmd_e.grab_focus(), cmd_e.set_position(-1)))
+            b.connect("clicked", lambda _b, app=a: _pick(app))
             list_box.pack_start(b, False, False, 0)
         if not shown:
             list_box.pack_start(bitem("No matching apps", dim=True), False, False, 0)
@@ -16031,9 +16355,20 @@ def _prompt_autostart_command(parent: Gtk.Window, existing: list) -> str | None:
     dlg.show_all()
     search_e.grab_focus()
     resp = dlg.run()
-    val = cmd_e.get_text().strip() if resp == Gtk.ResponseType.OK else None
+    cmd = cmd_e.get_text().strip() if resp == Gtk.ResponseType.OK else ""
+    app = picked["app"]
     dlg.destroy()
-    return val or None
+    if not cmd:
+        return None
+    first = cmd.split()[0]
+    if app and app["exec"].split()[0] == first:
+        return {"name": app["name"], "icon": app.get("icon") or "application-x-executable", "exec": cmd}
+    return {"name": os.path.basename(first), "icon": "application-x-executable", "exec": cmd}
+
+def _prompt_autostart_command(parent: Gtk.Window, existing: list) -> str | None:
+    """Autostart-Tab: nur den Befehl der gewählten/getippten App zurückgeben."""
+    app = _app_picker_dialog(parent, "Add autostart entry", existing)
+    return app["exec"] if app else None
 
 def _build_apps_autostart_tab(win: Gtk.Window) -> Gtk.Box:
     root = vbox(4); pad(root, h=4, v=6)
@@ -16251,7 +16586,13 @@ def _wine_list_set(path: Path, exe: str, on: bool) -> None:
     atomic_write_text(path, "\n".join(kept) + "\n")
 
 # ── .desktop -> echte .exe auflösen ───────────────────────────────────
-_WINE_PREFIX_RE = re.compile(r'WINEPREFIX=(?:"([^"]+)"|(\S+))')
+# Drei Schreibweisen im Exec=:  env "WINEPREFIX=/pfad"   (Anführungszeichen um
+# das GANZE KEY=VALUE - so schreibt es Wine bei dir)
+#                               env WINEPREFIX="/pfad x"  /  env WINEPREFIX=/pfad
+_WINE_PREFIX_RE = re.compile(r'"WINEPREFIX=([^"]+)"|WINEPREFIX="([^"]+)"|WINEPREFIX=([^\s"]+)')
+# Uninstaller (unins000.exe, uninstall.exe ...) tauchen als Wine-Einträge auf,
+# sind aber keine Spiele - ausblenden.
+_WINE_UNINSTALLER_RE = re.compile(r'^(unins\w*|uninst\w*|uninstall\w*)\.exe$', re.I)
 _WINE_TARGET_WIN_RE = re.compile(r'([A-Za-z]:\\[^"\n]*?\.(?:lnk|exe))(?=["\s]|$)', re.I)
 _WINE_TARGET_UNIX_RE = re.compile(r'(?:^|[\s"])(/[^"\s]+?\.(?:lnk|exe))(?=["\s]|$)', re.I)
 # Nackter Dateiname ohne Pfad (z.B. `wine winecfg.exe`) - wie im Wrapper
@@ -16294,28 +16635,54 @@ def _wine_win_to_unix(prefix: Path, winpath: str):
             return r
     return None
 
-def _wine_lnk_target(path: Path):
-    """Ziel-Pfad (Windows-Stil) aus einer .lnk lesen - derselbe Parser wie
-    im Wrapper (LinkInfo -> LocalBasePath)."""
+def _wine_lnk_info(path: Path) -> dict:
+    """Liest aus einer .lnk (a) den Ziel-Pfad aus LinkInfo/LocalBasePath
+    (derselbe Weg wie im Wrapper) und - als Fallback für .lnk-Dateien
+    OHNE LinkInfo, wie sie viele Installer erzeugen - (b) RelativePath
+    und WorkingDir aus der StringData. Rückgabe: {"target","relpath","workdir"}
+    (jeweils str oder None)."""
     import struct
+    out = {"target": None, "relpath": None, "workdir": None}
     try:
         data = path.read_bytes()
         if len(data) < 76 or data[0:4] != b"\x4c\x00\x00\x00":
-            return None
+            return out
         flags = struct.unpack_from("<I", data, 20)[0]
         offset = 76
         if flags & 0x1:     # HasLinkTargetIDList
             offset += 2 + struct.unpack_from("<H", data, offset)[0]
         if flags & 0x2:     # HasLinkInfo
             li = offset
+            li_size = struct.unpack_from("<I", data, li)[0]
             li_flags = struct.unpack_from("<I", data, li + 8)[0]
             if li_flags & 0x1:
-                start = li + struct.unpack_from("<I", data, li + 16)[0]
-                end = data.index(b"\x00", start)
-                return data[start:end].decode("latin-1")
+                try:
+                    start = li + struct.unpack_from("<I", data, li + 16)[0]
+                    end = data.index(b"\x00", start)
+                    out["target"] = data[start:end].decode("latin-1") or None
+                except Exception:
+                    pass
+            offset = li + li_size
+        # StringData: NAME(0x4) RELATIVE_PATH(0x8) WORKING_DIR(0x10) ARGS(0x20) ICON(0x40)
+        unicode_str = bool(flags & 0x80)
+        for bit, key in ((0x4, None), (0x8, "relpath"), (0x10, "workdir"),
+                         (0x20, None), (0x40, None)):
+            if not (flags & bit):
+                continue
+            cnt = struct.unpack_from("<H", data, offset)[0]
+            offset += 2
+            nbytes = cnt * (2 if unicode_str else 1)
+            raw = data[offset:offset + nbytes]
+            offset += nbytes
+            if key:
+                out[key] = (raw.decode("utf-16-le", "replace") if unicode_str
+                            else raw.decode("latin-1")) or None
     except Exception:
-        return None
-    return None
+        pass
+    return out
+
+def _wine_lnk_target(path: Path):
+    return _wine_lnk_info(path)["target"]
 
 _wine_ddraw_cache: dict = {}
 def _wine_exe_uses_ddraw(path) -> "bool | None":
@@ -16351,9 +16718,16 @@ def _wine_exe_uses_ddraw(path) -> "bool | None":
     return found
 
 def _wine_entry_from_desktop(desktop: Path):
+    """Ermittelt zu einer Wine-.desktop die echte .exe. Reihenfolge:
+      1. Exec=: .exe direkt, oder .lnk -> LinkInfo-Ziel
+      2. .lnk ohne LinkInfo -> StringData (WorkingDir + RelativePath)
+      3. StartupWMClass= (Wine schreibt dort den .exe-Namen) + Path=
+    Warum etwas nicht klappt, steht in entry["why"] (Tooltip im Tab)."""
     cp = configparser.RawConfigParser(strict=False, interpolation=None)
     try:
         cp.read(desktop, encoding="utf-8")
+    except configparser.ParsingError:
+        pass            # kaputte/umgebrochene Zeile: was geparst werden konnte, bleibt nutzbar
     except Exception:
         return None
     if not cp.has_section("Desktop Entry"):
@@ -16366,38 +16740,78 @@ def _wine_entry_from_desktop(desktop: Path):
     exec_raw = sec.get("Exec", "")
     if not exec_raw.strip():
         return None
+    why: list = []
     exec_s = _wine_unescape_exec(exec_raw)
     prefix = Path(os.path.expanduser("~/.wine"))
     pm = _WINE_PREFIX_RE.search(exec_s)
     if pm:
-        prefix = Path(os.path.expandvars(os.path.expanduser(pm.group(1) or pm.group(2))))
+        pv = pm.group(1) or pm.group(2) or pm.group(3)
+        prefix = Path(os.path.expandvars(os.path.expanduser(pv)))
     stripped = _WINE_PREFIX_RE.sub(" ", exec_s)
+    work_dir = sec.get("Path", "").strip()
 
     target = None
     m = (_WINE_TARGET_WIN_RE.search(stripped) or _WINE_TARGET_UNIX_RE.search(stripped)
          or _WINE_TARGET_BARE_RE.search(stripped))
     if m:
         target = m.group(1)
+    else:
+        why.append("no .exe/.lnk found in Exec=")
 
     exe_name, exe_path = None, None
     if target:
         is_win = bool(re.match(r'^[A-Za-z]:', target))
         if target.lower().endswith(".lnk"):
             lnk = _wine_win_to_unix(prefix, target) if is_win else Path(target)
-            if lnk is not None and Path(lnk).is_file():
-                tw = _wine_lnk_target(Path(lnk))
-                if tw:
-                    exe_path = _wine_win_to_unix(prefix, tw)
-                    exe_name = exe_path.name if exe_path is not None \
-                        else Path(tw.replace("\\", "/")).name
+            if lnk is None or not Path(lnk).is_file():
+                why.append(f"shortcut not found on disk: {target} (prefix {prefix})")
+            else:
+                info = _wine_lnk_info(Path(lnk))
+                if info["target"]:
+                    exe_path = _wine_win_to_unix(prefix, info["target"])
+                    exe_name = (exe_path.name if exe_path is not None
+                                else Path(info["target"].replace("\\", "/")).name)
+                elif info["relpath"] and info["relpath"].lower().endswith(".exe"):
+                    exe_name = Path(info["relpath"].replace("\\", "/")).name
+                    wd = _wine_win_to_unix(prefix, info["workdir"]) if info["workdir"] else None
+                    if wd is not None:
+                        exe_path = _wine_resolve_ci(wd, exe_name)
+                    if exe_path is None:
+                        rel = _wine_resolve_ci(Path(lnk).parent, info["relpath"].replace("\\", "/"))
+                        exe_path = rel if rel is not None and rel.is_file() else None
+                else:
+                    why.append("shortcut has neither a link target nor a relative path")
         else:
             exe_path = _wine_win_to_unix(prefix, target) if is_win else Path(target)
             exe_name = (exe_path.name if exe_path is not None
                         else Path(target.replace("\\", "/")).name)
-    if exe_name and exe_name.lower() in _WINE_UTILITIES:
+
+    # Fallback: StartupWMClass (= .exe-Name, den Wine selbst einträgt)
+    if not exe_name:
+        wm = sec.get("StartupWMClass", "").strip()
+        if wm.lower().endswith(".exe"):
+            exe_name = wm
+            why.append("exe name taken from StartupWMClass")
+        else:
+            why.append("no usable StartupWMClass either")
+    if exe_name and (exe_path is None or not Path(exe_path).exists()):
+        exe_path = None
+        if work_dir:
+            # Path= komplett case-insensitiv von "/" aus auflösen
+            bd = _wine_resolve_ci(Path("/"), work_dir.lstrip("/"))
+            cand = _wine_resolve_ci(bd, exe_name) if bd is not None else None
+            if cand is not None and cand.is_file():
+                exe_path = cand
+        if exe_path is None:
+            why.append(f"{exe_name}: file not found on disk (DDRAW check skipped)")
+    if exe_path is not None:
+        exe_name = Path(exe_path).name   # echte Schreibweise von der Platte
+
+    if exe_name and (exe_name.lower() in _WINE_UTILITIES or _WINE_UNINSTALLER_RE.match(exe_name)):
         return None
     return {"name": sec.get("Name", "").strip() or desktop.stem,
-            "exe": exe_name, "exe_path": exe_path, "desktop": str(desktop)}
+            "exe": exe_name, "exe_path": exe_path, "desktop": str(desktop),
+            "why": "; ".join(why), "exec": exec_raw.strip()}
 
 def _wine_scan_games() -> list:
     """Alle Wine-.desktop-Einträge (ohne Wine-Utilities), pro .exe nur
@@ -16457,13 +16871,17 @@ def _build_apps_wine_tab(win: Gtk.Window) -> Gtk.Box:
 
     # ── Globale Einstellungen ────────────────────────────────────────
     enabled_btn = btn("")
-    games_box_holder = vbox(2)      # wird unten befüllt; bei Enabled=false ausgegraut
+    games_box_holder = vbox(2)      # Spieleliste (Untertab "Games")
+    sub_stack = Gtk.Stack()         # Untertabs: Games / Scaling / DirectDraw
+    sub_stack.set_transition_type(Gtk.StackTransitionType.NONE)
+    sub_stack.set_hhomogeneous(False)
+    sub_stack.set_vhomogeneous(False)
 
     def _refresh_enabled():
         on = state["cfg"].get("Enabled", "true") == "true"
         enabled_btn.set_label("Gamescope for Wine:  On" if on else "Gamescope for Wine:  Off")
         _set_active(enabled_btn, on)
-        games_box_holder.set_sensitive(on)
+        sub_stack.set_sensitive(on)     # Master aus -> alle Untertabs ausgegraut
     def _on_enabled(_b):
         on = state["cfg"].get("Enabled", "true") == "true"
         if _save_key("Enabled", "false" if on else "true"):
@@ -16544,33 +16962,65 @@ def _build_apps_wine_tab(win: Gtk.Window) -> Gtk.Box:
         l.get_style_context().add_class("caption"); l.set_opacity(0.75)
         return l
 
-    root.pack_start(enabled_btn, False, False, 0)
-    root.pack_start(_caption("Upscale filter"), False, False, 0)
-    root.pack_start(filter_ctrl.widget, False, False, 0)
-    root.pack_start(_caption("Scaler"), False, False, 0)
-    root.pack_start(scaler_ctrl.widget, False, False, 0)
-    root.pack_start(sharp_row, False, False, 0)
-    root.pack_start(sharp_hint, False, False, 0)
-    root.pack_start(force_btn, False, False, 2)
-    root.pack_start(_caption("dgVoodoo2 version (for DirectDraw games)"), False, False, 0)
-    root.pack_start(dgv_ctrl.widget, False, False, 0)
-    root.pack_start(sep(), False, False, 4)
+    # ── Untertab "Scaling": alles rund um gamescope ──────────────────
+    scaling_page = vbox(4); pad(scaling_page, h=2, v=6)
+    scaling_page.pack_start(_caption("Upscale filter"), False, False, 0)
+    scaling_page.pack_start(filter_ctrl.widget, False, False, 0)
+    scaling_page.pack_start(_caption("Scaler"), False, False, 4)
+    scaling_page.pack_start(scaler_ctrl.widget, False, False, 0)
+    scaling_page.pack_start(sharp_row, False, False, 4)
+    scaling_page.pack_start(sharp_hint, False, False, 0)
+    scaling_page.pack_start(sep(), False, False, 4)
+    scaling_page.pack_start(force_btn, False, False, 2)
 
-    # ── Spieleliste ──────────────────────────────────────────────────
+    # ── Untertab "DirectDraw": dgVoodoo2 ─────────────────────────────
+    dd_page = vbox(4); pad(dd_page, h=2, v=6)
+    dd_page.pack_start(_caption("dgVoodoo2 version"), False, False, 0)
+    dd_page.pack_start(dgv_ctrl.widget, False, False, 0)
+    dd_note = _caption("dgVoodoo2 is only injected into games that import DDRAW.DLL\n"
+                       "(DirectDraw). Per-game opt-out: Games tab.")
+    dd_note.set_opacity(0.6)
+    dd_page.pack_start(dd_note, False, False, 6)
+
+    # ── Untertab "Games": Spieleliste mit Excludes ───────────────────
+    games_page = vbox(4); pad(games_page, h=2, v=6)
     head = hbox(6)
     head.pack_start(bsec("Wine games"), True, True, 0)
     rescan_btn = Gtk.Button.new_from_icon_name("view-refresh-symbolic", Gtk.IconSize.BUTTON)
     rescan_btn.set_relief(Gtk.ReliefStyle.NONE)
     rescan_btn.set_tooltip_text("Rescan ~/.local/share/applications/wine")
     head.pack_start(rescan_btn, False, False, 0)
-    root.pack_start(head, False, False, 0)
-    root.pack_start(_caption("Gamescope off = launch this game through raw Wine.\n"
-                             "dgVoodoo off = never inject dgVoodoo2 (only games importing DDRAW.DLL)."),
-                    False, False, 2)
-
-    list_sw, list_box = scroll_box(220)
+    games_page.pack_start(head, False, False, 0)
+    games_page.pack_start(_caption("Gamescope off = launch this game through raw Wine.\n"
+                                   "dgVoodoo off = never inject dgVoodoo2 for it."),
+                          False, False, 2)
+    list_sw, list_box = scroll_box(260)
     games_box_holder.pack_start(list_sw, False, False, 0)
-    root.pack_start(games_box_holder, False, False, 0)
+    games_page.pack_start(games_box_holder, False, False, 0)
+
+    sub_stack.add_named(games_page, "games")
+    sub_stack.add_named(scaling_page, "scaling")
+    sub_stack.add_named(dd_page, "dd")
+
+    sub_btns: dict = {}
+    sub_row = hbox(4); sub_row.set_halign(Gtk.Align.CENTER)
+    def _sub_switch(name):
+        _switch_stack(sub_stack, win, name)
+        for n, b in sub_btns.items():
+            ctx = b.get_style_context()
+            if n == name: ctx.add_class("active")
+            else:         ctx.remove_class("active")
+    for name, tlabel in (("games", "Games"), ("scaling", "Scaling"), ("dd", "DirectDraw")):
+        b = btn(tlabel, active=(name == "games"))
+        b.connect("clicked", lambda _b, n=name: _sub_switch(n))
+        sub_btns[name] = b
+        sub_row.pack_start(b, False, False, 0)
+    sub_stack.set_visible_child_name("games")
+
+    root.pack_start(enabled_btn, False, False, 0)
+    root.pack_start(sub_row, False, False, 2)
+    root.pack_start(sep(), False, False, 2)
+    root.pack_start(sub_stack, False, False, 0)
     root.pack_start(status_lbl, False, False, 2)
 
     def _render(entries: list):
@@ -16590,12 +17040,16 @@ def _build_apps_wine_tab(win: Gtk.Window) -> Gtk.Box:
             lbl.set_halign(Gtk.Align.START)
             lbl.set_ellipsize(Pango.EllipsizeMode.END)
             lbl.set_max_width_chars(16)
-            lbl.set_tooltip_text(e["exe"] or "Could not resolve the .exe of this entry")
+            lbl.set_tooltip_text(e["exe"] or
+                                 ("Could not resolve the .exe of this entry.\n"
+                                  f"Why: {e.get('why') or 'unknown'}\n"
+                                  f"Exec: {e.get('exec', '')}\nFile: {e.get('desktop', '')}"))
             row.pack_start(lbl, True, True, 0)
 
             if not e["exe"]:
                 dim = Gtk.Label(label="exe not found")
                 dim.get_style_context().add_class("caption"); dim.set_opacity(0.5)
+                dim.set_tooltip_text(lbl.get_tooltip_text())
                 row.pack_start(dim, False, False, 0)
                 list_box.pack_start(row, False, False, 0)
                 continue
@@ -16661,6 +17115,408 @@ def _build_apps_wine_tab(win: Gtk.Window) -> Gtk.Box:
     return root
 
 
+# ════════════════════════════════════════════════════════════
+#  App Editor Tab 2: Bar (gepinnte Apps + Widgets)
+#
+#  Schreibt in ~/.config/TrafkTuxBar/Userbar.jsonc - die Datei legt die BAR
+#  selbst an (befüllt mit dem System-Standard von "pinned" und
+#  "other-widgets", siehe TrafkTuxBar.c). Der Editor ändert nur diese
+#  zwei Module und schickt danach `pkill -HUP -x TrafkTuxBar`, worauf die
+#  Bar sich neu lädt. Das Settings-Widget und die festen Module (Launcher,
+#  Power, Uhr, Tray ...) stehen nicht in der Datei und sind hier nicht
+#  änderbar. Die Bar läuft auch ohne diesen Editor/die Widgets einwandfrei.
+# ════════════════════════════════════════════════════════════
+_BAR_DIR = Path(HOME) / ".config" / "TrafkTuxBar"
+_BAR_SYS_CONF = _BAR_DIR / "TrafkTuxBar.jsonc"
+_BAR_USER_CONF = _BAR_DIR / "Userbar.jsonc"
+_BAR_USER_HEADER = (
+    "// Userbar.jsonc - DEINE persoenlichen Bar-Einstellungen.\n"
+    "//\n"
+    "// Zuletzt geschrieben vom App Editor (Widgets > Apps & Shortcuts > Bar).\n"
+    "// Enthaelt die veraenderbaren Bereiche der Bar: \"pinned\" (gepinnte Apps)\n"
+    "// und \"other-widgets\" (Widgets rechts). Was hier steht, ERSETZT den\n"
+    "// System-Standard dieser Bereiche (TrafkTuxBar.jsonc). Von Hand editieren\n"
+    "// geht auch (danach: pkill -HUP -x TrafkTuxBar) - Kommentare gehen beim\n"
+    "// naechsten Speichern im Editor aber verloren (diese Kopfzeilen bleiben).\n"
+    "// Datei loeschen = die Bar legt sie beim naechsten Start frisch aus dem\n"
+    "// Standard an.\n"
+)
+
+def _bar_strip_jsonc(text: str) -> str:
+    """Python-Gegenstück zu strip_jsonc_comments() in TrafkTuxBar.c: "//" ausserhalb
+    von Strings entfernt den Rest der Zeile (URLs wie https://... in Strings
+    bleiben dadurch heil)."""
+    out, i, n = [], 0, len(text)
+    in_str = esc = False
+    while i < n:
+        ch = text[i]
+        if in_str:
+            out.append(ch)
+            if esc:            esc = False
+            elif ch == "\\":   esc = True
+            elif ch == '"':    in_str = False
+            i += 1
+            continue
+        if ch == '"':
+            in_str = True
+            out.append(ch); i += 1
+            continue
+        if ch == "/" and i + 1 < n and text[i + 1] == "/":
+            while i < n and text[i] != "\n":
+                i += 1
+            continue
+        out.append(ch); i += 1
+    return "".join(out)
+
+def _bar_read_json(path: Path):
+    """JSONC-Datei -> Python-Objekt, None wenn fehlend/kaputt."""
+    try:
+        return json.loads(_bar_strip_jsonc(path.read_text(encoding="utf-8")))
+    except Exception:
+        return None
+
+def _bar_system_module(mod_id: str):
+    """Das Modul mit dieser id aus TrafkTuxBar.jsonc (System-Standard) oder None."""
+    conf = _bar_read_json(_BAR_SYS_CONF)
+    if not isinstance(conf, dict):
+        return None
+    for key in ("modules_left", "modules_center", "modules_right"):
+        for m in conf.get(key) or []:
+            if isinstance(m, dict) and m.get("id") == mod_id:
+                return m
+    return None
+
+def _bar_user_read() -> dict:
+    data = _bar_read_json(_BAR_USER_CONF)
+    if not isinstance(data, dict):
+        data = {}
+    data.setdefault("version", 1)
+    if not isinstance(data.get("modules"), dict):
+        data["modules"] = {}
+    return data
+
+_bar_backed_up = [False]
+def _bar_user_write(data: dict) -> None:
+    _BAR_DIR.mkdir(parents=True, exist_ok=True)
+    if _BAR_USER_CONF.exists() and not _bar_backed_up[0]:
+        _bar_backed_up[0] = True
+        backup_file(_BAR_USER_CONF)
+    atomic_write_text(_BAR_USER_CONF,
+                      _BAR_USER_HEADER + json.dumps(data, indent=4, ensure_ascii=False) + "\n")
+
+def _bar_effective(mod_id: str) -> tuple:
+    """(items, visible_count) wie die Bar sie gerade verwendet: aus
+    Userbar.jsonc, falls dort für das Modul gesetzt, sonst System-Standard."""
+    user_mod = _bar_user_read()["modules"].get(mod_id)
+    sys_mod = _bar_system_module(mod_id) or {}
+    items = None
+    visible = None
+    if isinstance(user_mod, dict):
+        if isinstance(user_mod.get("items"), list):
+            items = user_mod["items"]
+        if isinstance(user_mod.get("visible_count"), int):
+            visible = user_mod["visible_count"]
+    if items is None:
+        items = sys_mod.get("items") if isinstance(sys_mod.get("items"), list) else []
+    if visible is None:
+        visible = sys_mod.get("visible_count") if isinstance(sys_mod.get("visible_count"), int) else 3
+    return [dict(i) for i in items if isinstance(i, dict)], int(visible)
+
+def _bar_save_module(mod_id: str, items: list, visible: int) -> None:
+    data = _bar_user_read()
+    entry = data["modules"].get(mod_id)
+    if not isinstance(entry, dict):
+        entry = {}
+    entry["visible_count"] = int(visible)
+    entry["items"] = items
+    data["modules"][mod_id] = entry
+    _bar_user_write(data)
+
+def _bar_reset_module(mod_id: str) -> None:
+    """Modul aus Userbar.jsonc entfernen -> die Bar nimmt wieder den System-Standard."""
+    data = _bar_user_read()
+    data["modules"].pop(mod_id, None)
+    _bar_user_write(data)
+
+def _bar_click_suffix() -> str:
+    """Der Klick-Sound-Befehl, den der System-Standard an seine gepinnten Apps
+    hängt (`... && <befehl> &`) - wird 1:1 übernommen, damit neue Shortcuts sich
+    genauso verhalten. Gibt es keinen, bleibt er leer (dann ohne Sound)."""
+    mod = _bar_system_module("pinned") or {}
+    for it in mod.get("items") or []:
+        m = re.search(r'&&\s*(.+?)\s*&\s*$', str((it or {}).get("on_click", "")))
+        if m:
+            return m.group(1)
+    return ""
+
+def _bar_make_shortcut(app: dict, existing_ids: set) -> dict:
+    slug = re.sub(r'[^a-z0-9]+', '-', app["name"].lower()).strip('-') or "app"
+    base, new_id, n = f"shortcut-{slug}", f"shortcut-{slug}", 2
+    while new_id in existing_ids:
+        new_id = f"{base}-{n}"; n += 1
+    cmd = f"setsid {app['exec']}"
+    suffix = _bar_click_suffix()
+    icon = app.get("icon") or "application-x-executable"
+    if os.path.isabs(icon):      # die Bar lädt Icons nur per Theme-Name, nicht per Pfad
+        icon = "application-x-executable"
+    return {"id": new_id, "icon": icon, "tooltip": app["name"],
+            "on_click": f"{cmd} && {suffix} &" if suffix else f"{cmd} &"}
+
+def _bar_proc_handles_sighup(pid: int) -> bool:
+    """True, wenn der Prozess SIGHUP abfängt oder ignoriert (Bit 0 in SigCgt/
+    SigIgn aus /proc/<pid>/status). Nur dann ist ein SIGHUP ungefährlich: eine
+    ALTE Bar ohne Reload-Unterstützung hätte die Standardaktion - Beenden."""
+    try:
+        mask = 0
+        for line in Path(f"/proc/{pid}/status").read_text().splitlines():
+            if line.startswith(("SigCgt:", "SigIgn:")):
+                mask |= int(line.split(":", 1)[1].strip(), 16)
+        return bool(mask & 1)          # Signal 1 (SIGHUP) = Bit 0
+    except Exception:
+        return False
+
+def _bar_send_reload() -> None:
+    """Bar neu laden lassen. Neue Bar: SIGHUP (sie startet sich selbst neu, siehe
+    on_sighup_reload in TrafkTuxBar.c). Läuft noch eine ALTE Bar (kein SIGHUP-
+    Handler), wird sie stattdessen wie früher beendet und neu gestartet."""
+    try:
+        out = subprocess.run(["pgrep", "-x", "TrafkTuxBar"], capture_output=True, text=True, timeout=3)
+        pids = [int(x) for x in out.stdout.split()]
+    except Exception as ex:
+        print(f"[AppEditor/Bar] pgrep failed: {ex}", file=sys.stderr)
+        return
+    if not pids:
+        return                          # Bar läuft nicht - beim nächsten Start gilt die Datei sowieso
+    if all(_bar_proc_handles_sighup(pid) for pid in pids):
+        for pid in pids:
+            try:
+                os.kill(pid, signal.SIGHUP)
+            except Exception as ex:
+                print(f"[AppEditor/Bar] SIGHUP to {pid} failed: {ex}", file=sys.stderr)
+    else:
+        print("[AppEditor/Bar] running bar has no SIGHUP reload yet -> restarting it the old way",
+              file=sys.stderr)
+        run_bg(["bash", "-c", "killall TrafkTuxBar; $HOME/.config/TrafkTuxBar/TrafkTuxBar &"])
+
+_bar_reload_timer = [None]
+def _bar_reload_soon(delay_ms: int = 700) -> None:
+    """Schickt der Bar SIGHUP (-> sie lädt sich neu), entprellt: mehrere
+    schnelle Änderungen führen nur zu EINEM Neustart der Bar."""
+    def _fire():
+        _bar_reload_timer[0] = None
+        in_thread(_bar_send_reload)
+        return False
+    if _bar_reload_timer[0]:
+        GLib.source_remove(_bar_reload_timer[0])
+    _bar_reload_timer[0] = GLib.timeout_add(delay_ms, _fire)
+
+def _bar_pick_widget_dialog(parent: Gtk.Window, candidates: list):
+    """Liste der (aus der Bar entfernten) Standard-Widgets zum Wiederhinzufügen."""
+    dlg = Gtk.Dialog(title="Add widget", transient_for=parent)
+    dlg.set_name("wb-daemon-popup")
+    dlg.set_modal(True)
+    dlg.set_keep_above(True)
+    dlg.set_type_hint(Gdk.WindowTypeHint.DIALOG)
+    dlg.set_default_size(280, 320)
+    dlg.add_buttons("Cancel", Gtk.ResponseType.CANCEL)
+    picked = {"item": None}
+    lst = vbox(2)
+    for it in candidates:
+        b = Gtk.Button()
+        b.set_relief(Gtk.ReliefStyle.NONE)
+        b.get_style_context().add_class("bubble")
+        b.get_style_context().add_class("item")
+        row = hbox(8)
+        row.pack_start(_applauncher_icon_img(it.get("icon") or "application-x-executable", 20),
+                       False, False, 0)
+        lbl = Gtk.Label(label=it.get("tooltip") or it.get("id", "?"))
+        lbl.set_halign(Gtk.Align.START)
+        row.pack_start(lbl, True, True, 0)
+        b.add(row)
+        def _choose(_b, item=it):
+            picked["item"] = item
+            dlg.response(Gtk.ResponseType.OK)
+        b.connect("clicked", _choose)
+        lst.pack_start(b, False, False, 0)
+    dlg.get_content_area().pack_start(lst, True, True, 6)
+    dlg.show_all()
+    dlg.run()
+    dlg.destroy()
+    return picked["item"]
+
+def _bar_item_list_page(win: Gtk.Window, mod_id: str, kind: str, flash) -> Gtk.Box:
+    """Eine Seite des Bar-Tabs für EIN Modul (kind: "app" = gepinnte Apps,
+    "widget" = Widgets): Liste mit ▲▼✕, "Items pro Zeile"-Slider, Hinzufügen
+    und Reset. Jede Änderung wird sofort in Userbar.jsonc geschrieben und löst
+    (entprellt) den Reload der Bar aus."""
+    page = vbox(4); pad(page, h=2, v=6)
+    items, visible = _bar_effective(mod_id)
+    st = {"items": items, "visible": visible}
+
+    def _save():
+        try:
+            _bar_save_module(mod_id, st["items"], st["visible"])
+            _bar_reload_soon()
+            flash("Saved — the bar reloads in a moment")
+        except Exception as ex:
+            flash(f"Error: {ex}")
+
+    list_sw, list_box = scroll_box(240)
+
+    def _render():
+        for c in list_box.get_children():
+            list_box.remove(c)
+        if not st["items"]:
+            list_box.pack_start(bitem("Nothing here yet", dim=True), False, False, 0)
+        for idx, it in enumerate(st["items"]):
+            row = hbox(4)
+            row.get_style_context().add_class("bubble")
+            row.get_style_context().add_class("item")
+            pad(row, h=6, v=3)
+            row.pack_start(_applauncher_icon_img(it.get("icon") or "application-x-executable", 20),
+                           False, False, 0)
+            lbl = Gtk.Label(label=it.get("tooltip") or it.get("id", "?"))
+            lbl.set_halign(Gtk.Align.START)
+            lbl.set_ellipsize(Pango.EllipsizeMode.END)
+            lbl.set_max_width_chars(20)
+            lbl.set_tooltip_text(it.get("on_click") or it.get("id") or "")
+            row.pack_start(lbl, True, True, 0)
+            for icon, tip, delta in (("go-up-symbolic", "Move up", -1),
+                                     ("go-down-symbolic", "Move down", 1)):
+                b = Gtk.Button.new_from_icon_name(icon, Gtk.IconSize.MENU)
+                b.set_relief(Gtk.ReliefStyle.NONE)
+                b.set_tooltip_text(tip)
+                j = idx + delta
+                b.set_sensitive(0 <= j < len(st["items"]))
+                b.connect("clicked", lambda _b, i=idx, j=j: _move(i, j))
+                row.pack_start(b, False, False, 0)
+            rm = Gtk.Button.new_from_icon_name("window-close-symbolic", Gtk.IconSize.MENU)
+            rm.set_relief(Gtk.ReliefStyle.NONE)
+            rm.set_tooltip_text("Remove from the bar")
+            rm.connect("clicked", lambda _b, i=idx: _remove(i))
+            row.pack_start(rm, False, False, 0)
+            list_box.pack_start(row, False, False, 0)
+        list_box.show_all()
+        GLib.idle_add(_shrink_to_fit, win)
+
+    def _move(i, j):
+        st["items"][i], st["items"][j] = st["items"][j], st["items"][i]
+        _render(); _save()
+    def _remove(i):
+        st["items"].pop(i)
+        _render(); _save()
+
+    # ── Items pro Zeile ──────────────────────────────────────────────
+    def _on_visible(scale):
+        v = int(round(scale.get_value()))
+        if v != st["visible"]:
+            st["visible"] = v
+            _save()
+    vis_row, _vis_scale = bslider("▦", 1, 8, 1, max(1, min(8, st["visible"])), _on_visible)
+    vis_hint = Gtk.Label(label="Items per row — the rest wraps to the next row (arrows on the bar)")
+    vis_hint.get_style_context().add_class("caption"); vis_hint.set_opacity(0.6)
+    vis_hint.set_line_wrap(True)
+
+    # ── Hinzufügen / Zurücksetzen ────────────────────────────────────
+    def _on_add(_b=None):
+        if kind == "app":
+            used_execs = [re.sub(r'^setsid\s+|\s*&&.*$|\s*&\s*$', '', str(i.get("on_click", "")))
+                          for i in st["items"]]
+            app = _app_picker_dialog(win, "Pin an app to the bar", used_execs, ok_label="Pin")
+            if not app:
+                return
+            st["items"].append(_bar_make_shortcut(app, {i.get("id") for i in st["items"]}))
+        else:
+            sys_mod = _bar_system_module(mod_id) or {}
+            have = {i.get("id") for i in st["items"]}
+            missing = [i for i in (sys_mod.get("items") or [])
+                       if isinstance(i, dict) and i.get("id") not in have]
+            if not missing:
+                flash("All standard widgets are already on the bar")
+                return
+            chosen = _bar_pick_widget_dialog(win, missing)
+            if not chosen:
+                return
+            st["items"].append(dict(chosen))
+        _render(); _save()
+
+    def _on_reset(_b=None):
+        try:
+            _bar_reset_module(mod_id)
+            _bar_reload_soon()
+            sys_mod = _bar_system_module(mod_id) or {}
+            st["items"] = [dict(i) for i in (sys_mod.get("items") or []) if isinstance(i, dict)]
+            st["visible"] = int(sys_mod.get("visible_count", 3) or 3)
+            _vis_scale.set_value(max(1, min(8, st["visible"])))
+            _render()
+            flash("Back to the system default — the bar reloads in a moment")
+        except Exception as ex:
+            flash(f"Error: {ex}")
+
+    add_btn = btn("＋  Add app…" if kind == "app" else "＋  Add widget…")
+    add_btn.connect("clicked", _on_add)
+    reset_btn = btn("Reset to default")
+    reset_btn.set_tooltip_text("Throws away your changes to this part and uses the system default again")
+    reset_btn.connect("clicked", _on_reset)
+    btn_row = hbox(6); btn_row.set_halign(Gtk.Align.CENTER)
+    btn_row.pack_start(add_btn, False, False, 0)
+    btn_row.pack_start(reset_btn, False, False, 0)
+
+    page.pack_start(list_sw, False, False, 0)
+    page.pack_start(vis_row, False, False, 4)
+    page.pack_start(vis_hint, False, False, 0)
+    page.pack_start(btn_row, False, False, 6)
+    _render()
+    return page
+
+def _build_apps_bar_tab(win: Gtk.Window) -> Gtk.Box:
+    root = vbox(4); pad(root, h=4, v=6)
+    status_lbl = Gtk.Label(label="")
+    status_lbl.get_style_context().add_class("caption")
+    status_lbl.set_opacity(0.75)
+    status_lbl.set_line_wrap(True)
+    status_lbl.set_no_show_all(True)
+    status_lbl.hide()
+    def _flash(text: str, ms: int = 2600):
+        status_lbl.set_label(text)
+        status_lbl.show()
+        GLib.timeout_add(ms, lambda: (status_lbl.hide(), False)[1])
+
+    sub_stack = Gtk.Stack()
+    sub_stack.set_transition_type(Gtk.StackTransitionType.NONE)
+    sub_stack.set_hhomogeneous(False)
+    sub_stack.set_vhomogeneous(False)
+    sub_stack.add_named(_bar_item_list_page(win, "pinned", "app", _flash), "shortcuts")
+    sub_stack.add_named(_bar_item_list_page(win, "other-widgets", "widget", _flash), "widgets")
+
+    sub_btns: dict = {}
+    sub_row = hbox(4); sub_row.set_halign(Gtk.Align.CENTER)
+    def _sub_switch(name):
+        _switch_stack(sub_stack, win, name)
+        for n, b in sub_btns.items():
+            ctx = b.get_style_context()
+            if n == name: ctx.add_class("active")
+            else:         ctx.remove_class("active")
+    for name, tlabel in (("shortcuts", "Pinned apps"), ("widgets", "Widgets")):
+        b = btn(tlabel, active=(name == "shortcuts"))
+        b.connect("clicked", lambda _b, n=name: _sub_switch(n))
+        sub_btns[name] = b
+        sub_row.pack_start(b, False, False, 0)
+    sub_stack.set_visible_child_name("shortcuts")
+
+    note = Gtk.Label(label="Changes apply live: the bar reloads itself. The Settings widget and the "
+                           "fixed buttons (launcher, power, clock, tray) are not editable.")
+    note.get_style_context().add_class("caption"); note.set_opacity(0.6)
+    note.set_line_wrap(True)
+
+    root.pack_start(sub_row, False, False, 2)
+    root.pack_start(sep(), False, False, 2)
+    root.pack_start(sub_stack, False, False, 0)
+    root.pack_start(note, False, False, 4)
+    root.pack_start(status_lbl, False, False, 2)
+    return root
+
+
 def _build_settings_apps(page: Gtk.Box, key: str, label: str, win: Gtk.Window) -> None:
     root = vbox(4)
     stack = Gtk.Stack()
@@ -16688,7 +17544,7 @@ def _build_settings_apps(page: Gtk.Box, key: str, label: str, win: Gtk.Window) -
     # nächstes, 4 (Default Apps) bewusst als Platzhalter (siehe Chat:
     # Recherche zu xdg-mime/mimeapps.list kommt zuletzt).
     stack.add_named(_build_app_launcher_tab(win), "launcher")
-    stack.add_named(_placeholder("Bar shortcuts editor — coming next"), "bar")
+    stack.add_named(_build_apps_bar_tab(win), "bar")
     stack.add_named(_build_apps_autostart_tab(win), "autostart")
     stack.add_named(_placeholder("Default apps — coming last (needs its own research pass)"), "defaults")
     stack.add_named(_build_apps_wine_tab(win), "wine")
@@ -17425,6 +18281,7 @@ def main():
     _reconcile_theme_state()
     _start_socket_server()
     in_thread(_prewarm_tools)
+    in_thread(_hypridle_boot)     # Config anlegen + hypridle starten (statt Autostart.lua)
     GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGTERM, _shutdown)
     GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGINT,  _shutdown)
     print(f"widgets_daemon: ready, listening on {SOCK_PATH}", file=sys.stderr)
