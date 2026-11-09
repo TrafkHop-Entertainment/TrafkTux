@@ -77,12 +77,12 @@ typedef struct { uint8_t kind; uint16_t code; uint16_t mod; } Action; /* kind: 0
 #define MBM(m, c)  ((Action){2, (c), (m)})
 
 typedef struct {
-    bool enabled, start_active, left_wasd, swap_ab, rumble, notify, sounds, scroll_invert;
+    bool enabled, start_active, left_wasd, swap_ab, swap_xy, swap_dpad, mouse_left, rumble, notify, sounds, scroll_invert;
     float stick_thr, mouse_dz, mouse_speed, mouse_curve, scroll_speed;
     unsigned combo_mask;
     int combo_hold_ms, combo_grace_ms;
     /* Achsen-/Tasten-Zuordnung: -2 = automatisch, -1 = keine, sonst evdev-Code */
-    int ov_rx, ov_ry, ov_l2, ov_r2, home_btn;
+    int ov_rx, ov_ry, ov_l2, ov_r2, home_btn, home_release_ms;
     bool debug, home_tap;
 } Cfg;
 
@@ -103,6 +103,7 @@ typedef struct Pad {
     int64_t combo_since;
     int ff_id;
     bool ff_ok, grabbed;
+    bool home_rel_pending; int64_t home_rel_at;   /* Home-Impulse zusammenfassen (Entprellen) */
     bool home_armed, home_used;     /* Tipp auf Home = naechste Taste kommt aus der Home-Ebene */
     int64_t home_armed_until, home_down_at;
     bool ax_set;
@@ -231,6 +232,16 @@ static void build_maps(void) {
     map_home[I_SLL] = KM(KEY_LEFTSHIFT, KEY_F14);
     map_home[I_SLD] = KM(KEY_LEFTSHIFT, KEY_F15);
     map_home[I_SLR] = KM(KEY_LEFTSHIFT, KEY_F16);
+    if (cfg.swap_dpad) {                    /* D-Pad <-> linker Stick, in BEIDEN Ebenen */
+        static const int dp[4] = { I_DU, I_DD, I_DL, I_DR }, sl[4] = { I_SLU, I_SLD, I_SLL, I_SLR };
+        for (int k = 0; k < 4; k++) {
+            Action t = map_base[dp[k]]; map_base[dp[k]] = map_base[sl[k]]; map_base[sl[k]] = t;
+            t = map_home[dp[k]]; map_home[dp[k]] = map_home[sl[k]]; map_home[sl[k]] = t;
+        }
+        /* Linker Stick = Maus: die Stick-Richtungen (jetzt Launcher/Power/Settings/Expo)
+           sind nicht erreichbar -> Launcher und Power-Menue auf Home + L3 / R3 legen. */
+        if (cfg.mouse_left) { map_home[I_L3] = K(KEY_F17); map_home[I_R3] = K(KEY_F18); }
+    }
 }
 
 /* ─────────────────────────────── Config ─────────────────────────────── */
@@ -245,7 +256,7 @@ static void cfg_defaults(void) {
         .rumble = true, .notify = true, .sounds = true, .scroll_invert = false,
         .stick_thr = 0.5f, .mouse_dz = 0.12f, .mouse_speed = 900.f, .mouse_curve = 1.8f,
         .scroll_speed = 1500.f, .combo_hold_ms = 1000, .combo_grace_ms = 80,
-        .ov_rx = -2, .ov_ry = -2, .ov_l2 = -2, .ov_r2 = -2, .home_btn = BTN_MODE, .debug = false, .home_tap = true,
+        .ov_rx = -2, .ov_ry = -2, .ov_l2 = -2, .ov_r2 = -2, .home_btn = BTN_MODE, .home_release_ms = 350, .debug = false, .home_tap = true,
     };
     cfg.combo_mask = (1u << I_L1) | (1u << I_R1) | (1u << I_SELECT) | (1u << I_START);
 }
@@ -279,6 +290,10 @@ static void cfg_apply_kv(const char *k, const char *v) {
     if (!strcmp(k, "enabled")) cfg.enabled = parse_bool(v, cfg.enabled);
     else if (!strcmp(k, "start_active")) cfg.start_active = parse_bool(v, cfg.start_active);
     else if (!strcmp(k, "left_stick")) cfg.left_wasd = strcasecmp(v, "arrows") != 0;
+    else if (!strcmp(k, "swap_xy")) cfg.swap_xy = parse_bool(v, cfg.swap_xy);
+    else if (!strcmp(k, "nintendo_layout")) cfg.swap_ab = cfg.swap_xy = parse_bool(v, cfg.swap_ab);
+    else if (!strcmp(k, "swap_dpad")) cfg.swap_dpad = parse_bool(v, cfg.swap_dpad);
+    else if (!strcmp(k, "mouse_stick")) cfg.mouse_left = strcasecmp(v, "left") == 0;
     else if (!strcmp(k, "swap_ab")) cfg.swap_ab = parse_bool(v, cfg.swap_ab);
     else if (!strcmp(k, "rumble")) cfg.rumble = parse_bool(v, cfg.rumble);
     else if (!strcmp(k, "notify")) cfg.notify = parse_bool(v, cfg.notify);
@@ -291,6 +306,7 @@ static void cfg_apply_kv(const char *k, const char *v) {
     else if (!strcmp(k, "scroll_speed")) cfg.scroll_speed = clampf(atof(v), 100.f, 10000.f);
     else if (!strcmp(k, "toggle_hold_ms")) cfg.combo_hold_ms = (int)clampf(atoi(v), 300, 5000);
     else if (!strcmp(k, "combo_grace_ms")) cfg.combo_grace_ms = (int)clampf(atoi(v), 0, 300);
+    else if (!strcmp(k, "home_release_ms")) cfg.home_release_ms = (int)clampf(atoi(v), 0, 1500);
     else if (!strcmp(k, "home_tap")) cfg.home_tap = parse_bool(v, cfg.home_tap);
     else if (!strcmp(k, "debug")) cfg.debug = parse_bool(v, cfg.debug);
     else if (!strcmp(k, "rstick_x")) cfg.ov_rx = parse_code(v, EV_ABS, cfg.ov_rx);
@@ -380,7 +396,7 @@ static void pad_reset_state(Pad *p) {
     memset(p->pending, 0, sizeof p->pending);
     memset(p->swallowed, 0, sizeof p->swallowed);
     memset(p->held_valid, 0, sizeof p->held_valid);
-    p->home = false; p->home_armed = false;
+    p->home = false; p->home_armed = false; p->home_rel_pending = false;
 }
 
 static void set_active(bool on, bool announce) {
@@ -456,6 +472,7 @@ static void combo_check(Pad *p) {
     if (d && !p->combo_armed && !p->combo_latch) {
         p->combo_armed = true;
         p->combo_since = clock_ms();
+        if (cfg.debug) logf_("Kombi: komplett, Haltezeit laeuft (%d ms)", cfg.combo_hold_ms);
     } else if (!d) {
         p->combo_armed = false;
         p->combo_latch = false;
@@ -463,6 +480,9 @@ static void combo_check(Pad *p) {
 }
 
 static void on_input_change(Pad *p, int i, bool down) {
+    if (cfg.debug)
+        logf_("INPUT %s %s%s%s%s", INPUT_NAMES[i], down ? "down" : "up", g.active ? "" : " [Modus AUS]",
+              p->ignore[i] ? " [ignoriert: schon beim Einschalten gehalten]" : "", p->home ? " [Home gehalten]" : "");
     if (!g.active) { combo_check(p); return; }
     if (p->ignore[i]) { if (!down) p->ignore[i] = false; combo_check(p); return; }
     if (i == I_HOME) {
@@ -533,7 +553,7 @@ static void update_left_stick(Pad *p) {
     };
     for (int k = 0; k < 4; k++) {
         float m = d[k].neg ? -d[k].v : d[k].v;
-        bool now = d[k].cur ? (m > r) : (m > t);
+        bool now = !cfg.mouse_left && (d[k].cur ? (m > r) : (m > t));   /* links = Maus: keine Tasten */
         set_src(p, d[k].in, true, now);
     }
 }
@@ -544,8 +564,8 @@ static void pad_event(Pad *p, int type, int code, int value) {
         switch (code) {
         case BTN_SOUTH: in = cfg.swap_ab ? I_B : I_A; break;
         case BTN_EAST:  in = cfg.swap_ab ? I_A : I_B; break;
-        case BTN_NORTH: in = I_X; break;
-        case BTN_WEST:  in = I_Y; break;
+        case BTN_NORTH: in = cfg.swap_xy ? I_Y : I_X; break;
+        case BTN_WEST:  in = cfg.swap_xy ? I_X : I_Y; break;
         case BTN_TL: in = I_L1; break;      case BTN_TR: in = I_R1; break;
         case BTN_TL2: in = I_L2; break;     case BTN_TR2: in = I_R2; break;
         case BTN_SELECT: in = I_SELECT; break; case BTN_START: in = I_START; break;
@@ -553,7 +573,16 @@ static void pad_event(Pad *p, int type, int code, int value) {
         case BTN_DPAD_UP: in = I_DU; break; case BTN_DPAD_DOWN: in = I_DD; break;
         case BTN_DPAD_LEFT: in = I_DL; break; case BTN_DPAD_RIGHT: in = I_DR; break;
         }
-        if (code == cfg.home_btn) in = I_HOME;
+        if (code == cfg.home_btn) {
+            in = I_HOME;
+            /* Manche Pads (8BitDo) senden Home nur als ~100 ms-Impuls, beim Halten als
+             * Impulsfolge. Release deshalb verzoegern: Impulse verschmelzen zu "gehalten". */
+            if (cfg.home_release_ms > 0) {
+                if (value) { p->home_rel_pending = false; set_src(p, I_HOME, false, true); }
+                else if (p->src_btn[I_HOME]) { p->home_rel_pending = true; p->home_rel_at = clock_ms() + cfg.home_release_ms; }
+                return;
+            }
+        }
         if (in >= 0) set_src(p, in, false, value != 0);
     } else if (type == EV_ABS) {
         switch (code) {
@@ -574,7 +603,10 @@ static float acc_x, acc_y, acc_sx, acc_sy;
 static int notch_x, notch_y;
 static int64_t last_tick;
 
-static bool rstick_live(const Pad *p) { return hypotf(p->rx, p->ry) > cfg.mouse_dz; }
+/* Welcher Stick steuert Maus/Scrollen? (Standard rechts; mouse_stick = left: linker Stick) */
+static float mx(const Pad *p) { return cfg.mouse_left ? p->lx : p->rx; }
+static float my(const Pad *p) { return cfg.mouse_left ? p->ly : p->ry; }
+static bool rstick_live(const Pad *p) { return hypotf(mx(p), my(p)) > cfg.mouse_dz; }
 
 static void emit_wheel(int hires_code, int legacy_code, float *acc, int *notch) {
     int h = (int)*acc;
@@ -596,13 +628,17 @@ static bool tick(int64_t now) {
     for (int n = 0; n < MAX_PADS; n++) {
         Pad *p = pads[n];
         if (!p) continue;
+        if (p->home_rel_pending) {
+            if (now >= p->home_rel_at) { p->home_rel_pending = false; set_src(p, I_HOME, false, false); return true; }
+            need = true;
+        }
         for (int i = 0; i < I_COUNT; i++)
             if (p->pending[i]) {
                 if (now >= p->pending_at[i]) { p->pending[i] = false; press_action(p, i); }
                 else need = true;
             }
         if (p->combo_armed) {
-            if (!combo_down(p)) p->combo_armed = false;
+            if (!combo_down(p)) { p->combo_armed = false; if (cfg.debug) logf_("Kombi: vor Ablauf losgelassen"); }
             else if (now - p->combo_since >= cfg.combo_hold_ms) {
                 p->combo_armed = false;
                 p->combo_latch = true;
@@ -612,10 +648,10 @@ static bool tick(int64_t now) {
         }
         if (!g.active || !rstick_live(p)) continue;
         need = true;
-        float mag = hypotf(p->rx, p->ry);
+        float mag = hypotf(mx(p), my(p));
         float s = clampf((mag - cfg.mouse_dz) / (1.f - cfg.mouse_dz), 0.f, 1.f);
         s = powf(s, cfg.mouse_curve);
-        float ux = p->rx / mag, uy = p->ry / mag;
+        float ux = mx(p) / mag, uy = my(p) / mag;
         if (layer_on(p)) {                     /* Scroll-Ebene */
             float sp = cfg.scroll_speed * s * dt;
             acc_sx += ux * sp * (cfg.scroll_invert ? -1.f : 1.f);
@@ -662,7 +698,7 @@ static bool need_tick(void) {
     for (int n = 0; n < MAX_PADS; n++) {
         Pad *p = pads[n];
         if (!p) continue;
-        if (p->combo_armed || (g.active && rstick_live(p))) return true;
+        if (p->combo_armed || p->home_rel_pending || (g.active && rstick_live(p))) return true;
         for (int i = 0; i < I_COUNT; i++) if (p->pending[i]) return true;
     }
     return false;
@@ -988,6 +1024,7 @@ static Pad *mk(void) {
 int main(void) {
     clock_ms = fake_clock;
     cfg_defaults();
+    cfg.home_release_ms = 0;               /* alte Tests: Home sofort loslassen */
     build_maps();
     Pad *p = mk();
     pads[0] = p;
@@ -1126,6 +1163,19 @@ int main(void) {
         unlink("/tmp/trafkpad_test.conf");
     }
 
+    /* 8BitDo: Home als 100 ms-Impulsfolge = gehalten (Entprellung) */
+    {
+        cfg.home_release_ms = 350;
+        Pad *q = mk(); pads[4] = q; g.active = true; clear();
+        pad_event(q, EV_KEY, BTN_MODE, 1); adv(100); pad_event(q, EV_KEY, BTN_MODE, 0); adv(150);
+        pad_event(q, EV_KEY, BTN_MODE, 1); adv(100); pad_event(q, EV_KEY, BTN_MODE, 0); adv(150);
+        pad_event(q, EV_ABS, ABS_HAT0Y, -1);
+        CHECK(has("K187=1"), "Home als Impulsfolge + Dpad hoch = F17 '%s'", rec);
+        pad_event(q, EV_ABS, ABS_HAT0Y, 0); adv(500);
+        CHECK(!q->home && !q->home_armed, "Home nach Impulsfolge wieder losgelassen");
+        pads[4] = NULL; free(q); g.active = true; cfg.home_release_ms = 0;
+    }
+
     /* Pad sendet Home nur als kurzen Impuls: Tipp = naechste Taste aus der Home-Ebene */
     {
         Pad *q = mk(); pads[4] = q; g.active = true; clear();
@@ -1149,6 +1199,50 @@ int main(void) {
         CHECK(has("K103=1"), "zweiter Tipp bricht ab '%s'", rec);
         pad_event(q, EV_ABS, ABS_HAT0Y, 0);
         pads[4] = NULL; free(q);
+    }
+
+    /* D-Pad <-> Stick tauschen, linker Stick = Maus */
+    {
+        cfg.swap_dpad = true; cfg.mouse_left = true; cfg.left_wasd = true; build_maps();
+        Pad *q = mk(); pads[6] = q; g.active = true; clear();
+        pad_event(q, EV_ABS, ABS_HAT0Y, -1);  CHECK(has("K17=1"), "Dpad hoch = W (getauscht) '%s'", rec);
+        pad_event(q, EV_ABS, ABS_HAT0Y, 0);
+        clear();
+        pad_event(q, EV_KEY, BTN_MODE, 1);
+        pad_event(q, EV_ABS, ABS_HAT0Y, -1);  CHECK(has("K42=1 K183=1"), "Home+Dpad hoch = Fokus (Shift+F13) '%s'", rec);
+        pad_event(q, EV_ABS, ABS_HAT0Y, 0);
+        clear();
+        pad_event(q, EV_KEY, BTN_THUMBL, 1);  CHECK(has("K187=1"), "Home+L3 = Launcher (F17) '%s'", rec);
+        pad_event(q, EV_KEY, BTN_THUMBL, 0);
+        pad_event(q, EV_KEY, BTN_MODE, 0);
+        clear();
+        pad_event(q, EV_ABS, ABS_X, 30000);
+        CHECK(!has("K32") && !has("K106"), "linker Stick = Maus: keine Tasten '%s'", rec);
+        CHECK(rstick_live(q), "linker Stick bewegt die Maus");
+        adv(100); CHECK(has("R0:"), "Maus X bewegt sich '%s'", rec);
+        pad_event(q, EV_ABS, ABS_X, 0);
+        clear();
+        pad_event(q, EV_ABS, ABS_RX, 30000);  CHECK(!rstick_live(q), "rechter Stick deaktiviert");
+        pad_event(q, EV_ABS, ABS_RX, 0);
+        /* nur tauschen, Stick bleibt Tasten-Stick: Home+Stick hoch = Launcher */
+        cfg.mouse_left = false; build_maps(); clear();
+        pad_event(q, EV_ABS, ABS_RX, 0);
+        pad_event(q, EV_KEY, BTN_MODE, 1);
+        pad_event(q, EV_ABS, ABS_Y, -30000);  CHECK(has("K187=1"), "Tausch: Home+Stick hoch = F17 '%s'", rec);
+        pad_event(q, EV_ABS, ABS_Y, 0);
+        pad_event(q, EV_KEY, BTN_MODE, 0);
+        pads[6] = NULL; free(q);
+        cfg.swap_dpad = cfg.mouse_left = false; build_maps();
+    }
+
+    /* Nintendo-Layout: A<->B und X<->Y getauscht */
+    {
+        Pad *q = mk(); pads[5] = q; g.active = true; cfg.swap_ab = cfg.swap_xy = true; clear();
+        pad_event(q, EV_KEY, BTN_EAST, 1);  CHECK(has("K57=1"), "Nintendo: rechte Taste (A) = Space '%s'", rec);
+        pad_event(q, EV_KEY, BTN_EAST, 0);
+        pad_event(q, EV_KEY, BTN_NORTH, 1); pad_event(q, EV_KEY, BTN_WEST, 1);
+        pad_event(q, EV_KEY, BTN_NORTH, 0); pad_event(q, EV_KEY, BTN_WEST, 0);
+        cfg.swap_ab = cfg.swap_xy = false; pads[5] = NULL; free(q);
     }
 
     /* DInput-Pad: rechter Stick = Z/RZ (0..255), Trigger nur als Tasten */

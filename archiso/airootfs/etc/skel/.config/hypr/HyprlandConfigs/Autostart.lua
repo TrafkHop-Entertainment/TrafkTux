@@ -165,7 +165,9 @@ hl.on("hyprland.start", function()
     -- bisher, startet es aber automatisch neu, falls es abstuerzt (siehe
     -- SwaySyncWatchdog.sh fuer Details/Stop-Befehl).
     hl.exec_cmd("setsid -f bash $HOME/.config/swaync/SwaySyncWatchdog.sh >/dev/null 2>&1 &")
-    hl.exec_cmd("hypridle")
+    -- hypridle wird NICHT mehr hier gestartet: der WidgetsDaemon legt die
+    -- Config (HyprlandUserConfigs/hypridle.conf) an und startet/steuert
+    -- hypridle selbst (Settings > Battery > Idle).
     hl.exec_cmd("/usr/lib/polkit-kde-authentication-agent-1")
     hl.exec_cmd("nm-applet --indicator")
     hl.exec_cmd("blueman-applet")

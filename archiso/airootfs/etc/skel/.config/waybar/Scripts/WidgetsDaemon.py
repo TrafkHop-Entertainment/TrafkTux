@@ -4,6 +4,12 @@ WidgetsDaemon.py — TrafkTux Waybar Widget System (Daemon)
 Invocation: python3 WidgetsDaemon.py
 Controlled via client: WidgetsClient.py <widget>
 Widgets: volume | network | bluetooth | brightness | akku | clock | settings | security
+
+Socket-Kommando:  <widget>[@kbd|@cursor]
+  settings          Toggle wie bisher (Tastatur erst nach Klick ins Widget)
+  settings@kbd      Toggle, Tastatur sofort aktiv (exklusiv)
+  settings@cursor   Toggle, mittig am Mauszeiger, Tastatur sofort aktiv
+                    (Hyprland: Super+Shift+Tab, siehe Controls.lua)
 """
 
 import gi, sys, os, re, signal, subprocess, json, threading, time, calendar, shutil, traceback, shlex
@@ -674,6 +680,23 @@ button.bubble:hover, button.bubble:active, button.bubble:checked,
 button.bubble:focus, .bubble.dropdown:focus {{
     box-shadow: none;
     outline: none;
+}}
+/* Tastatur-/Controller-Auswahl (siehe _nav_select): bei Buttons exakt der
+   Hover-Look, bei allem anderen (Slider, Switch, Dropdown, Eingabefeld)
+   ein goldener Rahmen. */
+button.bubble.kbd-focus, .bubble.dropdown.kbd-focus {{
+    color: {GOLD};
+    text-shadow: 0 0 3px {GOLD};
+}}
+.kbd-focus {{
+    outline-style: solid;
+    outline-width: 1px;
+    outline-color: {GOLD};
+    outline-offset: 2px;
+    border-radius: 10px;
+}}
+button.bubble.kbd-focus {{
+    outline-style: none;
 }}
 button.bubble.active {{
     color: {GOLD};
@@ -1611,7 +1634,542 @@ def _close_all(except_name: str = None) -> None:
         if name != except_name:
             _destroy_widget(name)
 
-def toggle_widget(name: str) -> str:
+# ════════════════════════════════════════════════════════════
+#  Tastatur-/Controller-Navigation für Widget-Fenster
+#
+#  Gleiche Steuerung wie im TrafkTuxLauncher (on_key_press), damit die
+#  Controller-Belegung (WASD/Pfeile, A=Space/Enter, B=X, L1/R1=Q/E) im
+#  ganzen System gleich bleibt:
+#
+#    W A S D / Pfeile   Auswahl räumlich bewegen (auf einem Slider:
+#                       A/D bzw. Links/Rechts = Wert ändern)
+#    Enter / Space      Auswahl auslösen (Button, Switch, Dropdown öffnen,
+#                       Eingabefeld = Tippmodus an)
+#    Q / E              vorheriger / nächster Tab (jede Leiste, auf die
+#                       ein tab_sep() folgt - kein Eingriff in die
+#                       einzelnen Widgets nötig)
+#    X                  eine Ebene zurück (wie Rechtsklick), sonst schließen
+#    Esc                Widget sofort schließen (im Tippmodus: Tippen beenden)
+#    Bild hoch/runter   Liste scrollen (für Controller-Scroll-Ebene)
+#
+#  Tastaturmodus pro Fenster (GtkLayerShell):
+#    - Öffnen per Hotkey ("name@kbd" / "name@cursor" über den Socket):
+#      EXCLUSIVE - Tasten gehen garantiert sofort an das Widget.
+#    - Öffnen per Mausklick (Bar): ON_DEMAND - Tasten gehen erst an das
+#      Widget, wenn man hineinklickt; wer danach woanders hinklickt,
+#      tippt wieder dort (kein Tastatur-Klau wie bei EXCLUSIVE).
+#    - Solange ein Gtk.Dialog offen ist (Passwort, Dateiauswahl, ...):
+#      NONE, sonst könnte der Dialog keine Tasten bekommen.
+# ════════════════════════════════════════════════════════════
+WIDGET_KBD_MODE_DEFAULT = "on_demand"   # Öffnen per Klick auf das Bar-Icon
+WIDGET_KBD_MODE_HOTKEY  = "exclusive"   # Öffnen per name@kbd / name@cursor
+# True = Widget schließt sich, sobald es den Tastaturfokus verliert (nur
+# sinnvoll bei "on_demand"). Standard False = Verhalten wie bisher.
+WIDGET_CLOSE_ON_FOCUS_OUT = False
+# Abstand zum Bildschirmrand beim Öffnen am Mauszeiger (logische Pixel)
+CURSOR_PLACE_EDGE = 12
+
+_nav: dict = {}              # Fenster -> {"sel","typing","mode","place","mx","my"}
+_nav_suspended = [0]         # >0 solange mindestens ein Gtk.Dialog offen ist
+
+_NAV_ACTIONABLE = (Gtk.Button, Gtk.Switch, Gtk.Scale, Gtk.ComboBox,
+                   Gtk.Entry, Gtk.SpinButton)
+_NAV_TYPING = (Gtk.Entry, Gtk.SpinButton, Gtk.TextView)
+_NAV_MOUSE_MOVE_CLEARS_PX = 6
+
+
+def _nav_apply_kbd_mode(win: Gtk.Window, mode: str) -> None:
+    if not HAS_LS:
+        return
+    km = GtkLayerShell.KeyboardMode
+    table = {
+        "none": km.NONE,
+        "exclusive": km.EXCLUSIVE,
+        # ON_DEMAND gibt es erst ab gtk-layer-shell 0.6 - sonst altes Verhalten
+        "on_demand": getattr(km, "ON_DEMAND", km.NONE),
+    }
+    try:
+        GtkLayerShell.set_keyboard_mode(win, table.get(mode, km.NONE))
+    except Exception as e:
+        print(f"WARNING: set_keyboard_mode({mode}) fehlgeschlagen: {e}", file=sys.stderr)
+
+
+def _nav_suspend() -> None:
+    _nav_suspended[0] += 1
+    if _nav_suspended[0] == 1:
+        for w in list(_nav):
+            _nav_apply_kbd_mode(w, "none")
+
+
+def _nav_resume() -> None:
+    _nav_suspended[0] = max(0, _nav_suspended[0] - 1)
+    if _nav_suspended[0] == 0:
+        for w, st in list(_nav.items()):
+            _nav_apply_kbd_mode(w, st["mode"])
+
+
+def _nav_dialog_track(dlg: Gtk.Dialog) -> None:
+    """Merkt sich pro Dialog genau einmal Suspend/Resume (show, show_all
+    und run() rufen sich teils gegenseitig auf)."""
+    if getattr(dlg, "_nav_tracked", False):
+        return
+    dlg._nav_tracked = True
+    _nav_suspend()
+
+    def _end(*_):
+        if not getattr(dlg, "_nav_tracked", False):
+            return
+        dlg._nav_tracked = False
+        _nav_resume()
+    dlg.connect("hide", _end)
+    dlg.connect("destroy", _end)
+
+
+def _nav_install_dialog_hooks() -> None:
+    """Alle ~35 Gtk.Dialog/MessageDialog/FileChooserDialog-Stellen laufen
+    über show()/show_all()/run(). Statt jede einzeln anzufassen, hier
+    zentral: solange ein Dialog offen ist, geben die Widget-Fenster den
+    Tastaturfokus frei (EXCLUSIVE würde dem Dialog sonst alle Tasten
+    wegnehmen)."""
+    for meth in ("show", "show_all", "run"):
+        orig = getattr(Gtk.Dialog, meth)
+
+        def wrapper(self, *a, _orig=orig, **k):
+            _nav_dialog_track(self)
+            return _orig(self, *a, **k)
+        wrapper.__name__ = meth
+        setattr(Gtk.Dialog, meth, wrapper)
+
+
+_nav_install_dialog_hooks()
+
+
+def _nav_rect(w: Gtk.Widget, win: Gtk.Window):
+    r = w.translate_coordinates(win, 0, 0)
+    if r is None:
+        return None
+    x, y = (r[-2], r[-1]) if len(r) >= 2 else (0, 0)
+    return (x, y, w.get_allocated_width(), w.get_allocated_height())
+
+
+def _nav_candidates(win: Gtk.Window) -> list:
+    out: list = []
+
+    def walk(w):
+        if not w.get_visible():
+            return
+        if isinstance(w, _NAV_ACTIONABLE):
+            if (w.get_mapped() and w.get_sensitive()
+                    and w.get_allocated_width() > 1 and w.get_allocated_height() > 1):
+                out.append(w)
+            return                      # nie in Buttons/Combos hineinlaufen
+        if isinstance(w, Gtk.Container):
+            for c in w.get_children():
+                walk(c)
+    walk(win)
+    return out
+
+
+def _nav_ensure_visible(w: Gtk.Widget) -> None:
+    p = w.get_parent()
+    while p is not None:
+        if isinstance(p, Gtk.ScrolledWindow):
+            vp = p.get_child()
+            content = vp.get_child() if isinstance(vp, Gtk.Viewport) else vp
+            if content is not None:
+                r = w.translate_coordinates(content, 0, 0)
+                if r is not None:
+                    y = r[-1]
+                    h = w.get_allocated_height()
+                    adj = p.get_vadjustment()
+                    top, page = adj.get_value(), adj.get_page_size()
+                    if y < top:
+                        adj.set_value(max(0, y - 8))
+                    elif y + h > top + page:
+                        adj.set_value(y + h - page + 8)
+        p = p.get_parent()
+
+
+def _nav_select(win: Gtk.Window, w) -> None:
+    st = _nav.get(win)
+    if st is None:
+        return
+    old = st["sel"]
+    if old is not None:
+        try:
+            old.get_style_context().remove_class("kbd-focus")
+        except Exception:
+            pass
+    st["sel"] = w
+    if w is not None:
+        w.get_style_context().add_class("kbd-focus")
+        _nav_ensure_visible(w)
+
+
+def _nav_initial(win: Gtk.Window, cands: list):
+    """Startpunkt: Kandidat unter/nahe dem Mauszeiger (z.B. direkt nach
+    Super+Shift+Tab am Cursor), sonst oberster linker."""
+    rects = []
+    for c in cands:
+        r = _nav_rect(c, win)
+        if r is not None:
+            rects.append((c, r))
+    if not rects:
+        return None
+    try:
+        px, py = win.get_pointer()[-2:]
+    except Exception:
+        px = py = 0
+    ww, wh = win.get_allocated_width(), win.get_allocated_height()
+    if (px, py) != (0, 0) and 0 <= px < ww and 0 <= py < wh:
+        return min(rects, key=lambda cr: (cr[1][0] + cr[1][2] / 2 - px) ** 2
+                                          + (cr[1][1] + cr[1][3] / 2 - py) ** 2)[0]
+    return min(rects, key=lambda cr: (cr[1][1], cr[1][0]))[0]
+
+
+def _nav_pick(win: Gtk.Window, sel, direction: str):
+    """Räumlich nächster Nachbar. Links/Rechts: nur dieselbe Zeile, nächster
+    in X. Hoch/Runter: erst die nächste Zeile darüber/darunter (alles, was
+    innerhalb eines halben Elements gleich weit weg liegt), darin der in X
+    nächste - so landet man in Listen/Gittern immer auf dem direkten
+    Nachbarn statt auf einem weiter entfernten, besser ausgerichteten."""
+    sr = _nav_rect(sel, win)
+    if sr is None:
+        return None
+    scx, scy = sr[0] + sr[2] / 2, sr[1] + sr[3] / 2
+    horiz = direction in ("left", "right")
+    found = []                                  # (primär, sekundär, Höhe, Widget)
+    for c in _nav_candidates(win):
+        if c is sel:
+            continue
+        r = _nav_rect(c, win)
+        if r is None:
+            continue
+        dx, dy = r[0] + r[2] / 2 - scx, r[1] + r[3] / 2 - scy
+        if horiz:
+            if abs(dy) > max(sr[3], r[3]) * 0.9:        # nur dieselbe Zeile
+                continue
+            if (direction == "right" and dx <= 2) or (direction == "left" and dx >= -2):
+                continue
+            found.append((abs(dx), abs(dy), r[3], c))
+        else:
+            if (direction == "down" and dy <= 2) or (direction == "up" and dy >= -2):
+                continue
+            found.append((abs(dy), abs(dx), r[3], c))
+    if not found:
+        return None
+    if horiz:
+        return min(found, key=lambda f: (f[0] + 3 * f[1]))[3]
+    nearest = min(f[0] for f in found)
+    band = [f for f in found if f[0] <= nearest + max(sr[3], f[2]) * 0.6]
+    return min(band, key=lambda f: f[1])[3]
+
+
+def _nav_tab_groups(win: Gtk.Window) -> list:
+    """Alle Tab-Leisten: das/die Button-Zeile(n) direkt VOR einem
+    tab_sep() (Separator mit Klasse "tab-divider"). So braucht keine der
+    ~15 Tab-Stellen im Code eine Änderung."""
+    def is_row(k):
+        kids = k.get_children() if isinstance(k, Gtk.Box) else []
+        return bool(kids) and all(isinstance(c, Gtk.Button) for c in kids)
+
+    groups: list = []
+
+    def walk(w):
+        if not (w.get_visible() and isinstance(w, Gtk.Container)):
+            return
+        kids = w.get_children()
+        for i, k in enumerate(kids):
+            if (isinstance(k, Gtk.Separator) and k.get_mapped()
+                    and k.get_style_context().has_class("tab-divider")):
+                rows, j = [], i - 1
+                while j >= 0 and kids[j].get_mapped() and is_row(kids[j]):
+                    rows.insert(0, kids[j])
+                    j -= 1
+                btns = [b for r in rows for b in r.get_children()
+                        if b.get_mapped() and b.get_sensitive()]
+                if len(btns) >= 2:
+                    groups.append(btns)
+        for k in kids:
+            walk(k)
+    walk(win)
+    return groups
+
+
+def _nav_switch_tab(win: Gtk.Window, delta: int) -> None:
+    groups = _nav_tab_groups(win)
+    if not groups:
+        return
+    st = _nav[win]
+    group = groups[0]
+    if st["sel"] is not None and len(groups) > 1:
+        sy = (_nav_rect(st["sel"], win) or (0, 0, 0, 0))[1]
+        above = [g for g in groups if (_nav_rect(g[0], win) or (0, 0, 0, 0))[1] <= sy]
+        if above:
+            group = max(above, key=lambda g: (_nav_rect(g[0], win) or (0, 0, 0, 0))[1])
+    idx = next((i for i, b in enumerate(group)
+                if b.get_style_context().has_class("active")), 0)
+    target = max(0, min(len(group) - 1, idx + delta))
+    if target == idx:
+        return
+    was_on_tab = st["sel"] in group
+    group[target].clicked()
+    _play_sound("FocusChange")
+    if was_on_tab:
+        _nav_select(win, group[target])
+    GLib.timeout_add(260, _nav_revalidate, win)
+
+
+def _nav_revalidate(win: Gtk.Window) -> bool:
+    """Nach Tab-/Seitenwechsel (Stack blendet 200ms über): ist die
+    Auswahl noch sichtbar? Sonst neu setzen."""
+    st = _nav.get(win)
+    if st is None:
+        return False
+    sel = st["sel"]
+    if sel is not None and not (sel.get_mapped() and sel.get_sensitive()):
+        cands = _nav_candidates(win)
+        _nav_select(win, _nav_initial(win, cands) if cands else None)
+    return False
+
+
+def _nav_close(win: Gtk.Window) -> None:
+    for name, w in list(_open.items()):
+        if w is win:
+            _open.pop(name, None)
+            _fade_out_and_close(name, win)
+            _play_sound("Close")
+            return
+
+
+def _nav_back_or_close(win: Gtk.Window) -> None:
+    back = _right_click_back.get(win)
+    try:
+        if back and back():
+            GLib.timeout_add(260, _nav_revalidate, win)
+            return
+    except Exception:
+        pass
+    _nav_close(win)
+
+
+def _nav_activate(win: Gtk.Window, w) -> None:
+    if isinstance(w, Gtk.Switch):
+        w.set_active(not w.get_active())
+    elif isinstance(w, Gtk.ComboBox):
+        w.popup()
+    elif isinstance(w, _NAV_TYPING):
+        _nav[win]["typing"] = True
+        w.grab_focus()
+    elif isinstance(w, Gtk.Button):
+        w.clicked()
+        GLib.timeout_add(260, _nav_revalidate, win)
+
+
+def _nav_stop_typing(win: Gtk.Window) -> None:
+    _nav[win]["typing"] = False
+    win.set_focus(None)
+
+
+def _nav_scroll(win: Gtk.Window, direction: int) -> None:
+    st = _nav[win]
+    sw = None
+    p = st["sel"].get_parent() if st["sel"] is not None else None
+    while p is not None:
+        if isinstance(p, Gtk.ScrolledWindow):
+            sw = p
+            break
+        p = p.get_parent()
+    if sw is None:
+        def find(w):
+            if isinstance(w, Gtk.ScrolledWindow) and w.get_mapped():
+                return w
+            if isinstance(w, Gtk.Container):
+                for c in w.get_children():
+                    r = find(c)
+                    if r is not None:
+                        return r
+            return None
+        sw = find(win)
+    if sw is None:
+        return
+    adj = sw.get_vadjustment()
+    adj.set_value(max(adj.get_lower(),
+                      min(adj.get_upper() - adj.get_page_size(),
+                          adj.get_value() + direction * adj.get_page_size() * 0.8)))
+
+
+_NAV_DIRS = {"w": "up", "up": "up", "s": "down", "down": "down",
+             "a": "left", "left": "left", "d": "right", "right": "right"}
+
+
+def _nav_on_key(win: Gtk.Window, ev) -> bool:
+    st = _nav.get(win)
+    if st is None:
+        return False
+    if ev.state & (Gdk.ModifierType.CONTROL_MASK | Gdk.ModifierType.MOD1_MASK
+                   | Gdk.ModifierType.SUPER_MASK | Gdk.ModifierType.MOD4_MASK):
+        return False
+    name = Gdk.keyval_name(ev.keyval) or ""
+    low = name.lower()
+
+    # ── Tippmodus (Entry/SpinButton hat Fokus): Tasten gehören dem Feld ──
+    focus = win.get_focus()
+    if st["typing"] and isinstance(focus, _NAV_TYPING):
+        if name == "Escape":
+            _nav_stop_typing(win)
+            return True
+        if name in ("Up", "Down") and not isinstance(focus, Gtk.SpinButton):
+            _nav_stop_typing(win)       # weiter unten als normale Bewegung
+        else:
+            return False
+
+    if name == "Escape":
+        _nav_close(win)
+        return True
+    if low == "x":
+        _nav_back_or_close(win)
+        return True
+    if name in ("Page_Up", "Page_Down"):
+        _nav_scroll(win, -1 if name == "Page_Up" else 1)
+        return True
+    if low == "q" or low == "e":
+        _nav_switch_tab(win, -1 if low == "q" else 1)
+        return True
+
+    sel = st["sel"]
+    if sel is not None and not (sel.get_mapped() and sel.get_sensitive()):
+        sel = None
+    direction = _NAV_DIRS.get(low)
+
+    if direction is not None or name in ("Return", "KP_Enter", "space"):
+        if sel is None:                 # erster Tastendruck: nur Auswahl setzen
+            cands = _nav_candidates(win)
+            first = _nav_initial(win, cands) if cands else None
+            _nav_select(win, first)
+            if first is not None:
+                _play_sound("FocusChange")
+            return True
+        if direction in ("left", "right") and isinstance(sel, Gtk.Scale):
+            adj = sel.get_adjustment()
+            step = adj.get_step_increment() or 1
+            sel.set_value(sel.get_value() + (step if direction == "right" else -step))
+            return True
+        if direction is not None:
+            nxt = _nav_pick(win, sel, direction)
+            if nxt is not None:
+                _nav_select(win, nxt)
+                _play_sound("FocusChange")
+            return True
+        _nav_activate(win, sel)
+        return True
+    return False
+
+
+def _nav_on_set_focus(win: Gtk.Window, widget) -> None:
+    st = _nav.get(win)
+    if st is not None:
+        # Per Mausklick ins Eingabefeld = Tippmodus (Auswahl-Highlight weg)
+        st["typing"] = isinstance(widget, _NAV_TYPING)
+        if st["typing"]:
+            _nav_select(win, None)
+
+
+def _nav_on_motion(win: Gtk.Window, ev) -> bool:
+    st = _nav.get(win)
+    if st is None:
+        return False
+    last = st.get("mx"), st.get("my")
+    st["mx"], st["my"] = ev.x, ev.y
+    if (st["sel"] is not None and last[0] is not None
+            and abs(ev.x - last[0]) + abs(ev.y - last[1]) > _NAV_MOUSE_MOVE_CLEARS_PX):
+        _nav_select(win, None)          # Maus übernimmt: nur noch Hover-Glow
+    return False
+
+
+def _nav_clear_initial_focus(win: Gtk.Window) -> bool:
+    """GTK fokussiert beim Anzeigen gern das erste Eingabefeld - das
+    würde den Tippmodus sofort an lassen und W/A/S/D verschlucken."""
+    st = _nav.get(win)
+    if st is not None:
+        try:
+            win.set_focus(None)
+        except Exception:
+            pass
+        st["typing"] = False
+    return False
+
+
+def _nav_attach(win: Gtk.Window, mode: str) -> None:
+    _nav[win] = {"sel": None, "typing": False, "mode": mode, "place": None}
+    win.add_events(Gdk.EventMask.KEY_PRESS_MASK | Gdk.EventMask.POINTER_MOTION_MASK)
+    win.connect("key-press-event", _nav_on_key)
+    win.connect("set-focus", _nav_on_set_focus)
+    win.connect("motion-notify-event", _nav_on_motion)
+    win.connect("destroy", lambda w: _nav.pop(w, None))
+    _nav_apply_kbd_mode(win, "none" if _nav_suspended[0] else mode)
+
+
+def _place_at_cursor(win: Gtk.Window) -> bool:
+    """Super+Shift+Tab: Widget mittig um den Mauszeiger öffnen (am Rand
+    des Monitors, auf dem der Zeiger gerade ist, eingeklemmt). Cursor-
+    Position kommt von Hyprland (`hyprctl cursorpos`, Layout-Koordinaten
+    = logische Pixel = dieselben wie die Gdk-Monitor-Geometrien)."""
+    if not HAS_LS:
+        return False
+    cur = jrun(["hyprctl", "cursorpos", "-j"])
+    if not isinstance(cur, dict) or "x" not in cur or "y" not in cur:
+        return False
+    cx, cy = float(cur["x"]), float(cur["y"])
+    display = win.get_display()
+    try:
+        mon = display.get_monitor_at_point(int(cx), int(cy))
+        geo = mon.get_geometry()
+    except Exception:
+        return False
+    try:
+        GtkLayerShell.set_monitor(win, mon)
+    except Exception:
+        pass
+    nat_w = win.get_preferred_width()[1]
+    nat_h = win.get_preferred_height()[1]
+    edge = CURSOR_PLACE_EDGE
+
+    def clamp(v, size, total):
+        return int(max(edge, min(v, total - size - edge)))
+
+    left = clamp(cx - geo.x - nat_w / 2, nat_w, geo.width)
+    top = clamp(cy - geo.y - nat_h / 2, nat_h, geo.height)
+    for e, on in ((GtkLayerShell.Edge.TOP, True), (GtkLayerShell.Edge.LEFT, True),
+                  (GtkLayerShell.Edge.BOTTOM, False), (GtkLayerShell.Edge.RIGHT, False)):
+        GtkLayerShell.set_anchor(win, e, on)
+    GtkLayerShell.set_margin(win, GtkLayerShell.Edge.TOP, top)
+    GtkLayerShell.set_margin(win, GtkLayerShell.Edge.LEFT, left)
+    GtkLayerShell.set_margin(win, GtkLayerShell.Edge.BOTTOM, 0)
+    GtkLayerShell.set_margin(win, GtkLayerShell.Edge.RIGHT, 0)
+    st = _nav.get(win)
+    if st is not None:
+        st["place"] = {"left": left, "top": top, "w": geo.width, "h": geo.height}
+
+    def _reclamp(w, alloc):
+        # Tab-/Seitenwechsel lässt das Fenster ab der oberen linken Ecke
+        # wachsen - dann wieder in den Bildschirm zurückschieben.
+        pl = (_nav.get(w) or {}).get("place")
+        if not pl:
+            return
+        new_top = clamp(pl["top"], alloc.height, pl["h"])
+        new_left = clamp(pl["left"], alloc.width, pl["w"])
+        if new_top != pl["top"] or new_left != pl["left"]:
+            pl["top"], pl["left"] = new_top, new_left
+            GLib.idle_add(lambda: (
+                GtkLayerShell.set_margin(w, GtkLayerShell.Edge.TOP, new_top),
+                GtkLayerShell.set_margin(w, GtkLayerShell.Edge.LEFT, new_left),
+                False)[-1])
+    win.connect("size-allocate", _reclamp)
+    return True
+
+
+def toggle_widget(name: str, opt: str = "") -> str:
     global WIDGET
     if name not in BUILDERS:
         return f"error: unknown widget '{name}'"
@@ -1637,7 +2195,12 @@ def toggle_widget(name: str) -> str:
     BUILDERS[name](win)
     _current_win[0] = None
     _clamp_window_to_screen(win)
+    _nav_attach(win, WIDGET_KBD_MODE_HOTKEY if opt in ("kbd", "cursor")
+                     else WIDGET_KBD_MODE_DEFAULT)
+    if opt == "cursor":
+        _place_at_cursor(win)
     win.show_all()
+    GLib.idle_add(_nav_clear_initial_focus, win)
     _open[name] = win
     _start_popup_in(win)
     _play_sound("Open")
@@ -1729,7 +2292,11 @@ def make_win(name: str) -> Gtk.Window:
 
     _cleanup_by_win[win] = _cleanup
     win.connect("destroy", _cleanup)
-    win.connect("focus-out-event", lambda w, e: _cleanup())
+    # Seit die Fenster Tastaturfokus bekommen koennen, wuerde dieser Handler
+    # sonst z.B. beim Oeffnen eines Dropdowns/Dialogs das Widget schliessen.
+    win.connect("focus-out-event",
+                lambda w, e: (_cleanup() if (WIDGET_CLOSE_ON_FOCUS_OUT
+                                              and not _nav_suspended[0]) else False))
 
     # Rechtsklick: erst "eine Ebene zurück" (falls das Widget das kann,
     # siehe _right_click_back), sonst Widget schließen. Es gab vorher
@@ -11601,6 +12168,7 @@ SETTINGS_CATEGORIES = [
     ("apps",       "󱁤", "Apps & Shortcuts", "Launcher editor, Config files"),
     ("devices",    "", "Devices",       "Touch/Tablet-to-monitor binding"),
     ("widgets",    "󰍹", "Widgets",       "Clock mode, seconds, milliseconds"),
+    ("controller", "󰊴", "Controller",    "Gamepad control, Login"),
 ]
 
 def _build_settings_brightness(page: Gtk.Box, key: str, label: str, win: Gtk.Window) -> None:
@@ -17019,7 +17587,9 @@ def _build_apps_wine_tab(win: Gtk.Window) -> Gtk.Box:
 
     root.pack_start(enabled_btn, False, False, 0)
     root.pack_start(sub_row, False, False, 2)
-    root.pack_start(sep(), False, False, 2)
+    # tab_sep() (nicht sep()): daran erkennt die Tastatur-/Controller-Navigation
+    # (_nav_tab_groups) eine Tab-Leiste - so schalten Q/E auch diese Untertabs um.
+    root.pack_start(tab_sep(), False, False, 2)
     root.pack_start(sub_stack, False, False, 0)
     root.pack_start(status_lbl, False, False, 2)
 
@@ -17510,7 +18080,9 @@ def _build_apps_bar_tab(win: Gtk.Window) -> Gtk.Box:
     note.set_line_wrap(True)
 
     root.pack_start(sub_row, False, False, 2)
-    root.pack_start(sep(), False, False, 2)
+    # tab_sep() (nicht sep()): daran erkennt die Tastatur-/Controller-Navigation
+    # (_nav_tab_groups) eine Tab-Leiste - so schalten Q/E auch diese Untertabs um.
+    root.pack_start(tab_sep(), False, False, 2)
     root.pack_start(sub_stack, False, False, 0)
     root.pack_start(note, False, False, 4)
     root.pack_start(status_lbl, False, False, 2)
@@ -17941,6 +18513,360 @@ def _build_settings_widgets(page: Gtk.Box, key: str, label: str, win: Gtk.Window
     root.pack_start(stack, False, False, 0)
     page.pack_start(root, True, True, 0)
 
+# ════════════════════════════════════════════════════════════
+#  Controller (TrafkPad) + Login-Einstellungen
+#
+#  Die Config wird von DIESEM Widget angelegt/gepflegt:
+#    ~/.config/TrafkTuxPad/TrafkPad.conf   (key = value, vom C-Daemon gelesen)
+#  Fehlt die Datei, nutzt der Daemon dieselben Standardwerte wie unten
+#  (also: AN) - die Datei entsteht beim ersten Öffnen dieser Seite bzw. bei
+#  der ersten Änderung. Nach jeder Änderung bekommt der Daemon "reload".
+# ════════════════════════════════════════════════════════════
+PAD_DIR  = Path(HOME) / ".config" / "TrafkTuxPad"
+PAD_CONF = PAD_DIR / "TrafkPad.conf"
+
+# MUSS zu cfg_defaults() in TrafkPad.c passen
+PAD_DEFAULTS = {
+    "enabled": "true", "start_active": "true",
+    "toggle_combo": "L1+R1+SELECT+START", "toggle_hold_ms": "1000",
+    "left_stick": "wasd", "swap_ab": "false", "scroll_invert": "false",
+    "swap_xy": "false", "mouse_speed": "900", "mouse_curve": "1.8", "mouse_deadzone": "0.12",
+    "scroll_speed": "1500",
+    "rumble": "true", "notify": "true", "sounds": "true",
+}
+PAD_COMBOS = (
+    ("L1+R1+SELECT+START", "L1+R1+Sel+Start"),
+    ("L1+R1+L3+R3",        "L1+R1+L3+R3"),
+    ("SELECT+START+L3+R3", "Sel+Start+L3+R3"),
+)
+
+def _pad_cfg_read() -> dict:
+    cfg = dict(PAD_DEFAULTS)
+    try:
+        for line in PAD_CONF.read_text().splitlines():
+            line = line.split("#", 1)[0].strip()
+            if "=" in line:
+                k, v = (s.strip() for s in line.split("=", 1))
+                if k in cfg and v:
+                    cfg[k] = v
+    except Exception:
+        pass
+    return cfg
+
+def _pad_cfg_write(cfg: dict) -> None:
+    PAD_DIR.mkdir(parents=True, exist_ok=True)
+    lines = ["# TrafkPad - wird von den Widgets (Settings > Controller) verwaltet.",
+             "# Von Hand editierbar; danach: TrafkPad --ctl reload", ""]
+    lines += [f"{k} = {cfg[k]}" for k in PAD_DEFAULTS]
+    # Von Hand ergaenzte Schluessel (debug, home_button, rstick_x, ...) beibehalten
+    try:
+        extra = []
+        for line in PAD_CONF.read_text().splitlines():
+            key = line.split("#", 1)[0].split("=", 1)[0].strip()
+            if "=" in line and key and key not in PAD_DEFAULTS and not line.lstrip().startswith("#"):
+                extra.append(line.strip())
+        if extra:
+            lines += ["", "# Manuell ergaenzt (bleibt beim Speichern erhalten)"] + extra
+    except Exception:
+        pass
+    atomic_write_text(PAD_CONF, "\n".join(lines) + "\n")
+
+def _pad_cfg_ensure() -> dict:
+    cfg = _pad_cfg_read()
+    if not PAD_CONF.exists():
+        try:
+            _pad_cfg_write(cfg)
+        except Exception:
+            pass
+    return cfg
+
+def _pad_ctl(cmd: str, timeout: float = 0.6) -> str:
+    """Kommando an den TrafkPad-Daemon (Unix-Socket, gleiche Pfadlogik wie
+    in TrafkPad.c). Leerer String = Daemon läuft nicht."""
+    xrd = os.environ.get("XDG_RUNTIME_DIR", "")
+    path = f"{xrd}/TrafkPad.sock" if xrd and len(xrd) < 90 else f"/tmp/TrafkPad-{os.getuid()}.sock"
+    try:
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        s.settimeout(timeout)
+        s.connect(path)
+        s.sendall(cmd.encode())
+        s.shutdown(socket.SHUT_WR)
+        reply = s.recv(256).decode().strip()
+        s.close()
+        return reply
+    except Exception:
+        return ""
+
+_pad_save_src = [0]
+def _pad_cfg_save_soon(cfg: dict) -> None:
+    """Slider feuern dauernd - erst 300ms nach der letzten Änderung schreiben."""
+    if _pad_save_src[0]:
+        GLib.source_remove(_pad_save_src[0])
+    def _do():
+        _pad_save_src[0] = 0
+        try:
+            _pad_cfg_write(cfg)
+        except Exception as e:
+            print(f"WARNING: TrafkPad-Config schreiben fehlgeschlagen: {e}", file=sys.stderr)
+        _pad_ctl("reload")
+        return False
+    _pad_save_src[0] = GLib.timeout_add(300, _do)
+
+# ── Login: SDDM-Autologin + hyprlock ───────────────────────────────
+SDDM_AUTOLOGIN_FILE = "/etc/sddm.conf.d/trafktux-autologin.conf"
+HYPRLOCK_OFF_FLAG   = Path(HOME) / ".config" / "hypr" / "hyprlock_disabled"
+HYPRLOCK_WRAPPER    = "/usr/local/bin/hyprlock"     # liest HYPRLOCK_OFF_FLAG
+
+def _sddm_session_file() -> str:
+    for d in ("/usr/share/wayland-sessions", "/usr/share/xsessions"):
+        try:
+            names = sorted(os.listdir(d))
+        except Exception:
+            continue
+        for n in names:
+            if n.lower() == "hyprland.desktop":
+                return n
+        for n in names:
+            if "hyprland" in n.lower() and n.endswith(".desktop"):
+                return n
+    return "hyprland.desktop"
+
+def _sddm_set_autologin(on: bool) -> tuple:
+    """Schreibt/entfernt /etc/sddm.conf.d/trafktux-autologin.conf. Läuft
+    erst unprivilegiert, bei Permission-Fehler automatisch per pkexec
+    (siehe _run_maybe_priv) - also mit grafischem Passwort-Dialog."""
+    if on:
+        tmp = Path(tempfile.gettempdir()) / f"trafktux-autologin-{os.getuid()}.conf"
+        user = os.environ.get("USER") or Path(HOME).name
+        tmp.write_text(f"[Autologin]\nUser={user}\nSession={_sddm_session_file()}\n")
+        ok, msg = _run_maybe_priv(["install", "-D", "-m", "644", str(tmp), SDDM_AUTOLOGIN_FILE])
+        try:
+            tmp.unlink()
+        except Exception:
+            pass
+        return ok, msg
+    return _run_maybe_priv(["rm", "-f", SDDM_AUTOLOGIN_FILE])
+
+def _build_settings_controller(page: Gtk.Box, key: str, label: str, win: Gtk.Window) -> None:
+    cfg = _pad_cfg_ensure()
+    root = vbox(4)
+    stack = Gtk.Stack()
+    stack.set_transition_type(Gtk.StackTransitionType.NONE)
+    stack.set_hhomogeneous(False)
+    stack.set_vhomogeneous(False)
+
+    def toggle(text, tip, cfg_key, on_change=None):
+        b = btn(text, active=(cfg[cfg_key] == "true"), tip=tip)
+        def _clicked(_b):
+            cfg[cfg_key] = "false" if cfg[cfg_key] == "true" else "true"
+            ctx = b.get_style_context()
+            ctx.add_class("active") if cfg[cfg_key] == "true" else ctx.remove_class("active")
+            _pad_cfg_save_soon(cfg)
+            if on_change:
+                on_change()
+        b.connect("clicked", _clicked)
+        return b
+
+    def caption(text):
+        l = Gtk.Label(label=text)
+        l.get_style_context().add_class("caption")
+        l.set_opacity(0.6)
+        l.set_line_wrap(True)
+        l.set_max_width_chars(44)
+        l.set_justify(Gtk.Justification.CENTER)
+        l.set_halign(Gtk.Align.CENTER)
+        return l
+
+    # ═════════════ Tab 1: Controller ═════════════
+    t_pad = vbox(6); pad(t_pad, h=4, v=10)
+
+    status_lbl = Gtk.Label()
+    status_lbl.get_style_context().add_class("caption")
+    status_lbl.set_halign(Gtk.Align.CENTER)
+
+    def _refresh_status():
+        r = _pad_ctl("status")
+        if not r:
+            status_lbl.set_text("TrafkPad is not running")
+        else:
+            parts = dict(p.split("=", 1) for p in r.split()[1:] if "=" in p)
+            mode = r.split()[0].upper()
+            status_lbl.set_text(f"Controller mode: {mode}  ·  {parts.get('pads', '0')} pad(s)")
+        return True
+    _refresh_status()
+    add_timer(2000, _refresh_status)
+
+    def _switch_now(_b):
+        _pad_ctl("toggle")
+        _refresh_status()
+    now_btn = btn("Switch ON / OFF now", _switch_now,
+                  tip="Same as holding the toggle combo on the pad for 1 s")
+
+    def _after_enable():
+        _pad_ctl("reload")
+        GLib.timeout_add(400, _refresh_status)
+    enable_btn = toggle("Controller support", "Master switch. Off = the daemon idles and never touches your pads",
+                        "enabled", _after_enable)
+    boot_btn = toggle("ON at start", "Start with controller mode ON after login", "start_active")
+
+    t_pad.pack_start(status_lbl, False, False, 0)
+    t_pad.pack_start(hrow(enable_btn, boot_btn), False, False, 0)
+    t_pad.pack_start(hrow(now_btn), False, False, 0)
+
+    # Toggle-Kombi
+    combo_btns: dict = {}
+    def _set_combo(val):
+        cfg["toggle_combo"] = val
+        for v, b in combo_btns.items():
+            ctx = b.get_style_context()
+            ctx.add_class("active") if v == val else ctx.remove_class("active")
+        _pad_cfg_save_soon(cfg)
+    combo_row = hbox(4); combo_row.set_halign(Gtk.Align.CENTER)
+    for val, text in PAD_COMBOS:
+        b = btn(text, active=(cfg["toggle_combo"].upper() == val), tip=f"Hold {val} to toggle")
+        b.connect("clicked", lambda _b, v=val: _set_combo(v))
+        combo_btns[val] = b
+        combo_row.pack_start(b, False, False, 0)
+    t_pad.pack_start(sep(), False, False, 2)
+    t_pad.pack_start(caption("Toggle combo (hold on one pad)"), False, False, 0)
+    t_pad.pack_start(combo_row, False, False, 0)
+
+    def fslider(icon, lo, hi, step, cfg_key, fmt, tip):
+        sl_box, sl = bslider(icon, lo, hi, step, float(cfg[cfg_key]), show_val=True)
+        sl.set_tooltip_text(tip)
+        sl.set_digits(0 if step >= 1 else 2)
+        def _chg(s):
+            v = s.get_value()
+            cfg[cfg_key] = fmt % v
+            _pad_cfg_save_soon(cfg)
+        sl.connect("value-changed", _chg)
+        return sl_box
+
+    t_pad.pack_start(fslider("󰍽", 500, 3000, 100, "toggle_hold_ms", "%d", "Hold time for the toggle combo (ms)"), False, False, 0)
+    t_pad.pack_start(caption("Hold time (ms)"), False, False, 0)
+
+    # ═════════════ Tab 2: Feel ═════════════
+    t_feel = vbox(6); pad(t_feel, h=4, v=10)
+    t_feel.pack_start(fslider("󰍽", 200, 2500, 50, "mouse_speed", "%d", "Mouse pointer speed at full stick (px/s)"), False, False, 0)
+    t_feel.pack_start(caption("Pointer speed"), False, False, 0)
+    t_feel.pack_start(fslider("󰟶", 1.0, 3.0, 0.1, "mouse_curve", "%.1f", "1 = linear, higher = more precise near the center"), False, False, 0)
+    t_feel.pack_start(caption("Pointer curve (higher = finer control)"), False, False, 0)
+    t_feel.pack_start(fslider("󰍺", 0.05, 0.4, 0.01, "mouse_deadzone", "%.2f", "Stick dead zone"), False, False, 0)
+    t_feel.pack_start(caption("Stick dead zone"), False, False, 0)
+    t_feel.pack_start(fslider("󰜮", 300, 5000, 100, "scroll_speed", "%d", "Scroll speed (Home + right stick)"), False, False, 0)
+    t_feel.pack_start(caption("Scroll speed (Home + right stick)"), False, False, 0)
+
+    stick_btns: dict = {}
+    def _set_stick(v):
+        cfg["left_stick"] = v
+        for n, b in stick_btns.items():
+            ctx = b.get_style_context()
+            ctx.add_class("active") if n == v else ctx.remove_class("active")
+        _pad_cfg_save_soon(cfg)
+    stick_row = hbox(4); stick_row.set_halign(Gtk.Align.CENTER)
+    for v, text, tip in (("wasd", "W A S D", "Left stick sends W A S D (same as the launcher)"),
+                         ("arrows", "Arrows", "Left stick sends arrow keys - safer in text fields")):
+        b = btn(text, active=(cfg["left_stick"] == v), tip=tip)
+        b.connect("clicked", lambda _b, x=v: _set_stick(x))
+        stick_btns[v] = b
+        stick_row.pack_start(b, False, False, 0)
+    t_feel.pack_start(sep(), False, False, 2)
+    t_feel.pack_start(caption("Left stick"), False, False, 0)
+    t_feel.pack_start(stick_row, False, False, 0)
+    nintendo_btn = btn("Nintendo layout", active=(cfg["swap_ab"] == "true" and cfg["swap_xy"] == "true"),
+                       tip="Swaps A/B and X/Y for Nintendo-style pads (A = right button)")
+    def _nintendo(_b):
+        on = not (cfg["swap_ab"] == "true" and cfg["swap_xy"] == "true")
+        cfg["swap_ab"] = cfg["swap_xy"] = "true" if on else "false"
+        ctx = nintendo_btn.get_style_context()
+        ctx.add_class("active") if on else ctx.remove_class("active")
+        _pad_cfg_save_soon(cfg)
+    nintendo_btn.connect("clicked", _nintendo)
+    t_feel.pack_start(hrow(
+        toggle("Rumble", "Short vibration when the mode switches", "rumble"),
+        toggle("Notify", "Notification when the mode switches", "notify"),
+        toggle("Sounds", "System sound when the mode switches", "sounds")), False, False, 0)
+    t_feel.pack_start(hrow(
+        nintendo_btn,
+        toggle("Invert scroll", "Reverse the scroll direction", "scroll_invert")), False, False, 0)
+
+    # ═════════════ Tab 3: Login ═════════════
+    t_login = vbox(6); pad(t_login, h=4, v=10)
+    login_status = Gtk.Label()
+    login_status.get_style_context().add_class("caption")
+    login_status.set_halign(Gtk.Align.CENTER)
+    login_status.set_line_wrap(True)
+    login_status.set_max_width_chars(44)
+
+    sddm_btn = btn("Skip login screen (SDDM)", active=os.path.exists(SDDM_AUTOLOGIN_FILE),
+                   tip="Automatic login: SDDM logs you in without asking for a password")
+    def _sddm_done(ok, msg, target):
+        ctx = sddm_btn.get_style_context()
+        if ok:
+            ctx.add_class("active") if target else ctx.remove_class("active")
+            login_status.set_text("SDDM: automatic login " + ("ON - applies at next boot" if target else "OFF"))
+        else:
+            login_status.set_text(f"SDDM: failed ({msg})")
+        sddm_btn.set_sensitive(True)
+        return False
+    def _sddm_clicked(_b):
+        target = not os.path.exists(SDDM_AUTOLOGIN_FILE)
+        sddm_btn.set_sensitive(False)
+        login_status.set_text("Waiting for authorization…")
+        def _work():
+            ok, msg = _sddm_set_autologin(target)
+            GLib.idle_add(_sddm_done, ok, msg, target)
+        threading.Thread(target=_work, daemon=True).start()
+    sddm_btn.connect("clicked", _sddm_clicked)
+
+    lock_btn = btn("Disable lock screen (hyprlock)", active=HYPRLOCK_OFF_FLAG.exists(),
+                   tip="hyprlock does nothing while this is on (idle lock, power menu, lock-session)")
+    def _lock_clicked(_b):
+        try:
+            if HYPRLOCK_OFF_FLAG.exists():
+                HYPRLOCK_OFF_FLAG.unlink()
+                lock_btn.get_style_context().remove_class("active")
+                login_status.set_text("hyprlock: ON")
+            else:
+                HYPRLOCK_OFF_FLAG.parent.mkdir(parents=True, exist_ok=True)
+                HYPRLOCK_OFF_FLAG.touch()
+                lock_btn.get_style_context().add_class("active")
+                login_status.set_text("hyprlock: DISABLED")
+        except Exception as e:
+            login_status.set_text(f"hyprlock: failed ({e})")
+        if not os.path.exists(HYPRLOCK_WRAPPER):
+            login_status.set_text(f"Missing wrapper {HYPRLOCK_WRAPPER} - the flag has no effect without it")
+    lock_btn.connect("clicked", _lock_clicked)
+
+    t_login.pack_start(hrow(sddm_btn), False, False, 0)
+    t_login.pack_start(hrow(lock_btn), False, False, 0)
+    t_login.pack_start(login_status, False, False, 2)
+    t_login.pack_start(caption("Typing a long password needs a keyboard. With these off, a pad-only system never gets stuck at a login screen."), False, False, 0)
+
+    stack.add_named(t_pad,   "pad")
+    stack.add_named(t_feel,  "feel")
+    stack.add_named(t_login, "login")
+
+    tab_row = hbox(4); tab_row.set_halign(Gtk.Align.CENTER)
+    tab_btns: dict = {}
+    def _switch(name):
+        _switch_stack(stack, win, name)
+        for n, b in tab_btns.items():
+            ctx = b.get_style_context()
+            ctx.add_class("active") if n == name else ctx.remove_class("active")
+    for name, tlabel in (("pad", "Controller"), ("feel", "Feel"), ("login", "Login")):
+        b = btn(tlabel, active=(name == "pad"))
+        b.connect("clicked", lambda _b, n=name: _switch(n))
+        tab_btns[name] = b
+        tab_row.pack_start(b, False, False, 0)
+    stack.set_visible_child_name("pad")
+
+    root.pack_start(tab_row, True, False, 2)
+    root.pack_start(tab_sep(), False, False, 0)
+    root.pack_start(stack, False, False, 0)
+    page.pack_start(root, True, True, 0)
+
+
 SETTINGS_BUILDERS = {
     "display":    _build_settings_display,
     "brightness": _build_settings_brightness,
@@ -17954,6 +18880,7 @@ SETTINGS_BUILDERS = {
     "apps":       _build_settings_apps,
     "devices":    _build_settings_devices,
     "widgets":    _build_settings_widgets,
+    "controller": _build_settings_controller,
 }
 
 def build_settings(win: Gtk.Window):
@@ -18199,7 +19126,8 @@ def _on_client_readable(conn, _cond):
                 try: conn.sendall((result + "\n").encode())
                 except Exception: pass
             elif name:
-                result = toggle_widget(name)
+                name, _, opt = name.partition("@")
+                result = toggle_widget(name, opt)
                 try: conn.sendall((result + "\n").encode())
                 except Exception: pass
     except Exception:
