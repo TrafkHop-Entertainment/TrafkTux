@@ -81,7 +81,7 @@
  * auf den meisten Dateisystemen).
  *
  * Zuordnung/Entscheidungen beim Übertragen der Wunschliste hierher:
- *  - Click/RightClick/MiddleClick/Open/Close/Pip/Autohide/LayoutSwitch/
+ *  - Click/RightClick/MiddleClick/Open/Close/Pip/Minimize/LayoutSwitch/
  *    Dunst/Error: 1:1 wie gewünscht.
  *  - FocusChange: deckt sowohl "fokuswechsel" als auch das explizit
  *    gleichgesetzte "widgets-wechsel" ab (dieselbe Datei, ein Event) -
@@ -97,14 +97,14 @@
  *  - Toggle, Enter: nicht in der neuen Liste genannt, aber bewusst
  *    BEIBEHALTEN (nur PascalCase-umbenannt) statt stillschweigend
  *    entfernt - Toggle wird aktuell noch von keinem der spezifischeren
- *    Events (Pip/Autohide) abgelöst, weil die zugehörigen Skripte das
+ *    Events (Pip/Minimize) abgelöst, weil die zugehörigen Skripte das
  *    noch nicht selbst aufrufen (siehe README, "einzeln einbauen"), und
  *    Enter hängt schon aktiv an RofiTrafkBubbleMenus.c (Menü-Bestätigen).
  *    Sag Bescheid, falls die beiden weg sollen. */
 static const char *EVENT_NAMES[NUM_EVENTS] = {
     "Click", "RightClick", "MiddleClick",
     "Open", "Close", "FocusChange",
-    "Pip", "Autohide", "LayoutSwitch", "Dunst",
+    "Pip", "Minimize", "LayoutSwitch", "Dunst",
     "Error", "Toggle", "Enter"
 };
 
@@ -331,6 +331,10 @@ static void load_all_sounds(int is_reload) {
 /* --------------------------------- Play-Logik --------------------------------- */
 
 static void handle_play(const char *event) {
+    /* Das Event hiess frueher "Autohide" - jetzt "Minimize" (passend zur Datei
+     * Minimize.ogg und zur Event-Liste der Sound-Einstellungen). Der alte Name
+     * bleibt als Alias gueltig, falls ein Skript ihn noch ruft. */
+    if (strcmp(event, "Autohide") == 0) event = "Minimize";
     int idx = -1;
     for (int i = 0; i < NUM_EVENTS; i++) {
         if (strcmp(EVENT_NAMES[i], event) == 0) { idx = i; break; }

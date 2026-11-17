@@ -78,7 +78,7 @@ fi
 # ist per Default gesperrt/kein Passwort gesetzt - siehe /etc/shadow aus dem
 # linux/base-Paket). Daher hier EXPLIZIT einen "liveuser" anlegen, analog
 # zum ueblichen Muster anderer Arch-basierter Live-Distros.
-useradd -m -G wheel,storage,optical,audio,video,network,lp,scanner,power -s /usr/bin/bash liveuser
+useradd -m -G wheel,storage,optical,audio,video,network,lp,scanner,power -s /usr/bin/fish liveuser
 
 # Hyprland-Plugins (ISO.sh Schritt 1/5): hyprpm sucht seinen State
 # systemweit unter /var/cache/hyprpm/<username> (per Quellcode verifiziert,

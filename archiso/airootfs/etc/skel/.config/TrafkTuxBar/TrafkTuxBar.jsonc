@@ -119,19 +119,19 @@
             "id": "appmenu",
             "icon": "view-app-grid-symbolic",
             "tooltip": "App Launcher",
-            "on_click": "$HOME/.config/TrafkTuxLauncher/TrafkTuxLauncher --show AppLauncher && bash ~/.config/hypr/soundctl.sh click &"
+            "on_click": "$HOME/.config/TrafkTuxLauncher/TrafkTuxLauncher --show AppLauncher && bash ~/.config/hypr/SoundCenter.sh Click &"
         },
         {
             "id": "workspaces-view",
             "icon": "view-grid-symbolic",
             "tooltip": "Workspace Overview",
-            "on_click": "hyprctl eval 'hl.plugin.hyprexpo.expo(\"toggle\")' ; hyprctl eval 'hl.dispatch(hl.dsp.submap(\"hyprexpo\"))' ; bash ~/.config/hypr/soundctl.sh click &"
+            "on_click": "hyprctl eval 'hl.plugin.hyprexpo.expo(\"toggle\")' ; hyprctl eval 'hl.dispatch(hl.dsp.submap(\"hyprexpo\"))' ; bash ~/.config/hypr/SoundCenter.sh Click &"
         },
         {
             "id": "powermenu",
             "icon": "system-shutdown-symbolic",
             "tooltip": "Power Menu",
-            "on_click": "$HOME/.config/TrafkTuxLauncher/TrafkTuxLauncher --show PowerMenu && bash ~/.config/hypr/soundctl.sh click &"
+            "on_click": "$HOME/.config/TrafkTuxLauncher/TrafkTuxLauncher --show PowerMenu && bash ~/.config/hypr/SoundCenter.sh Click &"
         },
         {
             // Trennt den festen 3er-Cluster (appmenu/workspaces-view/
@@ -145,6 +145,10 @@
             // blaettern zwischen den Zeilen (Mausrad ueber den Icons auch).
             // Standard 3 - hier frei einstellbar, unabhaengig von
             // Aufloesung/Skalierung.
+            // INHALT (die Apps) steht NICHT hier: Die Bar legt ihn beim ersten
+            // Start in ~/.config/TrafkTuxBar/Userbar.jsonc an (eingebaute
+            // Standardwerte, siehe TrafkTuxBar.c) - dort aenderst du ihn, oder
+            // im App Editor (Widgets > Apps & Shortcuts > Bar).
             "id": "pinned",
             "type": "button_row",
             "visible_count": 3,
@@ -183,19 +187,12 @@
             // bricht in eine neue Zeile um; die Pfeile daneben blaettern
             // zwischen den Zeilen (Mausrad ueber den Icons auch). Standard
             // 3 - hier frei einstellbar.
+            // INHALT (die Widgets) steht NICHT hier - siehe "pinned" oben:
+            // kommt aus ~/.config/TrafkTuxBar/Userbar.jsonc.
             "id": "other-widgets",
             "type": "widget_grid",
             "visible_count": 3,
             "items": [
-                {
-                    "id": "osk",
-                    "icon": "input-keyboard-symbolic",
-                    "tooltip": "Bildschirmtastatur",
-                    "exec_cmd": "pgrep -x wvkbd-mobintl >/dev/null && echo '{\"class\":\"active\"}' || echo '{\"class\":\"inactive\"}'",
-                    "exec_interval_sec": 2,
-                    "exec_return_json": true,
-                    "on_click": "(pgrep -x wvkbd-mobintl >/dev/null && pkill -x wvkbd-mobintl || setsid wvkbd-mobintl -L 300); bash ~/.config/hypr/soundctl.sh toggle &"
-                }
             ]
         },
         {

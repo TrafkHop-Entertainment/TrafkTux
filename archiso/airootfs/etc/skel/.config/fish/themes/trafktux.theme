@@ -1,0 +1,38 @@
+# name: 'TrafkTux'
+[dark]
+preferred_background: 23163B
+fish_color_normal fffdf5
+fish_color_command fff495
+fish_color_param ed9121
+fish_color_redirection ed9121
+fish_color_end ed9121
+fish_color_error c0392b
+fish_color_comment 888888
+fish_color_match ed9121
+fish_color_search_match 89CFF0
+fish_color_operator ed9121
+fish_color_escape ed9121
+fish_color_cwd 89CFF0
+fish_pager_color_prefix 888888
+fish_pager_color_completion d1d1d1
+fish_pager_color_description f9e2af
+fish_pager_color_progress fff495
+
+[light]
+preferred_background fffdf5
+fish_color_normal 23163B
+fish_color_command 5a3998
+fish_color_param ed9121
+fish_color_redirection ed9121
+fish_color_end ed9121
+fish_color_error c0392b
+fish_color_comment 555555
+fish_color_match ed9121
+fish_color_search_match 89CFF0
+fish_color_operator ed9121
+fish_color_escape ed9121
+fish_color_cwd 1a0d34
+fish_pager_color_prefix 555555
+fish_pager_color_completion 38255B
+fish_pager_color_description 5a3998
+fish_pager_color_progress 5a3998

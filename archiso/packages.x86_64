@@ -168,6 +168,8 @@ flatpak
 htop
 nano
 bash-completion
+fish
+starship
 khal
 python-psutil
 

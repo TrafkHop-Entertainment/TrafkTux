@@ -296,14 +296,22 @@ static void parse_module_array(JsonObject *root, const char *key, GPtrArray *out
  * Userbar.jsonc -, die die BAR SELBST anlegt, falls sie fehlt (gleiches
  * Prinzip wie Usermenu.json beim TrafkTuxLauncher).
  *
- * Beim ersten Anlegen wird die Datei mit dem aktuellen System-Standard der
- * ZWEI veraenderbaren Module befuellt: "pinned" (die gepinnten Apps) und
- * "other-widgets" (alle Widgets des Grids). Das Settings-Widget und die
- * festen Module (Launcher, Power, Uhr, Tray ...) stehen bewusst NICHT
- * darin - sie sollen sich nicht entfernen lassen. Was in der Datei steht,
- * ersetzt den System-Standard dieser Module; neue Standard-Widgets eines
- * Updates erscheinen dadurch nicht automatisch (Datei loeschen = beim
- * naechsten Start frisch aus dem Standard).
+ * Die INHALTE der zwei veraenderbaren Module - "pinned" (die gepinnten Apps)
+ * und "other-widgets" (alle Widgets des Grids) - stehen NICHT mehr in
+ * TrafkTuxBar.jsonc (dort nur noch das Geruest: id, type, visible_count),
+ * sondern sind als Standardwerte in diese Bar einkompiliert
+ * (BUILTIN_MODULE_DEFAULTS unten). Beim ersten Start legt die Bar daraus
+ * Userbar.jsonc an. Das Settings-Widget und die festen Module (Launcher,
+ * Power, Uhr, Tray ...) stehen bewusst NICHT darin - sie sollen sich nicht
+ * entfernen lassen. Was in der Datei steht, ersetzt die Items der Module.
+ *
+ * Fehlt die Datei, ist sie kaputt oder unlesbar, bekommen die beiden Module
+ * trotzdem ihre eingebauten Standardwerte (nie eine leere Bar). Fehlt in
+ * einer vorhandenen Datei etwas (z.B. weil nur "autohide" drinsteht), ergaenzt
+ * die Bar es beim Start aus denselben Standardwerten.
+ *
+ * Die Standardwerte muessen zu _BAR_BUILTIN_DEFAULTS in WidgetsDaemon.py
+ * passen (der Editor braucht sie fuer "Reset" und "Add widget").
  *
  * Der App Editor der Widgets schreibt nur noch hinein und schickt ein
  * SIGHUP; die Bar laeuft aber auch komplett ohne Widgets - sie wartet auf
@@ -342,12 +350,117 @@ static const char USER_BAR_HEADER[] =
     "// Bar wieder frisch aus dem Standard. Weitere Schluessel auf oberster Ebene\n"
     "// (z.B. \"autohide\": { \"enabled\": false }) ueberschreiben Systemwerte.\n";
 
-static JsonObject *find_module_by_id(JsonObject *root, const char *id);   /* s.u. */
+/* Eingebaute Standardwerte der zwei veraenderbaren Module. Einzige Quelle in
+ * C; das Gegenstueck im Editor ist _BAR_BUILTIN_DEFAULTS in WidgetsDaemon.py
+ * (beide wurden aus derselben Vorlage erzeugt und muessen gleich bleiben).
+ * Sound: der Klick-Befehl ruft SoundCenter.sh mit dem Event "Click" - Datei
+ * UND Event-Name muessen exakt stimmen (der SoundDaemon kennt nur PascalCase-
+ * Namen; frueher stand hier das nicht mehr existierende soundctl.sh + "click"). */
+static const char BUILTIN_MODULE_DEFAULTS[] =
+    "{\n"
+    "    \"pinned\": {\n"
+    "        \"visible_count\": 3,\n"
+    "        \"items\": [\n"
+    "            {\n"
+    "                \"id\": \"shortcut-kitty\",\n"
+    "                \"icon\": \"utilities-terminal-symbolic\",\n"
+    "                \"tooltip\": \"Xfce4 Terminal\",\n"
+    "                \"on_click\": \"setsid xfce4-terminal && bash ~/.config/hypr/SoundCenter.sh Click &\"\n"
+    "            },\n"
+    "            {\n"
+    "                \"id\": \"shortcut-thunar\",\n"
+    "                \"icon\": \"system-file-manager-symbolic\",\n"
+    "                \"tooltip\": \"Thunar\",\n"
+    "                \"on_click\": \"setsid thunar && bash ~/.config/hypr/SoundCenter.sh Click &\"\n"
+    "            },\n"
+    "            {\n"
+    "                \"id\": \"shortcut-firefox\",\n"
+    "                \"icon\": \"firefox\",\n"
+    "                \"tooltip\": \"Firefox\",\n"
+    "                \"on_click\": \"setsid firefox && bash ~/.config/hypr/SoundCenter.sh Click &\"\n"
+    "            }\n"
+    "        ]\n"
+    "    },\n"
+    "    \"other-widgets\": {\n"
+    "        \"visible_count\": 3,\n"
+    "        \"items\": [\n"
+    "            {\n"
+    "                \"id\": \"volume\",\n"
+    "                \"icon\": \"audio-volume-high-symbolic\",\n"
+    "                \"tooltip\": \"Volume & Audio\",\n"
+    "                \"on_click\": \"socat - UNIX-CONNECT:/tmp/wb-daemon.sock <<< volume\"\n"
+    "            },\n"
+    "            {\n"
+    "                \"id\": \"network\",\n"
+    "                \"icon\": \"network-wireless-symbolic\",\n"
+    "                \"tooltip\": \"Netzwerk / Wi-Fi\",\n"
+    "                \"on_click\": \"socat - UNIX-CONNECT:/tmp/wb-daemon.sock <<< network\"\n"
+    "            },\n"
+    "            {\n"
+    "                \"id\": \"bluetooth\",\n"
+    "                \"icon\": \"bluetooth-symbolic\",\n"
+    "                \"tooltip\": \"Bluetooth\",\n"
+    "                \"on_click\": \"socat - UNIX-CONNECT:/tmp/wb-daemon.sock <<< bluetooth\"\n"
+    "            },\n"
+    "            {\n"
+    "                \"id\": \"brightness\",\n"
+    "                \"icon\": \"display-brightness-symbolic\",\n"
+    "                \"tooltip\": \"Helligkeit & Nachtlicht\",\n"
+    "                \"on_click\": \"socat - UNIX-CONNECT:/tmp/wb-daemon.sock <<< brightness\"\n"
+    "            },\n"
+    "            {\n"
+    "                \"id\": \"akku\",\n"
+    "                \"icon\": \"battery-good-symbolic\",\n"
+    "                \"tooltip\": \"Akku-Info\",\n"
+    "                \"on_click\": \"socat - UNIX-CONNECT:/tmp/wb-daemon.sock <<< akku\"\n"
+    "            },\n"
+    "            {\n"
+    "                \"id\": \"osk\",\n"
+    "                \"icon\": \"input-keyboard-symbolic\",\n"
+    "                \"tooltip\": \"Bildschirmtastatur\",\n"
+    "                \"exec_cmd\": \"pgrep -x wvkbd-mobintl >/dev/null && echo '{\\\"class\\\":\\\"active\\\"}' || echo '{\\\"class\\\":\\\"inactive\\\"}'\",\n"
+    "                \"exec_interval_sec\": 2,\n"
+    "                \"exec_return_json\": true,\n"
+    "                \"on_click\": \"(pgrep -x wvkbd-mobintl >/dev/null && pkill -x wvkbd-mobintl || setsid wvkbd-mobintl -L 300); bash ~/.config/hypr/SoundCenter.sh Click &\"\n"
+    "            }\n"
+    "        ]\n"
+    "    }\n"
+    "}\n";
 
-/* Uebernimmt "visible_count" und "items" des System-Moduls <id> in "mods". */
-static void add_module_defaults(JsonObject *mods, JsonObject *root, const char *id) {
-    JsonObject *m = find_module_by_id(root, id);
-    if (!m) return;
+/* Liefert die eingebauten Standardwerte als JsonObject (einmal geparst, dann
+ * gecached; gehoert dem Cache - nicht freigeben). */
+static JsonObject *builtin_defaults(void) {
+    static JsonParser *parser = NULL;
+    if (!parser) {
+        parser = json_parser_new();
+        GError *err = NULL;
+        if (!json_parser_load_from_data(parser, BUILTIN_MODULE_DEFAULTS, -1, &err)) {
+            g_printerr("[config] INTERNER FEHLER: eingebaute Standardwerte nicht lesbar: %s\n",
+                       err ? err->message : "?");
+            g_clear_error(&err);
+            g_object_unref(parser);
+            parser = NULL;
+            return NULL;
+        }
+    }
+    JsonNode *rn = json_parser_get_root(parser);
+    return (rn && JSON_NODE_HOLDS_OBJECT(rn)) ? json_node_get_object(rn) : NULL;
+}
+
+static JsonObject *builtin_module(const char *id) {
+    JsonObject *d = builtin_defaults();
+    if (!d || !json_object_has_member(d, id)) return NULL;
+    JsonNode *n = json_object_get_member(d, id);
+    return JSON_NODE_HOLDS_OBJECT(n) ? json_node_get_object(n) : NULL;
+}
+
+/* Uebernimmt "visible_count" und "items" des eingebauten Standards <id> in "mods". */
+static void add_module_defaults(JsonObject *mods, const char *id) {
+    JsonObject *m = builtin_module(id);
+    if (!m) {
+        g_message("[config] Userbar: kein eingebauter Standard fuer '%s'.", id);
+        return;
+    }
     JsonObject *entry = json_object_new();
     if (json_object_has_member(m, "visible_count"))
         json_object_set_member(entry, "visible_count",
@@ -359,18 +472,40 @@ static void add_module_defaults(JsonObject *mods, JsonObject *root, const char *
     json_object_set_member(mods, id, en);
 }
 
-/* Legt Userbar.jsonc an, falls sie fehlt - befuellt mit dem System-Standard
- * von "pinned" und "other-widgets" (siehe Kopfkommentar). "root" ist dabei
- * der System-Baum VOR dem Anwenden des Overlays. */
-static void ensure_user_bar_file(const char *path, JsonObject *root) {
+/* Serialisiert einen JSON-Baum huebsch (4 Leerzeichen) und schreibt ihn mit
+ * dem Kopfkommentar atomar nach "path". TRUE bei Erfolg. */
+static gboolean write_user_bar_file(const char *path, JsonNode *root_node) {
+    JsonGenerator *gen = json_generator_new();
+    json_generator_set_pretty(gen, TRUE);
+    json_generator_set_indent(gen, 4);
+    json_generator_set_root(gen, root_node);       /* kopiert den Knoten */
+    gsize body_len = 0;
+    char *body = json_generator_to_data(gen, &body_len);
+    char *content = g_strconcat(USER_BAR_HEADER, body ? body : "{}", "\n", NULL);
+
+    GError *err = NULL;
+    gboolean ok = g_file_set_contents(path, content, -1, &err);
+    if (!ok) {
+        g_printerr("[config] Konnte %s nicht schreiben: %s\n", path, err ? err->message : "?");
+        g_clear_error(&err);
+    }
+    g_free(content);
+    g_free(body);
+    g_object_unref(gen);
+    return ok;
+}
+
+/* Legt Userbar.jsonc an, falls sie fehlt - befuellt mit den eingebauten
+ * Standardwerten von "pinned" und "other-widgets" (siehe Kopfkommentar). */
+static void ensure_user_bar_file(const char *path) {
     if (g_file_test(path, G_FILE_TEST_EXISTS)) return;
     char *dir = g_path_get_dirname(path);
     g_mkdir_with_parents(dir, 0755);
     g_free(dir);
 
     JsonObject *mods = json_object_new();
-    add_module_defaults(mods, root, "pinned");
-    add_module_defaults(mods, root, "other-widgets");
+    add_module_defaults(mods, "pinned");
+    add_module_defaults(mods, "other-widgets");
     JsonObject *top = json_object_new();
     json_object_set_int_member(top, "version", 1);
     JsonNode *mn = json_node_new(JSON_NODE_OBJECT);
@@ -379,24 +514,8 @@ static void ensure_user_bar_file(const char *path, JsonObject *root) {
     JsonNode *rn = json_node_new(JSON_NODE_OBJECT);
     json_node_take_object(rn, top);
 
-    JsonGenerator *gen = json_generator_new();
-    json_generator_set_pretty(gen, TRUE);
-    json_generator_set_indent(gen, 4);
-    json_generator_set_root(gen, rn);       /* kopiert den Knoten */
-    gsize body_len = 0;
-    char *body = json_generator_to_data(gen, &body_len);
-    char *content = g_strconcat(USER_BAR_HEADER, body ? body : "{}", "\n", NULL);
-
-    GError *err = NULL;
-    if (g_file_set_contents(path, content, -1, &err)) {
-        g_message("[config] %s neu angelegt (aus dem System-Standard).", path);
-    } else {
-        g_printerr("[config] Konnte %s nicht anlegen: %s\n", path, err ? err->message : "?");
-        g_clear_error(&err);
-    }
-    g_free(content);
-    g_free(body);
-    g_object_unref(gen);
+    if (write_user_bar_file(path, rn))
+        g_message("[config] %s neu angelegt (aus den eingebauten Standardwerten).", path);
     json_node_unref(rn);
 }
 
@@ -530,12 +649,91 @@ static void merge_user_overlay(JsonObject *root, JsonObject *user) {
     g_list_free(keys);
 }
 
+/* Ergaenzt in einer BESTEHENDEN Userbar.jsonc, was von "pinned" und
+ * "other-widgets" fehlt (Modul, "visible_count", "items") aus dem System-
+ * Standardwerten - die Datei soll die zwei veraenderbaren Bereiche immer vollstaendig
+ * enthalten. Anlass: sie wird nur angelegt, wenn sie FEHLT; war sie schon da
+ * (z.B. von einer frueheren Version leer, oder weil nur "autohide" drinstand),
+ * blieben die Eintraege sonst fuer immer aus. Absichtlich geleerte Listen
+ * ("items": []) bleiben leer - nur FEHLENDES wird ergaenzt. Gibt TRUE zurueck,
+ * wenn etwas ergaenzt wurde (dann muss die Datei neu geschrieben werden). */
+static gboolean fill_missing_user_modules(JsonObject *user) {
+    gboolean changed = FALSE;
+    JsonObject *mods = NULL;
+    if (json_object_has_member(user, "modules") &&
+        JSON_NODE_HOLDS_OBJECT(json_object_get_member(user, "modules"))) {
+        mods = json_node_get_object(json_object_get_member(user, "modules"));
+    } else {
+        mods = json_object_new();
+        JsonNode *mn = json_node_new(JSON_NODE_OBJECT);
+        json_node_take_object(mn, mods);
+        json_object_set_member(user, "modules", mn);   /* ersetzt auch einen Nicht-Objekt-Wert */
+        changed = TRUE;
+    }
+
+    static const char *const ids[] = { "pinned", "other-widgets", NULL };
+    static const char *const keys[] = { "visible_count", "items", NULL };
+    for (int i = 0; ids[i]; i++) {
+        JsonObject *sm = builtin_module(ids[i]);
+        if (!sm) {
+            g_message("[config] Userbar: kein eingebauter Standard fuer '%s' - nichts aufzufuellen.", ids[i]);
+            continue;
+        }
+        JsonObject *um = NULL;
+        if (json_object_has_member(mods, ids[i]) &&
+            JSON_NODE_HOLDS_OBJECT(json_object_get_member(mods, ids[i]))) {
+            um = json_node_get_object(json_object_get_member(mods, ids[i]));
+        } else {
+            um = json_object_new();
+            JsonNode *un = json_node_new(JSON_NODE_OBJECT);
+            json_node_take_object(un, um);
+            json_object_set_member(mods, ids[i], un);
+            changed = TRUE;
+        }
+        for (int k = 0; keys[k]; k++) {
+            if (!json_object_has_member(um, keys[k]) && json_object_has_member(sm, keys[k])) {
+                json_object_set_member(um, keys[k],
+                                       json_node_copy(json_object_get_member(sm, keys[k])));
+                changed = TRUE;
+            }
+        }
+    }
+    return changed;
+}
+
+/* Sorgt dafuer, dass "pinned" und "other-widgets" im geladenen Baum NIE leer
+ * sind, nur weil die Userbar.jsonc fehlt oder kaputt ist: hat ein solches Modul
+ * in der System-Config keine "items" (oder eine leere Liste - dort steht nur
+ * noch das Geruest), bekommt es die eingebauten Standardwerte. Ein vorhandenes
+ * Overlay setzt sich danach darueber durch - auch ein absichtlich leeres
+ * ("items": []). */
+static void apply_builtin_defaults_if_empty(JsonObject *root) {
+    static const char *const ids[] = { "pinned", "other-widgets", NULL };
+    for (int i = 0; ids[i]; i++) {
+        JsonObject *mo = find_module_by_id(root, ids[i]);
+        JsonObject *def = builtin_module(ids[i]);
+        if (!mo || !def) continue;
+        JsonArray *items = member_array(mo, "items");
+        if (items && json_array_get_length(items) > 0) continue;
+        if (json_object_has_member(def, "items"))
+            json_object_set_member(mo, "items", json_node_copy(json_object_get_member(def, "items")));
+        if (!json_object_has_member(mo, "visible_count") && json_object_has_member(def, "visible_count"))
+            json_object_set_member(mo, "visible_count",
+                                   json_node_copy(json_object_get_member(def, "visible_count")));
+    }
+}
+
 /* Legt Userbar.jsonc bei Bedarf an und legt sie ueber "root". Jeder Fehler
  * (Datei unlesbar, JSON kaputt) wird nur protokolliert - dann gilt der
  * System-Standard. */
 static void apply_user_overlay(JsonObject *root, const char *config_dir) {
+    /* ERST die eingebauten Standardwerte in leere Module setzen, dann die
+     * User-Datei darueberlegen - so ist die Bar auch bei fehlender oder
+     * kaputter Datei nie leer. */
+    apply_builtin_defaults_if_empty(root);
+
     char *upath = g_build_filename(config_dir, USER_BAR_FILE, NULL);
-    ensure_user_bar_file(upath, root);   /* root = System-Standard, noch ohne Overlay */
+    ensure_user_bar_file(upath);
 
     char *raw = NULL;
     gsize len = 0;
@@ -557,9 +755,16 @@ static void apply_user_overlay(JsonObject *root, const char *config_dir) {
         g_clear_error(&err);
     } else {
         JsonNode *rn = json_parser_get_root(parser);
-        if (rn && JSON_NODE_HOLDS_OBJECT(rn))
-            merge_user_overlay(root, json_node_get_object(rn));
-        else
+        if (rn && JSON_NODE_HOLDS_OBJECT(rn)) {
+            JsonObject *uobj = json_node_get_object(rn);
+            /* Fehlendes aus den eingebauten Standardwerten ergaenzen und die
+             * Datei dann neu schreiben. */
+            if (fill_missing_user_modules(uobj)) {
+                if (write_user_bar_file(upath, rn))
+                    g_message("[config] %s: fehlende Eintraege aus den eingebauten Standardwerten ergaenzt.", upath);
+            }
+            merge_user_overlay(root, uobj);
+        } else
             g_printerr("[config] %s: Wurzel ist kein Objekt - ignoriert.\n", upath);
     }
     g_object_unref(parser);
@@ -5126,7 +5331,7 @@ static gboolean enable_screen_alpha(GtkWidget *widget) {
  * (siehe main()). Damit ist zweifelsfrei nachpruefbar, welcher Build
  * tatsaechlich laeuft, statt es zu raten - bitte bei jedem Testlauf
  * die BUILD-Zeile mit posten. */
-#define TB_BUILD_TAG "2026-11-userbar-overlay-sighup-reload"
+#define TB_BUILD_TAG "2026-11-userbar-overlay-sighup-reload-builtin"
 
 static gboolean on_window_click_probe(GtkWidget *widget, GdkEventButton *ev, gpointer user_data) {
     (void)widget; (void)user_data;

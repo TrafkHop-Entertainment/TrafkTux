@@ -1,0 +1,52 @@
+command_timeout = 2000
+add_newline = true
+
+format = """
+$username\
+$hostname\
+$directory\
+$git_branch\
+$git_status\
+$character"""
+
+# --- Benutzername ---
+[username]
+show_always = true
+style_user = "bold #7cfc00"
+format = "[$user]($style) "
+
+# --- Hostname (nur bei SSH) ---
+[hostname]
+ssh_only = true
+style = "bold #c0392b"
+format = "@[$hostname]($style) "
+
+# --- Verzeichnis ---
+[directory]
+style = "italic #f6f3d5"
+format = "[\uf07b $path]($style)"
+truncation_length = 0
+home_symbol = ""
+
+# --- Git Branch ---
+[git_branch]
+style = "bold #fffdf5"      # Text: Weiß
+symbol = "[\ue725](bold #fff495) "  # Icon: Gelb
+format = " [$symbol$branch]($style)"
+
+# --- Git Status ---
+[git_status]
+style = "bold #fffdf5"      # Text: Weiß
+format = '([$all_status$ahead_behind]($style)) '
+# Jetzt sind alle Icons definiert, mit ihren leichten Farbtönen:
+modified = "[\uf044](bold #ed9121)"    # Carrot Orange
+staged = "[\uf0c7](bold #7cfc00)"      # Lawn Green
+untracked = "[\uf128](bold #ff6347)"   # Tomato
+deleted = "[\uf1f8](bold #c0392b)"     # Kaminrot (damit es nicht mehr Standard-Rot ist)
+renamed = "[\uf064](bold #89CFF0)"     # Baby Blau
+conflicted = "[\uf071](bold #ed9121)"  # Carrot Orange
+
+# --- Character ---
+[character]
+success_symbol = "[:](bold #fff495) "
+error_symbol = "[:](bold #c0392b) "

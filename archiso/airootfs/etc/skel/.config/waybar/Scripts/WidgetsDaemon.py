@@ -3861,9 +3861,20 @@ def build_network(win: Gtk.Window):
 
 # ════════════════════════════════════════════════════════════
 #  BLUETOOTH
+#
+#  Scan + Pairing laufen über EINE langlebige `bluetoothctl`-Sitzung
+#  (_BtSession, per Pseudo-Terminal). Das ist nötig, weil BlueZ eine Suche an
+#  die D-Bus-Verbindung des Clients bindet: ein einzelnes
+#  `bluetoothctl scan on` beendet sich sofort wieder und mit ihm die Suche
+#  (das war der Grund, warum nie unbekannte Geräte auftauchten). Dieselbe
+#  Sitzung registriert sich als Pairing-Agent (KeyboardDisplay), damit
+#  Bestätigungs-/PIN-Abfragen (`Confirm passkey 123456 (yes/no)`, `Enter PIN
+#  code`) im Widget als Dialog erscheinen statt das Pairing still scheitern zu
+#  lassen. Die Geräteliste selbst kommt weiterhin aus einmaligen
+#  `bluetoothctl devices …`-Aufrufen (derselbe Adapter-Zustand für alle Clients).
 # ════════════════════════════════════════════════════════════
-def _bt(cmd: str) -> str:
-    return run(["bluetoothctl"] + cmd.split(), timeout=8)
+def _bt(cmd: str, timeout: int = 8) -> str:
+    return run(["bluetoothctl"] + cmd.split(), timeout=timeout)
 
 def _bt_powered() -> bool:
     return "Powered: yes" in _bt("show")
@@ -3880,133 +3891,543 @@ def _bt_devices(filter_arg: str = "") -> list:
             res.append({"mac": p[1], "name": p[2]})
     return res
 
+# BlueZ nennt namenlose Geräte (BLE-Beacons, Zufallsadressen ...) einfach nach
+# ihrer MAC mit Bindestrichen ("4C-1A-2B-..."). Die sind in der Liste nur Rauschen.
+def _bt_is_wiimote(name: str) -> bool:
+    """Wiimote / Balance Board (Nintendo RVL-CNT-01, RVL-WBC-01). Die lassen sich nicht
+    koppeln (ihre PIN ist die rückwärts gelesene Adresse): trust + connect genügt, wenn
+    /etc/bluetooth/input.conf `ClassicBondedOnly=false` hat (wird mitgeliefert)."""
+    return (name or "").startswith("Nintendo RVL")
+
+_BT_NAMELESS_RE = re.compile(r'^([0-9A-Fa-f]{2}[-:]){5}[0-9A-Fa-f]{2}$')
+_BT_ANSI_RE = re.compile(r'\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07|\r')
+_BT_PROMPT_PREFIX_RE = re.compile(r'^(\[[^\]]*\]#\s*)+')
+_BT_RE_YESNO = re.compile(r'^\[agent\]\s*(?P<text>.*?)\s*\(yes/no\):?$', re.I)
+_BT_RE_PIN = re.compile(r'^\[agent\]\s*Enter PIN code:?$', re.I)
+_BT_RE_PASSKEY = re.compile(r'^\[agent\]\s*Enter passkey.*:?$', re.I)
+_BT_RE_DISPLAY = re.compile(r'^\[agent\]\s*(?P<what>PIN code|Passkey):\s*(?P<val>\d+)', re.I)
+_BT_RE_PAIR_FAIL = re.compile(r'Failed to pair:\s*(?P<why>.*)$', re.I)
+_BT_RE_CONN_FAIL = re.compile(r'Failed to connect:\s*(?P<why>.*)$', re.I)
+
+def _bt_friendly_error(why: str) -> str:
+    """BlueZ-Fehlertext lesbar machen (org.bluez.Error.AuthenticationFailed ...)."""
+    w = (why or "").strip()
+    table = (("AuthenticationFailed", "authentication failed (wrong PIN?)"),
+             ("AuthenticationCanceled", "pairing was cancelled"),
+             ("AuthenticationRejected", "the device rejected the pairing"),
+             ("AuthenticationTimeout", "the device did not answer in time"),
+             ("ConnectionAttemptFailed", "could not reach the device"),
+             ("AlreadyExists", "already paired"),
+             ("InProgress", "another operation is still running"),
+             ("NotReady", "the adapter is not ready"),
+             ("page-timeout", "the device is out of range or not in pairing mode"),
+             ("Timeout", "timed out"))
+    for key, text in table:
+        if key.lower() in w.lower():
+            return text
+    w = re.sub(r'^org\.bluez\.Error\.', '', w)       # unbekannter Fehler: wenigstens ohne Präfix
+    return w or "unknown error"
+
+class _BtSession:
+    """Langlebige `bluetoothctl`-Sitzung (Pseudo-Terminal) für Suche und Pairing.
+
+    on_prompt(kind, text, answer)  - wenn der Agent etwas wissen will. kind ist
+        "confirm" (ja/nein), "pin" oder "passkey"; answer(str) schickt die Antwort.
+    on_info(text)                  - Hinweise ohne Antwort (z.B. "Passkey: 123456":
+        den muss der Nutzer am Gerät eintippen).
+    dispatch(fn, *args)            - bringt Callbacks in den GTK-Thread (Standard:
+        direkter Aufruf, im Daemon GLib.idle_add)."""
+
+    PAIR_TIMEOUT_S = 60
+
+    def __init__(self, on_prompt, on_info, dispatch=None):
+        self._on_prompt = on_prompt
+        self._on_info = on_info
+        self._dispatch = dispatch or (lambda fn, *a: fn(*a))
+        self._proc = None
+        self._master = None
+        self._lock = threading.Lock()
+        self._prompt_open = False
+        self._pair = None            # {"mac", "done", "timer", "paired"} oder None
+        self.scanning = False
+
+    # ── Prozess ──────────────────────────────────────────────
+    def start(self) -> bool:
+        with self._lock:
+            if self._proc is not None and self._proc.poll() is None:
+                return True
+            exe = shutil.which("bluetoothctl")
+            if not exe:
+                return False
+            import pty, termios
+            master, slave = pty.openpty()
+            try:                                   # breit, damit lange Zeilen nicht umbrochen werden
+                import fcntl, struct
+                fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 50, 250, 0, 0))
+            except Exception:
+                pass
+            env = dict(os.environ, TERM="dumb")
+            self._proc = subprocess.Popen([exe], stdin=slave, stdout=slave, stderr=slave,
+                                          close_fds=True, start_new_session=True, env=env)
+            os.close(slave)
+            self._master = master
+            self._prompt_open = False
+            threading.Thread(target=self._reader, args=(master,), daemon=True).start()
+        self.send("agent KeyboardDisplay")
+        self.send("default-agent")
+        return True
+
+    def alive(self) -> bool:
+        return self._proc is not None and self._proc.poll() is None
+
+    def send(self, line: str) -> None:
+        with self._lock:
+            m = self._master
+        if m is None:
+            return
+        try:
+            os.write(m, (line + "\n").encode())
+        except OSError:
+            pass
+
+    def shutdown(self) -> None:
+        if self._pair and self._pair.get("timer"):
+            self._pair["timer"].cancel()
+        self._pair = None
+        if self.alive():
+            self.send("scan off")
+            self.send("quit")
+            try:
+                self._proc.wait(timeout=1.5)
+            except Exception:
+                try: self._proc.terminate()
+                except Exception: pass
+        with self._lock:
+            m, self._master = self._master, None
+        if m is not None:
+            try: os.close(m)
+            except OSError: pass
+        self.scanning = False
+
+    # ── Suche ────────────────────────────────────────────────
+    def start_scan(self) -> bool:
+        if not self.start():
+            return False
+        self.send("scan on")
+        self.scanning = True
+        return True
+
+    def stop_scan(self) -> None:
+        if self.alive():
+            self.send("scan off")
+        self.scanning = False
+
+    # ── Pairing ──────────────────────────────────────────────
+    def pair(self, mac: str, done) -> None:
+        """Koppelt, vertraut und verbindet. done(mac, ok, message) kommt im GTK-Thread."""
+        if not self.start():
+            self._dispatch(done, mac, False, "bluetoothctl is not installed")
+            return
+        timer = threading.Timer(self.PAIR_TIMEOUT_S, self._pair_timeout, args=(mac,))
+        timer.daemon = True
+        self._pair = {"mac": mac, "done": done, "timer": timer, "paired": False}
+        timer.start()
+        self.send(f"pair {mac}")
+
+    def _pair_timeout(self, mac: str) -> None:
+        if self._pair and self._pair["mac"] == mac:
+            self._finish_pair(False, "timed out - is the device in pairing mode?")
+
+    def _finish_pair(self, ok: bool, msg: str) -> None:
+        p, self._pair = self._pair, None
+        if not p:
+            return
+        if p.get("timer"):
+            p["timer"].cancel()
+        self._dispatch(p["done"], p["mac"], ok, msg)
+
+    # ── Ausgabe auswerten ────────────────────────────────────
+    def _reader(self, master: int) -> None:
+        buf = ""
+        while True:
+            try:
+                data = os.read(master, 4096)
+            except OSError:
+                break
+            if not data:
+                break
+            buf += _BT_ANSI_RE.sub("", data.decode("utf-8", "replace"))
+            while "\n" in buf:
+                line, buf = buf.split("\n", 1)
+                self._handle_line(line.strip(), terminated=True)
+            # Eine Abfrage endet ohne Zeilenumbruch ("... (yes/no): "), steht also
+            # noch im Puffer.
+            if buf.strip():
+                self._handle_line(buf.strip(), terminated=False)
+
+    def _answer_fn(self):
+        def _answer(text: str) -> None:
+            self._prompt_open = False
+            self.send(text)
+        return _answer
+
+    def _handle_line(self, line: str, terminated: bool) -> None:
+        line = _BT_PROMPT_PREFIX_RE.sub("", line).strip()
+        if not line:
+            return
+        m = _BT_RE_YESNO.match(line)
+        if m:
+            self._open_prompt("confirm", m.group("text"))
+            return
+        if _BT_RE_PIN.match(line):
+            self._open_prompt("pin", "Enter the PIN code of the device")
+            return
+        if _BT_RE_PASSKEY.match(line):
+            self._open_prompt("passkey", "Enter the passkey (0-999999)")
+            return
+        if not terminated:
+            return                      # nur vollständige Zeilen weiter auswerten
+        m = _BT_RE_DISPLAY.match(line)
+        if m:
+            self._dispatch(self._on_info, f"{m.group('what')}: {m.group('val')} - enter it on the device")
+            return
+        p = self._pair
+        if p is None:
+            return
+        if "Pairing successful" in line:
+            p["paired"] = True
+            self.send(f"trust {p['mac']}")
+            self.send(f"connect {p['mac']}")
+            return
+        m = _BT_RE_PAIR_FAIL.search(line)
+        if m:
+            why = m.group("why")
+            if "AlreadyExists" in why:                # schon gekoppelt -> einfach verbinden
+                p["paired"] = True
+                self.send(f"trust {p['mac']}")
+                self.send(f"connect {p['mac']}")
+            else:
+                self._finish_pair(False, _bt_friendly_error(why))
+            return
+        if p.get("paired"):
+            if "Connection successful" in line:
+                self._finish_pair(True, "paired and connected")
+                return
+            m = _BT_RE_CONN_FAIL.search(line)
+            if m:
+                self._finish_pair(True, "paired, but connecting failed: " + _bt_friendly_error(m.group("why")))
+
+    def _open_prompt(self, kind: str, text: str) -> None:
+        if self._prompt_open:           # derselbe Prompt wird beim Neuzeichnen mehrfach gelesen
+            return
+        self._prompt_open = True
+        self._dispatch(self._on_prompt, kind, text, self._answer_fn())
+
+def _bt_snapshot() -> dict:
+    """Alles, was die Anzeige braucht, in EINEM Rutsch (im Worker-Thread aufrufen,
+    nie im GTK-Thread - jeder bluetoothctl-Aufruf ist ein Subprozess)."""
+    snap = {"powered": _bt_powered(), "paired": [], "found": [], "hidden": 0}
+    if not snap["powered"]:
+        return snap
+    all_devs = _bt_devices()
+    paired_macs = {d["mac"] for d in _bt_devices("Paired")}
+    connected = {d["mac"] for d in _bt_devices("Connected")}
+    paired = [d for d in all_devs if d["mac"] in paired_macs]
+    if not connected and paired:
+        # Ältere bluetoothctl-Versionen kennen den Filter "Connected" nicht -> einzeln fragen
+        connected = {d["mac"] for d in paired if _bt_connected(d["mac"])}
+    for d in paired:
+        d["connected"] = d["mac"] in connected
+    snap["paired"] = paired
+    for d in all_devs:
+        if d["mac"] in paired_macs:
+            continue
+        if _BT_NAMELESS_RE.match(d["name"]):
+            snap["hidden"] += 1
+        else:
+            snap["found"].append(d)
+    return snap
+
+def _bt_prompt_dialog(parent, kind: str, text: str):
+    """Fragt den Nutzer, was der Pairing-Agent wissen will. Gibt die Antwort
+    zurück ("yes"/"no" bzw. den eingegebenen Code) oder None bei Abbruch."""
+    dlg = Gtk.Dialog(title="Bluetooth pairing", transient_for=parent)
+    dlg.set_name("wb-daemon-popup")
+    dlg.set_modal(True)
+    dlg.set_keep_above(True)
+    dlg.set_type_hint(Gdk.WindowTypeHint.DIALOG)
+    box = dlg.get_content_area()
+    lbl = Gtk.Label(label=text)
+    lbl.set_line_wrap(True)
+    lbl.set_max_width_chars(44)
+    box.pack_start(lbl, False, False, 10)
+    entry = None
+    if kind == "confirm":
+        dlg.add_buttons("No", Gtk.ResponseType.NO, "Yes", Gtk.ResponseType.YES)
+        dlg.set_default_response(Gtk.ResponseType.YES)
+    else:
+        entry = Gtk.Entry()
+        entry.set_activates_default(True)
+        entry.set_placeholder_text("PIN" if kind == "pin" else "Passkey")
+        box.pack_start(entry, False, False, 6)
+        dlg.add_buttons("Cancel", Gtk.ResponseType.CANCEL, "OK", Gtk.ResponseType.OK)
+        dlg.set_default_response(Gtk.ResponseType.OK)
+    dlg.show_all()
+    if entry is not None:
+        entry.grab_focus()
+    resp = dlg.run()
+    answer = None
+    if kind == "confirm":
+        answer = "yes" if resp == Gtk.ResponseType.YES else "no"
+    elif resp == Gtk.ResponseType.OK:
+        answer = entry.get_text().strip() or None
+    dlg.destroy()
+    return answer
+
 def _bluetooth_content() -> Gtk.Box:
     root = vbox(4); safe_pad(root, 380)
-    powered = [_bt_powered()]
+    st = {"powered": False, "snap": None, "scan_timer": None, "tick": None,
+          "alive": True, "busy": set(), "mapped": False}
 
     root.pack_start(btitle("Bluetooth"), False, False, 0)
     root.pack_start(hub_sep(), False, False, 0)
 
-    # Icon-only, oben links (Ein/Aus) / oben rechts (Scan) direkt unter
-    # dem fetten Trennstrich - kein Text mehr, nur noch das Symbol.
-    pwr_b  = btn("󰂯" if powered[0] else "󰂲", active=powered[0])
+    pwr_b  = btn("󰂲")
     pwr_b.set_tooltip_text("Bluetooth on/off")
     scan_b = btn("󰑐")
-    scan_b.set_sensitive(powered[0])
-    scan_b.set_tooltip_text("Scan for devices")
+    scan_b.set_sensitive(False)
+    scan_b.set_tooltip_text("Search for new devices")
 
     hdr = hbox(6)
     hdr.pack_start(pwr_b, False, False, 0)
     hdr.pack_end(scan_b, False, False, 0)
     root.pack_start(hdr, False, False, 0)
 
+    status_lbl = Gtk.Label(label="")
+    status_lbl.get_style_context().add_class("caption")
+    status_lbl.set_line_wrap(True)
+    status_lbl.set_max_width_chars(46)
+    status_lbl.set_no_show_all(True)
+    status_lbl.hide()
+    root.pack_start(status_lbl, False, False, 2)
+    _status_timer = [None]
+    def _status(text: str, ms: int = 0):
+        """Hinweiszeile; ms > 0 blendet sie danach wieder aus."""
+        if _status_timer[0]:
+            GLib.source_remove(_status_timer[0]); _status_timer[0] = None
+        if not text:
+            status_lbl.hide(); return False
+        status_lbl.set_label(text); status_lbl.set_opacity(0.85); status_lbl.show()
+        if ms:
+            def _hide():
+                _status_timer[0] = None; status_lbl.hide(); return False
+            _status_timer[0] = GLib.timeout_add(ms, _hide)
+        return False
+
     sw, dev_box = scroll_box(280)
     root.pack_start(sw, True, True, 0)
 
-    def _refresh():
+    # ── Sitzung (Scan + Agent) ───────────────────────────────
+    def _on_prompt(kind, text, answer):
+        parent = root.get_toplevel()
+        ans = _bt_prompt_dialog(parent if isinstance(parent, Gtk.Window) else None, kind, text)
+        answer(ans if ans is not None else ("no" if kind == "confirm" else ""))
+        return False
+    def _on_info(text):
+        _status(text, 20000)
+        return False
+    session = _BtSession(_on_prompt, _on_info, dispatch=lambda fn, *a: GLib.idle_add(
+        lambda: (fn(*a), False)[1]))
+
+    # ── Anzeige ──────────────────────────────────────────────
+    def _render(snap):
+        if not st["alive"]:
+            return False
+        st["snap"] = snap
+        st["powered"] = snap["powered"]
+        pwr_b.set_label("󰂯" if snap["powered"] else "󰂲")
+        ctx = pwr_b.get_style_context()
+        (ctx.add_class if snap["powered"] else ctx.remove_class)("active")
+        scan_b.set_sensitive(snap["powered"])
         for c in dev_box.get_children(): dev_box.remove(c)
-        if not powered[0]:
-            dev_box.pack_start(bitem("Bluetooth disabled", dim=True),
-                               False, False, 0)
-            dev_box.show_all(); return
+        if not snap["powered"]:
+            dev_box.pack_start(bitem("Bluetooth disabled", dim=True), False, False, 0)
+            dev_box.show_all(); return False
 
-        paired_macs = {d["mac"] for d in _bt_devices("Paired")}
-        all_devs    = _bt_devices()
-        paired      = [d for d in all_devs if d["mac"] in paired_macs]
-        found       = [d for d in all_devs if d["mac"] not in paired_macs]
-
-        # KEIN "KNOWN DEVICES"-Header mehr - bekannte/gekoppelte Geräte
-        # stehen direkt oben in der Liste, ohne eigene Überschrift.
-        for d in paired:
-            conn = _bt_connected(d["mac"])
-            row = hrow(sp=6)
-            row.set_halign(Gtk.Align.CENTER)
-            # Voller Name, KEIN Bluetooth-Icon mehr links - der Name
-            # SELBST ist jetzt der Connect/Disconnect-Schalter (leuchtet
-            # bei aktiver Verbindung), kein separater Button mehr dafür.
+        for d in snap["paired"]:
+            mac, conn = d["mac"], d.get("connected", False)
+            row = hrow(sp=6); row.set_halign(Gtk.Align.CENTER)
+            # Der Name SELBST ist der Connect/Disconnect-Schalter (leuchtet bei Verbindung).
             name_b = btn(d["name"], active=conn)
-            rm_b   = btn("󰆴", tip="Remove")
-
-            def _mk_con(mac, c):
-                def _cb(_):
-                    in_thread(lambda: (
-                        _bt(f"disconnect {mac}") if c else _bt(f"connect {mac}"),
-                        GLib.idle_add(_refresh)))
-                return _cb
-            def _mk_rm(mac):
-                return lambda _: in_thread(lambda: (
-                    _bt(f"remove {mac}"), GLib.idle_add(_refresh)))
-            name_b.connect("clicked", _mk_con(d["mac"], conn))
-            rm_b.connect("clicked",  _mk_rm(d["mac"]))
+            name_b.set_tooltip_text("Disconnect" if conn else "Connect")
+            rm_b = btn("󰆴", tip="Remove")
+            if mac in st["busy"]:
+                name_b.set_sensitive(False); rm_b.set_sensitive(False)
+            name_b.connect("clicked", lambda _b, m=mac, n=d["name"], c=conn: _toggle_connect(m, n, c))
+            rm_b.connect("clicked", lambda _b, m=mac: _remove(m))
             row.pack_start(name_b, False, False, 0)
             row.pack_start(rm_b, False, False, 0)
             dev_box.pack_start(row, False, False, 0)
 
-        if found:
-            # Unbekannte/nicht gekoppelte Geräte UNTER den bekannten,
-            # MIT eigener Überschrift (im selben Stil, den vorher
-            # "KNOWN DEVICES" hatte).
-            dev_box.pack_start(bsec("UNKNOWN DEVICES"), False, False, 0)
-            for d in found:
-                pair_row = hrow(sp=6)
-                pair_row.set_halign(Gtk.Align.CENTER)
-                pair_b = btn("Pair")
-                def _mk_pair(mac):
-                    return lambda _: in_thread(lambda: (
-                        _bt(f"pair {mac}"), _bt(f"connect {mac}"),
-                        GLib.idle_add(_refresh)))
-                pair_b.connect("clicked", _mk_pair(d["mac"]))
-                pair_row.pack_start(bitem(d["name"]), False, False, 0)
-                pair_row.pack_start(pair_b, False, False, 0)
-                dev_box.pack_start(pair_row, False, False, 0)
+        if snap["found"] or session.scanning:
+            dev_box.pack_start(bsec("NEW DEVICES"), False, False, 0)
+        for d in snap["found"]:
+            mac = d["mac"]
+            pair_row = hrow(sp=6); pair_row.set_halign(Gtk.Align.CENTER)
+            wii = _bt_is_wiimote(d["name"])
+            pair_b = btn("Connecting…" if (mac in st["busy"] and wii) else
+                         "Pairing…" if mac in st["busy"] else ("Connect" if wii else "Pair"))
+            pair_b.set_sensitive(mac not in st["busy"])
+            if wii:
+                pair_b.set_tooltip_text("A Wiimote can't be paired: it is trusted and connected instead. "
+                                        "Hold 1 + 2 first. Needs ClassicBondedOnly=false in /etc/bluetooth/input.conf")
+            pair_b.connect("clicked", lambda _b, m=mac, n=d["name"]: _pair(m, n))
+            pair_row.pack_start(bitem(d["name"]), False, False, 0)
+            pair_row.pack_start(pair_b, False, False, 0)
+            dev_box.pack_start(pair_row, False, False, 0)
+        if session.scanning and not snap["found"]:
+            dev_box.pack_start(bitem("Searching…", dim=True), False, False, 0)
+        if snap["hidden"]:
+            dev_box.pack_start(bitem(f"+ {snap['hidden']} unnamed devices nearby (hidden)", dim=True),
+                               False, False, 0)
         dev_box.show_all()
+        return False
 
-    def _on_power(_):
+    def _refresh():
+        """Daten im Worker holen, im GTK-Thread anzeigen (keine Subprozesse im GTK-Thread)."""
+        in_thread(lambda: GLib.idle_add(_render, _bt_snapshot()))
+
+    # ── Aktionen ─────────────────────────────────────────────
+    def _toggle_connect(mac, name, connected):
+        st["busy"].add(mac)
+        _status(("Disconnecting " if connected else "Connecting to ") + name + "…")
+        _render(st["snap"])
         def _do():
-            _bt("power " + ("off" if powered[0] else "on"))
-            powered[0] = not powered[0]
-            # WICHTIG: derselbe Bug-Typ wie bei apply_all()/
-            # _apply_bar_refresh - ein unindiziertes Tupel-Literal ist
-            # in Python IMMER wahr, unabhängig vom Inhalt (auch ein
-            # Tupel aus lauter None-Werten ist wahr, da Tupel-
-            # Wahrheitswert an der LÄNGE hängt, nicht am Inhalt). GLib
-            # hätte diesen Callback dadurch für immer erneut
-            # aufgerufen - bei JEDEM Klick auf den Bluetooth-Ein/Aus-
-            # Schalter ein ungedrosselter Busy-Loop, der zusätzlich
-            # jedes Mal _refresh() (inkl. bluetoothctl-Subprozess-
-            # Aufrufen) erneut angestoßen hätte. Explizit False
-            # zurückgeben, damit die Idle-Source sich selbst entfernt.
-            def _apply_ui():
-                pwr_b.set_label("󰂯" if powered[0] else "󰂲")
-                if powered[0]:
-                    pwr_b.get_style_context().add_class("active")
-                else:
-                    pwr_b.get_style_context().remove_class("active")
-                scan_b.set_sensitive(powered[0])
-                _refresh()
-                return False
-            GLib.idle_add(_apply_ui)
+            out = _bt(("disconnect " if connected else "connect ") + mac, timeout=30)
+            ok = ("successful" in out.lower()) or connected
+            def _ui():
+                st["busy"].discard(mac)
+                _status("" if ok else "Could not connect to " + name, 0 if ok else 5000)
+                _refresh(); return False
+            GLib.idle_add(_ui)
         in_thread(_do)
 
-    def _on_scan(_):
-        scan_b.set_label("󰑎"); scan_b.set_sensitive(False)
+    def _remove(mac):
+        in_thread(lambda: (_bt(f"remove {mac}"), GLib.idle_add(_refresh)))
+
+    def _connect_wiimote(mac, name):
+        """Wiimotes lassen sich nicht koppeln: vertrauen + verbinden (kein Agent nötig)."""
+        st["busy"].add(mac)
+        _status(f"Connecting to {name}… (hold 1 + 2 on the Wiimote)")
+        _render(st["snap"])
         def _do():
-            proc = subprocess.Popen(
-                ["bluetoothctl", "scan", "on"],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            for _ in range(2):
-                time.sleep(7)
-                GLib.idle_add(_refresh)
-            proc.terminate()
-            subprocess.Popen(["bluetoothctl", "scan", "off"],
-                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            GLib.idle_add(_refresh)
-            GLib.idle_add(lambda: (scan_b.set_label("󰑐"),
-                                   scan_b.set_sensitive(True), False)[2])
+            _bt(f"trust {mac}")
+            out = _bt(f"connect {mac}", timeout=30)
+            ok = "successful" in out.lower()
+            def _ui():
+                st["busy"].discard(mac)
+                _status(f"{name}: connected" if ok else
+                        f"Could not connect to {name} - hold 1 + 2 and try again", 8000)
+                _refresh(); return False
+            GLib.idle_add(_ui)
         in_thread(_do)
 
-    pwr_b.connect("clicked",  _on_power)
+    def _pair(mac, name):
+        if _bt_is_wiimote(name):
+            _connect_wiimote(mac, name)
+            return
+        st["busy"].add(mac)
+        _status(f"Pairing with {name}… (put the device in pairing mode)")
+        _render(st["snap"])
+        def _done(m, ok, msg):
+            st["busy"].discard(m)
+            _status(f"{name}: {msg}" if ok else f"Pairing with {name} failed: {msg}", 8000)
+            _refresh()
+        def _go():
+            session.pair(mac, _done)
+        in_thread(_go)
+
+    def _stop_scan():
+        if st["scan_timer"]:
+            GLib.source_remove(st["scan_timer"]); st["scan_timer"] = None
+        if st["tick"]:
+            GLib.source_remove(st["tick"]); st["tick"] = None
+        in_thread(session.stop_scan)
+        scan_b.set_label("󰑐"); scan_b.set_tooltip_text("Search for new devices")
+        if st["alive"] and st["snap"]:
+            _render(st["snap"])
+
+    def _start_scan(duration_s: int = 30):
+        """Suche starten; nach duration_s endet sie von selbst (eine dauerhafte Suche
+        kann laufende Audio-Verbindungen stören)."""
+        if not st["powered"]:
+            return
+        if st["scan_timer"]:
+            GLib.source_remove(st["scan_timer"])
+        scan_b.set_label("󰑎"); scan_b.set_tooltip_text("Stop searching")
+        def _go():
+            if not session.start_scan():
+                GLib.idle_add(lambda: (_status("bluetoothctl is not installed", 5000), _stop_scan(), False)[2])
+        in_thread(_go)
+        session.scanning = True
+        st["scan_timer"] = GLib.timeout_add_seconds(duration_s, lambda: (_stop_scan(), False)[1])
+        if not st["tick"]:
+            def _tick():
+                if not st["alive"] or not st["mapped"]:
+                    st["tick"] = None; return False
+                _refresh(); return True
+            st["tick"] = GLib.timeout_add_seconds(3, _tick)
+        _refresh()
+
+    def _on_scan(_b):
+        if session.scanning:
+            _stop_scan()
+        else:
+            _start_scan()
+
+    def _on_power(_b):
+        def _do():
+            on = not st["powered"]
+            if not on:
+                session.stop_scan()
+            _bt("power " + ("on" if on else "off"))
+            GLib.idle_add(lambda: (_after_power(on), False)[1])
+        in_thread(_do)
+    def _after_power(on):
+        st["powered"] = on
+        if not on:
+            _stop_scan()
+        _refresh()
+        if on:
+            _start_scan()
+
+    # Beim Sichtbarwerden (Settings-Seite bzw. eigenes Widget) suchen, beim
+    # Verlassen aufhören; beim Zerstören die Sitzung beenden.
+    def _on_map(_w):
+        st["mapped"] = True
+        _refresh()
+        def _auto():
+            if st["alive"] and st["mapped"] and st["powered"]:
+                _start_scan()
+            return False
+        GLib.timeout_add(900, _auto)       # erst den Zustand (powered?) laden lassen
+    def _on_unmap(_w):
+        st["mapped"] = False
+        if session.scanning:
+            _stop_scan()
+    def _on_destroy(_w):
+        st["alive"] = False
+        st["mapped"] = False
+        for k in ("scan_timer", "tick"):
+            if st[k]:
+                GLib.source_remove(st[k]); st[k] = None
+        in_thread(session.shutdown)
+
+    pwr_b.connect("clicked", _on_power)
     scan_b.connect("clicked", _on_scan)
+    root.connect("map", _on_map)
+    root.connect("unmap", _on_unmap)
+    root.connect("destroy", _on_destroy)
     _refresh()
     return root
 
@@ -17689,8 +18110,8 @@ def _build_apps_wine_tab(win: Gtk.Window) -> Gtk.Box:
 #  App Editor Tab 2: Bar (gepinnte Apps + Widgets)
 #
 #  Schreibt in ~/.config/TrafkTuxBar/Userbar.jsonc - die Datei legt die BAR
-#  selbst an (befüllt mit dem System-Standard von "pinned" und
-#  "other-widgets", siehe TrafkTuxBar.c). Der Editor ändert nur diese
+#  selbst an (befüllt mit ihren eingebauten Standardwerten für "pinned" und
+#  "other-widgets", siehe BUILTIN_MODULE_DEFAULTS in TrafkTuxBar.c). Der Editor ändert nur diese
 #  zwei Module und schickt danach `pkill -HUP -x TrafkTuxBar`, worauf die
 #  Bar sich neu lädt. Das Settings-Widget und die festen Module (Launcher,
 #  Power, Uhr, Tray ...) stehen nicht in der Datei und sind hier nicht
@@ -17745,16 +18166,89 @@ def _bar_read_json(path: Path):
     except Exception:
         return None
 
-def _bar_system_module(mod_id: str):
-    """Das Modul mit dieser id aus TrafkTuxBar.jsonc (System-Standard) oder None."""
-    conf = _bar_read_json(_BAR_SYS_CONF)
-    if not isinstance(conf, dict):
-        return None
-    for key in ("modules_left", "modules_center", "modules_right"):
-        for m in conf.get(key) or []:
-            if isinstance(m, dict) and m.get("id") == mod_id:
-                return m
-    return None
+# Eingebaute Standardwerte der zwei veränderbaren Bar-Module. MÜSSEN zu
+# BUILTIN_MODULE_DEFAULTS in TrafkTuxBar.c passen (beide wurden aus derselben
+# Vorlage erzeugt): die Bar legt Userbar.jsonc daraus an, der Editor braucht sie
+# für "Reset to default" und "Add widget". In TrafkTuxBar.jsonc (System) steht nur
+# noch das Gerüst der Module - die Inhalte gehören der User-Datei.
+# Sound: der Klick-Befehl ruft SoundCenter.sh mit dem Event "Click" (Datei UND
+# Event-Name müssen exakt stimmen, siehe SoundDaemon.c).
+_BAR_BUILTIN_DEFAULTS = json.loads(r'''
+{
+    "pinned": {
+        "visible_count": 3,
+        "items": [
+            {
+                "id": "shortcut-kitty",
+                "icon": "utilities-terminal-symbolic",
+                "tooltip": "Xfce4 Terminal",
+                "on_click": "setsid xfce4-terminal && bash ~/.config/hypr/SoundCenter.sh Click &"
+            },
+            {
+                "id": "shortcut-thunar",
+                "icon": "system-file-manager-symbolic",
+                "tooltip": "Thunar",
+                "on_click": "setsid thunar && bash ~/.config/hypr/SoundCenter.sh Click &"
+            },
+            {
+                "id": "shortcut-firefox",
+                "icon": "firefox",
+                "tooltip": "Firefox",
+                "on_click": "setsid firefox && bash ~/.config/hypr/SoundCenter.sh Click &"
+            }
+        ]
+    },
+    "other-widgets": {
+        "visible_count": 3,
+        "items": [
+            {
+                "id": "volume",
+                "icon": "audio-volume-high-symbolic",
+                "tooltip": "Volume & Audio",
+                "on_click": "socat - UNIX-CONNECT:/tmp/wb-daemon.sock <<< volume"
+            },
+            {
+                "id": "network",
+                "icon": "network-wireless-symbolic",
+                "tooltip": "Netzwerk / Wi-Fi",
+                "on_click": "socat - UNIX-CONNECT:/tmp/wb-daemon.sock <<< network"
+            },
+            {
+                "id": "bluetooth",
+                "icon": "bluetooth-symbolic",
+                "tooltip": "Bluetooth",
+                "on_click": "socat - UNIX-CONNECT:/tmp/wb-daemon.sock <<< bluetooth"
+            },
+            {
+                "id": "brightness",
+                "icon": "display-brightness-symbolic",
+                "tooltip": "Helligkeit & Nachtlicht",
+                "on_click": "socat - UNIX-CONNECT:/tmp/wb-daemon.sock <<< brightness"
+            },
+            {
+                "id": "akku",
+                "icon": "battery-good-symbolic",
+                "tooltip": "Akku-Info",
+                "on_click": "socat - UNIX-CONNECT:/tmp/wb-daemon.sock <<< akku"
+            },
+            {
+                "id": "osk",
+                "icon": "input-keyboard-symbolic",
+                "tooltip": "Bildschirmtastatur",
+                "exec_cmd": "pgrep -x wvkbd-mobintl >/dev/null && echo '{\"class\":\"active\"}' || echo '{\"class\":\"inactive\"}'",
+                "exec_interval_sec": 2,
+                "exec_return_json": true,
+                "on_click": "(pgrep -x wvkbd-mobintl >/dev/null && pkill -x wvkbd-mobintl || setsid wvkbd-mobintl -L 300); bash ~/.config/hypr/SoundCenter.sh Click &"
+            }
+        ]
+    }
+}
+''')
+
+def _bar_default_module(mod_id: str):
+    """Kopie des eingebauten Standards eines Moduls ({"visible_count", "items"}) oder None."""
+    m = _BAR_BUILTIN_DEFAULTS.get(mod_id)
+    return json.loads(json.dumps(m)) if isinstance(m, dict) else None
 
 def _bar_user_read() -> dict:
     data = _bar_read_json(_BAR_USER_CONF)
@@ -17765,8 +18259,39 @@ def _bar_user_read() -> dict:
         data["modules"] = {}
     return data
 
+_BAR_EDITABLE_MODULES = ("pinned", "other-widgets")
+
+def _bar_fill_defaults(data: dict) -> bool:
+    """Ergänzt in einer Userbar-Datenstruktur, was von "pinned" und "other-widgets"
+    fehlt (Modul, "visible_count", "items"), aus dem System-Standard - dieselbe
+    Regel wie fill_missing_user_modules() in TrafkTuxBar.c. Absichtlich geleerte
+    Listen (items: []) bleiben leer. True, wenn etwas ergänzt wurde."""
+    changed = False
+    if not isinstance(data.get("modules"), dict):
+        data["modules"] = {}
+        changed = True
+    mods = data["modules"]
+    for mid in _BAR_EDITABLE_MODULES:
+        sm = _bar_default_module(mid)
+        if not sm:
+            continue
+        um = mods.get(mid)
+        if not isinstance(um, dict):
+            um = {}
+            mods[mid] = um
+            changed = True
+        for key in ("visible_count", "items"):
+            if key not in um and key in sm:
+                um[key] = json.loads(json.dumps(sm[key]))
+                changed = True
+    return changed
+
 _bar_backed_up = [False]
 def _bar_user_write(data: dict) -> None:
+    # Die Datei soll die zwei veränderbaren Bereiche IMMER vollständig enthalten -
+    # auch wenn der Editor sie vor der Bar anlegt (z.B. über die Display-Einstellung
+    # "Edge-trigger overhang") oder nur einen Bereich ändert.
+    _bar_fill_defaults(data)
     _BAR_DIR.mkdir(parents=True, exist_ok=True)
     if _BAR_USER_CONF.exists() and not _bar_backed_up[0]:
         _bar_backed_up[0] = True
@@ -17778,7 +18303,7 @@ def _bar_effective(mod_id: str) -> tuple:
     """(items, visible_count) wie die Bar sie gerade verwendet: aus
     Userbar.jsonc, falls dort für das Modul gesetzt, sonst System-Standard."""
     user_mod = _bar_user_read()["modules"].get(mod_id)
-    sys_mod = _bar_system_module(mod_id) or {}
+    sys_mod = _bar_default_module(mod_id) or {}
     items = None
     visible = None
     if isinstance(user_mod, dict):
@@ -17803,21 +18328,61 @@ def _bar_save_module(mod_id: str, items: list, visible: int) -> None:
     _bar_user_write(data)
 
 def _bar_reset_module(mod_id: str) -> None:
-    """Modul aus Userbar.jsonc entfernen -> die Bar nimmt wieder den System-Standard."""
+    """Modul auf den System-Standard zurücksetzen: dessen aktuelle Items und
+    visible_count werden in Userbar.jsonc eingetragen (die Datei enthält die
+    Bereiche immer vollständig - ein bloßes Entfernen würde die Bar beim Reload
+    ohnehin wieder auffüllen)."""
     data = _bar_user_read()
-    data["modules"].pop(mod_id, None)
+    sm = _bar_default_module(mod_id) or {}
+    entry = {}
+    for key in ("visible_count", "items"):
+        if key in sm:
+            entry[key] = json.loads(json.dumps(sm[key]))
+    data["modules"][mod_id] = entry
     _bar_user_write(data)
 
+def _bar_user_file_state() -> str:
+    """Zustand von Userbar.jsonc: "missing" | "broken" | "incomplete" | "ok"."""
+    if not _BAR_USER_CONF.exists():
+        return "missing"
+    data = _bar_read_json(_BAR_USER_CONF)
+    if not isinstance(data, dict):
+        return "broken"
+    return "incomplete" if _bar_fill_defaults(json.loads(json.dumps(data))) else "ok"
+
+def _bar_running_build() -> str:
+    """Welche Bar läuft? "new" = Build mit Userbar-Unterstützung (der Build-Tag
+    steht als Text im Binary), "old" = älterer Build, "stopped" = läuft nicht.
+    Geprüft wird das tatsächlich LAUFENDE Programm (/proc/<pid>/exe), nicht die
+    Datei auf der Platte - ein neu kompiliertes Binary, das noch nicht neu
+    gestartet wurde, zählt also noch als "old"."""
+    try:
+        out = subprocess.run(["pgrep", "-x", "TrafkTuxBar"], capture_output=True, text=True, timeout=3)
+        pids = [int(x) for x in out.stdout.split()]
+    except Exception:
+        return "stopped"
+    if not pids:
+        return "stopped"
+    marker = b"userbar-overlay"
+    try:
+        with open(f"/proc/{pids[0]}/exe", "rb") as f:
+            tail = b""
+            while True:
+                chunk = f.read(1024 * 1024)
+                if not chunk:
+                    return "old"
+                if marker in tail + chunk:
+                    return "new"
+                tail = chunk[-(len(marker) - 1):]
+    except Exception:
+        return "old"
+
+_BAR_CLICK_SOUND_CMD = "bash ~/.config/hypr/SoundCenter.sh Click"
+
 def _bar_click_suffix() -> str:
-    """Der Klick-Sound-Befehl, den der System-Standard an seine gepinnten Apps
-    hängt (`... && <befehl> &`) - wird 1:1 übernommen, damit neue Shortcuts sich
-    genauso verhalten. Gibt es keinen, bleibt er leer (dann ohne Sound)."""
-    mod = _bar_system_module("pinned") or {}
-    for it in mod.get("items") or []:
-        m = re.search(r'&&\s*(.+?)\s*&\s*$', str((it or {}).get("on_click", "")))
-        if m:
-            return m.group(1)
-    return ""
+    """Klick-Sound-Befehl, den neue Shortcuts anhängen (`... && <befehl> &`). Gleich
+    wie in den eingebauten Standardwerten: SoundCenter.sh + Event "Click"."""
+    return _BAR_CLICK_SOUND_CMD
 
 def _bar_make_shortcut(app: dict, existing_ids: set) -> dict:
     slug = re.sub(r'[^a-z0-9]+', '-', app["name"].lower()).strip('-') or "app"
@@ -17914,7 +18479,7 @@ def _bar_pick_widget_dialog(parent: Gtk.Window, candidates: list):
     dlg.destroy()
     return picked["item"]
 
-def _bar_item_list_page(win: Gtk.Window, mod_id: str, kind: str, flash) -> Gtk.Box:
+def _bar_item_list_page(win: Gtk.Window, mod_id: str, kind: str, flash, on_saved=None) -> Gtk.Box:
     """Eine Seite des Bar-Tabs für EIN Modul (kind: "app" = gepinnte Apps,
     "widget" = Widgets): Liste mit ▲▼✕, "Items pro Zeile"-Slider, Hinzufügen
     und Reset. Jede Änderung wird sofort in Userbar.jsonc geschrieben und löst
@@ -17928,6 +18493,8 @@ def _bar_item_list_page(win: Gtk.Window, mod_id: str, kind: str, flash) -> Gtk.B
             _bar_save_module(mod_id, st["items"], st["visible"])
             _bar_reload_soon()
             flash("Saved — the bar reloads in a moment")
+            if on_saved:
+                on_saved()
         except Exception as ex:
             flash(f"Error: {ex}")
 
@@ -17997,7 +18564,7 @@ def _bar_item_list_page(win: Gtk.Window, mod_id: str, kind: str, flash) -> Gtk.B
                 return
             st["items"].append(_bar_make_shortcut(app, {i.get("id") for i in st["items"]}))
         else:
-            sys_mod = _bar_system_module(mod_id) or {}
+            sys_mod = _bar_default_module(mod_id) or {}
             have = {i.get("id") for i in st["items"]}
             missing = [i for i in (sys_mod.get("items") or [])
                        if isinstance(i, dict) and i.get("id") not in have]
@@ -18014,19 +18581,21 @@ def _bar_item_list_page(win: Gtk.Window, mod_id: str, kind: str, flash) -> Gtk.B
         try:
             _bar_reset_module(mod_id)
             _bar_reload_soon()
-            sys_mod = _bar_system_module(mod_id) or {}
+            sys_mod = _bar_default_module(mod_id) or {}
             st["items"] = [dict(i) for i in (sys_mod.get("items") or []) if isinstance(i, dict)]
             st["visible"] = int(sys_mod.get("visible_count", 3) or 3)
             _vis_scale.set_value(max(1, min(8, st["visible"])))
             _render()
-            flash("Back to the system default — the bar reloads in a moment")
+            flash("Back to the built-in default — the bar reloads in a moment")
+            if on_saved:
+                on_saved()
         except Exception as ex:
             flash(f"Error: {ex}")
 
     add_btn = btn("＋  Add app…" if kind == "app" else "＋  Add widget…")
     add_btn.connect("clicked", _on_add)
     reset_btn = btn("Reset to default")
-    reset_btn.set_tooltip_text("Throws away your changes to this part and uses the system default again")
+    reset_btn.set_tooltip_text("Throws away your changes to this part and restores the built-in default")
     reset_btn.connect("clicked", _on_reset)
     btn_row = hbox(6); btn_row.set_halign(Gtk.Align.CENTER)
     btn_row.pack_start(add_btn, False, False, 0)
@@ -18056,8 +18625,52 @@ def _build_apps_bar_tab(win: Gtk.Window) -> Gtk.Box:
     sub_stack.set_transition_type(Gtk.StackTransitionType.NONE)
     sub_stack.set_hhomogeneous(False)
     sub_stack.set_vhomogeneous(False)
-    sub_stack.add_named(_bar_item_list_page(win, "pinned", "app", _flash), "shortcuts")
-    sub_stack.add_named(_bar_item_list_page(win, "other-widgets", "widget", _flash), "widgets")
+    # Statuszeile: sagt, WARUM die Anzeige hier von der Bar abweichen könnte
+    # (Datei fehlt/unvollständig/kaputt, oder es läuft noch eine alte Bar).
+    state_lbl = Gtk.Label(label="")
+    state_lbl.get_style_context().add_class("caption")
+    state_lbl.set_line_wrap(True)
+    state_lbl.set_no_show_all(True)
+    state_lbl.hide()
+    _STATE_TEXT = {
+        "missing":    "Userbar.jsonc does not exist yet. The bar creates it when it starts; until "
+                      "then this shows the built-in defaults. Your first change here creates it.",
+        "broken":     "Userbar.jsonc is not valid JSON, so the bar ignores it. Your next change "
+                      "here replaces it (a backup is made).",
+        "incomplete": "Userbar.jsonc is missing parts. The bar fills them in on its next reload; "
+                      "your next change here does too.",
+    }
+    def _apply_state(fstate: str, build: str):
+        lines = []
+        if build == "old":
+            lines.append("⚠ The running bar is an old build without Userbar support, so changes "
+                         "here have no effect on it. Rebuild TrafkTuxBar and restart it.")
+        if fstate in _STATE_TEXT:
+            lines.append(_STATE_TEXT[fstate])
+        if lines:
+            state_lbl.set_label("\n\n".join(lines))
+            state_lbl.set_opacity(0.85)
+            state_lbl.show()
+        else:
+            state_lbl.hide()
+        GLib.idle_add(_shrink_to_fit, win)
+        return False
+    def _refresh_state(delay_ms: int = 0):
+        def _go():
+            def _work():
+                fs, bd = _bar_user_file_state(), _bar_running_build()
+                GLib.idle_add(_apply_state, fs, bd)
+            in_thread(_work)
+            return False
+        if delay_ms:
+            GLib.timeout_add(delay_ms, _go)
+        else:
+            _go()
+    # Nach einer Änderung kurz warten, bis sich die Bar neu geladen hat.
+    _after_save = lambda: _refresh_state(1800)
+
+    sub_stack.add_named(_bar_item_list_page(win, "pinned", "app", _flash, _after_save), "shortcuts")
+    sub_stack.add_named(_bar_item_list_page(win, "other-widgets", "widget", _flash, _after_save), "widgets")
 
     sub_btns: dict = {}
     sub_row = hbox(4); sub_row.set_halign(Gtk.Align.CENTER)
@@ -18079,6 +18692,7 @@ def _build_apps_bar_tab(win: Gtk.Window) -> Gtk.Box:
     note.get_style_context().add_class("caption"); note.set_opacity(0.6)
     note.set_line_wrap(True)
 
+    root.pack_start(state_lbl, False, False, 4)
     root.pack_start(sub_row, False, False, 2)
     # tab_sep() (nicht sep()): daran erkennt die Tastatur-/Controller-Navigation
     # (_nav_tab_groups) eine Tab-Leiste - so schalten Q/E auch diese Untertabs um.
@@ -18086,6 +18700,7 @@ def _build_apps_bar_tab(win: Gtk.Window) -> Gtk.Box:
     root.pack_start(sub_stack, False, False, 0)
     root.pack_start(note, False, False, 4)
     root.pack_start(status_lbl, False, False, 2)
+    _refresh_state()
     return root
 
 
@@ -18252,32 +18867,184 @@ def _hypr_devices_by_category() -> tuple:
     tablets = data.get("tablets") or data.get("tablet") or []
     return touch, tablets
 
+# ── "Active"-Zuordnung: Touch-/Tablet-Geräte folgen dem fokussierten Monitor ──
+# Hyprland v0.57.1 (Lua): hl.device({ name = "...", output = "..." }) - dieselbe
+# Syntax wie in UserDeviceOutputs.lua, hier zur Laufzeit per `hyprctl eval`
+# erneut aufgerufen (hl.device ist laut hl.*-Doku nur als Setzer dokumentiert;
+# ob ein bestehendes Gerät live umgebunden wird, hängt von Hyprland ab - Fallback
+# siehe _hypr_active_apply). Event: socket2 "focusedmon>>MONITOR,WORKSPACE"
+# (bzw. "focusedmonv2>>MONITOR,WSID").
+HYPR_ACTIVE_FILE = Path(HOME) / ".config" / "TrafkTuxWidgets" / "ActiveDevices.json"
+_hypr_active_last: dict = {}   # device -> zuletzt gesetzter Monitor
+
+def _hypr_active_devices() -> list:
+    try:
+        v = json.loads(HYPR_ACTIVE_FILE.read_text())
+        return [str(x) for x in v] if isinstance(v, list) else []
+    except Exception:
+        return []
+
+def _hypr_active_save(names: list) -> None:
+    try:
+        HYPR_ACTIVE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_text(HYPR_ACTIVE_FILE, json.dumps(sorted(set(names))))
+    except Exception:
+        pass
+
+def _hypr_focused_monitor() -> str:
+    for m in (_hypr_monitors_live() or []):
+        if m.get("focused"):
+            return str(m.get("name", ""))
+    return ""
+
+def _hypr_active_apply(mon: str = "") -> None:
+    mon = mon or _hypr_focused_monitor()
+    if not mon:
+        return
+    for name in _hypr_active_devices():
+        if _hypr_active_last.get(name) == mon:
+            continue
+        _hypr_active_last[name] = mon
+        nm = name.replace("\\", "\\\\").replace('"', '\\"')
+        _hypr_eval(f'hl.device({{ name = "{nm}", output = "{mon}" }})')
+
+_hypr_active_kick_ev = threading.Event()
+
+def _hypr_active_kick() -> None:
+    _hypr_active_last.clear()
+    _hypr_active_kick_ev.set()
+
+def _hypr_active_thread() -> None:
+    """Liest Hyprland-Events; ohne aktive Geräte schläft der Thread (kein Polling)."""
+    while True:
+        if not _hypr_active_devices():
+            _hypr_active_kick_ev.wait(5.0)
+            _hypr_active_kick_ev.clear()
+            continue
+        sig = os.environ.get("HYPRLAND_INSTANCE_SIGNATURE", "")
+        rt = os.environ.get("XDG_RUNTIME_DIR", "")
+        path = f"{rt}/hypr/{sig}/.socket2.sock"
+        try:
+            sk = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            sk.settimeout(2.0)
+            sk.connect(path)
+        except Exception:
+            time.sleep(5.0)
+            continue
+        try:
+            _hypr_active_apply()
+            buf = b""
+            while True:
+                if _hypr_active_kick_ev.is_set():
+                    _hypr_active_kick_ev.clear()
+                    _hypr_active_apply()
+                    if not _hypr_active_devices():
+                        break
+                try:
+                    chunk = sk.recv(4096)
+                    if not chunk:
+                        break
+                except socket.timeout:
+                    continue
+                buf += chunk
+                while b"\n" in buf:
+                    line, buf = buf.split(b"\n", 1)
+                    t = line.decode("utf-8", "ignore")
+                    if t.startswith(("focusedmon>>", "focusedmonv2>>")):
+                        _hypr_active_apply(t.split(">>", 1)[1].split(",", 1)[0])
+        except Exception:
+            pass
+        finally:
+            try: sk.close()
+            except Exception: pass
+        time.sleep(2.0)
+
+def _build_wii_pointer_area_row(page: Gtk.Box) -> None:
+    """Wiimote-IR-Zeiger (TrafkPad Pointer): ueber alle Bildschirme / einen Monitor / den Monitor des
+    aktiven Workspace (folgt dem Fokus, Hyprland-Event focusedmon) / aus. Wird in TrafkPad.conf
+    geschrieben (wii_area, wii_rect, wii_mons) - die Flaechenaufteilung rechnet der Daemon selbst."""
+    cfg = _pad_cfg_ensure()
+    rects = _pad_monitor_rects()
+    multi = len(rects) > 1
+    row = hbox(6)
+    row.get_style_context().add_class("bubble")
+    row.get_style_context().add_class("item")
+    pad(row, h=6, v=4)
+    txt = vbox(0)
+    k = Gtk.Label(label="Wiimote pointer"); k.set_halign(Gtk.Align.START)
+    txt.pack_start(k, False, False, 0)
+    n = Gtk.Label(label="TrafkPad Pointer"); n.set_halign(Gtk.Align.START); n.set_opacity(0.6)
+    n.get_style_context().add_class("caption")
+    txt.pack_start(n, False, False, 0)
+    row.pack_start(txt, True, True, 0)
+
+    opts = [("all", "All")]
+    if multi:
+        opts += [(r[0], r[0]) for r in rects]
+        opts += [("active", "Active")]
+    opts += [("off", "Off")]
+    ctrl = _SegmentedControl()
+    for _v, text in opts:
+        ctrl.append_text(text)
+    cur = "off" if cfg.get("wii_pointer") == "false" else cfg.get("wii_area", "all")
+    names = [v for v, _t in opts]
+    ctrl.set_active(names.index(cur) if cur in names else 0)
+
+    def _changed(_c):
+        t = ctrl.get_active_text()
+        labels = [tx for _v, tx in opts]
+        if t not in labels:
+            return
+        val = names[labels.index(t)]
+        cfg["wii_area"] = val
+        cfg["wii_pointer"] = "false" if val == "off" else "true"
+        cfg["wii_mons"] = ";".join(f"{r[0]} {r[1]:.4f} {r[2]:.4f} {r[3]:.4f} {r[4]:.4f}" for r in rects)
+        by = {r[0]: r for r in rects}
+        if val in by:
+            r = by[val]
+            cfg["wii_rect"] = f"{r[1]:.4f} {r[2]:.4f} {r[3]:.4f} {r[4]:.4f}"
+        elif val == "active":
+            fm = next((m for m in (jrun(["hyprctl", "monitors", "-j"]) or []) if m.get("focused")), None)
+            r = by.get(fm.get("name")) if fm else None
+            cfg["wii_rect"] = f"{r[1]:.4f} {r[2]:.4f} {r[3]:.4f} {r[4]:.4f}" if r else "0 0 1 1"
+        else:
+            cfg["wii_rect"] = "0 0 1 1"
+        _pad_cfg_save_soon(cfg)
+    ctrl.connect("changed", _changed)
+    row.pack_start(ctrl.widget, False, False, 0)
+    row.set_tooltip_text("Where the IR pointer of the Wiimote reaches. 'Active' = the monitor of the active workspace (follows the focus)")
+    page.pack_start(row, False, False, 4)
+
 def _build_settings_devices(page: Gtk.Box, key: str, label: str, win: Gtk.Window) -> None:
     monitors = _hypr_monitors_live()
     touch, tablets = _hypr_devices_by_category()
     all_devices = [(d, "Touchscreen") for d in touch] + [(d, "Tablet/Stylus") for d in tablets]
 
-    intro = Gtk.Label()
-    intro.set_line_wrap(True)
-    # FIX (siehe Chat: Devices-Tab "viel zu breit"): set_line_wrap(True)
-    # allein begrenzt die angeforderte Breite NICHT - ohne
-    # set_max_width_chars() fordert GTK trotzdem die volle einzeilige
-    # Breite dieses langen Erklärtexts an, und genau DAS hat das ganze
-    # Popup-Fenster so breit gezogen (wahrscheinlich der Hauptanteil,
-    # nicht nur die Gerätenamen).
-    intro.set_max_width_chars(44)
-    intro.set_halign(Gtk.Align.START)
-    intro.set_justify(Gtk.Justification.LEFT)
-    intro.set_label(
-        "Hyprland behandelt alle Monitore als eine zusammenhängende Fläche. "
-        "Touch-/Tablet-Geräte arbeiten mit absoluten statt relativen Koordinaten "
-        "und werden ohne explizite Zuordnung auf diese GESAMTE Fläche gemappt, "
-        "nicht nur auf den Monitor, auf dem sie physisch sitzen. Hier jedem "
-        "Gerät seinen echten Monitor zuweisen, falls Touch-Eingaben daneben landen.")
-    intro.get_style_context().add_class("caption")
-    intro.set_opacity(0.8)
-    page.pack_start(intro, False, False, 6)
+    # (Der lange Erklaertext - "Hyprland behandelt alle Monitore als eine zusammenhaengende
+    # Flaeche ..." - steht bewusst nur noch hier im Code und wird nicht mehr angezeigt.)
+    # intro = Gtk.Label()
+    # intro.set_line_wrap(True)
+    # # FIX (siehe Chat: Devices-Tab "viel zu breit"): set_line_wrap(True)
+    # # allein begrenzt die angeforderte Breite NICHT - ohne
+    # # set_max_width_chars() fordert GTK trotzdem die volle einzeilige
+    # # Breite dieses langen Erklärtexts an, und genau DAS hat das ganze
+    # # Popup-Fenster so breit gezogen (wahrscheinlich der Hauptanteil,
+    # # nicht nur die Gerätenamen).
+    # intro.set_max_width_chars(44)
+    # intro.set_halign(Gtk.Align.START)
+    # intro.set_justify(Gtk.Justification.LEFT)
+    # intro.set_label(
+    #     "Hyprland behandelt alle Monitore als eine zusammenhängende Fläche. "
+    #     "Touch-/Tablet-Geräte arbeiten mit absoluten statt relativen Koordinaten "
+    #     "und werden ohne explizite Zuordnung auf diese GESAMTE Fläche gemappt, "
+    #     "nicht nur auf den Monitor, auf dem sie physisch sitzen. Hier jedem "
+    #     "Gerät seinen echten Monitor zuweisen, falls Touch-Eingaben daneben landen.")
+    # intro.get_style_context().add_class("caption")
+    # intro.set_opacity(0.8)
+    # page.pack_start(intro, False, False, 6)
 
+
+    _build_wii_pointer_area_row(page)
     if not monitors:
         page.pack_start(bitem("No monitors found via hyprctl (is Hyprland running?)", dim=True),
                         False, False, 0)
@@ -18311,6 +19078,7 @@ def _build_settings_devices(page: Gtk.Box, key: str, label: str, win: Gtk.Window
         GLib.timeout_add(ms, lambda: (status_lbl.hide(), False)[1])
 
     pickers: dict = {}   # device_name -> _SegmentedControl
+    active_now = set(_hypr_active_devices())
 
     for dev, kind in all_devices:
         name = dev.get("name", "?")
@@ -18340,8 +19108,12 @@ def _build_settings_devices(page: Gtk.Box, key: str, label: str, win: Gtk.Window
         ctrl.append_text("— none —")
         for mn in mon_names:
             ctrl.append_text(mn)
+        ctrl.append_text("Active")
         cur_val = current.get(name, "")
-        ctrl.set_active((mon_names.index(cur_val) + 1) if cur_val in mon_names else 0)
+        if name in active_now:
+            ctrl.set_active(len(mon_names) + 1)
+        else:
+            ctrl.set_active((mon_names.index(cur_val) + 1) if cur_val in mon_names else 0)
         def _on_change(_c):
             save_btn.set_sensitive(True)
             save_btn.set_label("󰆓  Save*")
@@ -18354,12 +19126,18 @@ def _build_settings_devices(page: Gtk.Box, key: str, label: str, win: Gtk.Window
     def _on_save(_b=None):
         try:
             assignments = {}
+            actives = []
             for name, ctrl in pickers.items():
                 txt = ctrl.get_active_text()
-                if txt and txt != "— none —":
+                if txt == "Active":
+                    actives.append(name)
+                elif txt and txt != "— none —":
                     assignments[name] = txt
             _hypr_write_user_config("UserDeviceOutputs.lua", _hypr_build_device_outputs_lua(assignments))
+            _hypr_active_save(actives)
             _hypr_reload()
+            # Reload setzt Laufzeit-Zuordnungen zurück -> danach neu anwenden
+            GLib.timeout_add(2000, lambda: (_hypr_active_kick(), False)[1])
             save_btn.set_sensitive(False)
             save_btn.set_label("󰆓  Save")
             _flash("Saved — reloading Hyprland…")
@@ -18530,14 +19308,19 @@ PAD_DEFAULTS = {
     "enabled": "true", "start_active": "true",
     "toggle_combo": "L1+R1+SELECT+START", "toggle_hold_ms": "1000",
     "left_stick": "wasd", "swap_ab": "false", "scroll_invert": "false",
-    "swap_xy": "false", "mouse_speed": "900", "mouse_curve": "1.8", "mouse_deadzone": "0.12",
+    "swap_xy": "false", "swap_dpad": "false", "mouse_stick": "right", "mouse_speed": "900", "mouse_curve": "1.8", "mouse_deadzone": "0.12",
     "scroll_speed": "1500",
     "rumble": "true", "notify": "true", "sounds": "true",
+    "wii_pointer": "true", "wii_smooth": "3", "wii_flip_x": "true", "wii_flip_y": "false",
+    "wii_nunchuk_flip_y": "true", "wii_area": "all", "wii_rect": "0 0 1 1",
+    "layout": "default", "wii_mons": "",
+    "wii_mode": "abs", "wii_alt_mode": "rel", "wii_rel_scale": "2500", "wii_apps": "minecraft,moorhuhn",
 }
 PAD_COMBOS = (
     ("L1+R1+SELECT+START", "L1+R1+Sel+Start"),
     ("L1+R1+L3+R3",        "L1+R1+L3+R3"),
     ("SELECT+START+L3+R3", "Sel+Start+L3+R3"),
+    ("L1+R1+SELECT",       "L1+R1+Sel"),
 )
 
 def _pad_cfg_read() -> dict:
@@ -18591,9 +19374,14 @@ def _pad_ctl(cmd: str, timeout: float = 0.6) -> str:
         s.connect(path)
         s.sendall(cmd.encode())
         s.shutdown(socket.SHUT_WR)
-        reply = s.recv(256).decode().strip()
+        chunks = []
+        while True:
+            part = s.recv(4096)
+            if not part:
+                break
+            chunks.append(part)
         s.close()
-        return reply
+        return b"".join(chunks).decode(errors="replace").strip()
     except Exception:
         return ""
 
@@ -18611,6 +19399,31 @@ def _pad_cfg_save_soon(cfg: dict) -> None:
         _pad_ctl("reload")
         return False
     _pad_save_src[0] = GLib.timeout_add(300, _do)
+
+WII_CONNECT_SH = PAD_DIR / "wiimote-connect.sh"
+
+def _pad_monitor_rects() -> tuple:
+    """([(name, x0, y0, x1, y1), ...] als Anteil der gesamten Bildflaeche, Gesamtflaeche gibt
+    es nicht extra). Die Bildflaeche ist die Bounding-Box aller Monitore in Hyprland-Layout-
+    Koordinaten (genau darauf bildet Hyprland ein absolutes Zeigegeraet ab)."""
+    mons = jrun(["hyprctl", "monitors", "-j"]) or []
+    boxes = []
+    for m in mons:
+        try:
+            sc = float(m.get("scale", 1)) or 1.0
+            w, h = float(m["width"]) / sc, float(m["height"]) / sc
+            if int(m.get("transform", 0)) % 2 == 1:
+                w, h = h, w
+            boxes.append((str(m["name"]), float(m["x"]), float(m["y"]), w, h))
+        except Exception:
+            continue
+    if not boxes:
+        return []
+    bx0 = min(b[1] for b in boxes); by0 = min(b[2] for b in boxes)
+    bx1 = max(b[1] + b[3] for b in boxes); by1 = max(b[2] + b[4] for b in boxes)
+    tw, th = (bx1 - bx0) or 1.0, (by1 - by0) or 1.0
+    return [(n, (x - bx0) / tw, (y - by0) / th, (x + w - bx0) / tw, (y + h - by0) / th)
+            for n, x, y, w, h in boxes]
 
 # ── Login: SDDM-Autologin + hyprlock ───────────────────────────────
 SDDM_AUTOLOGIN_FILE = "/etc/sddm.conf.d/trafktux-autologin.conf"
@@ -18647,6 +19460,465 @@ def _sddm_set_autologin(on: bool) -> tuple:
         return ok, msg
     return _run_maybe_priv(["rm", "-f", SDDM_AUTOLOGIN_FILE])
 
+def _pad_subtabs(win: Gtk.Window, items: list) -> Gtk.Box:
+    """Untertabs wie in den anderen Kategorien: _SegmentedControl + nicht-homogener Gtk.Stack.
+    items = [(Beschriftung, Widget), ...]"""
+    outer = vbox(4)
+    ctrl = _SegmentedControl()
+    ctrl.get_style_context().add_class("bubble")
+    ctrl.get_style_context().add_class("segmented")
+    ctrl.set_can_focus(False)
+    for text, _w in items:
+        ctrl.append_text(text)
+    ctrl.set_active(0)
+    row = hbox(6); row.set_halign(Gtk.Align.CENTER)
+    row.pack_start(ctrl.widget, False, False, 0)
+    outer.pack_start(row, False, False, 4)
+    st = Gtk.Stack()
+    st.set_hhomogeneous(False)
+    st.set_vhomogeneous(False)
+    names = {}
+    for i, (text, w) in enumerate(items):
+        st.add_named(w, f"s{i}")
+        names[text] = f"s{i}"
+    st.set_visible_child_name("s0")
+    outer.pack_start(st, True, True, 0)
+    ctrl.connect("changed", lambda _c: _switch_stack(st, win, names.get(ctrl.get_active_text(), "s0")))
+    return outer
+
+# ── Mapping-Editor ───────────────────────────────────────────────
+PAD_LAYOUT_DIR = PAD_DIR / "layouts"
+PAD_INPUTS_ALL = ["A", "B", "X", "Y", "L1", "R1", "L2", "R2", "SELECT", "START", "L3", "R3",
+                  "DU", "DD", "DL", "DR", "SLU", "SLD", "SLL", "SLR"]
+PAD_INPUT_LABEL = {"SELECT": "Select", "START": "Start", "DU": "D-pad up", "DD": "D-pad down",
+                   "DL": "D-pad left", "DR": "D-pad right", "SLU": "Stick up", "SLD": "Stick down",
+                   "SLL": "Stick left", "SLR": "Stick right", "L3": "L3 (stick click)", "R3": "R3 (stick click)"}
+PAD_KEY_CATS = [
+    ("Letters", [c for c in "abcdefghijklmnopqrstuvwxyz"]),
+    ("0-9", [c for c in "1234567890"]),
+    ("Nav", ["up", "down", "left", "right", "enter", "space", "esc", "tab", "backspace", "delete",
+             "home", "end", "pageup", "pagedown", "insert"]),
+    ("F-keys", [f"f{i}" for i in range(1, 25)]),
+    ("Mouse", ["mouse:left", "mouse:right", "mouse:middle", "scroll:up", "scroll:down", "scroll:left", "scroll:right"]),
+    ("Media", ["volumeup", "volumedown", "mute", "playpause", "nextsong", "previoussong", "brightnessup", "brightnessdown"]),
+    ("Mods", ["shift", "ctrl", "alt", "super"]),
+]
+PAD_KEY_PRETTY = {"mouse:left": "LMB", "mouse:right": "RMB", "mouse:middle": "MMB", "scroll:up": "Scroll ↑",
+                  "scroll:down": "Scroll ↓", "scroll:left": "Scroll ←", "scroll:right": "Scroll →",
+                  "volumeup": "Vol+", "volumedown": "Vol-", "playpause": "Play", "nextsong": "Next",
+                  "previoussong": "Prev", "brightnessup": "Bri+", "brightnessdown": "Bri-", "backspace": "Bksp",
+                  "pageup": "PgUp", "pagedown": "PgDn", "delete": "Del", "insert": "Ins", "escape": "Esc"}
+
+def _pad_layout_names() -> list:
+    names = ["default"]
+    try:
+        for f in sorted(PAD_LAYOUT_DIR.glob("*.conf")):
+            if f.stem != "default" and f.stem not in names:
+                names.append(f.stem)
+    except Exception:
+        pass
+    return names
+
+def _pad_layout_read(name: str) -> dict:
+    out: dict = {}
+    try:
+        for line in (PAD_LAYOUT_DIR / f"{name}.conf").read_text().splitlines():
+            line = line.split("#", 1)[0].strip()
+            if "=" in line:
+                k, v = line.split("=", 1)
+                out[k.strip()] = v.strip()
+    except Exception:
+        pass
+    return out
+
+def _pad_layout_write(name: str, data: dict) -> None:
+    PAD_LAYOUT_DIR.mkdir(parents=True, exist_ok=True)
+    path = PAD_LAYOUT_DIR / f"{name}.conf"
+    if not data and name != "default":
+        # leeres Layout bleibt als Datei bestehen (sonst verschwindet es aus der Liste)
+        atomic_write_text(path, "# TrafkPad layout (only overrides of the built-in mapping)\n")
+        return
+    if not data:
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
+        return
+    lines = ["# TrafkPad layout - written by the Mapping editor (only overrides of the built-in mapping)"]
+    lines += [f"{k} = {v}" for k, v in data.items()]
+    atomic_write_text(path, "\n".join(lines) + "\n")
+
+def _pad_dump_parse(text: str) -> dict:
+    out: dict = {}
+    for line in text.splitlines():
+        if "=" in line:
+            k, v = line.split("=", 1)
+            out[k.strip()] = v.strip()
+    return out
+
+def _pad_pressed_parse(text: str) -> dict:
+    res = {"down": set(), "lx": 0.0, "ly": 0.0, "rx": 0.0, "ry": 0.0, "layer": "base"}
+    for part in text.split():
+        if "=" not in part:
+            continue
+        k, v = part.split("=", 1)
+        try:
+            if k == "down":
+                res["down"] = {x for x in v.split(",") if x and x != "-"}
+            elif k in ("lx", "ly", "rx", "ry"):
+                res[k] = float(v)
+            elif k == "layer":
+                res["layer"] = v
+        except ValueError:
+            pass
+    return res
+
+# Formen des Controller-Bildes: (Name, Art, x, y, w, h) in einer 380x215-Zeichenflaeche
+PAD_SHAPES = [
+    ("L2", "rect", 38, 6, 70, 18), ("R2", "rect", 272, 6, 70, 18),
+    ("L1", "rect", 38, 28, 70, 16), ("R1", "rect", 272, 28, 70, 16),
+    ("SELECT", "rect", 150, 78, 34, 14), ("START", "rect", 196, 78, 34, 14),
+    ("SLU", "rect", 82, 58, 24, 14), ("SLD", "rect", 82, 116, 24, 14), ("SLL", "rect", 52, 80, 14, 24), ("SLR", "rect", 122, 80, 14, 24),
+    ("L3", "circle", 94, 92, 13, 0),
+    ("DU", "rect", 140, 138, 18, 18), ("DD", "rect", 140, 176, 18, 18), ("DL", "rect", 121, 157, 18, 18), ("DR", "rect", 159, 157, 18, 18),
+    ("Y", "circle", 286, 62, 14, 0), ("A", "circle", 286, 108, 14, 0), ("X", "circle", 263, 85, 14, 0), ("B", "circle", 309, 85, 14, 0),
+    ("R3", "circle", 235, 160, 18, 0),
+]
+
+def _build_pad_mapping_tab(win: Gtk.Window, cfg: dict, caption, hrow_fn) -> Gtk.Box:
+    root = vbox(6); pad(root, h=4, v=10)
+    st = {"layout": cfg.get("layout", "default") or "default", "sel": "A", "lay": "base",
+          "eff": {}, "over": {}, "cat": "Letters", "mods": set(), "pressed": {"down": set()},
+          "detect": False}
+
+    info = Gtk.Label()
+    info.get_style_context().add_class("caption")
+    info.set_halign(Gtk.Align.CENTER)
+    info.set_line_wrap(True)
+    info.set_max_width_chars(44)
+
+    # ── Layout-Zeile ──
+    lay_row = hbox(4); lay_row.set_halign(Gtk.Align.CENTER)
+    lay_holder = vbox(2)
+
+    def _reload_daemon():
+        _pad_ctl("reload")
+        GLib.timeout_add(250, _refresh_eff)
+
+    def _refresh_eff():
+        txt = _pad_ctl("dump", timeout=1.0)
+        st["eff"] = _pad_dump_parse(txt)
+        st["over"] = _pad_layout_read(st["layout"])
+        if not txt:
+            info.set_text("TrafkPad is not running - start it to edit the mapping")
+        _update_info()
+        _rebuild_stickmodes()
+        area.queue_draw()
+        return False
+
+    def _set_layout(name):
+        st["layout"] = name
+        cfg["layout"] = name
+        _pad_cfg_save_soon(cfg)
+        GLib.timeout_add(450, lambda: (_reload_daemon(), False)[1])
+        _rebuild_layouts()
+
+    def _new_layout(_b=None):
+        names = _pad_layout_names()
+        i = 2
+        while f"layout{i}" in names:
+            i += 1
+        new = f"layout{i}"
+        _pad_layout_write(new, dict(_pad_layout_read(st["layout"])))
+        _set_layout(new)
+
+    def _delete_layout(_b=None):
+        if st["layout"] == "default":
+            return
+        try:
+            (PAD_LAYOUT_DIR / f"{st['layout']}.conf").unlink()
+        except Exception:
+            pass
+        _set_layout("default")
+
+    def _reset_layout(_b=None):
+        _pad_layout_write(st["layout"], {})
+        _reload_daemon()
+
+    def _rebuild_layouts():
+        for c in lay_holder.get_children():
+            lay_holder.remove(c)
+        row = hbox(4); row.set_halign(Gtk.Align.CENTER)
+        for n in _pad_layout_names():
+            b = btn(n, active=(n == st["layout"]), tip="Switch to this layout" if n != "default" else "Built-in layout (editing it stores your changes as overrides)")
+            b.connect("clicked", lambda _b, x=n: _set_layout(x))
+            row.pack_start(b, False, False, 0)
+        lay_holder.pack_start(row, False, False, 0)
+        row2 = hbox(4); row2.set_halign(Gtk.Align.CENTER)
+        row2.pack_start(btn("New", _new_layout, tip="New layout (copy of the current one)"), False, False, 0)
+        dl = btn("Delete", _delete_layout, tip="Delete this layout")
+        dl.set_sensitive(st["layout"] != "default")
+        row2.pack_start(dl, False, False, 0)
+        row2.pack_start(btn("Reset", _reset_layout, tip="Remove all your changes in this layout"), False, False, 0)
+        lay_holder.pack_start(row2, False, False, 0)
+        lay_holder.show_all()
+
+    # ── Controller-Bild ──
+    area = Gtk.DrawingArea()
+    area.set_size_request(380, 215)
+    area.set_halign(Gtk.Align.CENTER)
+    area.add_events(Gdk.EventMask.BUTTON_PRESS_MASK)
+
+    def _hit(x, y):
+        for name, kind, sx, sy, sw, sh in reversed(PAD_SHAPES):
+            if kind == "rect":
+                if sx <= x <= sx + sw and sy <= y <= sy + sh:
+                    return name
+            else:
+                if (x - sx) ** 2 + (y - sy) ** 2 <= sw ** 2:
+                    return name
+        return None
+
+    def _on_press(_w, ev):
+        n = _hit(ev.x, ev.y)
+        if n:
+            st["sel"] = n
+            _update_info()
+            area.queue_draw()
+        return True
+    area.connect("button-press-event", _on_press)
+
+    def _draw(w, cr):
+        ctx = w.get_style_context()
+        fg = ctx.get_color(Gtk.StateFlags.NORMAL)
+        def col(a): cr.set_source_rgba(fg.red, fg.green, fg.blue, a)
+        down = st["pressed"].get("down", set())
+        # Gehaeuse
+        col(0.10)
+        cr.new_path()
+        cr.move_to(30, 50); cr.curve_to(30, 20, 60, 12, 90, 12); cr.line_to(290, 12)
+        cr.curve_to(320, 12, 350, 20, 350, 50); cr.line_to(350, 150)
+        cr.curve_to(350, 205, 300, 212, 270, 190); cr.line_to(230, 190); cr.line_to(150, 190); cr.line_to(110, 190)
+        cr.curve_to(80, 212, 30, 205, 30, 150); cr.close_path(); cr.fill()
+        # Sticks (Position-Punkte)
+        pr = st["pressed"]
+        for cx, cy, vx, vy in ((94, 92, pr.get("lx", 0), pr.get("ly", 0)), (235, 160, pr.get("rx", 0), pr.get("ry", 0))):
+            col(0.18); cr.arc(cx, cy, 24, 0, 6.2832); cr.fill()
+            cr.set_source_rgba(0.95, 0.75, 0.25, 0.9)
+            cr.arc(cx + vx * 14, cy + vy * 14, 4, 0, 6.2832); cr.fill()
+        cr.select_font_face("sans", 0, 0)
+        cr.set_font_size(9)
+        for name, kind, sx, sy, sw, sh in PAD_SHAPES:
+            is_down = name in down
+            is_sel = name == st["sel"]
+            if kind == "rect":
+                cr.rectangle(sx, sy, sw, sh)
+            else:
+                cr.arc(sx, sy, sw, 0, 6.2832)
+            if is_down:
+                cr.set_source_rgba(0.95, 0.75, 0.25, 0.95)
+            else:
+                col(0.28 if not name.startswith("SL") else 0.16)
+            cr.fill_preserve()
+            if is_sel:
+                cr.set_source_rgba(0.95, 0.75, 0.25, 1.0); cr.set_line_width(2.2)
+            else:
+                col(0.45); cr.set_line_width(1)
+            cr.stroke()
+            label = {"SLU": "↑", "SLD": "↓", "SLL": "←", "SLR": "→", "DU": "↑", "DD": "↓", "DL": "←", "DR": "→",
+                     "SELECT": "Sel", "START": "Sta"}.get(name, name)
+            ext = cr.text_extents(label)
+            cx = sx + (sw / 2 if kind == "rect" else 0) - ext.width / 2 - ext.x_bearing
+            cy = sy + (sh / 2 if kind == "rect" else 0) - ext.height / 2 - ext.y_bearing
+            if is_down:
+                cr.set_source_rgba(0, 0, 0, 0.9)
+            else:
+                col(0.9)
+            cr.move_to(cx, cy); cr.show_text(label)
+        # Home
+        cr.arc(190, 52, 11, 0, 6.2832)
+        if "HOME" in down: cr.set_source_rgba(0.95, 0.75, 0.25, 0.95)
+        else: col(0.28)
+        cr.fill_preserve(); col(0.45); cr.set_line_width(1); cr.stroke()
+        col(0.9); cr.move_to(181, 55); cr.show_text("Home")
+        return False
+    area.connect("draw", _draw)
+
+    # ── Ebene + Erkennung ──
+    layer_btns: dict = {}
+    def _set_layer(v):
+        st["lay"] = v
+        for n, b in layer_btns.items():
+            c = b.get_style_context()
+            c.add_class("active") if n == v else c.remove_class("active")
+        _update_info()
+    lrow = hbox(4); lrow.set_halign(Gtk.Align.CENTER)
+    for v, text, tip in (("base", "Base", "Mapping without Home"), ("home", "Home layer", "Mapping while Home is held (or tapped once)")):
+        b = btn(text, active=(v == st["lay"]), tip=tip)
+        b.connect("clicked", lambda _b, x=v: _set_layer(x))
+        layer_btns[v] = b
+        lrow.pack_start(b, False, False, 0)
+
+    detect_btn = btn("Detect", tip="Click, then press a button on the pad - it gets selected")
+    def _detect_poll():
+        r = _pad_ctl("detect")
+        st["tries"] = st.get("tries", 0) + 1
+        if r and r not in ("waiting", "-"):
+            st["detect"] = False
+            detect_btn.set_label("Detect")
+            if r == "HOME":
+                info.set_text("Home is the layer key and cannot be remapped")
+            elif r in PAD_INPUTS_ALL:
+                st["sel"] = r
+                _update_info()
+                area.queue_draw()
+            return False
+        if st["tries"] > 40:
+            _pad_ctl("detect stop")
+            st["detect"] = False
+            detect_btn.set_label("Detect")
+            return False
+        return True
+    def _detect_click(_b):
+        if st["detect"]:
+            _pad_ctl("detect stop"); st["detect"] = False; detect_btn.set_label("Detect"); return
+        if not _pad_ctl("detect start"):
+            info.set_text("TrafkPad is not running")
+            return
+        st["detect"] = True
+        detect_btn.set_label("Press a button…")
+        st["tries"] = 0
+        GLib.timeout_add(150, _detect_poll)
+    detect_btn.connect("clicked", _detect_click)
+    lrow.pack_start(detect_btn, False, False, 0)
+
+    # ── Info-Zeile ──
+    def _cur_val():
+        return st["eff"].get(f"{st['lay']}.{st['sel']}", "?")
+    def _update_info():
+        if not st["eff"]:
+            return
+        key = f"{st['lay']}.{st['sel']}"
+        custom = key in st["over"]
+        info.set_text(f"{PAD_INPUT_LABEL.get(st['sel'], st['sel'])} · {'Home layer' if st['lay'] == 'home' else 'Base'}  →  {_cur_val()}"
+                      + ("  (changed)" if custom else ""))
+
+    # ── Aktion zuweisen ──
+    def _assign(value):
+        key = f"{st['lay']}.{st['sel']}"
+        over = _pad_layout_read(st["layout"])
+        over[key] = value
+        _pad_layout_write(st["layout"], over)
+        _reload_daemon()
+    def _compose(base):
+        mods = [m for m in ("shift", "ctrl", "alt", "super") if m in st["mods"]]
+        if base in ("shift", "ctrl", "alt", "super"):
+            mods = [m for m in mods if m != base]
+        return "+".join(mods + [base]) if mods else base
+    def _reset_one(_b=None):
+        key = f"{st['lay']}.{st['sel']}"
+        over = _pad_layout_read(st["layout"])
+        if key in over:
+            del over[key]
+            _pad_layout_write(st["layout"], over)
+            _reload_daemon()
+
+    mod_row = hbox(4); mod_row.set_halign(Gtk.Align.CENTER)
+    for m in ("shift", "ctrl", "alt", "super"):
+        mb = btn(m.capitalize(), tip=f"Add {m} to the key you pick")
+        def _tm(_b, mm=m):
+            if mm in st["mods"]:
+                st["mods"].discard(mm); _b.get_style_context().remove_class("active")
+            else:
+                st["mods"].add(mm); _b.get_style_context().add_class("active")
+        mb.connect("clicked", _tm)
+        mod_row.pack_start(mb, False, False, 0)
+    mod_row.pack_start(btn("None", lambda _b: _assign("none"), tip="Button does nothing"), False, False, 0)
+    mod_row.pack_start(btn("Default", _reset_one, tip="Back to the built-in mapping for this button"), False, False, 0)
+
+    cat_row = hbox(3); cat_row.set_halign(Gtk.Align.CENTER)
+    grid_holder = vbox(0)
+    cat_btns: dict = {}
+    def _show_cat(cname):
+        st["cat"] = cname
+        for n, b in cat_btns.items():
+            c = b.get_style_context()
+            c.add_class("active") if n == cname else c.remove_class("active")
+        for c in grid_holder.get_children():
+            grid_holder.remove(c)
+        grid = Gtk.Grid(); grid.set_row_spacing(3); grid.set_column_spacing(3); grid.set_halign(Gtk.Align.CENTER)
+        keys = dict(PAD_KEY_CATS)[cname]
+        cols = 4 if cname in ("Mouse", "Media") else 7
+        for i, k in enumerate(keys):
+            kb = btn(PAD_KEY_PRETTY.get(k, k.upper() if len(k) <= 2 else k.capitalize()), tip=k)
+            kb.connect("clicked", lambda _b, kk=k: _assign(_compose(kk)))
+            grid.attach(kb, i % cols, i // cols, 1, 1)
+        grid_holder.pack_start(grid, False, False, 0)
+        grid_holder.show_all()
+    for cname, _keys in PAD_KEY_CATS:
+        cb = btn(cname, active=(cname == st["cat"]))
+        cb.connect("clicked", lambda _b, n=cname: _show_cat(n))
+        cat_btns[cname] = cb
+    cat_row1 = hbox(3); cat_row1.set_halign(Gtk.Align.CENTER)
+    cat_row2 = hbox(3); cat_row2.set_halign(Gtk.Align.CENTER)
+    for i, (cname, _k) in enumerate(PAD_KEY_CATS):
+        (cat_row1 if i < 4 else cat_row2).pack_start(cat_btns[cname], False, False, 0)
+
+    # ── Stick-Modi ──
+    stick_holder = vbox(2)
+    def _set_stickmode(which, mode):
+        over = _pad_layout_read(st["layout"])
+        over[f"stick.{which}"] = mode
+        _pad_layout_write(st["layout"], over)
+        _reload_daemon()
+    def _rebuild_stickmodes():
+        for c in stick_holder.get_children():
+            stick_holder.remove(c)
+        for which, title in (("base", "Mouse stick"), ("home", "Mouse stick with Home")):
+            cur = st["eff"].get(f"stick.{which}", "mouse" if which == "base" else "scroll")
+            row = hbox(4); row.set_halign(Gtk.Align.CENTER)
+            lab = Gtk.Label(label=title); lab.get_style_context().add_class("caption"); lab.set_opacity(0.7)
+            row.pack_start(lab, False, False, 4)
+            for mode, text in (("mouse", "Mouse"), ("scroll", "Scroll"), ("none", "Off")):
+                b = btn(text, active=(cur == mode))
+                b.connect("clicked", lambda _b, w=which, m=mode: _set_stickmode(w, m))
+                row.pack_start(b, False, False, 0)
+            stick_holder.pack_start(row, False, False, 0)
+        stick_holder.show_all()
+
+    def _poll_pressed():
+        txt = _pad_ctl("pressed", timeout=0.15)
+        if txt:
+            st["pressed"] = _pad_pressed_parse(txt)
+            area.queue_draw()
+        return True
+    add_timer(90, _poll_pressed)
+
+    # ── Aufbau: Untertabs ──
+    p_stick = vbox(6)
+    p_stick.pack_start(caption("What the stick that moves the pointer does - per layer. Set Home to Mouse and the base to Off for a scroll-only stick, or the other way around."), False, False, 0)
+    p_stick.pack_start(stick_holder, False, False, 0)
+    p_lay = vbox(6)
+    p_lay.pack_start(caption("Layouts: your own sets of changes. 'default' = the built-in mapping plus the changes you make while it is selected."), False, False, 0)
+    p_lay.pack_start(lay_holder, False, False, 0)
+
+    # Controller-Bild + Zuweisung in EINER Ansicht (Bild anklicken, darunter Taste waehlen); Stick/Layouts als Untertabs
+    edit = vbox(6)
+    edit.pack_start(area, False, False, 0)
+    edit.pack_start(lrow, False, False, 0)
+    edit.pack_start(info, False, False, 0)
+    edit.pack_start(mod_row, False, False, 0)
+    edit.pack_start(cat_row1, False, False, 0)
+    edit.pack_start(cat_row2, False, False, 0)
+    edit.pack_start(grid_holder, False, False, 0)
+    outer = _pad_subtabs(win, [("Buttons", edit), ("Stick", p_stick), ("Layouts", p_lay)])
+    root.pack_start(outer, False, False, 0)
+
+    _rebuild_layouts()
+    _show_cat("Letters")
+    _refresh_eff()
+    return root
+
 def _build_settings_controller(page: Gtk.Box, key: str, label: str, win: Gtk.Window) -> None:
     cfg = _pad_cfg_ensure()
     root = vbox(4)
@@ -18678,7 +19950,8 @@ def _build_settings_controller(page: Gtk.Box, key: str, label: str, win: Gtk.Win
         return l
 
     # ═════════════ Tab 1: Controller ═════════════
-    t_pad = vbox(6); pad(t_pad, h=4, v=10)
+    p_stat = vbox(6); pad(p_stat, h=4, v=10)
+    p_combo = vbox(6); pad(p_combo, h=4, v=10)
 
     status_lbl = Gtk.Label()
     status_lbl.get_style_context().add_class("caption")
@@ -18709,9 +19982,9 @@ def _build_settings_controller(page: Gtk.Box, key: str, label: str, win: Gtk.Win
                         "enabled", _after_enable)
     boot_btn = toggle("ON at start", "Start with controller mode ON after login", "start_active")
 
-    t_pad.pack_start(status_lbl, False, False, 0)
-    t_pad.pack_start(hrow(enable_btn, boot_btn), False, False, 0)
-    t_pad.pack_start(hrow(now_btn), False, False, 0)
+    p_stat.pack_start(status_lbl, False, False, 0)
+    p_stat.pack_start(hrow(enable_btn, boot_btn), False, False, 0)
+    p_stat.pack_start(hrow(now_btn), False, False, 0)
 
     # Toggle-Kombi
     combo_btns: dict = {}
@@ -18727,9 +20000,8 @@ def _build_settings_controller(page: Gtk.Box, key: str, label: str, win: Gtk.Win
         b.connect("clicked", lambda _b, v=val: _set_combo(v))
         combo_btns[val] = b
         combo_row.pack_start(b, False, False, 0)
-    t_pad.pack_start(sep(), False, False, 2)
-    t_pad.pack_start(caption("Toggle combo (hold on one pad)"), False, False, 0)
-    t_pad.pack_start(combo_row, False, False, 0)
+    p_combo.pack_start(caption("Toggle combo (hold on one pad)"), False, False, 0)
+    p_combo.pack_start(combo_row, False, False, 0)
 
     def fslider(icon, lo, hi, step, cfg_key, fmt, tip):
         sl_box, sl = bslider(icon, lo, hi, step, float(cfg[cfg_key]), show_val=True)
@@ -18742,19 +20014,24 @@ def _build_settings_controller(page: Gtk.Box, key: str, label: str, win: Gtk.Win
         sl.connect("value-changed", _chg)
         return sl_box
 
-    t_pad.pack_start(fslider("󰍽", 500, 3000, 100, "toggle_hold_ms", "%d", "Hold time for the toggle combo (ms)"), False, False, 0)
-    t_pad.pack_start(caption("Hold time (ms)"), False, False, 0)
+    p_combo.pack_start(fslider("󰍽", 500, 3000, 100, "toggle_hold_ms", "%d", "Hold time for the toggle combo (ms)"), False, False, 0)
+    p_combo.pack_start(caption("Hold time (ms)"), False, False, 0)
+
+    t_pad = _pad_subtabs(win, [("State", p_stat), ("Combo", p_combo)])
 
     # ═════════════ Tab 2: Feel ═════════════
-    t_feel = vbox(6); pad(t_feel, h=4, v=10)
-    t_feel.pack_start(fslider("󰍽", 200, 2500, 50, "mouse_speed", "%d", "Mouse pointer speed at full stick (px/s)"), False, False, 0)
-    t_feel.pack_start(caption("Pointer speed"), False, False, 0)
-    t_feel.pack_start(fslider("󰟶", 1.0, 3.0, 0.1, "mouse_curve", "%.1f", "1 = linear, higher = more precise near the center"), False, False, 0)
-    t_feel.pack_start(caption("Pointer curve (higher = finer control)"), False, False, 0)
-    t_feel.pack_start(fslider("󰍺", 0.05, 0.4, 0.01, "mouse_deadzone", "%.2f", "Stick dead zone"), False, False, 0)
-    t_feel.pack_start(caption("Stick dead zone"), False, False, 0)
-    t_feel.pack_start(fslider("󰜮", 300, 5000, 100, "scroll_speed", "%d", "Scroll speed (Home + right stick)"), False, False, 0)
-    t_feel.pack_start(caption("Scroll speed (Home + right stick)"), False, False, 0)
+    f_ptr = vbox(6); pad(f_ptr, h=4, v=10)
+    f_scr = vbox(6); pad(f_scr, h=4, v=10)
+    f_lay = vbox(6); pad(f_lay, h=4, v=10)
+    f_fb = vbox(6); pad(f_fb, h=4, v=10)
+    f_ptr.pack_start(fslider("󰍽", 200, 2500, 50, "mouse_speed", "%d", "Mouse pointer speed at full stick (px/s)"), False, False, 0)
+    f_ptr.pack_start(caption("Pointer speed"), False, False, 0)
+    f_ptr.pack_start(fslider("󰟶", 1.0, 3.0, 0.1, "mouse_curve", "%.1f", "1 = linear, higher = more precise near the center"), False, False, 0)
+    f_ptr.pack_start(caption("Pointer curve (higher = finer control)"), False, False, 0)
+    f_ptr.pack_start(fslider("󰍺", 0.05, 0.4, 0.01, "mouse_deadzone", "%.2f", "Stick dead zone"), False, False, 0)
+    f_ptr.pack_start(caption("Stick dead zone"), False, False, 0)
+    f_scr.pack_start(fslider("󰜮", 300, 5000, 100, "scroll_speed", "%d", "Scroll speed (Home + right stick)"), False, False, 0)
+    f_scr.pack_start(caption("Scroll speed (Home + right stick)"), False, False, 0)
 
     stick_btns: dict = {}
     def _set_stick(v):
@@ -18770,9 +20047,8 @@ def _build_settings_controller(page: Gtk.Box, key: str, label: str, win: Gtk.Win
         b.connect("clicked", lambda _b, x=v: _set_stick(x))
         stick_btns[v] = b
         stick_row.pack_start(b, False, False, 0)
-    t_feel.pack_start(sep(), False, False, 2)
-    t_feel.pack_start(caption("Left stick"), False, False, 0)
-    t_feel.pack_start(stick_row, False, False, 0)
+    f_lay.pack_start(caption("Left stick"), False, False, 0)
+    f_lay.pack_start(stick_row, False, False, 0)
     nintendo_btn = btn("Nintendo layout", active=(cfg["swap_ab"] == "true" and cfg["swap_xy"] == "true"),
                        tip="Swaps A/B and X/Y for Nintendo-style pads (A = right button)")
     def _nintendo(_b):
@@ -18782,13 +20058,26 @@ def _build_settings_controller(page: Gtk.Box, key: str, label: str, win: Gtk.Win
         ctx.add_class("active") if on else ctx.remove_class("active")
         _pad_cfg_save_soon(cfg)
     nintendo_btn.connect("clicked", _nintendo)
-    t_feel.pack_start(hrow(
+    swapdp_btn = toggle("Swap D-pad / stick keys",
+                        "D-pad and left stick trade roles (also on the Home layer: Home + D-pad = focus, Home + stick = launcher/power/...)", "swap_dpad")
+    mouseL_btn = btn("Mouse on left stick", active=(cfg["mouse_stick"] == "left"),
+                     tip="Left stick moves the pointer, right stick is disabled. With the swap on: Home + L3 = launcher, Home + R3 = power menu")
+    def _mouse_left(_b):
+        on = cfg["mouse_stick"] != "left"
+        cfg["mouse_stick"] = "left" if on else "right"
+        ctx = mouseL_btn.get_style_context()
+        ctx.add_class("active") if on else ctx.remove_class("active")
+        _pad_cfg_save_soon(cfg)
+    mouseL_btn.connect("clicked", _mouse_left)
+    f_lay.pack_start(hrow(swapdp_btn, mouseL_btn), False, False, 0)
+    f_fb.pack_start(hrow(
         toggle("Rumble", "Short vibration when the mode switches", "rumble"),
         toggle("Notify", "Notification when the mode switches", "notify"),
         toggle("Sounds", "System sound when the mode switches", "sounds")), False, False, 0)
-    t_feel.pack_start(hrow(
-        nintendo_btn,
-        toggle("Invert scroll", "Reverse the scroll direction", "scroll_invert")), False, False, 0)
+    f_lay.pack_start(hrow(nintendo_btn), False, False, 0)
+    f_scr.pack_start(hrow(toggle("Invert scroll", "Reverse the scroll direction", "scroll_invert")), False, False, 0)
+
+    t_feel = _pad_subtabs(win, [("Pointer", f_ptr), ("Scroll", f_scr), ("Layout", f_lay), ("Feedback", f_fb)])
 
     # ═════════════ Tab 3: Login ═════════════
     t_login = vbox(6); pad(t_login, h=4, v=10)
@@ -18843,9 +20132,144 @@ def _build_settings_controller(page: Gtk.Box, key: str, label: str, win: Gtk.Win
     t_login.pack_start(login_status, False, False, 2)
     t_login.pack_start(caption("Typing a long password needs a keyboard. With these off, a pad-only system never gets stuck at a login screen."), False, False, 0)
 
+    # ═════════════ Tab 4: Wiimote ═════════════
+    w_conn = vbox(6); pad(w_conn, h=4, v=10)
+    w_ptr = vbox(6); pad(w_ptr, h=4, v=10)
+    w_cal = vbox(6); pad(w_cal, h=4, v=10)
+    wii_status = Gtk.Label()
+    wii_status.get_style_context().add_class("caption")
+    wii_status.set_halign(Gtk.Align.CENTER)
+    wii_status.set_line_wrap(True)
+    wii_status.set_max_width_chars(44)
+
+    conn_btn = btn("Connect Wiimote", tip="Hold 1 + 2 on the Wiimote (LEDs blink), then click this")
+    def _conn_done(ok, msg):
+        wii_status.set_text(msg or ("Connected" if ok else "Failed"))
+        conn_btn.set_sensitive(True)
+        return False
+    def _conn_clicked(_b):
+        if not WII_CONNECT_SH.exists():
+            wii_status.set_text(f"Missing {WII_CONNECT_SH}")
+            return
+        conn_btn.set_sensitive(False)
+        wii_status.set_text("Searching… keep 1 + 2 pressed on the Wiimote")
+        def _work():
+            try:
+                r = subprocess.run(["bash", str(WII_CONNECT_SH), "25"], capture_output=True, text=True, timeout=40)
+                GLib.idle_add(_conn_done, r.returncode == 0, (r.stdout or r.stderr).strip().splitlines()[-1:] and (r.stdout or r.stderr).strip().splitlines()[-1])
+            except Exception as e:
+                GLib.idle_add(_conn_done, False, f"Failed: {e}")
+        threading.Thread(target=_work, daemon=True).start()
+    conn_btn.connect("clicked", _conn_clicked)
+    w_conn.pack_start(hrow(conn_btn), False, False, 0)
+    w_conn.pack_start(wii_status, False, False, 0)
+    w_conn.pack_start(caption("Hold 1 + 2 on the Wiimote while it searches. A second Wiimote works for buttons and Nunchuk; the IR pointer comes from the first one. The pointer area (all screens / one monitor / active workspace) is in Settings → Devices."), False, False, 0)
+
+    # Smoothness 1..5 (5 = raw)
+    smooth_btns: dict = {}
+    def _set_smooth(v):
+        cfg["wii_smooth"] = str(v)
+        for n, b in smooth_btns.items():
+            ctx = b.get_style_context()
+            ctx.add_class("active") if n == v else ctx.remove_class("active")
+        _pad_cfg_save_soon(cfg)
+    sm_row = hbox(4); sm_row.set_halign(Gtk.Align.CENTER)
+    for v in (1, 2, 3, 4, 5):
+        b = btn(str(v), active=(cfg["wii_smooth"] == str(v)), tip=f"Cursor smoothness {v} (1 = extremely smooth, 5 = raw input)")
+        b.connect("clicked", lambda _b, x=v: _set_smooth(x))
+        smooth_btns[v] = b
+        sm_row.pack_start(b, False, False, 0)
+    w_ptr.pack_start(caption("Cursor smoothness (1 = extremely smooth, 5 = raw)"), False, False, 0)
+    w_ptr.pack_start(sm_row, False, False, 0)
+
+    # Zeigermodus: absolut (Desktop) / relativ / Joystick (Spiele mit Mausfang)
+    def _mode_row(cfg_key, options, title, tip_fmt):
+        btns: dict = {}
+        def _set(v):
+            cfg[cfg_key] = v
+            for n, b in btns.items():
+                ctx = b.get_style_context()
+                ctx.add_class("active") if n == v else ctx.remove_class("active")
+            _pad_cfg_save_soon(cfg)
+        row = hbox(4); row.set_halign(Gtk.Align.CENTER)
+        for v, text, tip in options:
+            b = btn(text, active=(cfg[cfg_key] == v), tip=tip)
+            b.connect("clicked", lambda _b, x=v: _set(x))
+            btns[v] = b
+            row.pack_start(b, False, False, 0)
+        w_ptr.pack_start(caption(title), False, False, 0)
+        w_ptr.pack_start(row, False, False, 0)
+    _mode_row("wii_mode",
+              (("abs", "Absolute", "Pointer = where the Wiimote points (desktop)"),
+               ("rel", "Relative", "Pointer moves like a mouse (games that capture the mouse)"),
+               ("joy", "Joystick", "Distance from the screen center = speed (shooters)")),
+              "Pointer mode (normal)", "")
+    _mode_row("wii_alt_mode",
+              (("rel", "Relative", "Mouse-like motion"),
+               ("joy", "Joystick", "Distance from the center = speed")),
+              "Game mode (used by Switch now / auto-detect)", "")
+    w_ptr.pack_start(fslider("󰍽", 500, 6000, 100, "wii_rel_scale", "%d", "Relative mode: pixels per full screen width"), False, False, 0)
+    w_ptr.pack_start(caption("Relative speed"), False, False, 0)
+
+    mode_lbl = Gtk.Label()
+    mode_lbl.get_style_context().add_class("caption")
+    mode_lbl.set_halign(Gtk.Align.CENTER)
+    mode_lbl.set_line_wrap(True)
+    mode_lbl.set_max_width_chars(44)
+    def _mode_switch(_b):
+        r = _pad_ctl("wii-mode toggle")
+        mode_lbl.set_text(r or "TrafkPad is not running")
+    def _add_app(_b):
+        w = jrun(["hyprctl", "activewindow", "-j"]) or {}
+        cls = (w.get("class") or "").strip().lower()
+        if not cls:
+            mode_lbl.set_text("No active window found")
+            return
+        apps = [a for a in cfg["wii_apps"].split(",") if a]
+        if cls not in apps:
+            apps.append(cls)
+        cfg["wii_apps"] = ",".join(apps)
+        _pad_cfg_save_soon(cfg)
+        mode_lbl.set_text(f"Auto game mode for: {cfg['wii_apps']}")
+    def _clear_apps(_b):
+        cfg["wii_apps"] = "minecraft,moorhuhn"
+        _pad_cfg_save_soon(cfg)
+        mode_lbl.set_text(f"Auto game mode for: {cfg['wii_apps']}")
+    w_ptr.pack_start(hrow(btn("Switch now", _mode_switch, tip="Toggle between normal and game mode"),
+                          btn("Add active window", _add_app, tip="Focus the game, open this page via the launcher/keyboard and click: the window class joins the auto list"),
+                          btn("Reset list", _clear_apps, tip="Auto list back to the defaults")), False, False, 0)
+    w_ptr.pack_start(mode_lbl, False, False, 0)
+    w_ptr.pack_start(caption("Windows in the auto list (class or title contains) switch the pointer to game mode by themselves."), False, False, 0)
+
+    # Kalibrierung
+    cal_lbl = Gtk.Label()
+    cal_lbl.get_style_context().add_class("caption")
+    cal_lbl.set_halign(Gtk.Align.CENTER)
+    def _cal(cmd):
+        r = _pad_ctl(cmd)
+        cal_lbl.set_text(r or "TrafkPad is not running")
+    cal_row = hbox(4); cal_row.set_halign(Gtk.Align.CENTER)
+    for text, cmd, tip in (("Calibrate", "wii-cal start", "Then point the Wiimote at the top-left and bottom-right screen corner and press A each time"),
+                           ("Reset", "wii-cal reset", "Back to the default area")):
+        b = btn(text, tip=tip)
+        b.connect("clicked", lambda _b, c=cmd: _cal(c))
+        cal_row.pack_start(b, False, False, 0)
+    w_cal.pack_start(caption("Calibration: click, then point at the top-left corner and press A, then the bottom-right corner and press A"), False, False, 0)
+    w_cal.pack_start(cal_row, False, False, 0)
+    w_cal.pack_start(cal_lbl, False, False, 0)
+
+    w_ptr.pack_start(hrow(
+        toggle("Flip X", "Mirror the pointer left/right", "wii_flip_x"),
+        toggle("Flip Y", "Mirror the pointer up/down", "wii_flip_y"),
+        toggle("Flip Nunchuk Y", "Nunchuk stick up/down reversed", "wii_nunchuk_flip_y")), False, False, 0)
+
+    t_wii = _pad_subtabs(win, [("Connect", w_conn), ("Pointer", w_ptr), ("Calibrate", w_cal)])
+
     stack.add_named(t_pad,   "pad")
     stack.add_named(t_feel,  "feel")
     stack.add_named(t_login, "login")
+    stack.add_named(t_wii,   "wii")
+    stack.add_named(_build_pad_mapping_tab(win, cfg, caption, hrow), "map")
 
     tab_row = hbox(4); tab_row.set_halign(Gtk.Align.CENTER)
     tab_btns: dict = {}
@@ -18854,7 +20278,7 @@ def _build_settings_controller(page: Gtk.Box, key: str, label: str, win: Gtk.Win
         for n, b in tab_btns.items():
             ctx = b.get_style_context()
             ctx.add_class("active") if n == name else ctx.remove_class("active")
-    for name, tlabel in (("pad", "Controller"), ("feel", "Feel"), ("login", "Login")):
+    for name, tlabel in (("pad", "Controller"), ("feel", "Feel"), ("map", "Mapping"), ("wii", "Wiimote"), ("login", "Login")):
         b = btn(tlabel, active=(name == "pad"))
         b.connect("clicked", lambda _b, n=name: _switch(n))
         tab_btns[name] = b
@@ -19209,6 +20633,7 @@ def main():
     _reconcile_theme_state()
     _start_socket_server()
     in_thread(_prewarm_tools)
+    threading.Thread(target=_hypr_active_thread, daemon=True).start()   # Active-Zuordnung (folgt dem Fokus-Monitor)
     in_thread(_hypridle_boot)     # Config anlegen + hypridle starten (statt Autostart.lua)
     GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGTERM, _shutdown)
     GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGINT,  _shutdown)

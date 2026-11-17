@@ -188,7 +188,12 @@ Any gamepad = keyboard + mouse for the whole OS (daemon: `~/.config/TrafkTuxPad/
 | Home + Start / Select | Screenshot / lock Bar autohide |
 | Home + left stick | Focus window (like Super + WASD) |
 
+Settings → Controller → Feel: Nintendo layout (swaps A/B and X/Y), left stick WASD/arrows, speeds, swap D-pad and left stick (both layers: Home + D-pad then = window focus), mouse on left stick (right stick off; with the swap: Home + L3 = launcher, Home + R3 = power menu). If a pad sends Home only as a short pulse, tap Home once and then press the next button (`home_tap`). Debug: `debug = true` in `TrafkPad.conf`, log in `/tmp/TrafkPad.log`.
+
 The Home-layer keys are F13–F24 and only bound while controller mode is ON (Controls.lua, section 4).
+
+**Wiimote** (hid-wiimote, no pairing needed): hold 1 + 2, then Settings → Controller → Wiimote → *Connect Wiimote* (or `~/.config/TrafkTuxPad/wiimote-connect.sh`). Needs `ClassicBondedOnly=false` in `/etc/bluetooth/input.conf` (shipped). A / B = left / right click, 1 / 2 = Space / X, + / − = Enter / Esc, D-pad = arrows, Home = Home layer; Nunchuk: stick = WASD, Z / C = Q / E; the IR sensor bar moves the pointer (absolute, all screens or one monitor, smoothness 1–4, calibration `TrafkPad --ctl "wii-cal tl"` / `"wii-cal br"`). Toggle ON/OFF: hold + and − for 1 s.
+
 
 ### Touchscreen
 
@@ -342,6 +347,8 @@ We have a waybar that – like in Windows/KDE Plasma – hides itself as long as
   - Calendar + Weather
   - Settings – access to ALL widgets
 
+The pinned apps and the widgets on the right are yours to change: **Settings → Apps & Shortcuts → Bar** lets you add, remove and reorder pinned apps and choose and reorder the widgets – the bar reloads itself live. Your choices are stored in `~/.config/TrafkTuxBar/Userbar.jsonc`, a file the bar creates itself on its first start (it is not part of the system files, so updates never overwrite it). The Settings widget and the fixed buttons (launcher, power menu, clock, tray) can't be removed. Delete `Userbar.jsonc` to get the defaults back.
+
 And with the Hyprland plugin Hyprgrass it also has touch support – just swipe your finger from the bottom of the screen up and there it is!
 
 ### Dunst
@@ -445,7 +452,7 @@ Our control system for every setting and more!
 
 **Bluetooth**
 
-Connect, pair and remove devices!
+Connect, pair and remove devices! Opening the widget automatically searches for new devices for 30 seconds (the search button starts and stops it by hand); nearby devices show up under *New devices* with a *Pair* button. Pairing also handles code confirmation and PIN entry in a small dialog, then trusts and connects the device. Nameless beacons are hidden.
 
 **Brightness**
 1. **Tab:** monitor brightness and night mode
@@ -462,6 +469,7 @@ Connect, pair and remove devices!
    - RAM
    - Storage
    - GPU
+3. **Idle tab** (also on desktops without a battery): the screen-off, lock and suspend timers (hypridle), lock before sleep, and whether a playing video keeps the system awake. The widgets start and manage hypridle themselves and keep its config in `~/.config/hypr/HyprlandUserConfigs/hypridle.conf`.
 
 **Calendar & Weather**
 - **In the waybar:** you can see the time and also the date if toggled
@@ -493,6 +501,13 @@ Change the scale (to a certain degree). Toggle HDR. Change where your other moni
 1. **Tab:** change the theme, cursor effects, and Shake and Find
 2. **Tab:** change keyboard and system language
 
+**Apps & Shortcuts**
+1. **Tab:** Launcher – edit the app launcher: create folders, add installed or custom apps, reorder, change icons, move apps between folders and hide your own folders from the root menu (system entries are read-only)
+2. **Tab:** Bar – *Pinned apps* and *Widgets* of the bar (add, remove, reorder, items per row, reset to default); see Waybar above
+3. **Tab:** Autostart – pick any installed app (or type a command) to start with the session
+4. **Tab:** Defaults – default applications (not built yet)
+5. **Tab:** Wine – Gamescope for Wine: scaling filter, scaler, sharpness, dgVoodoo2 version, and per game switches to run it without Gamescope or without dgVoodoo2
+
 **Security**
 1. **Tab:** Privacy – hardware kill switches for WiFi, Bluetooth, WWAN/GPS, Camera and Microphone, plus a "Lock everything" panic button
 2. **Tab:** DNS – change DNS servers (Cloudflare/Google/Quad9/custom), enforce DNS-over-TLS, Hotel/Guest WiFi mode (temporarily allow captive portals on the current network only)
@@ -508,10 +523,11 @@ Change the scale (to a certain degree). Toggle HDR. Change where your other moni
 
 Still to be themed / done:
 - Calamares
-- Editor for: Rofi folders/apps, Waybar widgets/shortcuts, autostart apps, default apps: TrafkTux App Edito
+- App Editor: only the *Default Apps* tab is still missing (see App Editor below)
 - In the Launcher:
   1. update pre installed applications
   2. make it so that some applications are hidden pre installed ones ofc without user config.
+- NEW HYPRLAND LAYOUT: INFINITE DESKTOP!!!!! there are some options available online, but a custom layout would probably be the more safe option if there is no good version online like regular updates and stuff.
 
 ## Known Bugs
 
@@ -522,74 +538,56 @@ Still to be themed / done:
   1. Der xfdesktop oder hyprwinwrap oder hyprpaper entziehen der apps das tastaturtippen. man will was in ner app mit der tastatur machen, aber es geht auf den desktop (man merkt es besonders mit 2 monitoren) ok es ist nicht wegen hyprwinwrap, ist auch ohne so.
 - xfdesktop can crash and there is no daemon restarting it
 - hyprlock is ass! 1. it does not scale with resolution 2. when you type in the RIGHT password, it mostoften goes green but NOTHING happens and it SOFTLOCKS you out of YOUR OWN SYSTEM and if you type in the wrong password, it goes GREEN you wait 10s ca and THEN it turns RED..... shitty thing it is
-- Widgets:
-	- the gaming mode does not glow when active!
-	- with right click you should be able to go back. With that i mean go back to the settings widget – which is the main widget. and when you right click on the main widget it should close it (like clicking on the taskbar). Before implemented, please check for any right click interactions if there even are any (do not think so)
-- Widgets and Launcher:
-  The name matcher still groups some apps together which means if one app is sorted in, other apps will not be visible anymore in unsorted.
 - HYPRLAND:
   1. hyprland sagt es wird ohne umgebungsvariable gestartet, was aber nicht stimmen sollte
   2. hyprgrass meldet beim hyprland systemstart, dass es deaktiviert ist (gute 10-12 Mal btw)... ES IST NICHT DEAKTIVIERT.....
 
 ### Other Stuff
 - Finish System Sounds - tortenboxer
+  - Bar and launcher now call `SoundCenter.sh <Event>` with the exact event names (the daemon only knows PascalCase: Click, RightClick, MiddleClick, Open, Close, FocusChange, Pip, Minimize, LayoutSwitch, Dunst, Error, Toggle, Enter). Still to check: every other script (PictureInPicture.sh, LayoutSwitcher.sh, HideAll.sh, RofiTrafkBubbleMenus.c, Controls.lua ...) for the removed `soundctl.sh` or lowercase event names: `grep -rn soundctl ~/.config`
+  - No sound files yet for `Pip` and `Toggle` (those events stay silent until `Pip.ogg` / `Toggle.ogg` exist in `~/.config/hypr/Sounds/`)
 - make sddm idle animations  – turboprinz
+- add the calender option for the human one. the 12000 year one. the one that the our world in a nutshell or how the channel is called calender.
 - Make SDDM Buttons
 - Make custom Buttons for GUI
 - Mouse cursor redesign
 - Transfer Widgets FIles to new Folder and other FIles still in old waybar folder
 - Transfer all sound related stuff in SoundCenter
 - redo trafkbubble animation for opening and closing (siehe png)
-- hypridle options in widgets!
 - LAUNCHER:
   1. scrolling with the mouse should scroll the pages
   2. 2 new sorting options: 1. Size on Disk – sorts all apps in its size – scans from the root directory of the application the data. stored in a file and only updated when a new app gets added and stuff. 2. play time – 3. point
   3. Play Time:
      Every app will be tracked on how long it was open for. This will be system wide!!!!!!!!!!!!! NOT ONLY LAUNCHER!!!!! every app will get this. maybe also system processes if every everything should be tracked. or only applications that have a .desktop entry. no. everything. not everything has a .desktop entry! THIS is a GREAT feature!
-- HYPRLAND SYSTEM SHOULD BE CONTROLLABLE WITH ANY CONTROLLER!!!!
-  So: it should automaticly recognise any controler. if possible not map the keys to keyboard but instead new keybinds for controller specificly. if if possible also support sddm login with controller – risky option: A toggle in settings that turns on controller mode – turns password completely off! no sddm password i mean. normal sudo should still work and stuff. on screen keyboard – but on touch, gamepad. might need another on screen keyboard app for that. or right stick for mouse and then you could use the already there on screen keyboard! yes thats it! but no sddm login if activated! Good feature – should be implemented.
-  Controlls if keyboard mapped:
-  WASD = left stick
-  Mouse = right stick
-  A = space
-  B = X
-  Start = Enter
-  Select = ESCAPE
-  L2 R2 =Mouse down Left Right
-  R3 = Middle mouse
-  L1 R1 = q e
-  HOME = sudo – steam.... needs to be deactivated controler whise.
-  dpad = arrow keys
-  L3 = Shift? idunno
-  Y X = ?????
-
+- CONTROLLER / TrafkPad (basics done: gamepads, Wiimote + Nunchuk + IR pointer, Settings → Controller). Still open:
+  1. **Relative mouse for the Wiimote pointer** – games that capture the mouse (pointer lock: Minecraft camera; exclusive grab: Moorhuhn) need *relative* motion, the IR pointer is an absolute device and does nothing there. Plan: second pointer mode that emits relative deltas (movement relative to the center of the monitor, re-centered continuously). Switch: automatic detection (a window holding a pointer lock / cursor hidden) **or** a button combo, ideally both with a setting in Settings → Controller.
+  2. **uDraw tablet (Wii)** – plugs into the Wiimote extension port, not supported by hid-wiimote (hid-udraw only covers the PS3/Xbox USB version). Would need the raw HID reports (hidraw) and the extension protocol. Needs data first (`lsusb` for the USB version / hidraw dump for the Wii one).
+  3. **Mapping editor** – new tab in Settings → Controller with an interactive controller picture (sticks and buttons light up while pressed), click a button to rebind it, own layouts + editing the default layout, detection of pressed buttons for custom keybinds.
+  4. **Scrolling and window resizing** – scrolling shares the mouse stick, so you cannot scroll and resize windows at the same time; needs a scroll mode toggle or scroll on D-pad/shoulders. Also window resize / swap / snap layers.
+  5. **SDDM login with a controller** (not built; only the autologin toggle exists) + on-screen keyboard.
+  6. Wiimote: "Wii Motion Plus Required" joke, scrolling, remote-wide options (rumble feedback).
+  7. Launcher: scroll pages with the mouse wheel (see Launcher list above).
 
 ### App Editor
 
-**1. Bar Shortcuts (Tab 2) – nie gebaut**
+Built: Launcher tab (including editing the icon / hide flag of your own folders and moving apps between folders), Bar tab (pinned apps and widgets, live reload via SIGHUP, `Userbar.jsonc` created by the bar from built-in defaults), Autostart tab (app picker dialog), Wine/GameScope tab (the wrapper creates its own config files on the first Wine launch).
 
-- UI fehlt komplett (nur Platzhalter)
-- Soll: Pinned-Apps-Liste analog zum Launcher-Tab, schreibt in `TrafkTuxBar.jsonc`’s `pinned`-Array unter `modules_left`
-- Braucht zusätzlich SIGHUP-Handler in `TrafkTuxBar.c` für Live-Reload (nur vorgeschlagen, nie gebaut) – sonst bräuchte jede Pin-Änderung einen kompletten Bar-Neustart
-
-**2. Default Apps (Tab 4) – nie gebaut**
+**Default Apps (Tab 4) – nie gebaut**
 
 - Soll xdg-mime/`~/.config/mimeapps.list` verwalten
 - Offene technische Fragen vorher: mehrere mögliche `mimeapps.list`-Pfade mit unterschiedlicher Priorität, GIO-Cache-Invalidierung, Thunar-spezifisches Fehlverhalten (“nimmt zuletzt benutzte App statt echtem Default”)
 
-**3. Wine/GameScope Excludes (Tab 5) – nie gebaut**
+**Kleinere offene Punkte**
 
-- `.desktop`-Dateien unter `~/.local/share/applications/wine/**` scannen, pro `.exe` denselben `strings <exe> | grep -qi ddraw.dll`-Check wie `GameScopeWineWrapper.sh`, Treffer in `GameScopeExcludes.txt`/`GameScopeDgvoodooExcludes.txt` ein-/austragen, dazu UI für `GameScopeWrapper.conf` (Filter/Scaler/Sharpness/altes-vs-neues dgVoodoo2)
-
-**4. Launcher-Tab (Tab 1) – zwei kleinere Lücken**
-
-- Icon/Hidden-Flag eines Root-Ordners nachträglich ändern geht nicht, nur beim Anlegen
-- App zwischen zwei Ordnern verschieben geht nur über Entfernen + Neu-Einordnen aus Unsorted, kein direktes Verschieben
-
-### Widgets-Settings → Autostart-Tab – kaputt, ein zusammenhängendes Problem
-
-**5. Autostart-Tab komplett unbrauchbar**
-
-- Ursache 1: Freitext-Eingabefeld nimmt keine Tastatureingabe an (Bubble-/Layer-Shell-Popups scheinen das bei inline `Gtk.Entry` grundsätzlich zu blockieren) → Fix: echter `Gtk.Dialog`-Popup statt Inline-Entry, Muster wie `_prompt_text_generic`
-- Ursache 2: Selbst wenn die Eingabe ginge, gäbe es keine App-Auswahlliste (wie im Launcher-Tab: Unsorted/All Apps zum Anklicken) – man müsste den exakten Befehl von Hand kennen und tippen
-- Beide gehören zusammen behoben: Dialog MIT App-Liste zum Anklicken (trägt `exec` automatisch ein) statt nacktem Textfeld
+- Launcher-Tab: Icon/Hidden-Flag der **System**-Ordner (`menu.json`) lassen sich nicht ändern – der C-Launcher ignoriert beim Mergen Icon/`hidden` aus `Usermenu.json` (`merge_user_node`). Eigene Ordner gehen.
+- `Userbar.jsonc` ersetzt die Item-Listen der zwei Bar-Bereiche komplett: neue Standard-Widgets aus einem Update tauchen dort nicht automatisch auf (Datei löschen = die Bar legt sie neu aus den eingebauten Standardwerten an). Die eingebauten Werte stehen in `BUILTIN_MODULE_DEFAULTS` (TrafkTuxBar.c) und `_BAR_BUILTIN_DEFAULTS` (WidgetsDaemon.py) und müssen gleich bleiben.
+- hypridle: Stürzt es ab, startet es niemand neu, bis der WidgetsDaemon neu startet (bewusst keine Überwachung wegen möglicher Neustart-Schleife bei kaputter Config).
+- Apps die nicht mehr installiert sind tauchen noch immer im app editor auf -> beim speichern drücken automatisch einträge entfernen die nicht custom sind und nicht existieren. also apps die via der list ehinzugefügt worden sind die nicht mehr drinnen sind, sprich nicht mehr existieren.
+- Im bar tab bei den widgets: man muss alle widgets da hingeben können, nicht nur die standard widgets. es gibt keine standard widgets so ansich mehr. die sind zwar noch vordefiniert, das ich aber auch nur so damit man checkt, dass es das gibt. alle müssen da reingehen. man sollte auch widgettabs direkt da reingeben können!
+- Hyprland native screenshot tool benutzen anstatt das was jetzt ist + screenshot pfad fixen
+- 2 bash git files via widgets machen.
+- Neustes Update hat gefixt: 1. apps die beim installieren automatisch sich zum autostart hinzufügen wo auch immer starten nun + paketmanager han nun ne notificaion.
+  Neuestes Update hat gebrochen: Wallpaper beim start vom laptop. manuell via widgets gehts aber noch.
+  Neuestes update (mit update mein ich pacman btw) braucht 2 fixes: 1. wallpaper beheben 2. beim autostart widget müssen auch die anderen autostart sachen die nicht in der hyprland drinnen stehen verwaltbar sein (löschen hald, hinzufügen machen wir ja über hyprland)
+- widgets Controller login should be in Security ofc.
+- battery remaining time not shown/displayed. should be above Watts.
