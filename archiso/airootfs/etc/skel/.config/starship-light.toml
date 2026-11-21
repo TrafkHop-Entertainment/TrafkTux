@@ -1,0 +1,57 @@
+# Light-Mode-Variante von starship.toml (TrafkTux)
+# Mapping Dark -> Light: Kraft-Töne werden zu Trafk-Tönen
+#   Kraft (#fff495)      -> Trafk         (#5a3998)
+#   Kraftlight (#f6f3d5) -> Trafk-lighter (#7554B3)
+#   Kraft-lightest (#fffdf5, Text) -> Trafk-darkest (#1A0D34)
+
+command_timeout = 2000
+add_newline = true
+
+format = """
+$username\
+$hostname\
+$directory\
+$git_branch\
+$git_status\
+$character"""
+
+# --- Benutzername ---
+[username]
+show_always = true
+style_user = "bold #3f9b0b"          # dunkleres Lawn Green (Kontrast auf hell)
+format = "[$user]($style) "
+
+# --- Hostname (nur bei SSH) ---
+[hostname]
+ssh_only = true
+style = "bold #c0392b"
+format = "@[$hostname]($style) "
+
+# --- Verzeichnis ---
+[directory]
+style = "italic #7554B3"             # Trafk-lighter (Gegenstück zu Kraftlight)
+format = "[\uf07b $path]($style)"
+truncation_length = 0
+home_symbol = ""
+
+# --- Git Branch ---
+[git_branch]
+style = "bold #1A0D34"               # Text: Trafk-darkest
+symbol = "[\ue725](bold #5a3998) "   # Icon: Trafk
+format = " [$symbol$branch]($style)"
+
+# --- Git Status ---
+[git_status]
+style = "bold #1A0D34"               # Text: Trafk-darkest
+format = '([$all_status$ahead_behind]($style)) '
+modified = "[\uf044](bold #ed9121)"    # Carrot Orange
+staged = "[\uf0c7](bold #3f9b0b)"      # dunkleres Lawn Green
+untracked = "[\uf128](bold #ff6347)"   # Tomato
+deleted = "[\uf1f8](bold #c0392b)"     # Kaminrot
+renamed = "[\uf064](bold #3a7ca5)"     # dunkleres Baby Blau
+conflicted = "[\uf071](bold #ed9121)"  # Carrot Orange
+
+# --- Character ---
+[character]
+success_symbol = "[:](bold #5a3998) "  # Trafk (Gegenstück zu Kraft)
+error_symbol = "[:](bold #c0392b) "

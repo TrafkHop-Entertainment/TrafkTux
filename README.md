@@ -188,11 +188,11 @@ Any gamepad = keyboard + mouse for the whole OS (daemon: `~/.config/TrafkTuxPad/
 | Home + Start / Select | Screenshot / lock Bar autohide |
 | Home + left stick | Focus window (like Super + WASD) |
 
-Settings → Controller → Feel: Nintendo layout (swaps A/B and X/Y), left stick WASD/arrows, speeds, swap D-pad and left stick (both layers: Home + D-pad then = window focus), mouse on left stick (right stick off; with the swap: Home + L3 = launcher, Home + R3 = power menu). If a pad sends Home only as a short pulse, tap Home once and then press the next button (`home_tap`). Debug: `debug = true` in `TrafkPad.conf`, log in `/tmp/TrafkPad.log`.
+Settings → Controller (tabs **State, Mapping, Combos, Feel, Wiimote**). *State*: mode Keyboard / Off (a third mode “Controller”, which turns pads like the Wiimote into a standard gamepad, is planned), master switch, feedback (rumble / notification / sound). Starting with controller mode ON at login is set in Settings → Apps & Shortcuts → Autostart. *Mapping* (sub-tabs Normal, Wii, Layouts): one button per controller input showing its current binding. Click it and press the key or key combination on the keyboard (Super works, Esc is a normal key; a lone modifier like Super is taken when you release it). The popup closes by itself after 5 s without input. Mouse buttons, scroll, media keys, *None* and *Default* are picked in the same popup. Base and Home layer are separate. While the Mapping or Combos tab is open all pad / Wiimote input is blocked and only highlighted. *Combos*: click a field, hold the buttons on the controller together and let go (gamepad ON / OFF, Wiimote ON / OFF, Wiimote pointer mode, hold times). *Feel* (Pointer, Sticks): pointer speed / curve / dead zone, scroll speed, invert scroll; Nintendo layout (swaps A/B and X/Y), left stick WASD/arrows, swap D-pad and left stick (both layers: Home + D-pad then = window focus), mouse on left stick (right stick off; with the swap: Home + L3 = launcher, Home + R3 = power menu). If a pad sends Home only as a short pulse, tap Home once and then press the next button (`home_tap`). Debug: `debug = true` in `TrafkPad.conf`, log in `/tmp/TrafkPad.log`.
 
 The Home-layer keys are F13–F24 and only bound while controller mode is ON (Controls.lua, section 4).
 
-**Wiimote** (hid-wiimote, no pairing needed): hold 1 + 2, then Settings → Controller → Wiimote → *Connect Wiimote* (or `~/.config/TrafkTuxPad/wiimote-connect.sh`). Needs `ClassicBondedOnly=false` in `/etc/bluetooth/input.conf` (shipped). A / B = left / right click, 1 / 2 = Space / X, + / − = Enter / Esc, D-pad = arrows, Home = Home layer; Nunchuk: stick = WASD, Z / C = Q / E; the IR sensor bar moves the pointer (absolute, all screens or one monitor, smoothness 1–4, calibration `TrafkPad --ctl "wii-cal tl"` / `"wii-cal br"`). Toggle ON/OFF: hold + and − for 1 s.
+**Wiimote** (hid-wiimote, no pairing needed): hold 1 + 2, then Settings → Devices → Wiimote → *Connect* (or `~/.config/TrafkTuxPad/wiimote-connect.sh`). After every login TrafkPad also looks for a Wiimote for 5 minutes (notification; `wiimote-autoconnect.sh`, switch in Autostart), so you can connect without opening a widget. Needs `ClassicBondedOnly=false` in `/etc/bluetooth/input.conf` (shipped). A / B = left / right click, 1 / 2 = Space / X, + / − = Enter / Esc, D-pad = arrows, Home = Home layer; Nunchuk: stick = WASD, Z / C = Q / E; the IR sensor bar moves the pointer (absolute, all screens / one monitor / active monitor, set in Settings → Devices; smoothness 1–5 with 5 = raw; calibration in Settings → Controller → Wiimote → Calibrate). Rotation compensation: the tilt of the Wiimote (angle between the two IR dots) is subtracted, so pointing up while rolled −90° still moves up (switch `wii_roll`). Toggle ON/OFF: hold + and − for 1 s. Pointer mode normal ⇄ game mode (relative / joystick for games that capture the mouse): hold 1 and 2 for 0.6 s (no auto-detection). Both combos can be changed in Combos. After updating `TrafkPad.c` rebuild it (`~/.config/TrafkTuxPad/build.sh`) and restart the daemon (`pkill TrafkPad`, the watchdog restarts it); `TrafkPad --ctl version` must say `proto=4`.
 
 
 ### Touchscreen
@@ -347,7 +347,7 @@ We have a waybar that – like in Windows/KDE Plasma – hides itself as long as
   - Calendar + Weather
   - Settings – access to ALL widgets
 
-The pinned apps and the widgets on the right are yours to change: **Settings → Apps & Shortcuts → Bar** lets you add, remove and reorder pinned apps and choose and reorder the widgets – the bar reloads itself live. Your choices are stored in `~/.config/TrafkTuxBar/Userbar.jsonc`, a file the bar creates itself on its first start (it is not part of the system files, so updates never overwrite it). The Settings widget and the fixed buttons (launcher, power menu, clock, tray) can't be removed. Delete `Userbar.jsonc` to get the defaults back.
+The pinned apps and the widgets on the right are yours to change: **Settings → Apps & Shortcuts → Bar** lets you add, remove and reorder pinned apps and choose and reorder the widgets – the bar reloads itself live. *Add widget* offers **every** widget (not just the preset ones), every widget tab (e.g. *Battery & System → Processes*, *Network → Speed Test*, *Calendar & Weather → Weather*) and every Settings page, so you can pin exactly the tab you use (clicking a tab button of an already open widget switches the tab instead of closing it). Your choices are stored in `~/.config/TrafkTuxBar/Userbar.jsonc`, a file the bar creates itself on its first start (it is not part of the system files, so updates never overwrite it). The Settings widget and the fixed buttons (launcher, power menu, clock, tray) can't be removed. Delete `Userbar.jsonc` to get the defaults back.
 
 And with the Hyprland plugin Hyprgrass it also has touch support – just swipe your finger from the bottom of the screen up and there it is!
 
@@ -452,7 +452,7 @@ Our control system for every setting and more!
 
 **Bluetooth**
 
-Connect, pair and remove devices! Opening the widget automatically searches for new devices for 30 seconds (the search button starts and stops it by hand); nearby devices show up under *New devices* with a *Pair* button. Pairing also handles code confirmation and PIN entry in a small dialog, then trusts and connects the device. Nameless beacons are hidden.
+Connect, pair and remove devices! Opening the widget automatically searches for new devices for 30 seconds (the search button starts and stops it by hand); nearby devices show up under *New devices* with a *Pair* button. Pairing also handles code confirmation and PIN entry in a small dialog, then trusts and connects the device. A Wiimote can't be paired, so it shows *Connect* instead of *Pair* (hold 1 + 2 first). Nameless beacons are hidden.
 
 **Brightness**
 1. **Tab:** monitor brightness and night mode
@@ -502,8 +502,8 @@ Change the scale (to a certain degree). Toggle HDR. Change where your other moni
 2. **Tab:** change keyboard and system language
 
 **Apps & Shortcuts**
-1. **Tab:** Launcher – edit the app launcher: create folders, add installed or custom apps, reorder, change icons, move apps between folders and hide your own folders from the root menu (system entries are read-only)
-2. **Tab:** Bar – *Pinned apps* and *Widgets* of the bar (add, remove, reorder, items per row, reset to default); see Waybar above
+1. **Tab:** Launcher – edit the app launcher: create folders, add installed or custom apps, reorder, change icons, move apps between folders and hide your own folders from the root menu (system entries are read-only). Saving also removes apps you added from the list that are no longer installed (custom apps are never removed)
+2. **Tab:** Bar – *Pinned apps* and *Widgets* of the bar (add any widget or widget tab, remove, reorder, items per row, reset to default); see Waybar above
 3. **Tab:** Autostart – pick any installed app (or type a command) to start with the session
 4. **Tab:** Defaults – default applications (not built yet)
 5. **Tab:** Wine – Gamescope for Wine: scaling filter, scaler, sharpness, dgVoodoo2 version, and per game switches to run it without Gamescope or without dgVoodoo2
@@ -514,6 +514,7 @@ Change the scale (to a certain degree). Toggle HDR. Change where your other moni
 3. **Tab:** Tailscale – connect/disconnect/log out, see your IP and other tailnet devices, autostart toggle, options for accepting routes, MagicDNS, Tailscale SSH and Shields Up
 4. **Tab:** Firewall (UFW) – status, one-tap presets (Steam LAN, KDE Connect, Samba), full rule list, custom port/protocol rules, delete existing rules, log viewer sub-tab
 5. **Tab:** ClamAV – signature database status + manual update, on-demand scans (any single file or folder, including a one-tap full system scan) with a threat list you can quarantine/ignore from, a quarantine view to restore or permanently delete isolated files, and an automatic re-scan toggle for ~/Downloads
+6. **Tab:** Login – skip the login screen (SDDM autologin) and disable the lock screen (hyprlock), so a pad-only system never gets stuck at a password prompt
 
 
 # To Be Done
@@ -560,13 +561,17 @@ Still to be themed / done:
   3. Play Time:
      Every app will be tracked on how long it was open for. This will be system wide!!!!!!!!!!!!! NOT ONLY LAUNCHER!!!!! every app will get this. maybe also system processes if every everything should be tracked. or only applications that have a .desktop entry. no. everything. not everything has a .desktop entry! THIS is a GREAT feature!
 - CONTROLLER / TrafkPad (basics done: gamepads, Wiimote + Nunchuk + IR pointer, Settings → Controller). Still open:
-  1. **Relative mouse for the Wiimote pointer** – games that capture the mouse (pointer lock: Minecraft camera; exclusive grab: Moorhuhn) need *relative* motion, the IR pointer is an absolute device and does nothing there. Plan: second pointer mode that emits relative deltas (movement relative to the center of the monitor, re-centered continuously). Switch: automatic detection (a window holding a pointer lock / cursor hidden) **or** a button combo, ideally both with a setting in Settings → Controller.
+  1. **Relative mouse for the Wiimote pointer** – built (relative and joystick mode, switch by button combo 1 + 2, no auto-detection), still needs a hardware test in Minecraft / Moorhuhn.
   2. **uDraw tablet (Wii)** – plugs into the Wiimote extension port, not supported by hid-wiimote (hid-udraw only covers the PS3/Xbox USB version). Would need the raw HID reports (hidraw) and the extension protocol. Needs data first (`lsusb` for the USB version / hidraw dump for the Wii one).
-  3. **Mapping editor** – new tab in Settings → Controller with an interactive controller picture (sticks and buttons light up while pressed), click a button to rebind it, own layouts + editing the default layout, detection of pressed buttons for custom keybinds.
-  4. **Scrolling and window resizing** – scrolling shares the mouse stick, so you cannot scroll and resize windows at the same time; needs a scroll mode toggle or scroll on D-pad/shoulders. Also window resize / swap / snap layers.
+  3. **Mapping editor** – built (one button per input, key popup, per-device layers, combos, layouts, input blocked while the tab is open); needs hardware testing. The default keybinds are to be gone through once more.
+  4. **Scrolling and window resizing** – solved via the mapping editor (scroll on any button, scroll-only stick); still open: window swap / snap layers.
   5. **SDDM login with a controller** (not built; only the autologin toggle exists) + on-screen keyboard.
   6. Wiimote: "Wii Motion Plus Required" joke, scrolling, remote-wide options (rumble feedback).
   7. Launcher: scroll pages with the mouse wheel (see Launcher list above).
+  8. **Gyro aiming** (gyro mouse via Motion Plus / Joy-Con IMU).
+  9. **Switch Joy-Con** support (later), **Switch 2 Joy-Con** with mouse mode.
+  10. **Controller mode** (gamepad emulation): translate pads the OS does not accept as a gamepad (Wiimote ...) into a standard virtual gamepad, as a second mode next to keyboard & mouse (State tab has the button, disabled for now).
+  11. Wiimote rotation at exactly ±90° on first sight is ambiguous (could use the accelerometer).
 
 ### App Editor
 
@@ -582,12 +587,12 @@ Built: Launcher tab (including editing the icon / hide flag of your own folders 
 - Launcher-Tab: Icon/Hidden-Flag der **System**-Ordner (`menu.json`) lassen sich nicht ändern – der C-Launcher ignoriert beim Mergen Icon/`hidden` aus `Usermenu.json` (`merge_user_node`). Eigene Ordner gehen.
 - `Userbar.jsonc` ersetzt die Item-Listen der zwei Bar-Bereiche komplett: neue Standard-Widgets aus einem Update tauchen dort nicht automatisch auf (Datei löschen = die Bar legt sie neu aus den eingebauten Standardwerten an). Die eingebauten Werte stehen in `BUILTIN_MODULE_DEFAULTS` (TrafkTuxBar.c) und `_BAR_BUILTIN_DEFAULTS` (WidgetsDaemon.py) und müssen gleich bleiben.
 - hypridle: Stürzt es ab, startet es niemand neu, bis der WidgetsDaemon neu startet (bewusst keine Überwachung wegen möglicher Neustart-Schleife bei kaputter Config).
-- Apps die nicht mehr installiert sind tauchen noch immer im app editor auf -> beim speichern drücken automatisch einträge entfernen die nicht custom sind und nicht existieren. also apps die via der list ehinzugefügt worden sind die nicht mehr drinnen sind, sprich nicht mehr existieren.
-- Im bar tab bei den widgets: man muss alle widgets da hingeben können, nicht nur die standard widgets. es gibt keine standard widgets so ansich mehr. die sind zwar noch vordefiniert, das ich aber auch nur so damit man checkt, dass es das gibt. alle müssen da reingehen. man sollte auch widgettabs direkt da reingeben können!
+- Widget-Tabs in der Bar: Der Socket des WidgetsDaemon versteht `<widget>#<Tab>` (mehrere Ebenen mit `>`, danach optional `@kbd`/`@cursor`), z. B. `akku#Processes`, `network#Speed Test`, `settings#Apps & Shortcuts>Wine`. Der Tab-Name wird gegen die Beschriftung der Tab-Leiste verglichen (Symbole und Groß-/Kleinschreibung egal). Ein **neuer Tab** erscheint im *Add widget*-Dialog erst, wenn er in `_BAR_WIDGET_TABS` (WidgetsDaemon.py) steht; die Settings-Seiten kommen automatisch aus `SETTINGS_CATEGORIES`. Unter-Tabs von Settings-Seiten stehen nicht im Dialog, lassen sich aber von Hand in `Userbar.jsonc` eintragen.
+- Settings-Hub „In Waybar“: Die Einteilung richtet sich nach der echten Bar (`Userbar.jsonc` + feste Module). Die alte Waybar-Config wird nur noch gelesen, wenn die Bar-Config fehlt.
 - Hyprland native screenshot tool benutzen anstatt das was jetzt ist + screenshot pfad fixen
 - 2 bash git files via widgets machen.
 - Neustes Update hat gefixt: 1. apps die beim installieren automatisch sich zum autostart hinzufügen wo auch immer starten nun + paketmanager han nun ne notificaion.
   Neuestes Update hat gebrochen: Wallpaper beim start vom laptop. manuell via widgets gehts aber noch.
   Neuestes update (mit update mein ich pacman btw) braucht 2 fixes: 1. wallpaper beheben 2. beim autostart widget müssen auch die anderen autostart sachen die nicht in der hyprland drinnen stehen verwaltbar sein (löschen hald, hinzufügen machen wir ja über hyprland)
-- widgets Controller login should be in Security ofc.
 - battery remaining time not shown/displayed. should be above Watts.
+- Wiimote connecten hängt system ganz kurz auf (bruchteil einer sekunde, aber sichtbar) UND audio ist für ca 40 sekunden stumm..... also man hört nix. medien spielen normal weiter, aber man hört nix.

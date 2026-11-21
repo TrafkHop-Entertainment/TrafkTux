@@ -8,17 +8,17 @@ Optionale Software wird als kleine **Metapakete** (`TrafkTuxOptional-<Gruppe>`) 
 
 ## Bausteine
 
-| Datei | Ort im Profil | Aufgabe |
-|---|---|---|
-| `OptionalGroups.conf` | Profil-Root | Definition aller Gruppen (einzige Stelle, die man normalerweise bearbeitet) |
-| `BuildOptionalRepo.sh` | Profil-Root | Baut die Metapakete + Repo-DB nach `airootfs/opt/TrafkTuxOptional` |
-| `pacman.conf` (airootfs) | `airootfs/etc/` | Enthält `[TrafkTuxOptional]` mit `Server = file:///opt/TrafkTuxOptional`, **kein** `[trafktux]` |
-| `pacman.conf` (Profil) | Profil-Root | Unverändert, enthält `[trafktux]` mit Platzhalter (wird von `build-iso.sh` ersetzt) |
-| `install-aur-packages.sh` | `airootfs/usr/local/bin/` | Installiert die vorgebauten AUR-Pakete beim Install, über eine **temporäre** pacman-Config |
-| `shellprocess-cleanup.conf` | Calamares-Module | Löscht `/opt/trafktux-repo` + DB, initialisiert den Pacman-Keyring |
-| `SystemUpdate.sh` | `airootfs/usr/local/lib/trafktux/` | Holt das GitHub-Repo, kopiert die Dateien ins System (Backups), löscht den Klon wieder. Von den `TrafkTuxUpdate-*`-Metapaketen oder von Hand gestartet (Rechte 755, root-eigen, in `profiledef.sh` eingetragen) |
-| `OptionalSync.sh` | `airootfs/usr/local/lib/trafktux/` | Watcher/Installer für AUR, Flatpak, Gruppen, Downloads (Rechte **755**, in `profiledef.sh` eingetragen) |
-| Autostart-Zeile | `hyprland.lua` | `bash /usr/local/lib/trafktux/OptionalSync.sh --watch` |
+| Datei                       | Ort im Profil                      | Aufgabe                                                                                                                                                                                                         |
+| --------------------------- | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `OptionalGroups.conf`       | Profil-Root                        | Definition aller Gruppen (einzige Stelle, die man normalerweise bearbeitet)                                                                                                                                     |
+| `BuildOptionalRepo.sh`      | Profil-Root                        | Baut die Metapakete + Repo-DB nach `airootfs/opt/TrafkTuxOptional`                                                                                                                                              |
+| `pacman.conf` (airootfs)    | `airootfs/etc/`                    | Enthält `[TrafkTuxOptional]` mit `Server = file:///opt/TrafkTuxOptional`, **kein** `[trafktux]`                                                                                                                 |
+| `pacman.conf` (Profil)      | Profil-Root                        | Unverändert, enthält `[trafktux]` mit Platzhalter (wird von `build-iso.sh` ersetzt)                                                                                                                             |
+| `install-aur-packages.sh`   | `airootfs/usr/local/bin/`          | Installiert die vorgebauten AUR-Pakete beim Install, über eine **temporäre** pacman-Config                                                                                                                      |
+| `shellprocess-cleanup.conf` | Calamares-Module                   | Löscht `/opt/trafktux-repo` + DB, initialisiert den Pacman-Keyring                                                                                                                                              |
+| `SystemUpdate.sh`           | `airootfs/usr/local/lib/trafktux/` | Holt das GitHub-Repo, kopiert die Dateien ins System (Backups), löscht den Klon wieder. Von den `TrafkTuxUpdate-*`-Metapaketen oder von Hand gestartet (Rechte 755, root-eigen, in `profiledef.sh` eingetragen) |
+| `OptionalSync.sh`           | `airootfs/usr/local/lib/trafktux/` | Watcher/Installer für AUR, Flatpak, Gruppen, Downloads (Rechte **755**, in `profiledef.sh` eingetragen)                                                                                                         |
+| Autostart-Zeile             | `hyprland.lua`                     | `bash /usr/local/lib/trafktux/OptionalSync.sh --watch`                                                                                                                                                          |
 
 ## Ablauf
 

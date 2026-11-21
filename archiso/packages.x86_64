@@ -112,7 +112,7 @@ ntfs-3g
 dosfstools
 mtools
 fuse2
-gnome-disk-utility
+gparted
 gvfs
 gvfs-mtp
 gvfs-smb

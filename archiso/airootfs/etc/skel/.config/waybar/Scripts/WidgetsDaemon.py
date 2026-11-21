@@ -1920,6 +1920,71 @@ def _nav_switch_tab(win: Gtk.Window, delta: int) -> None:
     GLib.timeout_add(260, _nav_revalidate, win)
 
 
+
+# ── Widget direkt auf einem Tab öffnen ──────────────────────────────────
+# Der Socket versteht "<widget>#<Tab>" (z.B. "akku#Processes", "network#Speed Test",
+# "settings#Display"), mehrere Ebenen mit ">" ("settings#Apps & Shortcuts>Wine"),
+# und weiterhin "@kbd" / "@cursor" dahinter. Ein Bar-Button für einen Widget-Tab ist
+# damit nur ein anderer Text, den er dem Daemon schickt. Die Tab-Beschriftung wird
+# gegen die Button-Texte der Tab-Leisten verglichen (siehe _nav_tab_groups) - ohne
+# Symbol-Glyphen, ohne Leerraum, Groß-/Kleinschreibung egal; ein neuer Tab braucht
+# also keine Änderung hier.
+_tab_hooks: dict = {}   # Fenster -> (wähle(want) -> bool, ist_aktiv(want) -> bool); z.B. Settings-Kategorien
+
+def _tab_norm(text) -> str:
+    """Beschriftung für den Vergleich: Symbol-Glyphen und Leerraum raus, klein geschrieben."""
+    return re.sub(r'[^\w&]+', ' ', str(text or '')).strip().casefold()
+
+def _tab_parts(path: str) -> list:
+    return [p for p in (_tab_norm(x) for x in str(path or '').split('>')) if p]
+
+def _tab_find(win: Gtk.Window, want: str):
+    for group in _nav_tab_groups(win):
+        for b in group:
+            if _tab_norm(b.get_label()) == want:
+                return b
+    return None
+
+def _tab_select(win: Gtk.Window, want: str, use_hook: bool = True) -> bool:
+    hook = _tab_hooks.get(win) if use_hook else None   # Haken (z.B. Settings-Kategorien) nur für die 1. Ebene
+    if hook and hook[0](want):
+        return True
+    b = _tab_find(win, want)
+    if b is None:
+        return False
+    if not b.get_style_context().has_class("active"):
+        b.clicked()
+    return True
+
+def _tab_is_active(win: Gtk.Window, parts: list) -> bool:
+    """Steht das Fenster schon auf diesem Tab(-Pfad)? Nur dann schließt ein weiterer
+    Klick auf denselben Bar-Button das Widget, sonst wird nur umgeschaltet."""
+    if not parts:
+        return False
+    for depth, want in enumerate(parts):
+        hook = _tab_hooks.get(win) if depth == 0 else None
+        if hook and hook[1](want):
+            continue
+        b = _tab_find(win, want)
+        if b is None or not b.get_style_context().has_class("active"):
+            return False
+    return True
+
+def _tab_apply(win: Gtk.Window, parts: list, attempt: int = 0, depth: int = 0) -> bool:
+    """Wählt parts[0], danach (leicht verzögert, die Seite muss erst erscheinen) die
+    weiteren Ebenen. Direkt nach dem Öffnen ist das Fenster noch nicht gemappt, daher
+    ein paar Wiederholungen. Gibt immer False zurück (GLib-Konvention: nicht erneut)."""
+    if not parts or win not in _open.values():
+        return False
+    if _tab_select(win, parts[0], use_hook=(depth == 0)):
+        rest = parts[1:]
+        if rest:
+            GLib.timeout_add(220, lambda: (_tab_apply(win, rest, 0, depth + 1), False)[1])
+        return False
+    if attempt < 10:
+        GLib.timeout_add(120, lambda: (_tab_apply(win, parts, attempt + 1, depth), False)[1])
+    return False
+
 def _nav_revalidate(win: Gtk.Window) -> bool:
     """Nach Tab-/Seitenwechsel (Stack blendet 200ms über): ist die
     Auswahl noch sichtbar? Sonst neu setzen."""
@@ -2169,12 +2234,27 @@ def _place_at_cursor(win: Gtk.Window) -> bool:
     return True
 
 
-def toggle_widget(name: str, opt: str = "") -> str:
+def _parse_widget_request(text: str) -> tuple:
+    """Zerlegt eine Socket-Anfrage "<widget>[#<Tab>[>Unter-Tab]][@kbd|@cursor]" in
+    (name, opt, tab), z.B. "settings#Apps & Shortcuts>Wine@cursor" ->
+    ("settings", "cursor", "Apps & Shortcuts>Wine")."""
+    rest, _, opt = str(text).partition("@")
+    name, _, tab = rest.partition("#")
+    return name.strip(), opt.strip(), tab.strip()
+
+def toggle_widget(name: str, opt: str = "", tab: str = "") -> str:
     global WIDGET
     if name not in BUILDERS:
         return f"error: unknown widget '{name}'"
+    tab_parts = _tab_parts(tab)
 
     if name in _open:
+        # Bar-Button eines ANDEREN Tabs desselben Widgets: im offenen Fenster umschalten
+        # statt es zu schließen. Nur derselbe Tab nochmal angeklickt schließt wie immer.
+        if tab_parts and not _tab_is_active(_open[name], tab_parts):
+            _tab_apply(_open[name], tab_parts)
+            _play_sound("FocusChange")
+            return "tab"
         # Gleiche Blase nochmal angeklickt -> sanft ausblenden statt
         # abrupt verschwinden zu lassen.
         win = _open.pop(name)
@@ -2204,6 +2284,8 @@ def toggle_widget(name: str, opt: str = "") -> str:
     _open[name] = win
     _start_popup_in(win)
     _play_sound("Open")
+    if tab_parts:
+        GLib.timeout_add(150, lambda: (_tab_apply(win, tab_parts), False)[1])
     return "opened"
 
 def add_timer(ms: int, fn) -> int:
@@ -2320,7 +2402,7 @@ def make_win(name: str) -> Gtk.Window:
         return True
     win.add_events(Gdk.EventMask.BUTTON_PRESS_MASK)
     win.connect("button-press-event", _on_win_button_press)
-    win.connect("destroy", lambda w: _right_click_back.pop(w, None))
+    win.connect("destroy", lambda w: (_right_click_back.pop(w, None), _tab_hooks.pop(w, None)))
     return win
 
 # ════════════════════════════════════════════════════════════
@@ -12530,6 +12612,14 @@ def _waybar_active_widget_names() -> set | None:
     (siehe on-click in der Waybar-Config). None, wenn keine lesbare
     Config gefunden wurde - der Aufrufer soll das NICHT als "nichts
     ist in der Waybar" werten, sondern als "unbekannt" behandeln."""
+    # TrafkTuxBar hat die alte Waybar ersetzt: die tatsächlichen Bar-Inhalte
+    # (Userbar.jsonc + feste Module) bestimmen, was "In Waybar" ist. Die Waybar-Config
+    # unten wird nur noch als Rückfall gelesen, falls die Bar-Config fehlt - sonst
+    # würden die Reste einer alten Waybar-Config Widgets als "in der Bar" ausweisen,
+    # die dort gar nicht mehr sind.
+    bar_names = _bar_active_widget_names()
+    if bar_names is not None:
+        return bar_names
     paths = _waybar_config_paths()
     if not paths:
         return None
@@ -12589,7 +12679,7 @@ SETTINGS_CATEGORIES = [
     ("apps",       "󱁤", "Apps & Shortcuts", "Launcher editor, Config files"),
     ("devices",    "", "Devices",       "Touch/Tablet-to-monitor binding"),
     ("widgets",    "󰍹", "Widgets",       "Clock mode, seconds, milliseconds"),
-    ("controller", "󰊴", "Controller",    "Gamepad control, Login"),
+    ("controller", "󰊴", "Controller",    "Gamepad & Wiimote"),
 ]
 
 def _build_settings_brightness(page: Gtk.Box, key: str, label: str, win: Gtk.Window) -> None:
@@ -15634,6 +15724,64 @@ def _authentication_content(win: Gtk.Window) -> Gtk.Box:
     root.pack_start(status_lbl, False, False, 4)
     return root
 
+def _login_content(win: Gtk.Window) -> Gtk.Box:
+    """Security -> Login: SDDM-Autologin und hyprlock-Sperre (frueher im Controller-Widget)."""
+    t_login = vbox(6); pad(t_login, h=4, v=10)
+    login_status = Gtk.Label()
+    login_status.get_style_context().add_class("caption")
+    login_status.set_halign(Gtk.Align.CENTER)
+    login_status.set_line_wrap(True)
+    login_status.set_max_width_chars(44)
+
+    sddm_btn = btn("Skip login screen (SDDM)", active=os.path.exists(SDDM_AUTOLOGIN_FILE),
+                   tip="Automatic login: SDDM logs you in without asking for a password")
+    def _sddm_done(ok, msg, target):
+        ctx = sddm_btn.get_style_context()
+        if ok:
+            ctx.add_class("active") if target else ctx.remove_class("active")
+            login_status.set_text("SDDM: automatic login " + ("ON - applies at next boot" if target else "OFF"))
+        else:
+            login_status.set_text(f"SDDM: failed ({msg})")
+        sddm_btn.set_sensitive(True)
+        return False
+    def _sddm_clicked(_b):
+        target = not os.path.exists(SDDM_AUTOLOGIN_FILE)
+        sddm_btn.set_sensitive(False)
+        login_status.set_text("Waiting for authorization…")
+        def _work():
+            ok, msg = _sddm_set_autologin(target)
+            GLib.idle_add(_sddm_done, ok, msg, target)
+        threading.Thread(target=_work, daemon=True).start()
+    sddm_btn.connect("clicked", _sddm_clicked)
+
+    lock_btn = btn("Disable lock screen (hyprlock)", active=HYPRLOCK_OFF_FLAG.exists(),
+                   tip="hyprlock does nothing while this is on (idle lock, power menu, lock-session)")
+    def _lock_clicked(_b):
+        try:
+            if HYPRLOCK_OFF_FLAG.exists():
+                HYPRLOCK_OFF_FLAG.unlink()
+                lock_btn.get_style_context().remove_class("active")
+                login_status.set_text("hyprlock: ON")
+            else:
+                HYPRLOCK_OFF_FLAG.parent.mkdir(parents=True, exist_ok=True)
+                HYPRLOCK_OFF_FLAG.touch()
+                lock_btn.get_style_context().add_class("active")
+                login_status.set_text("hyprlock: DISABLED")
+        except Exception as e:
+            login_status.set_text(f"hyprlock: failed ({e})")
+        if not os.path.exists(HYPRLOCK_WRAPPER):
+            login_status.set_text(f"Missing wrapper {HYPRLOCK_WRAPPER} - the flag has no effect without it")
+    lock_btn.connect("clicked", _lock_clicked)
+
+    t_login.pack_start(hrow(sddm_btn), False, False, 0)
+    t_login.pack_start(hrow(lock_btn), False, False, 0)
+    t_login.pack_start(login_status, False, False, 2)
+    cap = Gtk.Label(label="Typing a long password needs a keyboard. With these off, a pad-only system never gets stuck at a login screen.")
+    cap.get_style_context().add_class("caption"); cap.set_opacity(0.6)
+    cap.set_line_wrap(True); cap.set_max_width_chars(44); cap.set_justify(Gtk.Justification.CENTER)
+    t_login.pack_start(cap, False, False, 0)
+    return t_login
+
 def _security_content(win: Gtk.Window) -> Gtk.Box:
     """Tab-Hülle fürs Security-Widget - alle 6 Sub-Panels:
     "Privacy" (Kill-Switches) + "DNS" (Server-Auswahl + Enforce-DoT +
@@ -15662,6 +15810,7 @@ def _security_content(win: Gtk.Window) -> Gtk.Box:
     stack.add_named(_dns_content(win), "dns")
     stack.add_named(_tailscale_content(win), "tailscale")
     stack.add_named(_clamav_content(win), "clamav")
+    stack.add_named(_login_content(win), "login")
 
     ufw_built = [False]
     auth_built = [False]
@@ -15714,6 +15863,7 @@ def _security_content(win: Gtk.Window) -> Gtk.Box:
             ("privacy", "󰦝  Privacy", tab_row_top),
             ("dns", "󰙲  DNS", tab_row_top),
             ("authentication", "󰌋  Auth", tab_row_top),
+            ("login", "󰍂  Login", tab_row_top),
             ("tailscale", "󰖂  Tailscale", tab_row_bottom),
             ("ufw", "󰈸  Firewall", tab_row_bottom),
             ("clamav", "  ClamAV", tab_row_bottom)):
@@ -16133,6 +16283,46 @@ def _applauncher_scan_path_binaries() -> list:
     _applauncher_path_cache["ts"] = now
     _applauncher_path_cache["apps"] = out
     return out
+
+def _applauncher_prune_missing_apps(user_tree: dict, installed: list) -> list:
+    """Entfernt aus dem USER-Baum alle Apps, die aus der App-Liste hinzugefügt
+    wurden, in dieser Liste aber nicht mehr vorkommen (also deinstalliert sind).
+    Gibt die Namen der entfernten Apps zurück.
+
+    - "Eigene" Apps (custom: true, per "New Custom App" angelegt) bleiben immer:
+      sie stammen nicht aus der Liste und können gar nicht "verschwinden".
+    - Eine App gilt als noch vorhanden, wenn ihr Name ODER ihr (normalisierter)
+      Befehl in der Liste vorkommt - derselbe Schlüssel wie beim Einsortieren
+      (_applauncher_exec_key). Dadurch fliegt eine App nicht raus, nur weil ein
+      Update ihren Namen oder ihren Befehl leicht geändert hat.
+    - Ist die Liste leer (Scan fehlgeschlagen), wird NICHTS gelöscht.
+    - Ordner bleiben, auch wenn sie dadurch leer werden (sind deine eigenen)."""
+    if not installed:
+        return []
+    names = {str(a.get("name", "")).casefold() for a in installed}
+    keys = {k for k in (_applauncher_exec_key(a.get("exec") or "") for a in installed) if k}
+    removed: list = []
+
+    def _walk(node: dict) -> None:
+        kids = node.get("children")
+        if not isinstance(kids, list):
+            return
+        keep = []
+        for c in kids:
+            if isinstance(c, dict) and c.get("type") == "app" and not c.get("custom"):
+                key = _applauncher_exec_key(c.get("exec") or "")
+                if str(c.get("name", "")).casefold() in names or (key and key in keys):
+                    keep.append(c)
+                else:
+                    removed.append(str(c.get("name", "?")))
+                continue
+            if isinstance(c, dict) and c.get("type") == "folder":
+                _walk(c)
+            keep.append(c)
+        kids[:] = keep
+
+    _walk(user_tree)
+    return removed
 
 def _applauncher_hidden_keys(user_tree: dict) -> tuple:
     """(names, exec_binaries) aus user_tree["hidden_apps"] - Apps, die
@@ -16877,6 +17067,14 @@ def _build_app_launcher_tab(win: Gtk.Window) -> Gtk.Box:
             # das gehört exklusiv dem Editor (menu.json "gehört" dem
             # System/Update-Skript, siehe ensure_user_menu_skeleton() in
             # der neuen TrafkTuxLauncher.c).
+            # Apps, die aus der Liste hinzugefügt wurden und nicht mehr installiert
+            # sind, fliegen beim Speichern automatisch raus (eigene Apps nie).
+            # Frischer Scan statt Cache, damit gerade deinstallierte Apps erkannt werden.
+            _applauncher_desktop_cache["ts"] = 0
+            removed = _applauncher_prune_missing_apps(state["user_tree"], _applauncher_scan_desktop_apps())
+            if removed:
+                _recompute_merged()
+                _refresh_all()
             _applauncher_save_user_tree(state["user_tree"])
             state["dirty"] = False
             save_btn.set_label("󰆓  Save")
@@ -16888,7 +17086,11 @@ def _build_app_launcher_tab(win: Gtk.Window) -> Gtk.Box:
             run_bg(["bash", "-c",
                     "killall TrafkTuxLauncher; "
                     "$HOME/.config/TrafkTuxLauncher/TrafkTuxLauncher --daemon &"])
-            _flash("Saved — TrafkTuxLauncher restarting…")
+            if removed:
+                shown = ", ".join(removed[:4]) + (f" +{len(removed) - 4} more" if len(removed) > 4 else "")
+                _flash(f"Saved — removed {len(removed)} app(s) that are no longer installed: {shown}", 6000)
+            else:
+                _flash("Saved — TrafkTuxLauncher restarting…")
         except Exception as e:
             _flash(f"Error: {e}")
     save_btn.connect("clicked", _on_save)
@@ -17442,6 +17644,23 @@ def _build_apps_autostart_tab(win: Gtk.Window) -> Gtk.Box:
     foot.pack_start(status_lbl, True, True, 0)
     foot.pack_start(save_btn, False, False, 0)
 
+    # Controller (TrafkPad): beim Login starten / Wiimote 5 min suchen (Schluessel in TrafkPad.conf)
+    pcfg = _pad_cfg_ensure()
+    def _pad_toggle(text, tip, ckey):
+        b = btn(text, active=(pcfg.get(ckey) == "true"), tip=tip)
+        def _c(_b):
+            pcfg[ckey] = "false" if pcfg.get(ckey) == "true" else "true"
+            ctx = b.get_style_context()
+            ctx.add_class("active") if pcfg[ckey] == "true" else ctx.remove_class("active")
+            _pad_cfg_save_soon(pcfg)
+        b.connect("clicked", _c)
+        return b
+    pad_row = hbox(6); pad_row.set_halign(Gtk.Align.CENTER)
+    pad_row.pack_start(_pad_toggle("󰊴  Controller ON at login", "TrafkPad starts with controller mode ON after login", "start_active"), False, False, 0)
+    pad_row.pack_start(_pad_toggle("󰂯  Wiimote search at login", "After login, TrafkPad looks for a Wiimote for 5 minutes (hold 1 + 2) and notifies you", "wii_autoconnect"), False, False, 0)
+
+    root.pack_start(pad_row, False, False, 0)
+    root.pack_start(sep(), False, False, 4)
     root.pack_start(add_row, False, False, 0)
     root.pack_start(sep(), False, False, 4)
     root.pack_start(list_sw, False, False, 0)
@@ -18445,18 +18664,124 @@ def _bar_reload_soon(delay_ms: int = 700) -> None:
         GLib.source_remove(_bar_reload_timer[0])
     _bar_reload_timer[0] = GLib.timeout_add(delay_ms, _fire)
 
-def _bar_pick_widget_dialog(parent: Gtk.Window, candidates: list):
-    """Liste der (aus der Bar entfernten) Standard-Widgets zum Wiederhinzufügen."""
+# ── Alle Widgets (und Widget-Tabs) als Bar-Buttons ──────────────────────
+# Es gibt keine "Standard-Widgets" im engeren Sinn mehr: die eingebauten Werte
+# (BUILTIN_MODULE_DEFAULTS) sind nur ein Vorschlag, damit man sieht, was es gibt.
+# JEDES Widget des Daemons - und jeder seiner Tabs - lässt sich in die Bar legen.
+# Ein Bar-Button ist nur ein Befehl, der dem Daemon "<widget>" oder "<widget>#<Tab>"
+# schickt (Tab-Auswahl: siehe _tab_apply). Die Tab-Namen müssen den Beschriftungen
+# der Tab-Leisten entsprechen (Symbol-Glyphen und Groß-/Kleinschreibung egal).
+_BAR_SOCKET_SEND = "socat - UNIX-CONNECT:/tmp/wb-daemon.sock <<< "
+_BAR_WIDGET_INFO = {            # Daemon-Widget -> (Icon, Beschriftung)
+    "volume":     ("audio-volume-high-symbolic",  "Volume & Audio"),
+    "network":    ("network-wireless-symbolic",   "Network / Wi-Fi"),
+    "bluetooth":  ("bluetooth-symbolic",          "Bluetooth"),
+    "brightness": ("display-brightness-symbolic", "Brightness & Night light"),
+    "akku":       ("battery-good-symbolic",       "Battery & System"),
+    "clock":      ("x-office-calendar-symbolic",  "Calendar & Weather"),
+    "settings":   ("preferences-system-symbolic", "Settings"),
+    "security":   ("security-high-symbolic",      "Security"),
+}
+_BAR_WIDGET_TABS = {            # Widget -> Tabs; "A>B" = Unter-Tab B im Tab A
+    "volume":     ["Media", "Devices", "Apps"],
+    "network":    ["Networks", "Speed Test"],
+    "brightness": ["Monitor", "Devices"],
+    "akku":       ["Battery", "System", "Processes", "Idle", "Battery>Profile",
+                   "System>CPU", "System>Memory", "System>Storage", "System>GPU"],
+    "clock":      ["Clock", "Weather", "Calendar"],
+}
+
+def _bar_slug(text: str) -> str:
+    return re.sub(r'[^a-z0-9]+', '-', str(text).lower()).strip('-') or "item"
+
+def _bar_unique_id(base: str, existing: set) -> str:
+    new_id, n = base, 2
+    while new_id in existing:
+        new_id = f"{base}-{n}"
+        n += 1
+    return new_id
+
+def _bar_widget_item(target: str, icon: str, tooltip: str, item_id: str) -> dict:
+    return {"id": item_id, "icon": icon, "tooltip": tooltip,
+            "on_click": _BAR_SOCKET_SEND + shlex.quote(target)}
+
+def _bar_widget_catalog() -> list:
+    """Alles, was sich als Button in die Widget-Reihe der Bar legen lässt:
+    [{"group", "label", "item"}, ...] - erst alle Widgets, dann deren Tabs,
+    dann die Settings-Seiten (die Kategorien kommen live aus SETTINGS_CATEGORIES)."""
+    out: list = []
+    def add(group: str, label: str, item: dict) -> None:
+        out.append({"group": group, "label": label, "item": item})
+    for name, (icon, tip) in _BAR_WIDGET_INFO.items():
+        add("Widgets", tip, _bar_widget_item(name, icon, tip, name))
+    osk = next((i for i in _BAR_BUILTIN_DEFAULTS["other-widgets"]["items"] if i.get("id") == "osk"), None)
+    if osk:
+        add("Widgets", osk.get("tooltip", "On-screen keyboard"), json.loads(json.dumps(osk)))
+    for name, tabs in _BAR_WIDGET_TABS.items():
+        icon, tip = _BAR_WIDGET_INFO[name]
+        for tab in tabs:
+            shown = tab.replace(">", " › ")
+            add(f"{tip} – tabs", shown,
+                _bar_widget_item(f"{name}#{tab}", icon, f"{tip}: {shown}", f"{name}-{_bar_slug(tab)}"))
+    icon, _tip = _BAR_WIDGET_INFO["settings"]
+    for key, _ic, label, _desc in SETTINGS_CATEGORIES:
+        add("Settings – pages", label,
+            _bar_widget_item(f"settings#{label}", icon, f"Settings: {label}", f"settings-{key}"))
+    return out
+
+_BAR_SOCKET_TARGET_RE = re.compile(r'wb-daemon\.sock\s*<<<\s*[\'"]?([A-Za-z0-9_]+)|WidgetsClient\.py\s+([A-Za-z0-9_]+)')
+
+def _bar_active_widget_names() -> "set | None":
+    """Welche Daemon-Widgets sind in der ECHTEN Bar (TrafkTuxBar) vorhanden? Gezählt
+    wird alles, was beim Klick dem Widgets-Daemon ein Widget nennt: die Items aus
+    Userbar.jsonc (bzw. den eingebauten Werten) UND die festen Module der Bar (Uhr,
+    Settings ...). "akku#Processes" zählt als "akku". None, wenn die Bar-Config
+    unlesbar ist."""
+    conf = _bar_read_json(_BAR_SYS_CONF)
+    if not isinstance(conf, dict):
+        return None
+    names: set = set()
+    def scan(o) -> None:
+        if isinstance(o, str):
+            for m in _BAR_SOCKET_TARGET_RE.finditer(o):
+                names.add((m.group(1) or m.group(2)).lower())
+        elif isinstance(o, dict):
+            for v in o.values():
+                scan(v)
+        elif isinstance(o, list):
+            for v in o:
+                scan(v)
+    for key in ("modules_left", "modules_center", "modules_right"):
+        for m in conf.get(key) or []:
+            if isinstance(m, dict) and m.get("id") in _BAR_EDITABLE_MODULES:
+                items, _vis = _bar_effective(m["id"])       # die Items, die wirklich angezeigt werden
+                scan(items)
+            else:
+                scan(m)
+    return names
+
+def _bar_pick_widget_dialog(parent: Gtk.Window, entries: list, have: set):
+    """Alle Widgets und Widget-Tabs zum Hinzufügen. Was (mit demselben Befehl) schon in
+    der Bar liegt, ist mit ✓ markiert, lässt sich aber trotzdem noch einmal hinzufügen."""
     dlg = Gtk.Dialog(title="Add widget", transient_for=parent)
     dlg.set_name("wb-daemon-popup")
     dlg.set_modal(True)
     dlg.set_keep_above(True)
     dlg.set_type_hint(Gdk.WindowTypeHint.DIALOG)
-    dlg.set_default_size(280, 320)
+    dlg.set_default_size(320, 480)
     dlg.add_buttons("Cancel", Gtk.ResponseType.CANCEL)
-    picked = {"item": None}
+    picked = {"entry": None}
     lst = vbox(2)
-    for it in candidates:
+    sw = Gtk.ScrolledWindow()
+    sw.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+    sw.set_min_content_height(380)
+    sw.add(lst)
+    last_group = None
+    for e in entries:
+        if e["group"] != last_group:
+            lst.pack_start(bsec(e["group"]), False, False, 2)
+            last_group = e["group"]
+        it = e["item"]
         b = Gtk.Button()
         b.set_relief(Gtk.ReliefStyle.NONE)
         b.get_style_context().add_class("bubble")
@@ -18464,20 +18789,25 @@ def _bar_pick_widget_dialog(parent: Gtk.Window, candidates: list):
         row = hbox(8)
         row.pack_start(_applauncher_icon_img(it.get("icon") or "application-x-executable", 20),
                        False, False, 0)
-        lbl = Gtk.Label(label=it.get("tooltip") or it.get("id", "?"))
+        present = str(it.get("on_click", "")) in have
+        lbl = Gtk.Label(label=e["label"] + ("   ✓" if present else ""))
         lbl.set_halign(Gtk.Align.START)
+        lbl.set_ellipsize(Pango.EllipsizeMode.END)
+        lbl.set_max_width_chars(34)
+        if present:
+            lbl.set_opacity(0.6)
         row.pack_start(lbl, True, True, 0)
         b.add(row)
-        def _choose(_b, item=it):
-            picked["item"] = item
+        def _choose(_b, entry=e):
+            picked["entry"] = entry
             dlg.response(Gtk.ResponseType.OK)
         b.connect("clicked", _choose)
         lst.pack_start(b, False, False, 0)
-    dlg.get_content_area().pack_start(lst, True, True, 6)
+    dlg.get_content_area().pack_start(sw, True, True, 6)
     dlg.show_all()
     dlg.run()
     dlg.destroy()
-    return picked["item"]
+    return picked["entry"]
 
 def _bar_item_list_page(win: Gtk.Window, mod_id: str, kind: str, flash, on_saved=None) -> Gtk.Box:
     """Eine Seite des Bar-Tabs für EIN Modul (kind: "app" = gepinnte Apps,
@@ -18564,17 +18894,13 @@ def _bar_item_list_page(win: Gtk.Window, mod_id: str, kind: str, flash, on_saved
                 return
             st["items"].append(_bar_make_shortcut(app, {i.get("id") for i in st["items"]}))
         else:
-            sys_mod = _bar_default_module(mod_id) or {}
-            have = {i.get("id") for i in st["items"]}
-            missing = [i for i in (sys_mod.get("items") or [])
-                       if isinstance(i, dict) and i.get("id") not in have]
-            if not missing:
-                flash("All standard widgets are already on the bar")
-                return
-            chosen = _bar_pick_widget_dialog(win, missing)
+            have = {str(i.get("on_click", "")) for i in st["items"]}
+            chosen = _bar_pick_widget_dialog(win, _bar_widget_catalog(), have)
             if not chosen:
                 return
-            st["items"].append(dict(chosen))
+            item = json.loads(json.dumps(chosen["item"]))
+            item["id"] = _bar_unique_id(item["id"], {i.get("id") for i in st["items"]})
+            st["items"].append(item)
         _render(); _save()
 
     def _on_reset(_b=None):
@@ -19007,6 +19333,7 @@ def _build_wii_pointer_area_row(page: Gtk.Box) -> None:
             fm = next((m for m in (jrun(["hyprctl", "monitors", "-j"]) or []) if m.get("focused")), None)
             r = by.get(fm.get("name")) if fm else None
             cfg["wii_rect"] = f"{r[1]:.4f} {r[2]:.4f} {r[3]:.4f} {r[4]:.4f}" if r else "0 0 1 1"
+            cfg["wii_cur"] = fm.get("name", "") if fm else ""
         else:
             cfg["wii_rect"] = "0 0 1 1"
         _pad_cfg_save_soon(cfg)
@@ -19014,6 +19341,44 @@ def _build_wii_pointer_area_row(page: Gtk.Box) -> None:
     row.pack_start(ctrl.widget, False, False, 0)
     row.set_tooltip_text("Where the IR pointer of the Wiimote reaches. 'Active' = the monitor of the active workspace (follows the focus)")
     page.pack_start(row, False, False, 4)
+
+    # Wiimote verbinden (frueher im Controller-Widget)
+    crow = hbox(6)
+    crow.get_style_context().add_class("bubble")
+    crow.get_style_context().add_class("item")
+    pad(crow, h=6, v=4)
+    ctxt = vbox(0)
+    ck = Gtk.Label(label="Wiimote"); ck.set_halign(Gtk.Align.START)
+    ctxt.pack_start(ck, False, False, 0)
+    wii_status = Gtk.Label(label="Hold 1 + 2, then click Connect")
+    wii_status.set_halign(Gtk.Align.START); wii_status.set_opacity(0.6)
+    wii_status.get_style_context().add_class("caption")
+    wii_status.set_ellipsize(Pango.EllipsizeMode.END); wii_status.set_max_width_chars(30)
+    ctxt.pack_start(wii_status, False, False, 0)
+    crow.pack_start(ctxt, True, True, 0)
+    conn_btn = btn("Connect", tip="Hold 1 + 2 on the Wiimote (LEDs blink), then click this. Also searches automatically for 5 minutes after login.")
+    def _conn_done(ok, msg):
+        wii_status.set_text(msg or ("Connected" if ok else "Failed"))
+        conn_btn.set_sensitive(True)
+        return False
+    def _conn_clicked(_b):
+        if not WII_CONNECT_SH.exists():
+            wii_status.set_text(f"Missing {WII_CONNECT_SH}")
+            return
+        conn_btn.set_sensitive(False)
+        wii_status.set_text("Searching… keep 1 + 2 pressed")
+        def _work():
+            try:
+                r = subprocess.run(["bash", str(WII_CONNECT_SH), "25"], capture_output=True, text=True, timeout=40)
+                out = (r.stdout or r.stderr).strip().splitlines()
+                GLib.idle_add(_conn_done, r.returncode == 0, out[-1] if out else "")
+            except Exception as e:
+                GLib.idle_add(_conn_done, False, f"Failed: {e}")
+        threading.Thread(target=_work, daemon=True).start()
+    conn_btn.connect("clicked", _conn_clicked)
+    crow.pack_start(conn_btn, False, False, 0)
+    page.pack_start(crow, False, False, 4)
+    page.pack_start(tab_sep(), False, False, 2)
 
 def _build_settings_devices(page: Gtk.Box, key: str, label: str, win: Gtk.Window) -> None:
     monitors = _hypr_monitors_live()
@@ -19305,7 +19670,7 @@ PAD_CONF = PAD_DIR / "TrafkPad.conf"
 
 # MUSS zu cfg_defaults() in TrafkPad.c passen
 PAD_DEFAULTS = {
-    "enabled": "true", "start_active": "true",
+    "enabled": "true", "start_active": "true", "wii_roll": "true", "wii_autoconnect": "true",
     "toggle_combo": "L1+R1+SELECT+START", "toggle_hold_ms": "1000",
     "left_stick": "wasd", "swap_ab": "false", "scroll_invert": "false",
     "swap_xy": "false", "swap_dpad": "false", "mouse_stick": "right", "mouse_speed": "900", "mouse_curve": "1.8", "mouse_deadzone": "0.12",
@@ -19314,7 +19679,8 @@ PAD_DEFAULTS = {
     "wii_pointer": "true", "wii_smooth": "3", "wii_flip_x": "true", "wii_flip_y": "false",
     "wii_nunchuk_flip_y": "true", "wii_area": "all", "wii_rect": "0 0 1 1",
     "layout": "default", "wii_mons": "",
-    "wii_mode": "abs", "wii_alt_mode": "rel", "wii_rel_scale": "2500", "wii_apps": "minecraft,moorhuhn",
+    "wii_mode": "abs", "wii_alt_mode": "rel", "wii_rel_scale": "2500",
+    "wii_toggle_combo": "START+SELECT", "wii_mode_combo": "A+B", "wii_mode_hold_ms": "600", "wii_cur": "",
 }
 PAD_COMBOS = (
     ("L1+R1+SELECT+START", "L1+R1+Sel+Start"),
@@ -19474,6 +19840,7 @@ def _pad_subtabs(win: Gtk.Window, items: list) -> Gtk.Box:
     row = hbox(6); row.set_halign(Gtk.Align.CENTER)
     row.pack_start(ctrl.widget, False, False, 0)
     outer.pack_start(row, False, False, 4)
+    outer.pack_start(tab_sep(), False, False, 0)
     st = Gtk.Stack()
     st.set_hhomogeneous(False)
     st.set_vhomogeneous(False)
@@ -19557,314 +19924,340 @@ def _pad_dump_parse(text: str) -> dict:
     return out
 
 def _pad_pressed_parse(text: str) -> dict:
-    res = {"down": set(), "lx": 0.0, "ly": 0.0, "rx": 0.0, "ry": 0.0, "layer": "base"}
+    res = {"down": set(), "wdown": set(), "lx": 0.0, "ly": 0.0, "rx": 0.0, "ry": 0.0, "wlx": 0.0, "wly": 0.0,
+           "layer": "base", "wlayer": "base", "seq": None, "last": "-", "lastw": 0}
     for part in text.split():
         if "=" not in part:
             continue
         k, v = part.split("=", 1)
         try:
-            if k == "down":
-                res["down"] = {x for x in v.split(",") if x and x != "-"}
-            elif k in ("lx", "ly", "rx", "ry"):
+            if k in ("down", "wdown"):
+                res[k] = {x for x in v.split(",") if x and x != "-"}
+            elif k in ("lx", "ly", "rx", "ry", "wlx", "wly"):
                 res[k] = float(v)
-            elif k == "layer":
-                res["layer"] = v
+            elif k in ("layer", "wlayer", "last"):
+                res[k] = v
+            elif k in ("seq", "lastw"):
+                res[k] = int(v)
         except ValueError:
             pass
     return res
 
-# Formen des Controller-Bildes: (Name, Art, x, y, w, h) in einer 380x215-Zeichenflaeche
-PAD_SHAPES = [
-    ("L2", "rect", 38, 6, 70, 18), ("R2", "rect", 272, 6, 70, 18),
-    ("L1", "rect", 38, 28, 70, 16), ("R1", "rect", 272, 28, 70, 16),
-    ("SELECT", "rect", 150, 78, 34, 14), ("START", "rect", 196, 78, 34, 14),
-    ("SLU", "rect", 82, 58, 24, 14), ("SLD", "rect", 82, 116, 24, 14), ("SLL", "rect", 52, 80, 14, 24), ("SLR", "rect", 122, 80, 14, 24),
-    ("L3", "circle", 94, 92, 13, 0),
-    ("DU", "rect", 140, 138, 18, 18), ("DD", "rect", 140, 176, 18, 18), ("DL", "rect", 121, 157, 18, 18), ("DR", "rect", 159, 157, 18, 18),
-    ("Y", "circle", 286, 62, 14, 0), ("A", "circle", 286, 108, 14, 0), ("X", "circle", 263, 85, 14, 0), ("B", "circle", 309, 85, 14, 0),
-    ("R3", "circle", 235, 160, 18, 0),
-]
+# Beschriftungen fuer die Wiimote (interne Eingabenamen wie beim Gamepad: A-Taste = L2, B = R2, 1 = A, 2 = B, + = START, - = SELECT, Z = L1, C = R1)
+WII_LABEL = {"L2": "A button", "R2": "B (trigger)", "A": "1 button", "B": "2 button", "START": "+ button", "SELECT": "− button",
+             "L1": "Nunchuk Z", "R1": "Nunchuk C", "DU": "D-pad up", "DD": "D-pad down", "DL": "D-pad left", "DR": "D-pad right",
+             "SLU": "Nunchuk stick up", "SLD": "Nunchuk stick down", "SLL": "Nunchuk stick left", "SLR": "Nunchuk stick right"}
+PAD_COMBO_INPUTS = [("L1", "L1"), ("R1", "R1"), ("L2", "L2"), ("R2", "R2"), ("SELECT", "Select"), ("START", "Start"),
+                    ("A", "A"), ("B", "B"), ("X", "X"), ("Y", "Y"), ("L3", "L3"), ("R3", "R3"),
+                    ("DU", "D↑"), ("DD", "D↓"), ("DL", "D←"), ("DR", "D→")]
+WII_COMBO_INPUTS = [("L2", "A"), ("R2", "B"), ("A", "1"), ("B", "2"), ("START", "+"), ("SELECT", "−"),
+                    ("DU", "↑"), ("DD", "↓"), ("DL", "←"), ("DR", "→"), ("L1", "Z"), ("R1", "C")]
+PAD_MAP_PAD = ["A", "B", "X", "Y", "L1", "R1", "L2", "R2", "SELECT", "START", "L3", "R3",
+               "DU", "DD", "DL", "DR", "SLU", "SLD", "SLL", "SLR"]
+PAD_MAP_WII = ["L2", "R2", "A", "B", "START", "SELECT", "DU", "DD", "DL", "DR", "L1", "R1", "SLU", "SLD", "SLL", "SLR"]
+PAD_PROTO_NEEDED = 4
+# Evdev-Tastencodes (= GDK hardware_keycode - 8) -> Namen, wie TrafkPad sie kennt (KEY_<NAME>)
+PAD_EVDEV_KEYS = {1: "esc", 2: "1", 3: "2", 4: "3", 5: "4", 6: "5", 7: "6", 8: "7", 9: "8", 10: "9", 11: "0", 12: "minus", 13: "equal", 14: "backspace", 15: "tab", 16: "q", 17: "w", 18: "e", 19: "r", 20: "t", 21: "y", 22: "u", 23: "i", 24: "o", 25: "p", 26: "leftbrace", 27: "rightbrace", 28: "enter", 29: "leftctrl", 30: "a", 31: "s", 32: "d", 33: "f", 34: "g", 35: "h", 36: "j", 37: "k", 38: "l", 39: "semicolon", 40: "apostrophe", 41: "grave", 42: "leftshift", 43: "backslash", 44: "z", 45: "x", 46: "c", 47: "v", 48: "b", 49: "n", 50: "m", 51: "comma", 52: "dot", 53: "slash", 54: "rightshift", 55: "kpasterisk", 56: "leftalt", 57: "space", 58: "capslock", 59: "f1", 60: "f2", 61: "f3", 62: "f4", 63: "f5", 64: "f6", 65: "f7", 66: "f8", 67: "f9", 68: "f10", 69: "numlock", 70: "scrolllock", 71: "kp7", 72: "kp8", 73: "kp9", 74: "kpminus", 75: "kp4", 76: "kp5", 77: "kp6", 78: "kpplus", 79: "kp1", 80: "kp2", 81: "kp3", 82: "kp0", 83: "kpdot", 85: "zenkakuhankaku", 86: "102nd", 87: "f11", 88: "f12", 89: "ro", 90: "katakana", 91: "hiragana", 92: "henkan", 93: "katakanahiragana", 94: "muhenkan", 95: "kpjpcomma", 96: "kpenter", 97: "rightctrl", 98: "kpslash", 99: "sysrq", 100: "rightalt", 101: "linefeed", 102: "home", 103: "up", 104: "pageup", 105: "left", 106: "right", 107: "end", 108: "down", 109: "pagedown", 110: "insert", 111: "delete", 112: "macro", 113: "mute", 114: "volumedown", 115: "volumeup", 116: "power", 117: "kpequal", 118: "kpplusminus", 119: "pause", 120: "scale", 121: "kpcomma", 122: "hangeul", 123: "hanja", 124: "yen", 125: "leftmeta", 126: "rightmeta", 127: "compose", 163: "nextsong", 164: "playpause", 165: "previoussong", 166: "stopcd", 172: "homepage", 173: "refresh", 174: "exit", 183: "f13", 184: "f14", 185: "f15", 186: "f16", 187: "f17", 188: "f18", 189: "f19", 190: "f20", 191: "f21", 192: "f22", 193: "f23", 194: "f24", 224: "brightnessdown", 225: "brightnessup"}
+_PAD_MOD_CODES = {29: "ctrl", 97: "ctrl", 42: "shift", 54: "shift", 56: "alt", 100: "alt", 125: "super", 126: "super"}
+
+def _pad_proto(txt: str) -> int:
+    """Protokollstand aus 'TrafkPad proto=N' bzw. status-Zeile; 0 = Daemon zu alt, -1 = laeuft nicht."""
+    if not txt:
+        return -1
+    for part in txt.split():
+        if part.startswith("proto="):
+            try:
+                return int(part[6:])
+            except ValueError:
+                return 0
+    return 0
+
+def _pad_pretty_action(v: str) -> str:
+    out = []
+    for p in v.split("+"):
+        out.append(PAD_KEY_PRETTY.get(p, p.upper() if (len(p) <= 1 or re.fullmatch(r"f\d+", p)) else p.capitalize()))
+    return "+".join(out)
+
+def _pad_state_mods(state) -> list:
+    out = []
+    if state & Gdk.ModifierType.SHIFT_MASK: out.append("shift")
+    if state & Gdk.ModifierType.CONTROL_MASK: out.append("ctrl")
+    if state & Gdk.ModifierType.MOD1_MASK: out.append("alt")
+    if state & (Gdk.ModifierType.SUPER_MASK | Gdk.ModifierType.MOD4_MASK | Gdk.ModifierType.META_MASK): out.append("super")
+    return out
+
+def _pad_action_from_key(hw_keycode: int, state) -> str | None:
+    """Taste + gehaltene Modifier -> Aktion wie "super+q" (physische Taste, genau das sendet TrafkPad).
+    None bei reinem Modifier oder unbekannter Taste."""
+    code = hw_keycode - 8
+    if code in _PAD_MOD_CODES:
+        return None
+    name = PAD_EVDEV_KEYS.get(code)
+    if not name:
+        return None
+    return "+".join(_pad_state_mods(state) + [name])
+
+def _pad_popup(win: Gtk.Window, title: str) -> tuple:
+    dlg = Gtk.Dialog(title=title, transient_for=win)
+    dlg.set_name("wb-daemon-popup")
+    dlg.set_modal(True)
+    dlg.set_keep_above(True)
+    dlg.set_type_hint(Gdk.WindowTypeHint.DIALOG)
+    dlg.set_default_size(300, 1)
+    box = dlg.get_content_area()
+    box.set_spacing(6)
+    pad(box, h=12, v=10)
+    return dlg, box
+
+def _pad_capture_action(win: Gtk.Window, label: str):
+    """Popup: Taste oder Tastenkombi druecken (Esc und Super werden mit erfasst). Schliesst nach 5 s ohne
+    Eingabe. Rueckgabe: Aktion ("super+q", "mouse:left", "none"), "__default__" (Standard) oder None (Abbruch)."""
+    dlg, box = _pad_popup(win, "Bind button")
+    head = Gtk.Label(label=f"Press a key or key combination for\n{label}")
+    head.set_justify(Gtk.Justification.CENTER)
+    held = Gtk.Label(label=" ")
+    held.get_style_context().add_class("caption")
+    count = Gtk.Label(label="Closes in 5 s")
+    count.get_style_context().add_class("caption"); count.set_opacity(0.6)
+    box.pack_start(head, False, False, 0)
+    box.pack_start(held, False, False, 0)
+    st = {"t": 5.0, "held": [], "done": False, "v": None, "tog": []}
+    _MOD_ORDER = ("shift", "ctrl", "alt", "super")
+
+    def _with_mods(v, extra=()):
+        """Aktion v + angeklickte Modifier-Schalter (+ gehaltene Modifier) -> "super+shift+q"."""
+        if v is None or v in ("none", "__default__"):
+            return v
+        parts = v.split("+")
+        mods = [m for m in _MOD_ORDER if m in st["tog"] or m in extra or m in parts[:-1]]
+        return "+".join(mods + [parts[-1]])
+
+    def _finish(v):
+        if st["done"]:
+            return
+        st["done"] = True
+        st["v"] = v
+        dlg.response(Gtk.ResponseType.OK if v is not None else Gtk.ResponseType.CANCEL)
+
+    def _row(items):
+        r = hbox(3); r.set_halign(Gtk.Align.CENTER)
+        for text, value in items:
+            r.pack_start(btn(text, lambda _b, vv=value: _finish(_with_mods(vv))), False, False, 0)
+        box.pack_start(r, False, False, 0)
+
+    def _tog_row():
+        r = hbox(3); r.set_halign(Gtk.Align.CENTER)
+        for m in _MOD_ORDER:
+            b = btn(m.capitalize(), tip="Adds this modifier to whatever you press next (for combos Hyprland would grab itself)")
+            def _t(_b, mm=m):
+                if mm in st["tog"]: st["tog"].remove(mm)
+                else: st["tog"].append(mm)
+                ctx = _b.get_style_context()
+                ctx.add_class("active") if mm in st["tog"] else ctx.remove_class("active")
+                _show_held()
+            b.connect("clicked", _t)
+            r.pack_start(b, False, False, 0)
+        box.pack_start(r, False, False, 0)
+    def _show_held():
+        allm = [m for m in _MOD_ORDER if m in st["tog"] or m in st["held"]]
+        held.set_text((" + ".join(x.capitalize() for x in allm) + " + …") if allm else " ")
+    box.pack_start(tab_sep(), False, False, 2)
+    box.pack_start(caption_label("Modifiers (tick them if Hyprland grabs the combo when you type it):"), False, False, 0)
+    _tog_row()
+    box.pack_start(tab_sep(), False, False, 2)
+    box.pack_start(caption_label("Cannot be typed - pick here:"), False, False, 0)
+    _row([("LMB", "mouse:left"), ("RMB", "mouse:right"), ("MMB", "mouse:middle")])
+    _row([("Scroll ↑", "scroll:up"), ("Scroll ↓", "scroll:down"), ("Scroll ←", "scroll:left"), ("Scroll →", "scroll:right")])
+    _row([("Vol+", "volumeup"), ("Vol-", "volumedown"), ("Mute", "mute"), ("Play", "playpause")])
+    _row([("Next", "nextsong"), ("Prev", "previoussong"), ("Bri+", "brightnessup"), ("Bri-", "brightnessdown")])
+    box.pack_start(tab_sep(), False, False, 2)
+    _row([("None", "none"), ("Default", "__default__"), ("Cancel", None)])
+    box.pack_start(count, False, False, 0)
+
+    def _on_press(_w, ev):
+        st["t"] = 5.0
+        code = ev.hardware_keycode - 8
+        m = _PAD_MOD_CODES.get(code)
+        if m:
+            if m not in st["held"]:
+                st["held"].append(m)
+            _show_held()
+            return True
+        v = _pad_action_from_key(ev.hardware_keycode, ev.state)
+        if v:
+            _finish(_with_mods(v))
+        return True                               # Esc & Co. beenden das Popup NICHT
+    def _on_release(_w, ev):
+        m = _PAD_MOD_CODES.get(ev.hardware_keycode - 8)
+        if m and st["held"] and not st["done"]:
+            _finish(st["held"][-1])               # nur ein Modifier (z.B. Super allein)
+        return True
+    dlg.add_events(Gdk.EventMask.KEY_PRESS_MASK | Gdk.EventMask.KEY_RELEASE_MASK)
+    dlg.connect("key-press-event", _on_press)
+    dlg.connect("key-release-event", _on_release)
+
+    def _tick():
+        if st["done"]:
+            return False
+        st["t"] -= 0.1
+        count.set_text(f"Closes in {max(0, int(st['t'] + 0.99))} s")
+        if st["t"] <= 0:
+            _finish(None)
+            return False
+        return True
+    GLib.timeout_add(100, _tick)
+    dlg.show_all()
+    dlg.run()
+    st["done"] = True
+    dlg.destroy()
+    return st["v"]
+
+def caption_label(text: str) -> Gtk.Label:
+    l = Gtk.Label(label=text)
+    l.get_style_context().add_class("caption")
+    l.set_opacity(0.6)
+    l.set_line_wrap(True)
+    l.set_max_width_chars(44)
+    l.set_justify(Gtk.Justification.CENTER)
+    l.set_halign(Gtk.Align.CENTER)
+    return l
+
+def _pad_capture_combo(win: Gtk.Window, label: str, dev: str, allowed: list, clearable: bool = False):
+    """Popup: Tasten am Controller zusammen halten und loslassen. Rueckgabe: Liste interner Namen (mind. 2),
+    [] = Kombi loeschen, None = Abbruch/Zeit abgelaufen (5 s ohne Eingabe)."""
+    names = [n for n, _t in allowed]
+    text = dict(allowed)
+    dlg, box = _pad_popup(win, "Set combo")
+    head = Gtk.Label(label=f"Hold the buttons for\n{label}\ntogether on the {'Wiimote' if dev == 'wii' else 'controller'}, then let go")
+    head.set_justify(Gtk.Justification.CENTER)
+    shown = Gtk.Label(label=" ")
+    count = Gtk.Label(label="Closes in 5 s")
+    count.get_style_context().add_class("caption"); count.set_opacity(0.6)
+    box.pack_start(head, False, False, 0)
+    box.pack_start(shown, False, False, 4)
+    st = {"t": 5.0, "u": set(), "done": False, "v": None}
+
+    def _finish(v):
+        if st["done"]:
+            return
+        st["done"] = True
+        st["v"] = v
+        dlg.response(Gtk.ResponseType.OK if v is not None else Gtk.ResponseType.CANCEL)
+    row = hbox(4); row.set_halign(Gtk.Align.CENTER)
+    if clearable:
+        row.pack_start(btn("Clear", lambda _b: _finish([])), False, False, 0)
+    row.pack_start(btn("Cancel", lambda _b: _finish(None)), False, False, 0)
+    box.pack_start(row, False, False, 0)
+    box.pack_start(count, False, False, 0)
+
+    def _poll():
+        if st["done"]:
+            return False
+        txt = _pad_ctl("padmon", timeout=0.2)
+        if not txt or txt.startswith("error"):
+            shown.set_text("TrafkPad is not running or outdated")
+        else:
+            res = _pad_pressed_parse(txt)
+            cur = {n for n in res["wdown" if dev == "wii" else "down"] if n in names}
+            if cur:
+                st["t"] = 5.0
+                st["u"] |= cur
+                shown.set_text(" + ".join(text[n] for n in names if n in st["u"]))
+            elif st["u"]:
+                if len(st["u"]) >= 2:
+                    _finish([n for n in names if n in st["u"]])
+                    return False
+                st["u"] = set()
+                shown.set_text("At least 2 buttons together")
+        st["t"] -= 0.05
+        count.set_text(f"Closes in {max(0, int(st['t'] + 0.99))} s")
+        if st["t"] <= 0:
+            _finish(None)
+            return False
+        return True
+    GLib.timeout_add(50, _poll)
+    dlg.show_all()
+    dlg.run()
+    st["done"] = True
+    dlg.destroy()
+    return st["v"]
+
+def _pad_monitor_heartbeat(w: Gtk.Widget) -> None:
+    """Solange w sichtbar ist, meldet das Widget dem Daemon alle ~90 ms "Editor offen": Pad-/Wiimote-Eingaben
+    werden dann nur angezeigt, nichts wird ausgefuehrt (Daemon: padmon)."""
+    def _hb():
+        if w.get_mapped():
+            _pad_ctl("padmon", timeout=0.25)
+        return True
+    add_timer(90, _hb)
 
 def _build_pad_mapping_tab(win: Gtk.Window, cfg: dict, caption, hrow_fn) -> Gtk.Box:
     root = vbox(6); pad(root, h=4, v=10)
-    st = {"layout": cfg.get("layout", "default") or "default", "sel": "A", "lay": "base",
-          "eff": {}, "over": {}, "cat": "Letters", "mods": set(), "pressed": {"down": set()},
-          "detect": False}
-
+    st = {"layout": cfg.get("layout", "default") or "default", "eff": {}, "over": {}, "proto": None,
+          "lay": {"pad": "base", "wii": "base"}, "pressed": {"down": set(), "wdown": set()}}
+    rows: dict = {}                                   # (Geraet, Eingabe) -> Button
     info = Gtk.Label()
     info.get_style_context().add_class("caption")
     info.set_halign(Gtk.Align.CENTER)
     info.set_line_wrap(True)
     info.set_max_width_chars(44)
+    hint = caption("Controller input is blocked while this tab is open. Click a button, then press the key or key combination you want on the keyboard.")
 
-    # ── Layout-Zeile ──
-    lay_row = hbox(4); lay_row.set_halign(Gtk.Align.CENTER)
-    lay_holder = vbox(2)
+    def _lab(dev, n):
+        return (WII_LABEL if dev == "wii" else PAD_INPUT_LABEL).get(n, n)
+    def _key(dev, n):
+        return f"{'w' if dev == 'wii' else ''}{st['lay'][dev]}.{n}"
+
+    def _refresh_buttons():
+        for (dev, n), b in rows.items():
+            k = _key(dev, n)
+            v = st["eff"].get(k)
+            b.set_label(f"{_lab(dev, n)}  →  {_pad_pretty_action(v) if v else '?'}" + (" ✎" if k in st["over"] else ""))
+            lab = b.get_child()
+            if isinstance(lab, Gtk.Label):
+                lab.set_ellipsize(Pango.EllipsizeMode.END)
+                lab.set_max_width_chars(24)
+
+    def _refresh_pressed():
+        for (dev, n), b in rows.items():
+            down = st["pressed"].get("wdown" if dev == "wii" else "down", set())
+            ctx = b.get_style_context()
+            ctx.add_class("active") if n in down else ctx.remove_class("active")
+
+    def _update_info():
+        if st["proto"] is not None and st["proto"] < 0:
+            info.set_text("TrafkPad is not running - start it to edit the mapping")
+        elif st["proto"] is not None and st["proto"] < PAD_PROTO_NEEDED:
+            info.set_text("TrafkPad is outdated (old build): rebuild it and restart it, then this editor works")
+        else:
+            info.set_text("")
+
+    def _refresh_eff():
+        st["eff"] = _pad_dump_parse(_pad_ctl("dump", timeout=1.0))
+        st["over"] = _pad_layout_read(st["layout"])
+        _update_info()
+        _rebuild_stickmodes()
+        _refresh_buttons()
+        return False
 
     def _reload_daemon():
         _pad_ctl("reload")
         GLib.timeout_add(250, _refresh_eff)
 
-    def _refresh_eff():
-        txt = _pad_ctl("dump", timeout=1.0)
-        st["eff"] = _pad_dump_parse(txt)
-        st["over"] = _pad_layout_read(st["layout"])
-        if not txt:
-            info.set_text("TrafkPad is not running - start it to edit the mapping")
-        _update_info()
-        _rebuild_stickmodes()
-        area.queue_draw()
-        return False
-
-    def _set_layout(name):
-        st["layout"] = name
-        cfg["layout"] = name
-        _pad_cfg_save_soon(cfg)
-        GLib.timeout_add(450, lambda: (_reload_daemon(), False)[1])
-        _rebuild_layouts()
-
-    def _new_layout(_b=None):
-        names = _pad_layout_names()
-        i = 2
-        while f"layout{i}" in names:
-            i += 1
-        new = f"layout{i}"
-        _pad_layout_write(new, dict(_pad_layout_read(st["layout"])))
-        _set_layout(new)
-
-    def _delete_layout(_b=None):
-        if st["layout"] == "default":
+    def _bind(dev, n):
+        lay = st["lay"][dev]
+        v = _pad_capture_action(win, f"{_lab(dev, n)}  ({'Home layer' if lay == 'home' else 'Base'})")
+        if v is None:
             return
-        try:
-            (PAD_LAYOUT_DIR / f"{st['layout']}.conf").unlink()
-        except Exception:
-            pass
-        _set_layout("default")
-
-    def _reset_layout(_b=None):
-        _pad_layout_write(st["layout"], {})
-        _reload_daemon()
-
-    def _rebuild_layouts():
-        for c in lay_holder.get_children():
-            lay_holder.remove(c)
-        row = hbox(4); row.set_halign(Gtk.Align.CENTER)
-        for n in _pad_layout_names():
-            b = btn(n, active=(n == st["layout"]), tip="Switch to this layout" if n != "default" else "Built-in layout (editing it stores your changes as overrides)")
-            b.connect("clicked", lambda _b, x=n: _set_layout(x))
-            row.pack_start(b, False, False, 0)
-        lay_holder.pack_start(row, False, False, 0)
-        row2 = hbox(4); row2.set_halign(Gtk.Align.CENTER)
-        row2.pack_start(btn("New", _new_layout, tip="New layout (copy of the current one)"), False, False, 0)
-        dl = btn("Delete", _delete_layout, tip="Delete this layout")
-        dl.set_sensitive(st["layout"] != "default")
-        row2.pack_start(dl, False, False, 0)
-        row2.pack_start(btn("Reset", _reset_layout, tip="Remove all your changes in this layout"), False, False, 0)
-        lay_holder.pack_start(row2, False, False, 0)
-        lay_holder.show_all()
-
-    # ── Controller-Bild ──
-    area = Gtk.DrawingArea()
-    area.set_size_request(380, 215)
-    area.set_halign(Gtk.Align.CENTER)
-    area.add_events(Gdk.EventMask.BUTTON_PRESS_MASK)
-
-    def _hit(x, y):
-        for name, kind, sx, sy, sw, sh in reversed(PAD_SHAPES):
-            if kind == "rect":
-                if sx <= x <= sx + sw and sy <= y <= sy + sh:
-                    return name
-            else:
-                if (x - sx) ** 2 + (y - sy) ** 2 <= sw ** 2:
-                    return name
-        return None
-
-    def _on_press(_w, ev):
-        n = _hit(ev.x, ev.y)
-        if n:
-            st["sel"] = n
-            _update_info()
-            area.queue_draw()
-        return True
-    area.connect("button-press-event", _on_press)
-
-    def _draw(w, cr):
-        ctx = w.get_style_context()
-        fg = ctx.get_color(Gtk.StateFlags.NORMAL)
-        def col(a): cr.set_source_rgba(fg.red, fg.green, fg.blue, a)
-        down = st["pressed"].get("down", set())
-        # Gehaeuse
-        col(0.10)
-        cr.new_path()
-        cr.move_to(30, 50); cr.curve_to(30, 20, 60, 12, 90, 12); cr.line_to(290, 12)
-        cr.curve_to(320, 12, 350, 20, 350, 50); cr.line_to(350, 150)
-        cr.curve_to(350, 205, 300, 212, 270, 190); cr.line_to(230, 190); cr.line_to(150, 190); cr.line_to(110, 190)
-        cr.curve_to(80, 212, 30, 205, 30, 150); cr.close_path(); cr.fill()
-        # Sticks (Position-Punkte)
-        pr = st["pressed"]
-        for cx, cy, vx, vy in ((94, 92, pr.get("lx", 0), pr.get("ly", 0)), (235, 160, pr.get("rx", 0), pr.get("ry", 0))):
-            col(0.18); cr.arc(cx, cy, 24, 0, 6.2832); cr.fill()
-            cr.set_source_rgba(0.95, 0.75, 0.25, 0.9)
-            cr.arc(cx + vx * 14, cy + vy * 14, 4, 0, 6.2832); cr.fill()
-        cr.select_font_face("sans", 0, 0)
-        cr.set_font_size(9)
-        for name, kind, sx, sy, sw, sh in PAD_SHAPES:
-            is_down = name in down
-            is_sel = name == st["sel"]
-            if kind == "rect":
-                cr.rectangle(sx, sy, sw, sh)
-            else:
-                cr.arc(sx, sy, sw, 0, 6.2832)
-            if is_down:
-                cr.set_source_rgba(0.95, 0.75, 0.25, 0.95)
-            else:
-                col(0.28 if not name.startswith("SL") else 0.16)
-            cr.fill_preserve()
-            if is_sel:
-                cr.set_source_rgba(0.95, 0.75, 0.25, 1.0); cr.set_line_width(2.2)
-            else:
-                col(0.45); cr.set_line_width(1)
-            cr.stroke()
-            label = {"SLU": "↑", "SLD": "↓", "SLL": "←", "SLR": "→", "DU": "↑", "DD": "↓", "DL": "←", "DR": "→",
-                     "SELECT": "Sel", "START": "Sta"}.get(name, name)
-            ext = cr.text_extents(label)
-            cx = sx + (sw / 2 if kind == "rect" else 0) - ext.width / 2 - ext.x_bearing
-            cy = sy + (sh / 2 if kind == "rect" else 0) - ext.height / 2 - ext.y_bearing
-            if is_down:
-                cr.set_source_rgba(0, 0, 0, 0.9)
-            else:
-                col(0.9)
-            cr.move_to(cx, cy); cr.show_text(label)
-        # Home
-        cr.arc(190, 52, 11, 0, 6.2832)
-        if "HOME" in down: cr.set_source_rgba(0.95, 0.75, 0.25, 0.95)
-        else: col(0.28)
-        cr.fill_preserve(); col(0.45); cr.set_line_width(1); cr.stroke()
-        col(0.9); cr.move_to(181, 55); cr.show_text("Home")
-        return False
-    area.connect("draw", _draw)
-
-    # ── Ebene + Erkennung ──
-    layer_btns: dict = {}
-    def _set_layer(v):
-        st["lay"] = v
-        for n, b in layer_btns.items():
-            c = b.get_style_context()
-            c.add_class("active") if n == v else c.remove_class("active")
-        _update_info()
-    lrow = hbox(4); lrow.set_halign(Gtk.Align.CENTER)
-    for v, text, tip in (("base", "Base", "Mapping without Home"), ("home", "Home layer", "Mapping while Home is held (or tapped once)")):
-        b = btn(text, active=(v == st["lay"]), tip=tip)
-        b.connect("clicked", lambda _b, x=v: _set_layer(x))
-        layer_btns[v] = b
-        lrow.pack_start(b, False, False, 0)
-
-    detect_btn = btn("Detect", tip="Click, then press a button on the pad - it gets selected")
-    def _detect_poll():
-        r = _pad_ctl("detect")
-        st["tries"] = st.get("tries", 0) + 1
-        if r and r not in ("waiting", "-"):
-            st["detect"] = False
-            detect_btn.set_label("Detect")
-            if r == "HOME":
-                info.set_text("Home is the layer key and cannot be remapped")
-            elif r in PAD_INPUTS_ALL:
-                st["sel"] = r
-                _update_info()
-                area.queue_draw()
-            return False
-        if st["tries"] > 40:
-            _pad_ctl("detect stop")
-            st["detect"] = False
-            detect_btn.set_label("Detect")
-            return False
-        return True
-    def _detect_click(_b):
-        if st["detect"]:
-            _pad_ctl("detect stop"); st["detect"] = False; detect_btn.set_label("Detect"); return
-        if not _pad_ctl("detect start"):
-            info.set_text("TrafkPad is not running")
-            return
-        st["detect"] = True
-        detect_btn.set_label("Press a button…")
-        st["tries"] = 0
-        GLib.timeout_add(150, _detect_poll)
-    detect_btn.connect("clicked", _detect_click)
-    lrow.pack_start(detect_btn, False, False, 0)
-
-    # ── Info-Zeile ──
-    def _cur_val():
-        return st["eff"].get(f"{st['lay']}.{st['sel']}", "?")
-    def _update_info():
-        if not st["eff"]:
-            return
-        key = f"{st['lay']}.{st['sel']}"
-        custom = key in st["over"]
-        info.set_text(f"{PAD_INPUT_LABEL.get(st['sel'], st['sel'])} · {'Home layer' if st['lay'] == 'home' else 'Base'}  →  {_cur_val()}"
-                      + ("  (changed)" if custom else ""))
-
-    # ── Aktion zuweisen ──
-    def _assign(value):
-        key = f"{st['lay']}.{st['sel']}"
         over = _pad_layout_read(st["layout"])
-        over[key] = value
+        if v == "__default__":
+            over.pop(_key(dev, n), None)
+        else:
+            over[_key(dev, n)] = v
         _pad_layout_write(st["layout"], over)
         _reload_daemon()
-    def _compose(base):
-        mods = [m for m in ("shift", "ctrl", "alt", "super") if m in st["mods"]]
-        if base in ("shift", "ctrl", "alt", "super"):
-            mods = [m for m in mods if m != base]
-        return "+".join(mods + [base]) if mods else base
-    def _reset_one(_b=None):
-        key = f"{st['lay']}.{st['sel']}"
-        over = _pad_layout_read(st["layout"])
-        if key in over:
-            del over[key]
-            _pad_layout_write(st["layout"], over)
-            _reload_daemon()
 
-    mod_row = hbox(4); mod_row.set_halign(Gtk.Align.CENTER)
-    for m in ("shift", "ctrl", "alt", "super"):
-        mb = btn(m.capitalize(), tip=f"Add {m} to the key you pick")
-        def _tm(_b, mm=m):
-            if mm in st["mods"]:
-                st["mods"].discard(mm); _b.get_style_context().remove_class("active")
-            else:
-                st["mods"].add(mm); _b.get_style_context().add_class("active")
-        mb.connect("clicked", _tm)
-        mod_row.pack_start(mb, False, False, 0)
-    mod_row.pack_start(btn("None", lambda _b: _assign("none"), tip="Button does nothing"), False, False, 0)
-    mod_row.pack_start(btn("Default", _reset_one, tip="Back to the built-in mapping for this button"), False, False, 0)
-
-    cat_row = hbox(3); cat_row.set_halign(Gtk.Align.CENTER)
-    grid_holder = vbox(0)
-    cat_btns: dict = {}
-    def _show_cat(cname):
-        st["cat"] = cname
-        for n, b in cat_btns.items():
-            c = b.get_style_context()
-            c.add_class("active") if n == cname else c.remove_class("active")
-        for c in grid_holder.get_children():
-            grid_holder.remove(c)
-        grid = Gtk.Grid(); grid.set_row_spacing(3); grid.set_column_spacing(3); grid.set_halign(Gtk.Align.CENTER)
-        keys = dict(PAD_KEY_CATS)[cname]
-        cols = 4 if cname in ("Mouse", "Media") else 7
-        for i, k in enumerate(keys):
-            kb = btn(PAD_KEY_PRETTY.get(k, k.upper() if len(k) <= 2 else k.capitalize()), tip=k)
-            kb.connect("clicked", lambda _b, kk=k: _assign(_compose(kk)))
-            grid.attach(kb, i % cols, i // cols, 1, 1)
-        grid_holder.pack_start(grid, False, False, 0)
-        grid_holder.show_all()
-    for cname, _keys in PAD_KEY_CATS:
-        cb = btn(cname, active=(cname == st["cat"]))
-        cb.connect("clicked", lambda _b, n=cname: _show_cat(n))
-        cat_btns[cname] = cb
-    cat_row1 = hbox(3); cat_row1.set_halign(Gtk.Align.CENTER)
-    cat_row2 = hbox(3); cat_row2.set_halign(Gtk.Align.CENTER)
-    for i, (cname, _k) in enumerate(PAD_KEY_CATS):
-        (cat_row1 if i < 4 else cat_row2).pack_start(cat_btns[cname], False, False, 0)
-
-    # ── Stick-Modi ──
+    # ── Stick-Modi (Zeigerstick, nur Gamepad) ──
     stick_holder = vbox(2)
     def _set_stickmode(which, mode):
         over = _pad_layout_read(st["layout"])
@@ -19874,50 +20267,159 @@ def _build_pad_mapping_tab(win: Gtk.Window, cfg: dict, caption, hrow_fn) -> Gtk.
     def _rebuild_stickmodes():
         for c in stick_holder.get_children():
             stick_holder.remove(c)
-        for which, title in (("base", "Mouse stick"), ("home", "Mouse stick with Home")):
+        for which, title in (("base", "Pointer stick"), ("home", "Pointer stick + Home")):
             cur = st["eff"].get(f"stick.{which}", "mouse" if which == "base" else "scroll")
-            row = hbox(4); row.set_halign(Gtk.Align.CENTER)
+            r = hbox(4); r.set_halign(Gtk.Align.CENTER)
             lab = Gtk.Label(label=title); lab.get_style_context().add_class("caption"); lab.set_opacity(0.7)
-            row.pack_start(lab, False, False, 4)
+            r.pack_start(lab, False, False, 4)
             for mode, text in (("mouse", "Mouse"), ("scroll", "Scroll"), ("none", "Off")):
                 b = btn(text, active=(cur == mode))
                 b.connect("clicked", lambda _b, w=which, m=mode: _set_stickmode(w, m))
-                row.pack_start(b, False, False, 0)
-            stick_holder.pack_start(row, False, False, 0)
+                r.pack_start(b, False, False, 0)
+            stick_holder.pack_start(r, False, False, 0)
         stick_holder.show_all()
 
-    def _poll_pressed():
-        txt = _pad_ctl("pressed", timeout=0.15)
-        if txt:
-            st["pressed"] = _pad_pressed_parse(txt)
-            area.queue_draw()
-        return True
-    add_timer(90, _poll_pressed)
+    # ── Seiten Normal / Wii ──
+    def _dev_page(dev):
+        page = vbox(6)
+        lrow = hbox(4); lrow.set_halign(Gtk.Align.CENTER)
+        lbtns: dict = {}
+        def _set_lay(v):
+            st["lay"][dev] = v
+            for n, b in lbtns.items():
+                c = b.get_style_context()
+                c.add_class("active") if n == v else c.remove_class("active")
+            _refresh_buttons()
+        for v, text, tip in (("base", "Base", "Mapping without Home"), ("home", "Home layer", "Mapping while Home is held (or tapped once)")):
+            b = btn(text, active=(v == st["lay"][dev]), tip=tip)
+            b.connect("clicked", lambda _b, x=v: _set_lay(x))
+            lbtns[v] = b
+            lrow.pack_start(b, False, False, 0)
+        page.pack_start(lrow, False, False, 0)
+        page.pack_start(tab_sep(), False, False, 2)
+        grid = Gtk.Grid(); grid.set_row_spacing(3); grid.set_column_spacing(3); grid.set_column_homogeneous(True)
+        grid.set_halign(Gtk.Align.CENTER)
+        for i, n in enumerate(PAD_MAP_WII if dev == "wii" else PAD_MAP_PAD):
+            b = btn(_lab(dev, n), tip="Click, then press the key or combination")
+            b.connect("clicked", lambda _b, d=dev, nn=n: _bind(d, nn))
+            rows[(dev, n)] = b
+            grid.attach(b, i % 2, i // 2, 1, 1)
+        page.pack_start(grid, False, False, 0)
+        if dev == "pad":
+            page.pack_start(tab_sep(), False, False, 2)
+            page.pack_start(stick_holder, False, False, 0)
+        return page
 
-    # ── Aufbau: Untertabs ──
-    p_stick = vbox(6)
-    p_stick.pack_start(caption("What the stick that moves the pointer does - per layer. Set Home to Mouse and the base to Off for a scroll-only stick, or the other way around."), False, False, 0)
-    p_stick.pack_start(stick_holder, False, False, 0)
+    # ── Layouts ──
+    lay_holder = vbox(2)
+    def _set_layout(name):
+        st["layout"] = name
+        cfg["layout"] = name
+        _pad_cfg_save_soon(cfg)
+        GLib.timeout_add(450, lambda: (_reload_daemon(), False)[1])
+        _rebuild_layouts()
+    def _new_layout(_b=None):
+        names = _pad_layout_names()
+        i = 2
+        while f"layout{i}" in names:
+            i += 1
+        new = f"layout{i}"
+        _pad_layout_write(new, dict(_pad_layout_read(st["layout"])))
+        _set_layout(new)
+    def _delete_layout(_b=None):
+        if st["layout"] == "default":
+            return
+        try:
+            (PAD_LAYOUT_DIR / f"{st['layout']}.conf").unlink()
+        except Exception:
+            pass
+        _set_layout("default")
+    def _reset_layout(_b=None):
+        _pad_layout_write(st["layout"], {})
+        _reload_daemon()
+    def _rebuild_layouts():
+        for c in lay_holder.get_children():
+            lay_holder.remove(c)
+        r = hbox(4); r.set_halign(Gtk.Align.CENTER)
+        for n in _pad_layout_names():
+            b = btn(n, active=(n == st["layout"]), tip="Switch to this layout" if n != "default" else "Built-in layout (your changes are stored as overrides)")
+            b.connect("clicked", lambda _b, x=n: _set_layout(x))
+            r.pack_start(b, False, False, 0)
+        lay_holder.pack_start(r, False, False, 0)
+        r2 = hbox(4); r2.set_halign(Gtk.Align.CENTER)
+        r2.pack_start(btn("New", _new_layout, tip="New layout (copy of the current one)"), False, False, 0)
+        dl = btn("Delete", _delete_layout, tip="Delete this layout")
+        dl.set_sensitive(st["layout"] != "default")
+        r2.pack_start(dl, False, False, 0)
+        r2.pack_start(btn("Reset", _reset_layout, tip="Remove all your changes in this layout"), False, False, 0)
+        lay_holder.pack_start(r2, False, False, 0)
+        lay_holder.show_all()
     p_lay = vbox(6)
     p_lay.pack_start(caption("Layouts: your own sets of changes. 'default' = the built-in mapping plus the changes you make while it is selected."), False, False, 0)
     p_lay.pack_start(lay_holder, False, False, 0)
 
-    # Controller-Bild + Zuweisung in EINER Ansicht (Bild anklicken, darunter Taste waehlen); Stick/Layouts als Untertabs
-    edit = vbox(6)
-    edit.pack_start(area, False, False, 0)
-    edit.pack_start(lrow, False, False, 0)
-    edit.pack_start(info, False, False, 0)
-    edit.pack_start(mod_row, False, False, 0)
-    edit.pack_start(cat_row1, False, False, 0)
-    edit.pack_start(cat_row2, False, False, 0)
-    edit.pack_start(grid_holder, False, False, 0)
-    outer = _pad_subtabs(win, [("Buttons", edit), ("Stick", p_stick), ("Layouts", p_lay)])
-    root.pack_start(outer, False, False, 0)
+    # ── Live: Eingaben sind gesperrt und werden nur angezeigt ──
+    def _poll_pressed():
+        if not root.get_mapped():
+            return True
+        txt = _pad_ctl("padmon", timeout=0.25)
+        if not txt or txt.startswith("error"):
+            v = _pad_proto(_pad_ctl("version", timeout=0.3))
+            if v != st["proto"]:
+                st["proto"] = v
+                _update_info()
+            return True
+        if st["proto"] != PAD_PROTO_NEEDED:
+            st["proto"] = PAD_PROTO_NEEDED
+            _refresh_eff()
+        st["pressed"] = _pad_pressed_parse(txt)
+        _refresh_pressed()
+        return True
+    add_timer(90, _poll_pressed)
 
+    root.pack_start(hint, False, False, 0)
+    root.pack_start(info, False, False, 0)
+    root.pack_start(_pad_subtabs(win, [("Normal", _dev_page("pad")), ("Wii", _dev_page("wii")), ("Layouts", p_lay)]), False, False, 0)
     _rebuild_layouts()
-    _show_cat("Letters")
     _refresh_eff()
     return root
+
+def _build_pad_combos_tab(win: Gtk.Window, cfg: dict, caption, fslider_fn) -> Gtk.Box:
+    root = vbox(8); pad(root, h=4, v=10)
+    root.pack_start(caption("Click a field, then hold the buttons on the controller together and let go. Controller input is blocked while this tab is open."), False, False, 0)
+
+    def _text(key, allowed):
+        t = dict(allowed)
+        names = [x for x in cfg.get(key, "").replace(",", "+").split("+") if x and x.lower() != "none"]
+        return " + ".join(t.get(n, n) for n in names) if names else "— none —"
+
+    def _field(title, key, dev, allowed, clearable=False):
+        box = vbox(2)
+        box.pack_start(caption(title), False, False, 0)
+        b = btn(_text(key, allowed), tip="Click and press the buttons on the controller")
+        def _click(_b):
+            r = _pad_capture_combo(win, title, dev, allowed, clearable)
+            if r is None:
+                return
+            cfg[key] = "+".join(r) if r else "none"
+            b.set_label(_text(key, allowed))
+            _pad_cfg_save_soon(cfg)
+        b.connect("clicked", _click)
+        row = hbox(4); row.set_halign(Gtk.Align.CENTER)
+        row.pack_start(b, False, False, 0)
+        box.pack_start(row, False, False, 0)
+        return box
+    root.pack_start(_field("Gamepad: controller mode ON / OFF", "toggle_combo", "pad", PAD_COMBO_INPUTS), False, False, 0)
+    root.pack_start(fslider_fn("󰍽", 500, 3000, 100, "toggle_hold_ms", "%d", "Hold time for the ON / OFF combo (ms)"), False, False, 0)
+    root.pack_start(caption("Hold time ON / OFF (ms)"), False, False, 0)
+    root.pack_start(tab_sep(), False, False, 2)
+    root.pack_start(_field("Wiimote: controller mode ON / OFF", "wii_toggle_combo", "wii", WII_COMBO_INPUTS), False, False, 0)
+    root.pack_start(_field("Wiimote: pointer mode (normal ⇄ game mode)", "wii_mode_combo", "wii", WII_COMBO_INPUTS, clearable=True), False, False, 0)
+    root.pack_start(fslider_fn("󰍽", 200, 2000, 100, "wii_mode_hold_ms", "%d", "Hold time for the pointer mode combo (ms)"), False, False, 0)
+    root.pack_start(caption("Hold time pointer mode (ms)"), False, False, 0)
+    _pad_monitor_heartbeat(root)
+    return root
+
 
 def _build_settings_controller(page: Gtk.Box, key: str, label: str, win: Gtk.Window) -> None:
     cfg = _pad_cfg_ensure()
@@ -19940,115 +20442,114 @@ def _build_settings_controller(page: Gtk.Box, key: str, label: str, win: Gtk.Win
         return b
 
     def caption(text):
-        l = Gtk.Label(label=text)
-        l.get_style_context().add_class("caption")
-        l.set_opacity(0.6)
-        l.set_line_wrap(True)
-        l.set_max_width_chars(44)
-        l.set_justify(Gtk.Justification.CENTER)
-        l.set_halign(Gtk.Align.CENTER)
-        return l
-
-    # ═════════════ Tab 1: Controller ═════════════
-    p_stat = vbox(6); pad(p_stat, h=4, v=10)
-    p_combo = vbox(6); pad(p_combo, h=4, v=10)
-
-    status_lbl = Gtk.Label()
-    status_lbl.get_style_context().add_class("caption")
-    status_lbl.set_halign(Gtk.Align.CENTER)
-
-    def _refresh_status():
-        r = _pad_ctl("status")
-        if not r:
-            status_lbl.set_text("TrafkPad is not running")
-        else:
-            parts = dict(p.split("=", 1) for p in r.split()[1:] if "=" in p)
-            mode = r.split()[0].upper()
-            status_lbl.set_text(f"Controller mode: {mode}  ·  {parts.get('pads', '0')} pad(s)")
-        return True
-    _refresh_status()
-    add_timer(2000, _refresh_status)
-
-    def _switch_now(_b):
-        _pad_ctl("toggle")
-        _refresh_status()
-    now_btn = btn("Switch ON / OFF now", _switch_now,
-                  tip="Same as holding the toggle combo on the pad for 1 s")
-
-    def _after_enable():
-        _pad_ctl("reload")
-        GLib.timeout_add(400, _refresh_status)
-    enable_btn = toggle("Controller support", "Master switch. Off = the daemon idles and never touches your pads",
-                        "enabled", _after_enable)
-    boot_btn = toggle("ON at start", "Start with controller mode ON after login", "start_active")
-
-    p_stat.pack_start(status_lbl, False, False, 0)
-    p_stat.pack_start(hrow(enable_btn, boot_btn), False, False, 0)
-    p_stat.pack_start(hrow(now_btn), False, False, 0)
-
-    # Toggle-Kombi
-    combo_btns: dict = {}
-    def _set_combo(val):
-        cfg["toggle_combo"] = val
-        for v, b in combo_btns.items():
-            ctx = b.get_style_context()
-            ctx.add_class("active") if v == val else ctx.remove_class("active")
-        _pad_cfg_save_soon(cfg)
-    combo_row = hbox(4); combo_row.set_halign(Gtk.Align.CENTER)
-    for val, text in PAD_COMBOS:
-        b = btn(text, active=(cfg["toggle_combo"].upper() == val), tip=f"Hold {val} to toggle")
-        b.connect("clicked", lambda _b, v=val: _set_combo(v))
-        combo_btns[val] = b
-        combo_row.pack_start(b, False, False, 0)
-    p_combo.pack_start(caption("Toggle combo (hold on one pad)"), False, False, 0)
-    p_combo.pack_start(combo_row, False, False, 0)
+        return caption_label(text)
 
     def fslider(icon, lo, hi, step, cfg_key, fmt, tip):
         sl_box, sl = bslider(icon, lo, hi, step, float(cfg[cfg_key]), show_val=True)
         sl.set_tooltip_text(tip)
         sl.set_digits(0 if step >= 1 else 2)
         def _chg(s):
-            v = s.get_value()
-            cfg[cfg_key] = fmt % v
+            cfg[cfg_key] = fmt % s.get_value()
             _pad_cfg_save_soon(cfg)
         sl.connect("value-changed", _chg)
         return sl_box
 
-    p_combo.pack_start(fslider("󰍽", 500, 3000, 100, "toggle_hold_ms", "%d", "Hold time for the toggle combo (ms)"), False, False, 0)
-    p_combo.pack_start(caption("Hold time (ms)"), False, False, 0)
+    def choice_row(cfg_key, options, title, holder):
+        btns: dict = {}
+        def _set(v):
+            cfg[cfg_key] = v
+            for n, b in btns.items():
+                ctx = b.get_style_context()
+                ctx.add_class("active") if n == v else ctx.remove_class("active")
+            _pad_cfg_save_soon(cfg)
+        row = hbox(4); row.set_halign(Gtk.Align.CENTER)
+        for v, text, tip in options:
+            b = btn(text, active=(cfg[cfg_key] == v), tip=tip)
+            b.connect("clicked", lambda _b, x=v: _set(x))
+            btns[v] = b
+            row.pack_start(b, False, False, 0)
+        holder.pack_start(caption(title), False, False, 0)
+        holder.pack_start(row, False, False, 0)
 
-    t_pad = _pad_subtabs(win, [("State", p_stat), ("Combo", p_combo)])
+    # ═════════════ Tab 1: State ═════════════
+    p_stat = vbox(6); pad(p_stat, h=4, v=10)
+    status_lbl = Gtk.Label()
+    status_lbl.get_style_context().add_class("caption")
+    status_lbl.set_halign(Gtk.Align.CENTER)
+    status_lbl.set_line_wrap(True)
+    status_lbl.set_max_width_chars(44)
+    mode_btns: dict = {}
 
-    # ═════════════ Tab 2: Feel ═════════════
+    def _show_mode(mode):
+        for n, b in mode_btns.items():
+            ctx = b.get_style_context()
+            ctx.add_class("active") if n == mode else ctx.remove_class("active")
+
+    def _refresh_status():
+        r = _pad_ctl("status")
+        if not r:
+            status_lbl.set_text("TrafkPad is not running")
+            _show_mode("")
+        else:
+            parts = dict(p.split("=", 1) for p in r.split()[1:] if "=" in p)
+            on = r.split()[0].lower() == "on"
+            txt = f"{parts.get('pads', '0')} pad(s) connected"
+            if parts.get("proto") is None:
+                txt += "\nTrafkPad is an old build - rebuild it and restart it (new features need it)"
+            status_lbl.set_text(txt)
+            _show_mode("keyboard" if on else "off")
+        return True
+
+    def _set_mode(m):
+        _pad_ctl("on" if m == "keyboard" else "off")
+        GLib.timeout_add(250, lambda: (_refresh_status(), False)[1])
+
+    mrow = hbox(4); mrow.set_halign(Gtk.Align.CENTER)
+    for m, text, tip in (("controller", "Controller", "Gamepad emulation: pads that the OS does not accept as a gamepad (Wiimote ...) appear as a standard gamepad - not built yet"),
+                         ("keyboard", "Keyboard", "Pads act as keyboard and mouse"),
+                         ("off", "Off", "TrafkPad ignores all pads")):
+        b = btn(text, tip=tip)
+        if m == "controller":
+            b.set_sensitive(False)
+        else:
+            b.connect("clicked", lambda _b, x=m: _set_mode(x))
+        mode_btns[m] = b
+        mrow.pack_start(b, False, False, 0)
+    p_stat.pack_start(caption("Mode"), False, False, 0)
+    p_stat.pack_start(mrow, False, False, 0)
+    p_stat.pack_start(status_lbl, False, False, 0)
+    _refresh_status()
+    add_timer(2000, _refresh_status)
+
+    def _after_enable():
+        _pad_ctl("reload")
+        GLib.timeout_add(400, lambda: (_refresh_status(), False)[1])
+    p_stat.pack_start(tab_sep(), False, False, 2)
+    p_stat.pack_start(hrow(toggle("Controller support", "Master switch. Off = the daemon idles and never touches your pads",
+                                  "enabled", _after_enable)), False, False, 0)
+    p_stat.pack_start(caption("Feedback when the mode switches"), False, False, 0)
+    p_stat.pack_start(hrow(
+        toggle("Rumble", "Short vibration when the mode switches", "rumble"),
+        toggle("Notify", "Notification when the mode switches", "notify"),
+        toggle("Sounds", "System sound when the mode switches", "sounds")), False, False, 0)
+    p_stat.pack_start(caption("Start with controller mode ON at login: Settings → Apps → Autostart. Mode switch buttons: Combos tab."), False, False, 0)
+
+    # ═════════════ Feel: Pointer | Sticks ═════════════
     f_ptr = vbox(6); pad(f_ptr, h=4, v=10)
-    f_scr = vbox(6); pad(f_scr, h=4, v=10)
-    f_lay = vbox(6); pad(f_lay, h=4, v=10)
-    f_fb = vbox(6); pad(f_fb, h=4, v=10)
+    f_stk = vbox(6); pad(f_stk, h=4, v=10)
     f_ptr.pack_start(fslider("󰍽", 200, 2500, 50, "mouse_speed", "%d", "Mouse pointer speed at full stick (px/s)"), False, False, 0)
     f_ptr.pack_start(caption("Pointer speed"), False, False, 0)
     f_ptr.pack_start(fslider("󰟶", 1.0, 3.0, 0.1, "mouse_curve", "%.1f", "1 = linear, higher = more precise near the center"), False, False, 0)
     f_ptr.pack_start(caption("Pointer curve (higher = finer control)"), False, False, 0)
     f_ptr.pack_start(fslider("󰍺", 0.05, 0.4, 0.01, "mouse_deadzone", "%.2f", "Stick dead zone"), False, False, 0)
     f_ptr.pack_start(caption("Stick dead zone"), False, False, 0)
-    f_scr.pack_start(fslider("󰜮", 300, 5000, 100, "scroll_speed", "%d", "Scroll speed (Home + right stick)"), False, False, 0)
-    f_scr.pack_start(caption("Scroll speed (Home + right stick)"), False, False, 0)
+    f_ptr.pack_start(fslider("󰜮", 300, 5000, 100, "scroll_speed", "%d", "Scroll speed (Home + right stick)"), False, False, 0)
+    f_ptr.pack_start(caption("Scroll speed (Home + right stick)"), False, False, 0)
+    f_ptr.pack_start(hrow(toggle("Invert scroll", "Reverse the scroll direction", "scroll_invert")), False, False, 0)
 
-    stick_btns: dict = {}
-    def _set_stick(v):
-        cfg["left_stick"] = v
-        for n, b in stick_btns.items():
-            ctx = b.get_style_context()
-            ctx.add_class("active") if n == v else ctx.remove_class("active")
-        _pad_cfg_save_soon(cfg)
-    stick_row = hbox(4); stick_row.set_halign(Gtk.Align.CENTER)
-    for v, text, tip in (("wasd", "W A S D", "Left stick sends W A S D (same as the launcher)"),
-                         ("arrows", "Arrows", "Left stick sends arrow keys - safer in text fields")):
-        b = btn(text, active=(cfg["left_stick"] == v), tip=tip)
-        b.connect("clicked", lambda _b, x=v: _set_stick(x))
-        stick_btns[v] = b
-        stick_row.pack_start(b, False, False, 0)
-    f_lay.pack_start(caption("Left stick"), False, False, 0)
-    f_lay.pack_start(stick_row, False, False, 0)
+    choice_row("left_stick", (("wasd", "W A S D", "Left stick sends W A S D (same as the launcher)"),
+                              ("arrows", "Arrows", "Left stick sends arrow keys - safer in text fields")),
+               "Left stick", f_stk)
     nintendo_btn = btn("Nintendo layout", active=(cfg["swap_ab"] == "true" and cfg["swap_xy"] == "true"),
                        tip="Swaps A/B and X/Y for Nintendo-style pads (A = right button)")
     def _nintendo(_b):
@@ -20059,9 +20560,9 @@ def _build_settings_controller(page: Gtk.Box, key: str, label: str, win: Gtk.Win
         _pad_cfg_save_soon(cfg)
     nintendo_btn.connect("clicked", _nintendo)
     swapdp_btn = toggle("Swap D-pad / stick keys",
-                        "D-pad and left stick trade roles (also on the Home layer: Home + D-pad = focus, Home + stick = launcher/power/...)", "swap_dpad")
+                        "D-pad and left stick trade roles (also on the Home layer)", "swap_dpad")
     mouseL_btn = btn("Mouse on left stick", active=(cfg["mouse_stick"] == "left"),
-                     tip="Left stick moves the pointer, right stick is disabled. With the swap on: Home + L3 = launcher, Home + R3 = power menu")
+                     tip="Left stick moves the pointer, right stick is disabled")
     def _mouse_left(_b):
         on = cfg["mouse_stick"] != "left"
         cfg["mouse_stick"] = "left" if on else "right"
@@ -20069,103 +20570,13 @@ def _build_settings_controller(page: Gtk.Box, key: str, label: str, win: Gtk.Win
         ctx.add_class("active") if on else ctx.remove_class("active")
         _pad_cfg_save_soon(cfg)
     mouseL_btn.connect("clicked", _mouse_left)
-    f_lay.pack_start(hrow(swapdp_btn, mouseL_btn), False, False, 0)
-    f_fb.pack_start(hrow(
-        toggle("Rumble", "Short vibration when the mode switches", "rumble"),
-        toggle("Notify", "Notification when the mode switches", "notify"),
-        toggle("Sounds", "System sound when the mode switches", "sounds")), False, False, 0)
-    f_lay.pack_start(hrow(nintendo_btn), False, False, 0)
-    f_scr.pack_start(hrow(toggle("Invert scroll", "Reverse the scroll direction", "scroll_invert")), False, False, 0)
+    f_stk.pack_start(hrow(swapdp_btn, mouseL_btn), False, False, 0)
+    f_stk.pack_start(hrow(nintendo_btn), False, False, 0)
+    t_feel = _pad_subtabs(win, [("Pointer", f_ptr), ("Sticks", f_stk)])
 
-    t_feel = _pad_subtabs(win, [("Pointer", f_ptr), ("Scroll", f_scr), ("Layout", f_lay), ("Feedback", f_fb)])
-
-    # ═════════════ Tab 3: Login ═════════════
-    t_login = vbox(6); pad(t_login, h=4, v=10)
-    login_status = Gtk.Label()
-    login_status.get_style_context().add_class("caption")
-    login_status.set_halign(Gtk.Align.CENTER)
-    login_status.set_line_wrap(True)
-    login_status.set_max_width_chars(44)
-
-    sddm_btn = btn("Skip login screen (SDDM)", active=os.path.exists(SDDM_AUTOLOGIN_FILE),
-                   tip="Automatic login: SDDM logs you in without asking for a password")
-    def _sddm_done(ok, msg, target):
-        ctx = sddm_btn.get_style_context()
-        if ok:
-            ctx.add_class("active") if target else ctx.remove_class("active")
-            login_status.set_text("SDDM: automatic login " + ("ON - applies at next boot" if target else "OFF"))
-        else:
-            login_status.set_text(f"SDDM: failed ({msg})")
-        sddm_btn.set_sensitive(True)
-        return False
-    def _sddm_clicked(_b):
-        target = not os.path.exists(SDDM_AUTOLOGIN_FILE)
-        sddm_btn.set_sensitive(False)
-        login_status.set_text("Waiting for authorization…")
-        def _work():
-            ok, msg = _sddm_set_autologin(target)
-            GLib.idle_add(_sddm_done, ok, msg, target)
-        threading.Thread(target=_work, daemon=True).start()
-    sddm_btn.connect("clicked", _sddm_clicked)
-
-    lock_btn = btn("Disable lock screen (hyprlock)", active=HYPRLOCK_OFF_FLAG.exists(),
-                   tip="hyprlock does nothing while this is on (idle lock, power menu, lock-session)")
-    def _lock_clicked(_b):
-        try:
-            if HYPRLOCK_OFF_FLAG.exists():
-                HYPRLOCK_OFF_FLAG.unlink()
-                lock_btn.get_style_context().remove_class("active")
-                login_status.set_text("hyprlock: ON")
-            else:
-                HYPRLOCK_OFF_FLAG.parent.mkdir(parents=True, exist_ok=True)
-                HYPRLOCK_OFF_FLAG.touch()
-                lock_btn.get_style_context().add_class("active")
-                login_status.set_text("hyprlock: DISABLED")
-        except Exception as e:
-            login_status.set_text(f"hyprlock: failed ({e})")
-        if not os.path.exists(HYPRLOCK_WRAPPER):
-            login_status.set_text(f"Missing wrapper {HYPRLOCK_WRAPPER} - the flag has no effect without it")
-    lock_btn.connect("clicked", _lock_clicked)
-
-    t_login.pack_start(hrow(sddm_btn), False, False, 0)
-    t_login.pack_start(hrow(lock_btn), False, False, 0)
-    t_login.pack_start(login_status, False, False, 2)
-    t_login.pack_start(caption("Typing a long password needs a keyboard. With these off, a pad-only system never gets stuck at a login screen."), False, False, 0)
-
-    # ═════════════ Tab 4: Wiimote ═════════════
-    w_conn = vbox(6); pad(w_conn, h=4, v=10)
+    # ═════════════ Wiimote: Pointer | Calibrate ═════════════
     w_ptr = vbox(6); pad(w_ptr, h=4, v=10)
     w_cal = vbox(6); pad(w_cal, h=4, v=10)
-    wii_status = Gtk.Label()
-    wii_status.get_style_context().add_class("caption")
-    wii_status.set_halign(Gtk.Align.CENTER)
-    wii_status.set_line_wrap(True)
-    wii_status.set_max_width_chars(44)
-
-    conn_btn = btn("Connect Wiimote", tip="Hold 1 + 2 on the Wiimote (LEDs blink), then click this")
-    def _conn_done(ok, msg):
-        wii_status.set_text(msg or ("Connected" if ok else "Failed"))
-        conn_btn.set_sensitive(True)
-        return False
-    def _conn_clicked(_b):
-        if not WII_CONNECT_SH.exists():
-            wii_status.set_text(f"Missing {WII_CONNECT_SH}")
-            return
-        conn_btn.set_sensitive(False)
-        wii_status.set_text("Searching… keep 1 + 2 pressed on the Wiimote")
-        def _work():
-            try:
-                r = subprocess.run(["bash", str(WII_CONNECT_SH), "25"], capture_output=True, text=True, timeout=40)
-                GLib.idle_add(_conn_done, r.returncode == 0, (r.stdout or r.stderr).strip().splitlines()[-1:] and (r.stdout or r.stderr).strip().splitlines()[-1])
-            except Exception as e:
-                GLib.idle_add(_conn_done, False, f"Failed: {e}")
-        threading.Thread(target=_work, daemon=True).start()
-    conn_btn.connect("clicked", _conn_clicked)
-    w_conn.pack_start(hrow(conn_btn), False, False, 0)
-    w_conn.pack_start(wii_status, False, False, 0)
-    w_conn.pack_start(caption("Hold 1 + 2 on the Wiimote while it searches. A second Wiimote works for buttons and Nunchuk; the IR pointer comes from the first one. The pointer area (all screens / one monitor / active workspace) is in Settings → Devices."), False, False, 0)
-
-    # Smoothness 1..5 (5 = raw)
     smooth_btns: dict = {}
     def _set_smooth(v):
         cfg["wii_smooth"] = str(v)
@@ -20181,36 +20592,17 @@ def _build_settings_controller(page: Gtk.Box, key: str, label: str, win: Gtk.Win
         sm_row.pack_start(b, False, False, 0)
     w_ptr.pack_start(caption("Cursor smoothness (1 = extremely smooth, 5 = raw)"), False, False, 0)
     w_ptr.pack_start(sm_row, False, False, 0)
-
-    # Zeigermodus: absolut (Desktop) / relativ / Joystick (Spiele mit Mausfang)
-    def _mode_row(cfg_key, options, title, tip_fmt):
-        btns: dict = {}
-        def _set(v):
-            cfg[cfg_key] = v
-            for n, b in btns.items():
-                ctx = b.get_style_context()
-                ctx.add_class("active") if n == v else ctx.remove_class("active")
-            _pad_cfg_save_soon(cfg)
-        row = hbox(4); row.set_halign(Gtk.Align.CENTER)
-        for v, text, tip in options:
-            b = btn(text, active=(cfg[cfg_key] == v), tip=tip)
-            b.connect("clicked", lambda _b, x=v: _set(x))
-            btns[v] = b
-            row.pack_start(b, False, False, 0)
-        w_ptr.pack_start(caption(title), False, False, 0)
-        w_ptr.pack_start(row, False, False, 0)
-    _mode_row("wii_mode",
-              (("abs", "Absolute", "Pointer = where the Wiimote points (desktop)"),
-               ("rel", "Relative", "Pointer moves like a mouse (games that capture the mouse)"),
-               ("joy", "Joystick", "Distance from the screen center = speed (shooters)")),
-              "Pointer mode (normal)", "")
-    _mode_row("wii_alt_mode",
-              (("rel", "Relative", "Mouse-like motion"),
-               ("joy", "Joystick", "Distance from the center = speed")),
-              "Game mode (used by Switch now / auto-detect)", "")
+    choice_row("wii_mode",
+               (("abs", "Absolute", "Pointer = where the Wiimote points (desktop)"),
+                ("rel", "Relative", "Pointer moves like a mouse (games that capture the mouse)"),
+                ("joy", "Joystick", "Distance from the screen center = speed (shooters)")),
+               "Pointer mode (normal)", w_ptr)
+    choice_row("wii_alt_mode",
+               (("rel", "Relative", "Mouse-like motion"),
+                ("joy", "Joystick", "Distance from the center = speed")),
+               "Game mode (the mode combo / Switch now toggles to this)", w_ptr)
     w_ptr.pack_start(fslider("󰍽", 500, 6000, 100, "wii_rel_scale", "%d", "Relative mode: pixels per full screen width"), False, False, 0)
     w_ptr.pack_start(caption("Relative speed"), False, False, 0)
-
     mode_lbl = Gtk.Label()
     mode_lbl.get_style_context().add_class("caption")
     mode_lbl.set_halign(Gtk.Align.CENTER)
@@ -20218,36 +20610,24 @@ def _build_settings_controller(page: Gtk.Box, key: str, label: str, win: Gtk.Win
     mode_lbl.set_max_width_chars(44)
     def _mode_switch(_b):
         r = _pad_ctl("wii-mode toggle")
+        if r.startswith("error unknown"):
+            r = "TrafkPad is an old build - rebuild it and restart it"
         mode_lbl.set_text(r or "TrafkPad is not running")
-    def _add_app(_b):
-        w = jrun(["hyprctl", "activewindow", "-j"]) or {}
-        cls = (w.get("class") or "").strip().lower()
-        if not cls:
-            mode_lbl.set_text("No active window found")
-            return
-        apps = [a for a in cfg["wii_apps"].split(",") if a]
-        if cls not in apps:
-            apps.append(cls)
-        cfg["wii_apps"] = ",".join(apps)
-        _pad_cfg_save_soon(cfg)
-        mode_lbl.set_text(f"Auto game mode for: {cfg['wii_apps']}")
-    def _clear_apps(_b):
-        cfg["wii_apps"] = "minecraft,moorhuhn"
-        _pad_cfg_save_soon(cfg)
-        mode_lbl.set_text(f"Auto game mode for: {cfg['wii_apps']}")
-    w_ptr.pack_start(hrow(btn("Switch now", _mode_switch, tip="Toggle between normal and game mode"),
-                          btn("Add active window", _add_app, tip="Focus the game, open this page via the launcher/keyboard and click: the window class joins the auto list"),
-                          btn("Reset list", _clear_apps, tip="Auto list back to the defaults")), False, False, 0)
+    w_ptr.pack_start(hrow(btn("Switch now", _mode_switch, tip="Toggle between normal and game mode (same as the mode combo)")), False, False, 0)
     w_ptr.pack_start(mode_lbl, False, False, 0)
-    w_ptr.pack_start(caption("Windows in the auto list (class or title contains) switch the pointer to game mode by themselves."), False, False, 0)
+    w_ptr.pack_start(tab_sep(), False, False, 2)
+    w_ptr.pack_start(hrow(
+        toggle("Flip X", "Mirror the pointer left/right", "wii_flip_x"),
+        toggle("Flip Y", "Mirror the pointer up/down", "wii_flip_y"),
+        toggle("Flip Nunchuk Y", "Nunchuk stick up/down reversed", "wii_nunchuk_flip_y")), False, False, 0)
+    w_ptr.pack_start(hrow(toggle("Rotation compensation", "Tilting the Wiimote sideways does not rotate the pointer movement (uses the two IR dots)", "wii_roll")), False, False, 0)
+    w_ptr.pack_start(caption("Connect the Wiimote in Settings → Devices. The pointer area is also there."), False, False, 0)
 
-    # Kalibrierung
     cal_lbl = Gtk.Label()
     cal_lbl.get_style_context().add_class("caption")
     cal_lbl.set_halign(Gtk.Align.CENTER)
     def _cal(cmd):
-        r = _pad_ctl(cmd)
-        cal_lbl.set_text(r or "TrafkPad is not running")
+        cal_lbl.set_text(_pad_ctl(cmd) or "TrafkPad is not running")
     cal_row = hbox(4); cal_row.set_halign(Gtk.Align.CENTER)
     for text, cmd, tip in (("Calibrate", "wii-cal start", "Then point the Wiimote at the top-left and bottom-right screen corner and press A each time"),
                            ("Reset", "wii-cal reset", "Back to the default area")):
@@ -20257,19 +20637,13 @@ def _build_settings_controller(page: Gtk.Box, key: str, label: str, win: Gtk.Win
     w_cal.pack_start(caption("Calibration: click, then point at the top-left corner and press A, then the bottom-right corner and press A"), False, False, 0)
     w_cal.pack_start(cal_row, False, False, 0)
     w_cal.pack_start(cal_lbl, False, False, 0)
+    t_wii = _pad_subtabs(win, [("Pointer", w_ptr), ("Calibrate", w_cal)])
 
-    w_ptr.pack_start(hrow(
-        toggle("Flip X", "Mirror the pointer left/right", "wii_flip_x"),
-        toggle("Flip Y", "Mirror the pointer up/down", "wii_flip_y"),
-        toggle("Flip Nunchuk Y", "Nunchuk stick up/down reversed", "wii_nunchuk_flip_y")), False, False, 0)
-
-    t_wii = _pad_subtabs(win, [("Connect", w_conn), ("Pointer", w_ptr), ("Calibrate", w_cal)])
-
-    stack.add_named(t_pad,   "pad")
-    stack.add_named(t_feel,  "feel")
-    stack.add_named(t_login, "login")
-    stack.add_named(t_wii,   "wii")
+    stack.add_named(p_stat, "pad")
     stack.add_named(_build_pad_mapping_tab(win, cfg, caption, hrow), "map")
+    stack.add_named(_build_pad_combos_tab(win, cfg, caption, fslider), "combos")
+    stack.add_named(t_feel, "feel")
+    stack.add_named(t_wii, "wii")
 
     tab_row = hbox(4); tab_row.set_halign(Gtk.Align.CENTER)
     tab_btns: dict = {}
@@ -20278,7 +20652,7 @@ def _build_settings_controller(page: Gtk.Box, key: str, label: str, win: Gtk.Win
         for n, b in tab_btns.items():
             ctx = b.get_style_context()
             ctx.add_class("active") if n == name else ctx.remove_class("active")
-    for name, tlabel in (("pad", "Controller"), ("feel", "Feel"), ("map", "Mapping"), ("wii", "Wiimote"), ("login", "Login")):
+    for name, tlabel in (("pad", "State"), ("map", "Mapping"), ("combos", "Combos"), ("feel", "Feel"), ("wii", "Wiimote")):
         b = btn(tlabel, active=(name == "pad"))
         b.connect("clicked", lambda _b, n=name: _switch(n))
         tab_btns[name] = b
@@ -20368,6 +20742,23 @@ def build_settings(win: Gtk.Window):
             page.show_all()
             stack.add_named(page, cat_key)
         _switch_stack(stack, win, cat_key)
+
+    # Bar-Buttons "settings#Display" & Co.: Kategorien wie Tabs auswählbar machen (siehe
+    # _tab_select). Schlüssel ODER Beschriftung (normalisiert), z.B. "display", "apps & shortcuts".
+    _cat_by_name: dict = {}
+    for _k, _ic, _lbl, _ds in SETTINGS_CATEGORIES:
+        _cat_by_name[_k] = _k
+        _cat_by_name[_tab_norm(_lbl)] = _k
+    def _hook_select(want: str) -> bool:
+        k = _cat_by_name.get(want)
+        if k is None:
+            return False
+        _open_category(k)
+        return True
+    def _hook_active(want: str) -> bool:
+        k = _cat_by_name.get(want)
+        return k is not None and stack.get_visible_child_name() == k
+    _tab_hooks[win] = (_hook_select, _hook_active)
 
     hub = vbox(2); safe_pad_edge(hub, 420, top=True, bottom=False)
     hub.set_valign(Gtk.Align.START)
@@ -20550,8 +20941,8 @@ def _on_client_readable(conn, _cond):
                 try: conn.sendall((result + "\n").encode())
                 except Exception: pass
             elif name:
-                name, _, opt = name.partition("@")
-                result = toggle_widget(name, opt)
+                name, opt, tab = _parse_widget_request(name)
+                result = toggle_widget(name, opt, tab)
                 try: conn.sendall((result + "\n").encode())
                 except Exception: pass
     except Exception:

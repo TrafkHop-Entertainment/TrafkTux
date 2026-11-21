@@ -88,6 +88,7 @@ typedef struct {
     bool debug, home_tap;
     char layout[48];                          /* aktives Layout: layouts/<name>.conf (Ueberschreibungen der Standardbelegung) */
     int stick_base, stick_home;               /* Maus-Stick: 0 aus, 1 Maus, 2 Scrollen (ohne / mit Home) */
+    bool wii_roll;                                              /* Drehung der Wiimote (Rollwinkel aus den zwei IR-Punkten) ausgleichen */
     bool wii_pointer, wii_flip_x, wii_flip_y, wii_nun_flip_y;   /* Wiimote: IR-Zeiger, Achsen-Spiegelung */
     float wii_tau;                            /* Glaettung 1..4 -> Zeitkonstante in s (gross = traege) */
     int wii_mode, wii_alt_mode;               /* 0 absolut, 1 relativ (Delta), 2 Joystick (Abstand zur Mitte) */
@@ -290,7 +291,7 @@ static void cfg_defaults(void) {
         .stick_thr = 0.5f, .mouse_dz = 0.12f, .mouse_speed = 900.f, .mouse_curve = 1.8f,
         .scroll_speed = 1500.f, .combo_hold_ms = 1000, .combo_grace_ms = 80,
         .ov_rx = -2, .ov_ry = -2, .ov_l2 = -2, .ov_r2 = -2, .home_btn = BTN_MODE, .home_release_ms = 350, .debug = false, .home_tap = true,
-        .wii_pointer = true, .wii_flip_x = true, .wii_flip_y = false, .wii_nun_flip_y = true,
+        .wii_roll = true, .wii_pointer = true, .wii_flip_x = true, .wii_flip_y = false, .wii_nun_flip_y = true,
         .layout = "default", .stick_base = 1, .stick_home = 2,
         .wii_tau = 0.2f, .wii_mode = 0, .wii_alt_mode = 1, .wii_rel_scale = 2500.f, .wii_x0 = 0.f, .wii_y0 = 0.f, .wii_x1 = 1.f, .wii_y1 = 1.f,
     };
@@ -351,6 +352,7 @@ static void cfg_apply_kv(const char *k, const char *v) {
     else if (!strcmp(k, "wii_pointer")) cfg.wii_pointer = parse_bool(v, cfg.wii_pointer);
     else if (!strcmp(k, "wii_flip_x")) cfg.wii_flip_x = parse_bool(v, cfg.wii_flip_x);
     else if (!strcmp(k, "wii_flip_y")) cfg.wii_flip_y = parse_bool(v, cfg.wii_flip_y);
+    else if (!strcmp(k, "wii_roll")) cfg.wii_roll = parse_bool(v, cfg.wii_roll);
     else if (!strcmp(k, "wii_smooth")) { static const float tau[6] = { 0.15f, 0.9f, 0.45f, 0.2f, 0.08f, 0.f }; int l = (int)clampf((float)atoi(v), 1.f, 5.f); cfg.wii_tau = tau[l];   /* 1 = extrem glatt ... 5 = roh */ }
     else if (!strcmp(k, "layout")) {
         size_t i = 0;
@@ -955,7 +957,8 @@ static void hypr_line(const char *line) {
 
 /* IR-Zeiger */
 static struct {
-    bool have2, vis, init;
+    bool have2, vis, init, theta_ok;
+    float theta;             /* Rollwinkel der Sensorleiste im Kamerabild (rad), fortlaufend verfolgt */
     float pa[2], pb[2], mid[2];
     float u, v;              /* roh, normiert 0..1 (nach Spiegelung) */
     float sx, sy;            /* geglaettet, Bildschirm 0..1 */
@@ -981,6 +984,18 @@ static void ir_process(const int pts[][2], int n) {
         ir.pa[0] = pts[bi][0]; ir.pa[1] = pts[bi][1]; ir.pb[0] = pts[bj][0]; ir.pb[1] = pts[bj][1];
         ir.have2 = true;
         mx_ = (ir.pa[0] + ir.pb[0]) / 2; my_ = (ir.pa[1] + ir.pb[1]) / 2;
+        /* Rollwinkel: Richtung der Linie durch beide Punkte. Die Leiste sieht um 180 Grad gedreht gleich aus,
+         * darum den zum letzten Winkel naechsten der beiden Kandidaten nehmen (beim ersten Mal: -90..90 Grad). */
+        float th = atan2f(ir.pb[1] - ir.pa[1], ir.pb[0] - ir.pa[0]);
+        const float PI_ = 3.14159265f;
+        if (ir.theta_ok) {
+            while (th - ir.theta > PI_ / 2) th -= PI_;
+            while (th - ir.theta < -PI_ / 2) th += PI_;
+        } else {
+            while (th > PI_ / 2) th -= PI_;
+            while (th <= -PI_ / 2) th += PI_;
+        }
+        ir.theta = th; ir.theta_ok = true;
     } else {
         float q[2] = { (float)pts[0][0], (float)pts[0][1] };
         if (ir.have2) {      /* ein Punkt sichtbar: Versatz zur letzten Mitte vom naeheren Punkt uebernehmen */
@@ -990,6 +1005,10 @@ static void ir_process(const int pts[][2], int n) {
             near_[0] = q[0]; near_[1] = q[1];
             mx_ = q[0] + ox; my_ = q[1] + oy;
         } else { mx_ = q[0]; my_ = q[1]; }
+    }
+    if (cfg.wii_roll && ir.theta_ok && ir.have2) {      /* Bildmitte um -Rollwinkel zurueckdrehen */
+        float cx = mx_ - 511.5f, cy = my_ - 383.5f, c = cosf(ir.theta), s = sinf(ir.theta);
+        mx_ = 511.5f + c * cx + s * cy; my_ = 383.5f - s * cx + c * cy;
     }
     if (!ir.vis) ir.fresh = true;
     ir.vis = true;
@@ -1921,7 +1940,7 @@ int main(void) {
         CHECK(has("K191=1") || has("K183=1"), "Wii Home+1 = F13 '%s'", rec);
         /* IR: zwei Punkte -> Mitte, gespiegelt */
         ir.init = false; ir.have2 = false; ir.vis = false; ir.last_x = ir.last_y = 0;
-        cal_u0 = cal_v0 = 0.f; cal_u1 = cal_v1 = 1.f; clear();
+        cal_u0 = cal_v0 = 0.f; cal_u1 = cal_v1 = 1.f; clear(); cfg.wii_roll = false; ir.theta_ok = false;
         int two[2][2] = { { 400, 300 }, { 600, 500 } };
         ir_process(two, 2); ir_emit(0.5f);
         CHECK(has("A0:") && has("A1:"), "IR gibt Zeiger aus '%s'", rec);
@@ -1931,10 +1950,33 @@ int main(void) {
         int one[1][2] = { { 410, 310 } };
         ir_process(one, 1); ir_emit(0.5f);
         CHECK(fabsf(ir.u - (u0 - 10.f / 1023.f)) < 0.002f && fabsf(ir.v - (v0 + 10.f / 767.f)) < 0.002f, "IR 1 Punkt folgt (u=%.3f v=%.3f)", ir.u, ir.v);
+        cfg.wii_roll = true; ir.theta_ok = false;
         clear(); ir_process(NULL, 0);
         CHECK(!ir.vis && rec[0] == 0, "IR weg: Zeiger bleibt stehen '%s'", rec);
         /* Kalibrierung: A zeigt Ecken */
         ir.init = false; ir.vis = false; cal_u0 = cal_v0 = 0.f; cal_u1 = cal_v1 = 1.f;
+        {   /* Rollausgleich: gleiches Ziel bei 0, 60, 89 und -90 Grad Drehung der Wiimote */
+            const float PI_ = 3.14159265f;
+            float base_u = 0, base_v = 0;
+            for (int k = 0; k < 4; k++) {
+                float al = k == 0 ? 0.f : k == 1 ? PI_ / 3 : k == 2 ? 89.f * PI_ / 180.f : -PI_ / 2 + 0.02f;
+                float mxo = 640 - 511.5f, myo = 300 - 383.5f, hx = 112.f;          /* Zielmitte (640,300), Leiste waagrecht */
+                float c = cosf(al), s = sinf(al);
+                int pt[2][2];
+                float ax = -hx, ay = 0, bx = hx, by = 0;
+                pt[0][0] = (int)lroundf(511.5f + c * (mxo + ax) - s * (myo + ay)); pt[0][1] = (int)lroundf(383.5f + s * (mxo + ax) + c * (myo + ay));
+                pt[1][0] = (int)lroundf(511.5f + c * (mxo + bx) - s * (myo + by)); pt[1][1] = (int)lroundf(383.5f + s * (mxo + bx) + c * (myo + by));
+                ir.theta_ok = false; ir.have2 = false; ir.vis = false;
+                bool ok_in = true;
+                for (int q = 0; q < 2; q++) if (pt[q][0] < 0 || pt[q][0] > 1023 || pt[q][1] < 0 || pt[q][1] > 767) ok_in = false;
+                if (!ok_in) { CHECK(false, "Testpunkte ausserhalb der Kamera (k=%d)", k); continue; }
+                ir_process(pt, 2);
+                if (k == 0) { base_u = ir.u; base_v = ir.v; }
+                else CHECK(fabsf(ir.u - base_u) < 0.01f && fabsf(ir.v - base_v) < 0.01f, "Rollausgleich %d: u=%.3f v=%.3f erwartet %.3f %.3f", k, ir.u, ir.v, base_u, base_v);
+            }
+            cfg.wii_roll = false; { int pt[2][2] = { { 300, 600 }, { 520, 700 } }; ir.theta_ok = false; ir_process(pt, 2); CHECK(ir.theta_ok, "theta wird auch ohne Ausgleich verfolgt"); }
+            cfg.wii_roll = true; ir.theta_ok = false; ir.have2 = false; ir.vis = false;
+        }
         int c1[2][2] = { { 800, 150 }, { 800, 150 } }; ir_process(c1, 2);
         wii_cal_step = 1; clear(); wii_button(w, BTN_SOUTH, 1); wii_button(w, BTN_SOUTH, 0);
         CHECK(wii_cal_step == 2 && rec[0] == 0, "Kal. Schritt 1: A kein Klick '%s'", rec);

@@ -20,7 +20,7 @@ fish_pager_color_progress fff495
 
 [light]
 preferred_background fffdf5
-fish_color_normal 23163B
+fish_color_normal 1A0D34
 fish_color_command 5a3998
 fish_color_param ed9121
 fish_color_redirection ed9121

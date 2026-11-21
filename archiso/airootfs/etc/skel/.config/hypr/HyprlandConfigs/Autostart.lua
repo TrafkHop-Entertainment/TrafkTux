@@ -150,6 +150,11 @@ hl.on("hyprland.start", function()
             .. ">/dev/null 2>&1 &"
     )
 
+    -- Wiimote-Suche: 5 Minuten lang nach dem Login (mit Notification), damit man
+    -- ohne Widget verbinden kann (1+2 halten). Single-Instance + nur einmal pro
+    -- Login (das Skript prueft selbst), abschaltbar in Widgets > Apps > Autostart.
+    hl.exec_cmd("setsid -f bash ~/.config/TrafkTuxPad/wiimote-autoconnect.sh >/dev/null 2>&1 &")
+
     hl.exec_cmd("pkill -f '[W]idgetsDaemon.py'")
     -- DEBUG (temporaer, siehe Chat): stderr/stdout jetzt nach
     -- /tmp/WidgetsDaemon.log statt /dev/null, damit ein evtl. Absturz/
