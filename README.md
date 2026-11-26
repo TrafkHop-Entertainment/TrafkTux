@@ -176,21 +176,25 @@ Any gamepad = keyboard + mouse for the whole OS (daemon: `~/.config/TrafkTuxPad/
 | --- | --- |
 | Left stick / D-pad | W A S D (or arrows, setting) / arrow keys |
 | Right stick | Mouse |
-| A / B / Start / Select | Space / X / Enter / Esc |
+| A / B / X / Y | Space / Ctrl / Tab / F |
+| Start / Select | Enter / Esc |
 | L1 / R1 / L3 | Q / E / Shift |
 | L2 / R2 / R3 | Left / right / middle click |
 | Home + right stick | Scroll (4 directions) |
 | Home + L2 / R2 | Super + left / right click (move / resize windows) |
-| Home + A / B / X / Y | Terminal / File manager / Fullscreen / Hide all |
-| Home + D-pad up / down | Launcher / Power menu |
-| Home + D-pad left / right | Settings at pointer / Workspace overview |
+| Home + X / Y | Workspace overview (Hyprexpo) / Screenshot |
+| Home + A / B | unassigned |
+| Home + D-pad up / down | Pin / Hide window (with R3 held: Hide all) |
+| Home + D-pad left / right | Fullscreen 1 (with R3 held: Fullscreen 0) / lock Bar autohide |
+| Home + Start / Select | Launcher (with R3 held: Settings at pointer) / Power menu |
 | Home + L1 / R1 | Previous / next workspace |
-| Home + Start / Select | Screenshot / lock Bar autohide |
 | Home + left stick | Focus window (like Super + WASD) |
+
+Wiimote (default): B / A = left / right click, 1 / 2 = scroll up / down, + / − = Enter / Esc, D-pad = arrows, Nunchuk stick = WASD, Z / C = Q / E. With Home: A / B = Super + right / left click, D-pad up / down / left / right = Launcher / Power menu / Settings at pointer / Hyprexpo, + / − = Launcher / Power menu, 1 = Screenshot, 2 = Hide all, Z / C = previous / next workspace.
 
 Settings → Controller (tabs **State, Mapping, Combos, Feel, Wiimote**). *State*: mode Keyboard / Off (a third mode “Controller”, which turns pads like the Wiimote into a standard gamepad, is planned), master switch, feedback (rumble / notification / sound). Starting with controller mode ON at login is set in Settings → Apps & Shortcuts → Autostart. *Mapping* (sub-tabs Normal, Wii, Layouts): one button per controller input showing its current binding. Click it and press the key or key combination on the keyboard (Super works, Esc is a normal key; a lone modifier like Super is taken when you release it). The popup closes by itself after 5 s without input. Mouse buttons, scroll, media keys, *None* and *Default* are picked in the same popup. Base and Home layer are separate. While the Mapping or Combos tab is open all pad / Wiimote input is blocked and only highlighted. *Combos*: click a field, hold the buttons on the controller together and let go (gamepad ON / OFF, Wiimote ON / OFF, Wiimote pointer mode, hold times). *Feel* (Pointer, Sticks): pointer speed / curve / dead zone, scroll speed, invert scroll; Nintendo layout (swaps A/B and X/Y), left stick WASD/arrows, swap D-pad and left stick (both layers: Home + D-pad then = window focus), mouse on left stick (right stick off; with the swap: Home + L3 = launcher, Home + R3 = power menu). If a pad sends Home only as a short pulse, tap Home once and then press the next button (`home_tap`). Debug: `debug = true` in `TrafkPad.conf`, log in `/tmp/TrafkPad.log`.
 
-The Home-layer keys are F13–F24 and only bound while controller mode is ON (Controls.lua, section 4).
+The pad does not talk to Hyprland directly: for actions like Launcher or Screenshot it sends fixed keys (F13–F24, with Shift / Ctrl for variants; no real keyboard has them). What Hyprland does with them lives in `~/.config/hypr/HyprlandUserConfigs/ControllerBinds.lua`, which the widgets generate (rewritten and Hyprland reloaded once when it changes) and `Controls.lua` (section 4) loads, same pattern as `UserAutostart.lua`. Binds only work while controller mode is ON. In the Mapping popup every button can be set to a typed key combination, a mouse / scroll / media entry, or a *Hyprland action* from a list; the Home layer shows the meaning, e.g. “F13 · Launcher”. With Home + R3 (right stick click) held — the shift layer — Shift is added to the key and the right stick does nothing (no scroll, no mouse). L3 is not involved: L3 + Home stays movement/focus. Which click is the shift button is set in Feel → Sticks → “Shift button” (`shift_btn = R3` or `L3` in `TrafkPad.conf`). Extra buttons of a pad (paddles, macro keys …) show up automatically as *Extra 1…8* in the Mapping tab (unassigned by default). The controller settings only appear while a controller is connected; the Normal / Wii mapping tabs follow the connected device types. Wiimote pointer area “active workspace”: the daemon asks Hyprland (`hyprctl monitors -j`) for the real geometry of the focused monitor (on focus change and every 3 s), so different resolutions / scales work; `wii_edge` (default 3 %) makes the screen corners reachable.
 
 **Wiimote** (hid-wiimote, no pairing needed): hold 1 + 2, then Settings → Devices → Wiimote → *Connect* (or `~/.config/TrafkTuxPad/wiimote-connect.sh`). After every login TrafkPad also looks for a Wiimote for 5 minutes (notification; `wiimote-autoconnect.sh`, switch in Autostart), so you can connect without opening a widget. Needs `ClassicBondedOnly=false` in `/etc/bluetooth/input.conf` (shipped). A / B = left / right click, 1 / 2 = Space / X, + / − = Enter / Esc, D-pad = arrows, Home = Home layer; Nunchuk: stick = WASD, Z / C = Q / E; the IR sensor bar moves the pointer (absolute, all screens / one monitor / active monitor, set in Settings → Devices; smoothness 1–5 with 5 = raw; calibration in Settings → Controller → Wiimote → Calibrate). Rotation compensation: the tilt of the Wiimote (angle between the two IR dots) is subtracted, so pointing up while rolled −90° still moves up (switch `wii_roll`). Toggle ON/OFF: hold + and − for 1 s. Pointer mode normal ⇄ game mode (relative / joystick for games that capture the mouse): hold 1 and 2 for 0.6 s (no auto-detection). Both combos can be changed in Combos. After updating `TrafkPad.c` rebuild it (`~/.config/TrafkTuxPad/build.sh`) and restart the daemon (`pkill TrafkPad`, the watchdog restarts it); `TrafkPad --ctl version` must say `proto=4`.
 

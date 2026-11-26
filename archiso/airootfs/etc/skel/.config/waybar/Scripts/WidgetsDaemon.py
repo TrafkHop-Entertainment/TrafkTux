@@ -19670,10 +19670,10 @@ PAD_CONF = PAD_DIR / "TrafkPad.conf"
 
 # MUSS zu cfg_defaults() in TrafkPad.c passen
 PAD_DEFAULTS = {
-    "enabled": "true", "start_active": "true", "wii_roll": "true", "wii_autoconnect": "true",
+    "enabled": "true", "start_active": "true", "wii_roll": "true", "wii_edge": "3", "wii_autoconnect": "true",
     "toggle_combo": "L1+R1+SELECT+START", "toggle_hold_ms": "1000",
     "left_stick": "wasd", "swap_ab": "false", "scroll_invert": "false",
-    "swap_xy": "false", "swap_dpad": "false", "mouse_stick": "right", "mouse_speed": "900", "mouse_curve": "1.8", "mouse_deadzone": "0.12",
+    "swap_xy": "false", "swap_dpad": "false", "shift_btn": "R3", "mouse_stick": "right", "mouse_speed": "900", "mouse_curve": "1.8", "mouse_deadzone": "0.12",
     "scroll_speed": "1500",
     "rumble": "true", "notify": "true", "sounds": "true",
     "wii_pointer": "true", "wii_smooth": "3", "wii_flip_x": "true", "wii_flip_y": "false",
@@ -19858,8 +19858,8 @@ PAD_LAYOUT_DIR = PAD_DIR / "layouts"
 PAD_INPUTS_ALL = ["A", "B", "X", "Y", "L1", "R1", "L2", "R2", "SELECT", "START", "L3", "R3",
                   "DU", "DD", "DL", "DR", "SLU", "SLD", "SLL", "SLR"]
 PAD_INPUT_LABEL = {"SELECT": "Select", "START": "Start", "DU": "D-pad up", "DD": "D-pad down",
-                   "DL": "D-pad left", "DR": "D-pad right", "SLU": "Stick up", "SLD": "Stick down",
-                   "SLL": "Stick left", "SLR": "Stick right", "L3": "L3 (stick click)", "R3": "R3 (stick click)"}
+                   "DL": "D-pad left", "DR": "D-pad right", "SLU": "Left stick ↑", "SLD": "Left stick ↓",
+                   "SLL": "Left stick ←", "SLR": "Left stick →", "L3": "L3 (stick click)", "R3": "R3 (stick click)"}
 PAD_KEY_CATS = [
     ("Letters", [c for c in "abcdefghijklmnopqrstuvwxyz"]),
     ("0-9", [c for c in "1234567890"]),
@@ -19946,33 +19946,131 @@ def _pad_pressed_parse(text: str) -> dict:
 # Beschriftungen fuer die Wiimote (interne Eingabenamen wie beim Gamepad: A-Taste = L2, B = R2, 1 = A, 2 = B, + = START, - = SELECT, Z = L1, C = R1)
 WII_LABEL = {"L2": "A button", "R2": "B (trigger)", "A": "1 button", "B": "2 button", "START": "+ button", "SELECT": "− button",
              "L1": "Nunchuk Z", "R1": "Nunchuk C", "DU": "D-pad up", "DD": "D-pad down", "DL": "D-pad left", "DR": "D-pad right",
-             "SLU": "Nunchuk stick up", "SLD": "Nunchuk stick down", "SLL": "Nunchuk stick left", "SLR": "Nunchuk stick right"}
+             "SLU": "Nunchuk stick ↑", "SLD": "Nunchuk stick ↓", "SLL": "Nunchuk stick ←", "SLR": "Nunchuk stick →"}
 PAD_COMBO_INPUTS = [("L1", "L1"), ("R1", "R1"), ("L2", "L2"), ("R2", "R2"), ("SELECT", "Select"), ("START", "Start"),
                     ("A", "A"), ("B", "B"), ("X", "X"), ("Y", "Y"), ("L3", "L3"), ("R3", "R3"),
                     ("DU", "D↑"), ("DD", "D↓"), ("DL", "D←"), ("DR", "D→")]
 WII_COMBO_INPUTS = [("L2", "A"), ("R2", "B"), ("A", "1"), ("B", "2"), ("START", "+"), ("SELECT", "−"),
                     ("DU", "↑"), ("DD", "↓"), ("DL", "←"), ("DR", "→"), ("L1", "Z"), ("R1", "C")]
 PAD_MAP_PAD = ["A", "B", "X", "Y", "L1", "R1", "L2", "R2", "SELECT", "START", "L3", "R3",
-               "DU", "DD", "DL", "DR", "SLU", "SLD", "SLL", "SLR"]
+               "DU", "DD", "DL", "DR", "SLU", "SLD", "SLL", "SLR", "E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8"]
 PAD_MAP_WII = ["L2", "R2", "A", "B", "START", "SELECT", "DU", "DD", "DL", "DR", "L1", "R1", "SLU", "SLD", "SLL", "SLR"]
-PAD_PROTO_NEEDED = 4
+PAD_PROTO_NEEDED = 6
 # Evdev-Tastencodes (= GDK hardware_keycode - 8) -> Namen, wie TrafkPad sie kennt (KEY_<NAME>)
 PAD_EVDEV_KEYS = {1: "esc", 2: "1", 3: "2", 4: "3", 5: "4", 6: "5", 7: "6", 8: "7", 9: "8", 10: "9", 11: "0", 12: "minus", 13: "equal", 14: "backspace", 15: "tab", 16: "q", 17: "w", 18: "e", 19: "r", 20: "t", 21: "y", 22: "u", 23: "i", 24: "o", 25: "p", 26: "leftbrace", 27: "rightbrace", 28: "enter", 29: "leftctrl", 30: "a", 31: "s", 32: "d", 33: "f", 34: "g", 35: "h", 36: "j", 37: "k", 38: "l", 39: "semicolon", 40: "apostrophe", 41: "grave", 42: "leftshift", 43: "backslash", 44: "z", 45: "x", 46: "c", 47: "v", 48: "b", 49: "n", 50: "m", 51: "comma", 52: "dot", 53: "slash", 54: "rightshift", 55: "kpasterisk", 56: "leftalt", 57: "space", 58: "capslock", 59: "f1", 60: "f2", 61: "f3", 62: "f4", 63: "f5", 64: "f6", 65: "f7", 66: "f8", 67: "f9", 68: "f10", 69: "numlock", 70: "scrolllock", 71: "kp7", 72: "kp8", 73: "kp9", 74: "kpminus", 75: "kp4", 76: "kp5", 77: "kp6", 78: "kpplus", 79: "kp1", 80: "kp2", 81: "kp3", 82: "kp0", 83: "kpdot", 85: "zenkakuhankaku", 86: "102nd", 87: "f11", 88: "f12", 89: "ro", 90: "katakana", 91: "hiragana", 92: "henkan", 93: "katakanahiragana", 94: "muhenkan", 95: "kpjpcomma", 96: "kpenter", 97: "rightctrl", 98: "kpslash", 99: "sysrq", 100: "rightalt", 101: "linefeed", 102: "home", 103: "up", 104: "pageup", 105: "left", 106: "right", 107: "end", 108: "down", 109: "pagedown", 110: "insert", 111: "delete", 112: "macro", 113: "mute", 114: "volumedown", 115: "volumeup", 116: "power", 117: "kpequal", 118: "kpplusminus", 119: "pause", 120: "scale", 121: "kpcomma", 122: "hangeul", 123: "hanja", 124: "yen", 125: "leftmeta", 126: "rightmeta", 127: "compose", 163: "nextsong", 164: "playpause", 165: "previoussong", 166: "stopcd", 172: "homepage", 173: "refresh", 174: "exit", 183: "f13", 184: "f14", 185: "f15", 186: "f16", 187: "f17", 188: "f18", 189: "f19", 190: "f20", 191: "f21", 192: "f22", 193: "f23", 194: "f24", 224: "brightnessdown", 225: "brightnessup"}
 _PAD_MOD_CODES = {29: "ctrl", 97: "ctrl", 42: "shift", 54: "shift", 56: "alt", 100: "alt", 125: "super", 126: "super"}
 
-def _pad_proto(txt: str) -> int:
-    """Protokollstand aus 'TrafkPad proto=N' bzw. status-Zeile; 0 = Daemon zu alt, -1 = laeuft nicht."""
-    if not txt:
-        return -1
-    for part in txt.split():
-        if part.startswith("proto="):
-            try:
-                return int(part[6:])
-            except ValueError:
-                return 0
-    return 0
+# Hyprland-Aktionen fuer Controller-Tasten. Der Daemon sendet fuer jede Aktion eine feste Taste (F13..F24, ggf. mit
+# Shift/Ctrl - gibt es auf keiner echten Tastatur), das Widget erzeugt daraus HyprlandUserConfigs/ControllerBinds.lua
+# (wird von Controls.lua eingebunden). (id, Beschriftung, Taste im Layout, Hyprland-Bind, Lua-Aktion; ctx = Tabelle aus Controls.lua)
+PAD_HYPR_ACTIONS = [
+    ("launcher",   "Launcher",              "f13",       "code:191",           "exec(ctx.launcher_cmd)"),
+    ("options",    "Options (Settings)",    "shift+f13", "SHIFT + code:191",   "exec(ctx.settings_cursor_cmd)"),
+    ("power",      "Power menu",            "f14",       "code:192",           "exec(ctx.powermenu_cmd)"),
+    ("terminal",   "Terminal",              "f15",       "code:193",           "exec(ctx.terminal)"),
+    ("files",      "File manager",          "f24",       "code:202",           "exec(ctx.fileManager)"),
+    ("hyprexpo",   "Workspace overview",    "f16",       "code:194",           "hyprexpo()"),
+    ("screenshot", "Screenshot",            "f17",       "code:195",           "exec('grim -g \"$(slurp -d)\" - | wl-copy')"),
+    ("hide",       "Hide window",           "f18",       "code:196",           "exec('hyprland-minimizer')"),
+    ("hideall",    "Hide all windows",      "shift+f18", "SHIFT + code:196",   "exec('bash ~/.config/waybar/Scripts/HideAll.sh toggle &')"),
+    ("pin",        "Pin window (PiP)",      "f19",       "code:197",           "exec(\"hyprctl dispatch 'hl.dsp.exec_cmd(\\\"~/.config/hypr/PictureInPicture.sh\\\")'\")"),
+    ("barlock",    "Lock bar autohide",     "f20",       "code:198",           "exec('bash -c \\'p=/tmp/TrafkTuxBar.pid; [ -f \"$p\" ] && kill -RTMIN+1 $(cat \"$p\")\\'')"),
+    ("ws_prev",    "Workspace back",        "f21",       "code:199",           "workspace(-1)"),
+    ("ws_next",    "Workspace forward",     "f22",       "code:200",           "workspace(1)"),
+    ("full1",      "Fullscreen 1",          "f23",       "code:201",           "fullscreen(1)"),
+    ("full0",      "Fullscreen 0",          "shift+f23", "SHIFT + code:201",   "fullscreen(0)"),
+    ("focus_up",   "Focus up",              "ctrl+f13",  "CTRL + code:191",    "ctx.focusOrCycle('up')()"),
+    ("focus_left", "Focus left",            "ctrl+f14",  "CTRL + code:192",    "ctx.focusOrCycle('left')()"),
+    ("focus_down", "Focus down",            "ctrl+f15",  "CTRL + code:193",    "ctx.focusOrCycle('down')()"),
+    ("focus_right","Focus right",           "ctrl+f16",  "CTRL + code:194",    "ctx.focusOrCycle('right')()"),
+]
+PAD_ACTION_NOTES = {k: label for _i, label, k, _b, _a in PAD_HYPR_ACTIONS}
+PAD_BINDS_FILE = "ControllerBinds.lua"
+
+def _pad_binds_lua() -> str:
+    """Inhalt von HyprlandUserConfigs/ControllerBinds.lua. Liefert eine Funktion, die Controls.lua mit seinen lokalen
+    Hilfen (launcher_cmd, focusOrCycle ...) aufruft - eine per dofile geladene Datei sieht diese Locals sonst nicht."""
+    L = [
+        "-- ControllerBinds.lua",
+        "--",
+        "-- Automatisch von den Widgets (Settings > Controller) generiert - NICHT von Hand aendern, wird beim",
+        "-- Start des WidgetsDaemon neu geschrieben, wenn sich der Inhalt aendert.",
+        "-- Der Controller-Daemon (TrafkPad) sendet fuer Aktionen wie \"Launcher\" eine feste Taste (F13..F24, teils",
+        "-- mit Shift/Ctrl - gibt es auf keiner echten Tastatur); hier steht, was Hyprland daraus macht. Die Binds",
+        "-- greifen nur, solange der Controller-Modus AN ist (Flag-Datei, die TrafkPad anlegt).",
+        "-- Eingebunden von Controls.lua (Abschnitt 4), das seine lokalen Hilfen als Tabelle \"ctx\" uebergibt.",
+        "-- Keycodes: xkb = evdev + 8 (F13 = 183 -> 191 ... F24 = 194 -> 202).",
+        "",
+        'local FLAG = os.getenv("HOME") .. "/.cache/hypr/controller_mode_active"',
+        "",
+        "local function mode_active()",
+        '    local f = io.open(FLAG, "r")',
+        "    if f then",
+        "        f:close()",
+        "        return true",
+        "    end",
+        "    return false",
+        "end",
+        "",
+        "return function(ctx)",
+        "    local function bind(keys, action)",
+        "        hl.bind(keys, function()",
+        "            if mode_active() then",
+        "                action()",
+        "            end",
+        "        end)",
+        "    end",
+        "    local function exec(cmd)",
+        "        hl.exec_cmd(cmd)",
+        "    end",
+        "    local function workspace(step)",
+        "        local ws = hl.get_active_workspace()",
+        "        if not ws or not ws.id then",
+        "            return",
+        "        end",
+        "        local target = ws.id + step",
+        "        if target < 1 then",
+        "            target = 9",
+        "        elseif target > 9 then",
+        "            target = 1",
+        "        end",
+        "        hl.dispatch(hl.dsp.focus({ workspace = target }))",
+        "    end",
+        "    local function fullscreen(mode)",
+        "        hl.dispatch(hl.dsp.window.fullscreen({ mode = mode }))",
+        "    end",
+        "    local function hyprexpo()",
+        "        if hl.plugin and hl.plugin.hyprexpo then",
+        '            hl.plugin.hyprexpo.expo("toggle")',
+        '            hl.dispatch(hl.dsp.submap("hyprexpo"))',
+        "        end",
+        "    end",
+        "",
+    ]
+    for _i, label, key, bindspec, act in PAD_HYPR_ACTIONS:
+        L.append(f'    bind("{bindspec}", function() -- {key.upper()}  {label}')
+        L.append(f"        {act}")
+        L.append("    end)")
+    L.append("end")
+    L.append("")
+    return "\n".join(L)
+
+def _pad_binds_ensure() -> None:
+    """ControllerBinds.lua anlegen/aktualisieren. Aendert sich der Inhalt (oder fehlt die Datei), laedt Hyprland
+    per 'hyprctl reload' neu (als eigener Schritt, nie aus der Lua-Config heraus - siehe _hypr_reload)."""
+    want = _pad_binds_lua()
+    if _hypr_read_user_config(PAD_BINDS_FILE) == want:
+        return
+    try:
+        _hypr_write_user_config(PAD_BINDS_FILE, want)
+        _hypr_reload()
+    except Exception as e:
+        print(f"widgets_daemon: ControllerBinds.lua: {e}", file=sys.stderr)
 
 def _pad_pretty_action(v: str) -> str:
+    note = PAD_ACTION_NOTES.get(v.lower())
+    if note:
+        return f"{v.upper() if len(v) <= 3 else '+'.join(x.capitalize() if len(x) > 3 else x.upper() for x in v.split('+'))} · {note}"
     out = []
     for p in v.split("+"):
         out.append(PAD_KEY_PRETTY.get(p, p.upper() if (len(p) <= 1 or re.fullmatch(r"f\d+", p)) else p.capitalize()))
@@ -20062,15 +20160,26 @@ def _pad_capture_action(win: Gtk.Window, label: str):
         allm = [m for m in _MOD_ORDER if m in st["tog"] or m in st["held"]]
         held.set_text((" + ".join(x.capitalize() for x in allm) + " + …") if allm else " ")
     box.pack_start(tab_sep(), False, False, 2)
-    box.pack_start(caption_label("Modifiers (tick them if Hyprland grabs the combo when you type it):"), False, False, 0)
     _tog_row()
     box.pack_start(tab_sep(), False, False, 2)
-    box.pack_start(caption_label("Cannot be typed - pick here:"), False, False, 0)
     _row([("LMB", "mouse:left"), ("RMB", "mouse:right"), ("MMB", "mouse:middle")])
     _row([("Scroll ↑", "scroll:up"), ("Scroll ↓", "scroll:down"), ("Scroll ←", "scroll:left"), ("Scroll →", "scroll:right")])
     _row([("Vol+", "volumeup"), ("Vol-", "volumedown"), ("Mute", "mute"), ("Play", "playpause")])
     _row([("Next", "nextsong"), ("Prev", "previoussong"), ("Bri+", "brightnessup"), ("Bri-", "brightnessdown")])
     box.pack_start(tab_sep(), False, False, 2)
+    def _actions_menu(_b):
+        st["t"] = 60.0                                   # waehrend das Menue offen ist, nicht schliessen
+        m = Gtk.Menu()
+        for _i, text, key, _bs, _a in PAD_HYPR_ACTIONS:
+            it = Gtk.MenuItem(label=text)
+            it.connect("activate", lambda _w, k=key: _finish(k))
+            m.append(it)
+        m.connect("deactivate", lambda _m: st.__setitem__("t", 5.0))
+        m.show_all()
+        m.popup_at_widget(_b, Gdk.Gravity.SOUTH_WEST, Gdk.Gravity.NORTH_WEST, None)
+    ab = hbox(3); ab.set_halign(Gtk.Align.CENTER)
+    ab.pack_start(btn("Hyprland action ▾", _actions_menu, tip="Launcher, screenshot, workspaces, pin ... (handled by Hyprland via ControllerBinds.lua)"), False, False, 0)
+    box.pack_start(ab, False, False, 0)
     _row([("None", "none"), ("Default", "__default__"), ("Cancel", None)])
     box.pack_start(count, False, False, 0)
 
@@ -20111,16 +20220,6 @@ def _pad_capture_action(win: Gtk.Window, label: str):
     st["done"] = True
     dlg.destroy()
     return st["v"]
-
-def caption_label(text: str) -> Gtk.Label:
-    l = Gtk.Label(label=text)
-    l.get_style_context().add_class("caption")
-    l.set_opacity(0.6)
-    l.set_line_wrap(True)
-    l.set_max_width_chars(44)
-    l.set_justify(Gtk.Justification.CENTER)
-    l.set_halign(Gtk.Align.CENTER)
-    return l
 
 def _pad_capture_combo(win: Gtk.Window, label: str, dev: str, allowed: list, clearable: bool = False):
     """Popup: Tasten am Controller zusammen halten und loslassen. Rueckgabe: Liste interner Namen (mind. 2),
@@ -20191,51 +20290,109 @@ def _pad_monitor_heartbeat(w: Gtk.Widget) -> None:
         return True
     add_timer(90, _hb)
 
-def _build_pad_mapping_tab(win: Gtk.Window, cfg: dict, caption, hrow_fn) -> Gtk.Box:
-    root = vbox(6); pad(root, h=4, v=10)
-    st = {"layout": cfg.get("layout", "default") or "default", "eff": {}, "over": {}, "proto": None,
-          "lay": {"pad": "base", "wii": "base"}, "pressed": {"down": set(), "wdown": set()}}
-    rows: dict = {}                                   # (Geraet, Eingabe) -> Button
-    info = Gtk.Label()
-    info.get_style_context().add_class("caption")
-    info.set_halign(Gtk.Align.CENTER)
-    info.set_line_wrap(True)
-    info.set_max_width_chars(44)
-    hint = caption("Controller input is blocked while this tab is open. Click a button, then press the key or key combination you want on the keyboard.")
+def _pad_title(text: str) -> Gtk.Button:
+    """Ueberschrift im Stil der anderen Widgets (wie "VOLUME: 45%" im Audio-Widget)."""
+    b = bsec_btn(text)
+    b.set_can_focus(False)
+    return b
 
-    def _lab(dev, n):
-        return (WII_LABEL if dev == "wii" else PAD_INPUT_LABEL).get(n, n)
-    def _key(dev, n):
-        return f"{'w' if dev == 'wii' else ''}{st['lay'][dev]}.{n}"
+def _pad_extras_parse(txt: str) -> dict:
+    """"E1=BTN_C E2=BTN_TRIGGER_HAPPY1" -> {"E1": "C", "E2": "Trigger Happy1"} (Namen der Zusatztasten des Pads)."""
+    out = {}
+    for part in (txt or "").split():
+        if "=" in part:
+            k, v = part.split("=", 1)
+            v = v[4:] if v.startswith("BTN_") else v
+            out[k] = v.replace("_", " ").title()
+    return out
+
+def _pad_status_parse(txt: str) -> dict:
+    """status-Zeile des Daemons -> {"on": bool, "pads", "gpads", "wiis", "proto"}; leer = Daemon laeuft nicht."""
+    out = {"on": False, "pads": 0, "gpads": 0, "wiis": 0, "ebtn": 0, "proto": -1}
+    if not txt or txt.startswith("error"):
+        return out
+    parts = txt.split()
+    out["on"] = parts[0].lower() == "on"
+    out["proto"] = 0
+    for p in parts[1:]:
+        if "=" in p:
+            k, v = p.split("=", 1)
+            if k in ("pads", "gpads", "wiis", "ebtn", "proto"):
+                try:
+                    out[k] = int(v)
+                except ValueError:
+                    pass
+    return out
+
+def _pad_subtabs_dyn(win: Gtk.Window, items: list) -> tuple:
+    """Wie _pad_subtabs, aber einzelne Untertabs lassen sich ein-/ausblenden (z.B. "Wii" nur mit Wiimote).
+    Rueckgabe: (Box, set_visible(dict Beschriftung -> bool))."""
+    outer = vbox(4)
+    ctrl = _SegmentedControl()
+    ctrl.get_style_context().add_class("bubble")
+    ctrl.get_style_context().add_class("segmented")
+    ctrl.set_can_focus(False)
+    row = hbox(6); row.set_halign(Gtk.Align.CENTER)
+    row.pack_start(ctrl.widget, False, False, 0)
+    outer.pack_start(row, False, False, 4)
+    outer.pack_start(tab_sep(), False, False, 0)
+    st = Gtk.Stack()
+    st.set_hhomogeneous(False)
+    st.set_vhomogeneous(False)
+    names = {}
+    for i, (text, w) in enumerate(items):
+        st.add_named(w, f"s{i}")
+        names[text] = f"s{i}"
+    outer.pack_start(st, True, True, 0)
+    cur = {"vis": None, "user": False}
+    def _show(text):
+        _switch_stack(st, win, names.get(text, "s0"))
+    def set_visible(vis: dict):
+        want = [t for t, _w in items if vis.get(t, True)]
+        if want == cur["vis"]:
+            return
+        prev = ctrl.get_active_text()
+        cur["vis"] = want
+        ctrl.remove_all()
+        for t in want:
+            ctrl.append_text(t)
+        sel = prev if (prev in want and cur["user"]) else (want[0] if want else None)
+        if sel is not None:
+            ctrl.set_active(want.index(sel))
+            _show(sel)
+    def _chg(_c):
+        cur["user"] = True
+        _show(ctrl.get_active_text())
+    ctrl.connect("changed", _chg)
+    set_visible({})
+    return outer, set_visible
+
+def _build_pad_mapping_tab(win: Gtk.Window, cfg: dict, dev: dict, on_dev) -> Gtk.Box:
+    root = vbox(6); pad(root, h=4, v=10)
+    st = {"layout": cfg.get("layout", "default") or "default", "eff": {}, "over": {},
+          "lay": {"pad": "base", "wii": "base"}, "pressed": {"down": set(), "wdown": set()}}
+    rows: dict = {}                                   # (Geraet, Eingabe) -> (Button, Belegung rechts, Name links)
+
+    def _lab(d, n):
+        return (WII_LABEL if d == "wii" else PAD_INPUT_LABEL).get(n, n)
+    def _key(d, n):
+        return f"{'w' if d == 'wii' else ''}{st['lay'][d]}.{n}"
 
     def _refresh_buttons():
-        for (dev, n), b in rows.items():
-            k = _key(dev, n)
+        for (d, n), (b, r, _l) in rows.items():
+            k = _key(d, n)
             v = st["eff"].get(k)
-            b.set_label(f"{_lab(dev, n)}  →  {_pad_pretty_action(v) if v else '?'}" + (" ✎" if k in st["over"] else ""))
-            lab = b.get_child()
-            if isinstance(lab, Gtk.Label):
-                lab.set_ellipsize(Pango.EllipsizeMode.END)
-                lab.set_max_width_chars(24)
+            r.set_text((_pad_pretty_action(v) if v else "?") + ("  ✎" if k in st["over"] else ""))
 
     def _refresh_pressed():
-        for (dev, n), b in rows.items():
-            down = st["pressed"].get("wdown" if dev == "wii" else "down", set())
+        for (d, n), (b, r, _l) in rows.items():
+            down = st["pressed"].get("wdown" if d == "wii" else "down", set())
             ctx = b.get_style_context()
             ctx.add_class("active") if n in down else ctx.remove_class("active")
-
-    def _update_info():
-        if st["proto"] is not None and st["proto"] < 0:
-            info.set_text("TrafkPad is not running - start it to edit the mapping")
-        elif st["proto"] is not None and st["proto"] < PAD_PROTO_NEEDED:
-            info.set_text("TrafkPad is outdated (old build): rebuild it and restart it, then this editor works")
-        else:
-            info.set_text("")
 
     def _refresh_eff():
         st["eff"] = _pad_dump_parse(_pad_ctl("dump", timeout=1.0))
         st["over"] = _pad_layout_read(st["layout"])
-        _update_info()
         _rebuild_stickmodes()
         _refresh_buttons()
         return False
@@ -20244,16 +20401,16 @@ def _build_pad_mapping_tab(win: Gtk.Window, cfg: dict, caption, hrow_fn) -> Gtk.
         _pad_ctl("reload")
         GLib.timeout_add(250, _refresh_eff)
 
-    def _bind(dev, n):
-        lay = st["lay"][dev]
-        v = _pad_capture_action(win, f"{_lab(dev, n)}  ({'Home layer' if lay == 'home' else 'Base'})")
+    def _bind(d, n):
+        lay = st["lay"][d]
+        v = _pad_capture_action(win, f"{_lab(d, n)}  ({'Home layer' if lay == 'home' else 'Base'})")
         if v is None:
             return
         over = _pad_layout_read(st["layout"])
         if v == "__default__":
-            over.pop(_key(dev, n), None)
+            over.pop(_key(d, n), None)
         else:
-            over[_key(dev, n)] = v
+            over[_key(d, n)] = v
         _pad_layout_write(st["layout"], over)
         _reload_daemon()
 
@@ -20269,9 +20426,8 @@ def _build_pad_mapping_tab(win: Gtk.Window, cfg: dict, caption, hrow_fn) -> Gtk.
             stick_holder.remove(c)
         for which, title in (("base", "Pointer stick"), ("home", "Pointer stick + Home")):
             cur = st["eff"].get(f"stick.{which}", "mouse" if which == "base" else "scroll")
+            stick_holder.pack_start(_pad_title(title), False, False, 0)
             r = hbox(4); r.set_halign(Gtk.Align.CENTER)
-            lab = Gtk.Label(label=title); lab.get_style_context().add_class("caption"); lab.set_opacity(0.7)
-            r.pack_start(lab, False, False, 4)
             for mode, text in (("mouse", "Mouse"), ("scroll", "Scroll"), ("none", "Off")):
                 b = btn(text, active=(cur == mode))
                 b.connect("clicked", lambda _b, w=which, m=mode: _set_stickmode(w, m))
@@ -20280,32 +20436,45 @@ def _build_pad_mapping_tab(win: Gtk.Window, cfg: dict, caption, hrow_fn) -> Gtk.
         stick_holder.show_all()
 
     # ── Seiten Normal / Wii ──
-    def _dev_page(dev):
+    def _dev_page(d):
         page = vbox(6)
         lrow = hbox(4); lrow.set_halign(Gtk.Align.CENTER)
         lbtns: dict = {}
         def _set_lay(v):
-            st["lay"][dev] = v
+            st["lay"][d] = v
             for n, b in lbtns.items():
                 c = b.get_style_context()
                 c.add_class("active") if n == v else c.remove_class("active")
             _refresh_buttons()
-        for v, text, tip in (("base", "Base", "Mapping without Home"), ("home", "Home layer", "Mapping while Home is held (or tapped once)")):
-            b = btn(text, active=(v == st["lay"][dev]), tip=tip)
+        for v, text in (("base", "Base"), ("home", "Home layer")):
+            b = btn(text, active=(v == st["lay"][d]))
             b.connect("clicked", lambda _b, x=v: _set_lay(x))
             lbtns[v] = b
             lrow.pack_start(b, False, False, 0)
         page.pack_start(lrow, False, False, 0)
         page.pack_start(tab_sep(), False, False, 2)
-        grid = Gtk.Grid(); grid.set_row_spacing(3); grid.set_column_spacing(3); grid.set_column_homogeneous(True)
-        grid.set_halign(Gtk.Align.CENTER)
-        for i, n in enumerate(PAD_MAP_WII if dev == "wii" else PAD_MAP_PAD):
-            b = btn(_lab(dev, n), tip="Click, then press the key or combination")
-            b.connect("clicked", lambda _b, d=dev, nn=n: _bind(d, nn))
-            rows[(dev, n)] = b
-            grid.attach(b, i % 2, i // 2, 1, 1)
-        page.pack_start(grid, False, False, 0)
-        if dev == "pad":
+        sw, lst = scroll_box(240)                      # scrollbar: das Widget wird nicht zu hoch
+        sw.set_min_content_height(190)
+        sw.set_max_content_height(190)
+        sw.set_propagate_natural_height(False)
+        for n in (PAD_MAP_WII if d == "wii" else PAD_MAP_PAD):
+            b = Gtk.Button()
+            b.get_style_context().add_class("bubble")
+            b.set_can_focus(False)
+            h = hbox(8)
+            l = Gtk.Label(label=_lab(d, n)); l.set_halign(Gtk.Align.START)
+            r = Gtk.Label(label="?"); r.set_halign(Gtk.Align.END); r.set_opacity(0.85)
+            h.pack_start(l, True, True, 0)
+            h.pack_start(r, False, False, 0)
+            b.add(h)
+            b.connect("clicked", lambda _b, dd=d, nn=n: _bind(dd, nn))
+            rows[(d, n)] = (b, r, l)
+            if n.startswith("E"):
+                b.set_no_show_all(True)
+                b.set_visible(False)
+            lst.pack_start(b, False, False, 0)
+        page.pack_start(sw, False, False, 0)
+        if d == "pad":
             page.pack_start(tab_sep(), False, False, 2)
             page.pack_start(stick_holder, False, False, 0)
         return page
@@ -20342,7 +20511,7 @@ def _build_pad_mapping_tab(win: Gtk.Window, cfg: dict, caption, hrow_fn) -> Gtk.
             lay_holder.remove(c)
         r = hbox(4); r.set_halign(Gtk.Align.CENTER)
         for n in _pad_layout_names():
-            b = btn(n, active=(n == st["layout"]), tip="Switch to this layout" if n != "default" else "Built-in layout (your changes are stored as overrides)")
+            b = btn(n, active=(n == st["layout"]))
             b.connect("clicked", lambda _b, x=n: _set_layout(x))
             r.pack_start(b, False, False, 0)
         lay_holder.pack_start(r, False, False, 0)
@@ -20355,7 +20524,6 @@ def _build_pad_mapping_tab(win: Gtk.Window, cfg: dict, caption, hrow_fn) -> Gtk.
         lay_holder.pack_start(r2, False, False, 0)
         lay_holder.show_all()
     p_lay = vbox(6)
-    p_lay.pack_start(caption("Layouts: your own sets of changes. 'default' = the built-in mapping plus the changes you make while it is selected."), False, False, 0)
     p_lay.pack_start(lay_holder, False, False, 0)
 
     # ── Live: Eingaben sind gesperrt und werden nur angezeigt ──
@@ -20364,41 +20532,42 @@ def _build_pad_mapping_tab(win: Gtk.Window, cfg: dict, caption, hrow_fn) -> Gtk.
             return True
         txt = _pad_ctl("padmon", timeout=0.25)
         if not txt or txt.startswith("error"):
-            v = _pad_proto(_pad_ctl("version", timeout=0.3))
-            if v != st["proto"]:
-                st["proto"] = v
-                _update_info()
             return True
-        if st["proto"] != PAD_PROTO_NEEDED:
-            st["proto"] = PAD_PROTO_NEEDED
-            _refresh_eff()
         st["pressed"] = _pad_pressed_parse(txt)
         _refresh_pressed()
         return True
     add_timer(90, _poll_pressed)
 
-    root.pack_start(hint, False, False, 0)
-    root.pack_start(info, False, False, 0)
-    root.pack_start(_pad_subtabs(win, [("Normal", _dev_page("pad")), ("Wii", _dev_page("wii")), ("Layouts", p_lay)]), False, False, 0)
+    tabs, set_vis = _pad_subtabs_dyn(win, [("Normal", _dev_page("pad")), ("Wii", _dev_page("wii")), ("Layouts", p_lay)])
+    def _dev_changed():
+        set_vis({"Normal": dev["g"] > 0, "Wii": dev["w"] > 0})
+        for k in range(1, 9):                                 # Zusatztasten: nur so viele, wie das Pad hat
+            b, r, l = rows[("pad", f"E{k}")]
+            b.set_visible(k <= dev.get("e", 0))
+            l.set_text(f"Extra {k} · {dev.get('enames', {}).get(f'E{k}', '?')}")
+        if dev["proto"] >= PAD_PROTO_NEEDED and not st["eff"]:
+            _refresh_eff()
+    on_dev(_dev_changed)
+    root.pack_start(tabs, False, False, 0)
     _rebuild_layouts()
-    _refresh_eff()
+    _dev_changed()
     return root
 
-def _build_pad_combos_tab(win: Gtk.Window, cfg: dict, caption, fslider_fn) -> Gtk.Box:
+def _build_pad_combos_tab(win: Gtk.Window, cfg: dict, dev: dict, on_dev, fslider_fn) -> Gtk.Box:
     root = vbox(8); pad(root, h=4, v=10)
-    root.pack_start(caption("Click a field, then hold the buttons on the controller together and let go. Controller input is blocked while this tab is open."), False, False, 0)
 
     def _text(key, allowed):
         t = dict(allowed)
         names = [x for x in cfg.get(key, "").replace(",", "+").split("+") if x and x.lower() != "none"]
-        return " + ".join(t.get(n, n) for n in names) if names else "— none —"
+        return " & ".join(t.get(n, n) for n in names) if names else "— none —"
 
-    def _field(title, key, dev, allowed, clearable=False):
+    boxes: dict = {}
+    def _field(title, key, d, allowed, clearable=False):
         box = vbox(2)
-        box.pack_start(caption(title), False, False, 0)
-        b = btn(_text(key, allowed), tip="Click and press the buttons on the controller")
+        box.pack_start(_pad_title(title), False, False, 0)
+        b = btn(_text(key, allowed), tip="Click, then hold the buttons on the controller and let go")
         def _click(_b):
-            r = _pad_capture_combo(win, title, dev, allowed, clearable)
+            r = _pad_capture_combo(win, title, d, allowed, clearable)
             if r is None:
                 return
             cfg[key] = "+".join(r) if r else "none"
@@ -20409,25 +20578,32 @@ def _build_pad_combos_tab(win: Gtk.Window, cfg: dict, caption, fslider_fn) -> Gt
         row.pack_start(b, False, False, 0)
         box.pack_start(row, False, False, 0)
         return box
-    root.pack_start(_field("Gamepad: controller mode ON / OFF", "toggle_combo", "pad", PAD_COMBO_INPUTS), False, False, 0)
-    root.pack_start(fslider_fn("󰍽", 500, 3000, 100, "toggle_hold_ms", "%d", "Hold time for the ON / OFF combo (ms)"), False, False, 0)
-    root.pack_start(caption("Hold time ON / OFF (ms)"), False, False, 0)
+    gp = vbox(8)
+    gp.pack_start(_field("Gamepad: mode ON / OFF", "toggle_combo", "pad", PAD_COMBO_INPUTS), False, False, 0)
+    gp.pack_start(fslider_fn("Hold time", 500, 3000, 100, "toggle_hold_ms", "%d", "Hold time for the ON / OFF combo", " ms"), False, False, 0)
+    wp = vbox(8)
+    wp.pack_start(_field("Wiimote: mode ON / OFF", "wii_toggle_combo", "wii", WII_COMBO_INPUTS), False, False, 0)
+    wp.pack_start(_field("Wiimote: pointer mode", "wii_mode_combo", "wii", WII_COMBO_INPUTS, clearable=True), False, False, 0)
+    wp.pack_start(fslider_fn("Hold time", 200, 2000, 100, "wii_mode_hold_ms", "%d", "Hold time for the pointer mode combo", " ms"), False, False, 0)
+    root.pack_start(gp, False, False, 0)
     root.pack_start(tab_sep(), False, False, 2)
-    root.pack_start(_field("Wiimote: controller mode ON / OFF", "wii_toggle_combo", "wii", WII_COMBO_INPUTS), False, False, 0)
-    root.pack_start(_field("Wiimote: pointer mode (normal ⇄ game mode)", "wii_mode_combo", "wii", WII_COMBO_INPUTS, clearable=True), False, False, 0)
-    root.pack_start(fslider_fn("󰍽", 200, 2000, 100, "wii_mode_hold_ms", "%d", "Hold time for the pointer mode combo (ms)"), False, False, 0)
-    root.pack_start(caption("Hold time pointer mode (ms)"), False, False, 0)
+    root.pack_start(wp, False, False, 0)
+    def _dev_changed():
+        gp.set_visible(dev["g"] > 0)
+        wp.set_visible(dev["w"] > 0)
+    gp.show_all(); wp.show_all()
+    gp.set_no_show_all(True); wp.set_no_show_all(True)
+    on_dev(_dev_changed)
+    _dev_changed()
     _pad_monitor_heartbeat(root)
     return root
 
-
 def _build_settings_controller(page: Gtk.Box, key: str, label: str, win: Gtk.Window) -> None:
     cfg = _pad_cfg_ensure()
-    root = vbox(4)
-    stack = Gtk.Stack()
-    stack.set_transition_type(Gtk.StackTransitionType.NONE)
-    stack.set_hhomogeneous(False)
-    stack.set_vhomogeneous(False)
+    dev = {"proto": -1, "g": 0, "w": 0, "e": 0, "enames": {}, "on": False}
+    dev_cbs: list = []
+    def on_dev(cb):
+        dev_cbs.append(cb)
 
     def toggle(text, tip, cfg_key, on_change=None):
         b = btn(text, active=(cfg[cfg_key] == "true"), tip=tip)
@@ -20441,18 +20617,32 @@ def _build_settings_controller(page: Gtk.Box, key: str, label: str, win: Gtk.Win
         b.connect("clicked", _clicked)
         return b
 
-    def caption(text):
-        return caption_label(text)
-
-    def fslider(icon, lo, hi, step, cfg_key, fmt, tip):
-        sl_box, sl = bslider(icon, lo, hi, step, float(cfg[cfg_key]), show_val=True)
+    def fslider(title, lo, hi, step, cfg_key, fmt, tip, unit=""):
+        """Wie im Audio-Widget: Ueberschrift mit Wert ("POINTER SPEED: 900") + Slider darunter (fest 230 px, mittig)."""
+        box = vbox(2)
+        try:
+            cur = float(cfg[cfg_key])
+        except ValueError:
+            cur = lo
+        hdr = _pad_title(f"{title}: {fmt % cur}{unit}")
+        sl_box, sl = bslider("", lo, hi, step, cur, show_val=False)
+        for ch in sl_box.get_children():
+            if isinstance(ch, Gtk.Label):
+                sl_box.remove(ch)
+                break
+        sl_box.set_halign(Gtk.Align.CENTER)
+        sl_box.set_size_request(230, -1)
         sl.set_tooltip_text(tip)
         sl.set_digits(0 if step >= 1 else 2)
         def _chg(s):
-            cfg[cfg_key] = fmt % s.get_value()
+            v = s.get_value()
+            cfg[cfg_key] = fmt % v
+            hdr.set_label(f"{title}: {fmt % v}{unit}".upper())
             _pad_cfg_save_soon(cfg)
         sl.connect("value-changed", _chg)
-        return sl_box
+        box.pack_start(hdr, False, False, 0)
+        box.pack_start(sl_box, False, False, 0)
+        return box
 
     def choice_row(cfg_key, options, title, holder):
         btns: dict = {}
@@ -20468,44 +20658,21 @@ def _build_settings_controller(page: Gtk.Box, key: str, label: str, win: Gtk.Win
             b.connect("clicked", lambda _b, x=v: _set(x))
             btns[v] = b
             row.pack_start(b, False, False, 0)
-        holder.pack_start(caption(title), False, False, 0)
+        holder.pack_start(_pad_title(title), False, False, 0)
         holder.pack_start(row, False, False, 0)
 
-    # ═════════════ Tab 1: State ═════════════
+    # ═════════════ State ═════════════
     p_stat = vbox(6); pad(p_stat, h=4, v=10)
-    status_lbl = Gtk.Label()
-    status_lbl.get_style_context().add_class("caption")
-    status_lbl.set_halign(Gtk.Align.CENTER)
-    status_lbl.set_line_wrap(True)
-    status_lbl.set_max_width_chars(44)
     mode_btns: dict = {}
-
     def _show_mode(mode):
         for n, b in mode_btns.items():
             ctx = b.get_style_context()
             ctx.add_class("active") if n == mode else ctx.remove_class("active")
-
-    def _refresh_status():
-        r = _pad_ctl("status")
-        if not r:
-            status_lbl.set_text("TrafkPad is not running")
-            _show_mode("")
-        else:
-            parts = dict(p.split("=", 1) for p in r.split()[1:] if "=" in p)
-            on = r.split()[0].lower() == "on"
-            txt = f"{parts.get('pads', '0')} pad(s) connected"
-            if parts.get("proto") is None:
-                txt += "\nTrafkPad is an old build - rebuild it and restart it (new features need it)"
-            status_lbl.set_text(txt)
-            _show_mode("keyboard" if on else "off")
-        return True
-
     def _set_mode(m):
         _pad_ctl("on" if m == "keyboard" else "off")
         GLib.timeout_add(250, lambda: (_refresh_status(), False)[1])
-
     mrow = hbox(4); mrow.set_halign(Gtk.Align.CENTER)
-    for m, text, tip in (("controller", "Controller", "Gamepad emulation: pads that the OS does not accept as a gamepad (Wiimote ...) appear as a standard gamepad - not built yet"),
+    for m, text, tip in (("controller", "Controller", "Gamepad emulation (Wiimote etc. as a standard gamepad) - not built yet"),
                          ("keyboard", "Keyboard", "Pads act as keyboard and mouse"),
                          ("off", "Off", "TrafkPad ignores all pads")):
         b = btn(text, tip=tip)
@@ -20515,36 +20682,27 @@ def _build_settings_controller(page: Gtk.Box, key: str, label: str, win: Gtk.Win
             b.connect("clicked", lambda _b, x=m: _set_mode(x))
         mode_btns[m] = b
         mrow.pack_start(b, False, False, 0)
-    p_stat.pack_start(caption("Mode"), False, False, 0)
+    p_stat.pack_start(_pad_title("Mode"), False, False, 0)
     p_stat.pack_start(mrow, False, False, 0)
-    p_stat.pack_start(status_lbl, False, False, 0)
-    _refresh_status()
-    add_timer(2000, _refresh_status)
-
     def _after_enable():
         _pad_ctl("reload")
         GLib.timeout_add(400, lambda: (_refresh_status(), False)[1])
     p_stat.pack_start(tab_sep(), False, False, 2)
     p_stat.pack_start(hrow(toggle("Controller support", "Master switch. Off = the daemon idles and never touches your pads",
                                   "enabled", _after_enable)), False, False, 0)
-    p_stat.pack_start(caption("Feedback when the mode switches"), False, False, 0)
+    p_stat.pack_start(_pad_title("Feedback"), False, False, 0)
     p_stat.pack_start(hrow(
         toggle("Rumble", "Short vibration when the mode switches", "rumble"),
         toggle("Notify", "Notification when the mode switches", "notify"),
         toggle("Sounds", "System sound when the mode switches", "sounds")), False, False, 0)
-    p_stat.pack_start(caption("Start with controller mode ON at login: Settings → Apps → Autostart. Mode switch buttons: Combos tab."), False, False, 0)
 
     # ═════════════ Feel: Pointer | Sticks ═════════════
     f_ptr = vbox(6); pad(f_ptr, h=4, v=10)
     f_stk = vbox(6); pad(f_stk, h=4, v=10)
-    f_ptr.pack_start(fslider("󰍽", 200, 2500, 50, "mouse_speed", "%d", "Mouse pointer speed at full stick (px/s)"), False, False, 0)
-    f_ptr.pack_start(caption("Pointer speed"), False, False, 0)
-    f_ptr.pack_start(fslider("󰟶", 1.0, 3.0, 0.1, "mouse_curve", "%.1f", "1 = linear, higher = more precise near the center"), False, False, 0)
-    f_ptr.pack_start(caption("Pointer curve (higher = finer control)"), False, False, 0)
-    f_ptr.pack_start(fslider("󰍺", 0.05, 0.4, 0.01, "mouse_deadzone", "%.2f", "Stick dead zone"), False, False, 0)
-    f_ptr.pack_start(caption("Stick dead zone"), False, False, 0)
-    f_ptr.pack_start(fslider("󰜮", 300, 5000, 100, "scroll_speed", "%d", "Scroll speed (Home + right stick)"), False, False, 0)
-    f_ptr.pack_start(caption("Scroll speed (Home + right stick)"), False, False, 0)
+    f_ptr.pack_start(fslider("Pointer speed", 200, 2500, 50, "mouse_speed", "%d", "Mouse pointer speed at full stick (px/s)"), False, False, 0)
+    f_ptr.pack_start(fslider("Pointer curve", 1.0, 3.0, 0.1, "mouse_curve", "%.1f", "1 = linear, higher = more precise near the center"), False, False, 0)
+    f_ptr.pack_start(fslider("Dead zone", 0.05, 0.4, 0.01, "mouse_deadzone", "%.2f", "Stick dead zone"), False, False, 0)
+    f_ptr.pack_start(fslider("Scroll speed", 300, 5000, 100, "scroll_speed", "%d", "Scroll speed (Home + right stick)"), False, False, 0)
     f_ptr.pack_start(hrow(toggle("Invert scroll", "Reverse the scroll direction", "scroll_invert")), False, False, 0)
 
     choice_row("left_stick", (("wasd", "W A S D", "Left stick sends W A S D (same as the launcher)"),
@@ -20570,6 +20728,10 @@ def _build_settings_controller(page: Gtk.Box, key: str, label: str, win: Gtk.Win
         ctx.add_class("active") if on else ctx.remove_class("active")
         _pad_cfg_save_soon(cfg)
     mouseL_btn.connect("clicked", _mouse_left)
+    choice_row("shift_btn", (("R3", "R3", "Home + R3 held: Shift is added to the Home keys and the right stick (scroll) does nothing"),
+                             ("L3", "L3", "Home + L3 held: same, but with the left stick click")),
+               "Shift button (Home layer)", f_stk)
+    f_stk.pack_start(tab_sep(), False, False, 2)
     f_stk.pack_start(hrow(swapdp_btn, mouseL_btn), False, False, 0)
     f_stk.pack_start(hrow(nintendo_btn), False, False, 0)
     t_feel = _pad_subtabs(win, [("Pointer", f_ptr), ("Sticks", f_stk)])
@@ -20590,30 +20752,28 @@ def _build_settings_controller(page: Gtk.Box, key: str, label: str, win: Gtk.Win
         b.connect("clicked", lambda _b, x=v: _set_smooth(x))
         smooth_btns[v] = b
         sm_row.pack_start(b, False, False, 0)
-    w_ptr.pack_start(caption("Cursor smoothness (1 = extremely smooth, 5 = raw)"), False, False, 0)
+    w_ptr.pack_start(_pad_title("Smoothness"), False, False, 0)
     w_ptr.pack_start(sm_row, False, False, 0)
     choice_row("wii_mode",
                (("abs", "Absolute", "Pointer = where the Wiimote points (desktop)"),
                 ("rel", "Relative", "Pointer moves like a mouse (games that capture the mouse)"),
                 ("joy", "Joystick", "Distance from the screen center = speed (shooters)")),
-               "Pointer mode (normal)", w_ptr)
+               "Pointer mode", w_ptr)
     choice_row("wii_alt_mode",
                (("rel", "Relative", "Mouse-like motion"),
                 ("joy", "Joystick", "Distance from the center = speed")),
-               "Game mode (the mode combo / Switch now toggles to this)", w_ptr)
-    w_ptr.pack_start(fslider("󰍽", 500, 6000, 100, "wii_rel_scale", "%d", "Relative mode: pixels per full screen width"), False, False, 0)
-    w_ptr.pack_start(caption("Relative speed"), False, False, 0)
+               "Game mode", w_ptr)
+    w_ptr.pack_start(fslider("Relative speed", 500, 6000, 100, "wii_rel_scale", "%d", "Relative mode: pixels per full screen width"), False, False, 0)
+    w_ptr.pack_start(fslider("Edge reach", 0, 10, 1, "wii_edge", "%d", "The outer % of the sensor view count as the screen edge (so you can reach the corners)", " %"), False, False, 0)
     mode_lbl = Gtk.Label()
     mode_lbl.get_style_context().add_class("caption")
     mode_lbl.set_halign(Gtk.Align.CENTER)
-    mode_lbl.set_line_wrap(True)
-    mode_lbl.set_max_width_chars(44)
     def _mode_switch(_b):
         r = _pad_ctl("wii-mode toggle")
         if r.startswith("error unknown"):
             r = "TrafkPad is an old build - rebuild it and restart it"
         mode_lbl.set_text(r or "TrafkPad is not running")
-    w_ptr.pack_start(hrow(btn("Switch now", _mode_switch, tip="Toggle between normal and game mode (same as the mode combo)")), False, False, 0)
+    w_ptr.pack_start(hrow(btn("Switch mode now", _mode_switch, tip="Toggle between normal and game mode (same as the mode combo)")), False, False, 0)
     w_ptr.pack_start(mode_lbl, False, False, 0)
     w_ptr.pack_start(tab_sep(), False, False, 2)
     w_ptr.pack_start(hrow(
@@ -20621,7 +20781,6 @@ def _build_settings_controller(page: Gtk.Box, key: str, label: str, win: Gtk.Win
         toggle("Flip Y", "Mirror the pointer up/down", "wii_flip_y"),
         toggle("Flip Nunchuk Y", "Nunchuk stick up/down reversed", "wii_nunchuk_flip_y")), False, False, 0)
     w_ptr.pack_start(hrow(toggle("Rotation compensation", "Tilting the Wiimote sideways does not rotate the pointer movement (uses the two IR dots)", "wii_roll")), False, False, 0)
-    w_ptr.pack_start(caption("Connect the Wiimote in Settings → Devices. The pointer area is also there."), False, False, 0)
 
     cal_lbl = Gtk.Label()
     cal_lbl.get_style_context().add_class("caption")
@@ -20634,36 +20793,89 @@ def _build_settings_controller(page: Gtk.Box, key: str, label: str, win: Gtk.Win
         b = btn(text, tip=tip)
         b.connect("clicked", lambda _b, c=cmd: _cal(c))
         cal_row.pack_start(b, False, False, 0)
-    w_cal.pack_start(caption("Calibration: click, then point at the top-left corner and press A, then the bottom-right corner and press A"), False, False, 0)
+    w_cal.pack_start(_pad_title("Calibration"), False, False, 0)
     w_cal.pack_start(cal_row, False, False, 0)
     w_cal.pack_start(cal_lbl, False, False, 0)
     t_wii = _pad_subtabs(win, [("Pointer", w_ptr), ("Calibrate", w_cal)])
 
+    # ═════════════ Huelle: Tabs + "kein Controller"-Seite ═════════════
+    stack = Gtk.Stack()
+    stack.set_transition_type(Gtk.StackTransitionType.NONE)
+    stack.set_hhomogeneous(False)
+    stack.set_vhomogeneous(False)
     stack.add_named(p_stat, "pad")
-    stack.add_named(_build_pad_mapping_tab(win, cfg, caption, hrow), "map")
-    stack.add_named(_build_pad_combos_tab(win, cfg, caption, fslider), "combos")
+    stack.add_named(_build_pad_mapping_tab(win, cfg, dev, on_dev), "map")
+    stack.add_named(_build_pad_combos_tab(win, cfg, dev, on_dev, fslider), "combos")
     stack.add_named(t_feel, "feel")
     stack.add_named(t_wii, "wii")
 
     tab_row = hbox(4); tab_row.set_halign(Gtk.Align.CENTER)
     tab_btns: dict = {}
+    cur_tab = {"n": "pad"}
     def _switch(name):
+        cur_tab["n"] = name
         _switch_stack(stack, win, name)
         for n, b in tab_btns.items():
             ctx = b.get_style_context()
             ctx.add_class("active") if n == name else ctx.remove_class("active")
     for name, tlabel in (("pad", "State"), ("map", "Mapping"), ("combos", "Combos"), ("feel", "Feel"), ("wii", "Wiimote")):
         b = btn(tlabel, active=(name == "pad"))
+        b.set_no_show_all(True)
         b.connect("clicked", lambda _b, n=name: _switch(n))
         tab_btns[name] = b
         tab_row.pack_start(b, False, False, 0)
     stack.set_visible_child_name("pad")
 
-    root.pack_start(tab_row, True, False, 2)
-    root.pack_start(tab_sep(), False, False, 0)
-    root.pack_start(stack, False, False, 0)
-    page.pack_start(root, True, True, 0)
+    main = vbox(4)
+    main.pack_start(tab_row, True, False, 2)
+    main.pack_start(tab_sep(), False, False, 0)
+    main.pack_start(stack, False, False, 0)
 
+    none_page = vbox(8); pad(none_page, h=12, v=24)
+    none_lbl = Gtk.Label()
+    none_lbl.set_justify(Gtk.Justification.CENTER)
+    none_lbl.set_line_wrap(True)
+    none_lbl.set_max_width_chars(36)
+    none_page.pack_start(none_lbl, False, False, 0)
+
+    outer = Gtk.Stack()
+    outer.set_transition_type(Gtk.StackTransitionType.NONE)
+    outer.set_hhomogeneous(False)
+    outer.set_vhomogeneous(False)
+    outer.add_named(main, "main")
+    outer.add_named(none_page, "none")
+
+    def _refresh_status():
+        s = _pad_status_parse(_pad_ctl("status"))
+        if s["ebtn"] != dev["e"]:
+            dev["enames"] = _pad_extras_parse(_pad_ctl("extras")) if s["ebtn"] else {}
+        dev.update(proto=s["proto"], g=s["gpads"], w=s["wiis"], e=s["ebtn"], on=s["on"])
+        if s["proto"] < 0:
+            none_lbl.set_text("TrafkPad is not running.")
+            target = "none"
+        elif s["proto"] < PAD_PROTO_NEEDED:
+            none_lbl.set_text("TrafkPad is an old build.\nRebuild it (~/.config/TrafkTuxPad/build.sh) and restart it (pkill TrafkPad).")
+            target = "none"
+        elif s["gpads"] + s["wiis"] == 0:
+            none_lbl.set_text("No controller connected.\nPlug in a gamepad or connect a Wiimote (Settings → Devices) - the controller settings show up as soon as one is there.")
+            target = "none"
+        else:
+            target = "main"
+        if outer.get_visible_child_name() != target:
+            outer.set_visible_child_name(target)
+        _show_mode("keyboard" if s["on"] else "off")
+        tab_btns["wii"].set_visible(dev["w"] > 0)
+        for n in ("pad", "map", "combos", "feel"):
+            tab_btns[n].set_visible(True)
+        if dev["w"] <= 0 and cur_tab["n"] == "wii":
+            _switch("pad")
+        for cb in dev_cbs:
+            cb()
+        return True
+    outer.show_all()
+    _refresh_status()
+    add_timer(1500, _refresh_status)
+    page.pack_start(outer, True, True, 0)
 
 SETTINGS_BUILDERS = {
     "display":    _build_settings_display,
@@ -21026,6 +21238,7 @@ def main():
     in_thread(_prewarm_tools)
     threading.Thread(target=_hypr_active_thread, daemon=True).start()   # Active-Zuordnung (folgt dem Fokus-Monitor)
     in_thread(_hypridle_boot)     # Config anlegen + hypridle starten (statt Autostart.lua)
+    in_thread(_pad_binds_ensure)  # HyprlandUserConfigs/ControllerBinds.lua (Controller-Aktionen -> Hyprland)
     GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGTERM, _shutdown)
     GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGINT,  _shutdown)
     print(f"widgets_daemon: ready, listening on {SOCK_PATH}", file=sys.stderr)

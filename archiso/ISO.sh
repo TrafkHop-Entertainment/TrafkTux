@@ -190,16 +190,22 @@ echo "Stelle sicher, dass dies exakt der Version entspricht, die euer"
 echo "packages.x86_64 fuer die ISO installiert. Enter zum Fortfahren, Strg+C zum Abbrechen."
 read -r
 
-# Repo -> Plugin-Name(n), die aktiviert werden sollen
-declare -A REPO_PLUGINS=(
-  ["https://github.com/hyprwm/hyprland-plugins"]="hyprbars hyprfocus"
-  ["https://github.com/sandwichfarm/hyprexpo"]="hyprexpo"
-  ["https://github.com/hyprnux/hyprglass"]="hyprglass"
-  ["https://github.com/virtcode/hypr-dynamic-cursors"]="dynamic-cursors"
-  ["https://github.com/horriblename/hyprgrass"]="hyprgrass"
-  ["https://github.com/savonovv/hypr-kinetic-scroll"]="hypr-kinetic-scroll"
-  ["https://github.com/gen3vra/hyprwinwrap"]="hyprwinwrap"
-)
+# Repo -> Plugin-Name(n), die aktiviert werden sollen.
+# Einzige Quelle ist airootfs/usr/share/TrafkTux/HyprpmPlugins.conf (die nutzt
+# auf dem installierten System auch HyprpmSync.sh).
+HYPRPM_PLUGIN_CONF="${PROFILE_DIR}/airootfs/usr/share/TrafkTux/HyprpmPlugins.conf"
+[[ -f "${HYPRPM_PLUGIN_CONF}" ]] || die "Plugin-Liste fehlt: ${HYPRPM_PLUGIN_CONF}"
+declare -A REPO_PLUGINS=()
+while read -r _repo _plugins; do
+    [[ -z "${_repo}" || "${_repo}" == \#* ]] && continue
+    [[ -n "${_plugins}" ]] || die "HyprpmPlugins.conf: keine Plugins bei ${_repo}"
+    REPO_PLUGINS["${_repo}"]="${_plugins}"
+done < "${HYPRPM_PLUGIN_CONF}"
+((${#REPO_PLUGINS[@]})) || die "HyprpmPlugins.conf ist leer."
+
+# Der Wrapper /usr/local/bin/hyprpm (leitet "hyprpm update" auf HyprpmSync.sh um)
+# darf beim ISO-Build nicht greifen: hier brauchen wir das echte hyprpm.
+export TRAFKTUX_HYPRPM_RAW=1
 
 for repo in "${!REPO_PLUGINS[@]}"; do
     echo "==> hyprpm add ${repo}"
@@ -599,7 +605,7 @@ opt_make_group() {
     read -r -a updates  <<<"$(opt_cfg "${g}" Update)"
 
     for u in "${updates[@]}"; do
-        [[ "${u}" =~ ^(fast|fastfull|full)$ ]] || die "Update=${u} (Gruppe ${g}) ungueltig, erlaubt: fast, fastfull, full."
+        [[ "${u}" =~ ^(fast|fastfull|full|hyprpm|mirrors)$ ]] || die "Update=${u} (Gruppe ${g}) ungueltig, erlaubt: fast, fastfull, full, hyprpm, mirrors."
     done
 
     echo "==> ${pkgname}"
@@ -622,7 +628,11 @@ opt_make_group() {
         list_lines+=("group ${gr}")
     done
     for u in "${updates[@]}"; do
-        extras+=("Systemupdate ${u}")
+        case "${u}" in
+            hyprpm)  extras+=("Hyprland-Plugins neu bauen") ;;
+            mirrors) extras+=("Mirrorlist sortieren") ;;
+            *)       extras+=("Systemupdate ${u}") ;;
+        esac
         list_lines+=("update ${u}")
     done
 

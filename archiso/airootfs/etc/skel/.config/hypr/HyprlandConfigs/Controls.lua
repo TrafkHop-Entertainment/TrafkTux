@@ -1087,97 +1087,29 @@ hl.bind(mainMod .. " + CTRL + x", cornerSnap(0.5, 0.5, 0.5, 0.5)) -- unten recht
 -- ============================================================
 -- 4. Controller-Modus (TrafkPad)
 -- ============================================================
--- Der Daemon (~/.config/TrafkTuxPad/TrafkPad) sendet auf dem Pad bei
--- gedrueckter HOME-Taste NORMALE Tastatur-Events auf F13..F24
--- (Shift+F13..F16 = linker Stick). Diese Tasten gibt es auf keiner
--- echten Tastatur, deshalb kollidiert nichts. Die Binds hier greifen
--- ZUSAETZLICH nur im Controller-Modus:
---   * CONTROLLER_BINDS_ENABLED = Hauptschalter (false = komplett aus)
---   * Flag-Datei ~/.cache/hypr/controller_mode_active (legt der Daemon an,
---     solange der Modus AN ist; Muster wie floating_mode_active)
--- Keycodes: xkb = evdev + 8  (F13 = 183 -> 191 ... F24 = 194 -> 202)
+-- Der Daemon (~/.config/TrafkTuxPad/TrafkPad) sendet bei gedrueckter
+-- HOME-Taste (und fuer Aktionen wie "Launcher") NORMALE Tastatur-Events
+-- auf F13..F24, teils mit Shift/Ctrl. Diese Tasten gibt es auf keiner
+-- echten Tastatur, deshalb kollidiert nichts.
 --
---   HOME + A  Terminal          HOME + DPad hoch    Launcher
---   HOME + B  Dateimanager      HOME + DPad runter  Power-Menue
---   HOME + X  Vollbild          HOME + DPad links   Settings am Zeiger
---   HOME + Y  Alle verstecken   HOME + DPad rechts  Workspace-Uebersicht
---   HOME + L1/R1  Workspace zurueck/vor
---   HOME + Start  Screenshot (Bereich -> Zwischenablage)
---   HOME + Select Bar-Autohide sperren
---   HOME + linker Stick  Fokus wechseln (wie SUPER + WASD)
---   HOME + rechter Stick  Scrollen, HOME + L2/R2  SUPER + Linksklick/Rechtsklick
---                         (Fenster ziehen/skalieren; macht der Daemon selbst)
-local CONTROLLER_BINDS_ENABLED = true
-local CONTROLLER_MODE_FLAG = os.getenv("HOME") .. "/.cache/hypr/controller_mode_active"
-
-local function controller_mode_active()
-    local f = io.open(CONTROLLER_MODE_FLAG, "r")
-    if f then
-        f:close()
-        return true
-    end
-    return false
-end
-
-if CONTROLLER_BINDS_ENABLED then
-    local function pad_bind(keys, action)
-        hl.bind(keys, function()
-            if controller_mode_active() then
-                action()
-            end
-        end)
-    end
-
-    local function pad_exec(cmd)
-        return function()
-            hl.exec_cmd(cmd)
-        end
-    end
-
-    local function pad_workspace_cycle(step)
-        return function()
-            local ws = hl.get_active_workspace()
-            if not ws or not ws.id then
-                return
-            end
-            local target = ws.id + step
-            if target < 1 then
-                target = 9
-            elseif target > 9 then
-                target = 1
-            end
-            hl.dispatch(hl.dsp.focus({ workspace = target }))
-        end
-    end
-
-    pad_bind("code:191", pad_exec(terminal)) -- F13  HOME + A
-    pad_bind("code:192", pad_exec(fileManager)) -- F14  HOME + B
-    pad_bind("code:193", function() -- F15  HOME + X
-        hl.dispatch(hl.dsp.window.fullscreen({ mode = 1 }))
-    end)
-    pad_bind("code:194", pad_exec("bash ~/.config/waybar/Scripts/HideAll.sh toggle &")) -- F16  HOME + Y
-
-    pad_bind("code:195", pad_exec(launcher_cmd)) -- F17  HOME + DPad hoch
-    pad_bind("code:196", pad_exec(powermenu_cmd)) -- F18  HOME + DPad runter
-    pad_bind("code:197", pad_exec(settings_cursor_cmd)) -- F19  HOME + DPad links
-    pad_bind("code:198", function() -- F20  HOME + DPad rechts
-        if hl.plugin and hl.plugin.hyprexpo then
-            hl.plugin.hyprexpo.expo("toggle")
-            hl.dispatch(hl.dsp.submap("hyprexpo"))
-        end
-    end)
-
-    pad_bind("code:199", pad_workspace_cycle(-1)) -- F21  HOME + L1
-    pad_bind("code:200", pad_workspace_cycle(1)) -- F22  HOME + R1
-    pad_bind("code:201", pad_exec('grim -g "$(slurp -d)" - | wl-copy')) -- F23  HOME + Start
-    pad_bind(
-        "code:202", -- F24  HOME + Select
-        pad_exec('bash -c \'p=/tmp/TrafkTuxBar.pid; [ -f "$p" ] && kill -RTMIN+1 $(cat "$p")\'')
-    )
-
-    -- Linker Stick + HOME = Fokus wie SUPER + WASD (Daemon sendet SHIFT + F13..F16)
-    pad_bind("SHIFT + code:191", focusOrCycle("up"))
-    pad_bind("SHIFT + code:192", focusOrCycle("left"))
-    pad_bind("SHIFT + code:193", focusOrCycle("down"))
-    pad_bind("SHIFT + code:194", focusOrCycle("right"))
+-- Was Hyprland daraus macht (Launcher, Power-Menue, Screenshot, Pin,
+-- Workspaces ...), steht NICHT hier: die Widgets (Settings > Controller)
+-- erzeugen es als HyprlandUserConfigs/ControllerBinds.lua - gleiches
+-- Muster wie UserAutostart.lua. Bei einem Update der Widgets wird die Datei
+-- automatisch neu geschrieben (und Hyprland einmal neu geladen). Diese
+-- Datei liefert nur die lokalen Hilfen, die eine per dofile geladene Datei
+-- sonst nicht sehen koennte. Die Binds greifen nur, solange der
+-- Controller-Modus AN ist (Flag ~/.cache/hypr/controller_mode_active).
+-- pcall(dofile, ...): fehlt die Datei (noch), passiert einfach nichts.
+local ok_pad, pad_binder =
+    pcall(dofile, os.getenv("HOME") .. "/.config/hypr/HyprlandUserConfigs/ControllerBinds.lua")
+if ok_pad and type(pad_binder) == "function" then
+    pad_binder({
+        terminal = terminal,
+        fileManager = fileManager,
+        launcher_cmd = launcher_cmd,
+        powermenu_cmd = powermenu_cmd,
+        settings_cursor_cmd = settings_cursor_cmd,
+        focusOrCycle = focusOrCycle,
+    })
 end

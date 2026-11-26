@@ -13,7 +13,9 @@
 #
 # Aufruf:
 #   OptionalSync.sh --watch   Dauerlaeufer (Autostart): beobachtet den Listen-
-#                             Ordner und startet bei Aenderungen die Installation
+#                             Ordner und startet bei Aenderungen die Installation.
+#                             Beim Start prueft er ausserdem, ob sich die laufende
+#                             Hyprland-Version geaendert hat (HyprpmSync.sh --auto).
 #   OptionalSync.sh --now     einmal alles Fehlende nachholen (auch zum Wiederholen)
 #
 # Log: ~/.local/state/TrafkTux/OptionalSync.log
@@ -30,6 +32,8 @@ POLL_SECONDS=5
 LOCK_WAIT_MAX=900
 ME="$(id -un)"
 SYSTEM_UPDATE="/usr/local/lib/trafktux/SystemUpdate.sh"
+HYPRPM_SYNC="/usr/local/lib/trafktux/HyprpmSync.sh"
+MIRROR_SYNC="/usr/local/lib/trafktux/MirrorSync.sh"
 VERBOSE=0
 
 mkdir -p "${STATE_DIR}"
@@ -205,8 +209,11 @@ sync_pkgurls() {
     done
 }
 
-# Systemupdate-Metapakete (TrafkTuxUpdate-*): holt das Repo und kopiert die
-# Dateien ins System. Fragt selbst per Polkit nach dem Passwort.
+# Wartungs-Metapakete (TrafkTuxUpdate-*):
+#   fast|fastfull|full  SystemUpdate.sh: holt das Repo, kopiert die Dateien ins System
+#   hyprpm              HyprpmSync.sh: Hyprland-Plugins neu bauen, Kaputtes entfernen
+#   mirrors             MirrorSync.sh: pacman-Mirrorlist nach Geschwindigkeit sortieren
+# Die Skripte fragen selbst per Polkit nach dem Passwort, wenn sie root brauchen.
 sync_updates() {
     local entry mode name mtime
     local flags=()
@@ -216,6 +223,17 @@ sync_updates() {
             fast)     flags=(--fast) ;;
             fastfull) flags=(--fast --full) ;;
             full)     flags=(--full) ;;
+            hyprpm|mirrors)
+                local helper="${HYPRPM_SYNC}" helper_args=(--now)
+                [[ "${mode}" == "mirrors" ]] && { helper="${MIRROR_SYNC}"; helper_args=(); }
+                log "Wartung (${mode})"
+                if run bash "${helper}" "${helper_args[@]}"; then
+                    echo "update ${mode} ${name} ${mtime}" >> "${DONE_FILE}"
+                else
+                    FAILED+=("update:${mode}")
+                fi
+                continue
+                ;;
             *)
                 log "Unbekannter Update-Modus: ${mode}"
                 FAILED+=("update:${mode}")
@@ -282,9 +300,20 @@ sync_once() {
     return 0
 }
 
+# Beim Login: hat sich die laufende Hyprland-Version geaendert, werden die
+# hyprpm-Plugins neu gebaut (nicht baubare fliegen raus). Laeuft im Hintergrund,
+# damit die Paketinstallation nicht warten muss.
+hyprpm_autocheck() {
+    [[ -f "${HYPRPM_SYNC}" ]] || return 0
+    command -v hyprpm >/dev/null 2>&1 || return 0
+    run_locked bash "${HYPRPM_SYNC}" --auto
+}
+
 watch_loop() {
     exec 9>"${RUNTIME_DIR}/TrafkTuxOptionalWatch.lock"
     flock -n 9 || exit 0
+
+    hyprpm_autocheck 9>&- &
 
     local last current
     last="$(cat "${SIG_FILE}" 2>/dev/null || true)"
@@ -313,7 +342,7 @@ case "${1:---now}" in
         fi
         ;;
     -h|--help)
-        sed -n '2,22p' "$0"
+        sed -n '2,21p' "$0"
         ;;
     *)
         echo "Unbekannte Option: $1 (siehe --help)" >&2

@@ -1,28 +1,27 @@
 .:
 insgesamt 80
-drwxr-xr-x 1 hopx hopx   308  6. Nov 22:58 .
-drwxr-xr-x 1 hopx hopx   198  6. Nov 22:52 ..
+drwxr-xr-x 1 hopx hopx   276 24. Nov 19:46 .
+drwxr-xr-x 1 hopx hopx   168 22. Nov 22:11 ..
 drwxr-xr-x 1 hopx hopx    34 17. Okt 16:20 airootfs
--rw-r--r-- 1 hopx hopx     0  6. Nov 22:58 Archiso
--rw-r--r-- 1 hopx hopx     0  6. Nov 22:58 ArchisoStructure.txt
+-rw-r--r-- 1 hopx hopx     0 24. Nov 19:46 Archiso.txt
 -rw-r--r-- 1 hopx hopx    26 11. Okt 00:38 bootstrap_packages
 drwxr-xr-x 1 hopx hopx    12 11. Okt 00:38 efiboot
 drwxr-xr-x 1 hopx hopx    40 11. Okt 00:38 grub
 -rw-r--r-- 1 hopx hopx 51614  2. Nov 01:36 ISO.sh
 -rw-r--r-- 1 hopx hopx   276 11. Okt 00:38 mkinitcpio.conf
 drwxr-xr-x 1 hopx hopx   174 25. Okt 22:30 OLD
--rw-r--r-- 1 hopx hopx  5129 11. Okt 00:38 OptionalGroups.conf
--rw-r--r-- 1 hopx hopx  3909 30. Okt 18:11 packages.x86_64
+-rw-r--r-- 1 hopx hopx  5156 19. Nov 18:39 OptionalGroups.conf
+-rw-r--r-- 1 hopx hopx  3931 18. Nov 21:05 packages.x86_64
 -rw-r--r-- 1 hopx hopx  3499 19. Okt 22:32 pacman.conf
--rw-r--r-- 1 hopx hopx  1315 17. Okt 16:15 profiledef.sh
+-rw-r--r-- 1 hopx hopx  1356  7. Nov 21:45 profiledef.sh
 drwxr-xr-x 1 hopx hopx   252 11. Okt 00:38 syslinux
 
 ./airootfs:
 insgesamt 0
 drwxr-xr-x 1 hopx hopx  34 17. Okt 16:20 .
-drwxr-xr-x 1 hopx hopx 308  6. Nov 22:58 ..
+drwxr-xr-x 1 hopx hopx 276 24. Nov 19:46 ..
 drwxr-xr-x 1 hopx hopx   8 17. Okt 16:20 boot
-drwxr-xr-x 1 hopx hopx 494 31. Okt 04:00 etc
+drwxr-xr-x 1 hopx hopx 512 11. Nov 22:40 etc
 drwxr-xr-x 1 hopx hopx 190  2. Nov 01:38 opt
 drwxr-xr-x 1 hopx hopx  42  6. Nov 11:06 root
 drwxr-xr-x 1 hopx hopx  20 11. Okt 00:38 usr
@@ -131,11 +130,12 @@ drwxr-xr-x 1 hopx hopx     64 19. Okt 00:20 ..
 
 ./airootfs/etc:
 insgesamt 32
-drwxr-xr-x 1 hopx hopx  494 31. Okt 04:00 .
+drwxr-xr-x 1 hopx hopx  512 11. Nov 22:40 .
 drwxr-xr-x 1 hopx hopx   34 17. Okt 16:20 ..
 drwxr-xr-x 1 hopx hopx   38 17. Okt 16:20 avahi
+drwxr-xr-x 1 hopx hopx   20 11. Nov 22:40 bluetooth
 drwxr-xr-x 1 hopx hopx   62 31. Okt 04:21 calamares
-drwxr-xr-x 1 hopx hopx   14 22. Okt 02:30 default
+drwxr-xr-x 1 hopx hopx   28 16. Nov 12:26 default
 drwxr-xr-x 1 hopx hopx   34 19. Okt 00:18 grub.d
 -rw-r--r-- 1 hopx hopx    9 11. Okt 00:38 hostname
 -rw-r--r-- 1 hopx hopx   13 11. Okt 00:38 locale.conf
@@ -143,7 +143,7 @@ lrwxrwxrwx 1 hopx hopx   33 18. Okt 17:08 localtime -> /usr/share/zoneinfo/Europ
 -rw-r--r-- 1 hopx hopx 3358 11. Okt 00:38 mkinitcpio.conf
 drwxr-xr-x 1 hopx hopx   24 17. Okt 21:23 mkinitcpio.conf.d
 drwxr-xr-x 1 hopx hopx   66 19. Okt 00:18 modprobe.d
-drwxr-xr-x 1 hopx hopx   24 19. Okt 00:18 modules-load.d
+drwxr-xr-x 1 hopx hopx   46 11. Nov 22:40 modules-load.d
 -rw-r--r-- 1 hopx hopx  748 11. Okt 00:38 motd
 drwxr-xr-x 1 hopx hopx   12 17. Okt 16:20 NetworkManager
 -rw-r--r-- 1 hopx hopx 3239 11. Okt 21:07 pacman.conf
@@ -155,7 +155,7 @@ drwxr-xr-x 1 hopx hopx   14 17. Okt 16:20 polkit-1
 lrwxrwxrwx 1 hopx hopx   37 11. Okt 00:38 resolv.conf -> /run/systemd/resolve/stub-resolv.conf
 drwxr-xr-x 1 hopx hopx   20 19. Okt 00:18 sddm.conf.d
 drwxr-xr-x 1 hopx hopx   28 19. Okt 00:18 security
-drwxr-xr-x 1 hopx hopx  100 19. Okt 00:36 skel
+drwxr-xr-x 1 hopx hopx  100 16. Nov 13:18 skel
 drwxr-xr-x 1 hopx hopx   66 19. Okt 22:28 sudoers.d
 drwxr-xr-x 1 hopx hopx   52 19. Okt 00:18 sysctl.d
 drwxr-xr-x 1 hopx hopx  160 19. Okt 00:18 systemd
@@ -166,7 +166,7 @@ drwxr-xr-x 1 hopx hopx   44 17. Okt 16:20 xdg
 ./airootfs/etc/avahi:
 insgesamt 0
 drwxr-xr-x 1 hopx hopx  38 17. Okt 16:20 .
-drwxr-xr-x 1 hopx hopx 494 31. Okt 04:00 ..
+drwxr-xr-x 1 hopx hopx 512 11. Nov 22:40 ..
 drwxr-xr-x 1 hopx hopx  36 19. Okt 00:18 avahi-daemon.conf.d
 
 ./airootfs/etc/avahi/avahi-daemon.conf.d:
@@ -175,10 +175,16 @@ drwxr-xr-x 1 hopx hopx 36 19. Okt 00:18 .
 drwxr-xr-x 1 hopx hopx 38 17. Okt 16:20 ..
 -rw-r--r-- 1 hopx hopx 28 11. Okt 00:38 10-local-only.conf
 
+./airootfs/etc/bluetooth:
+insgesamt 4
+drwxr-xr-x 1 hopx hopx  20 11. Nov 22:40 .
+drwxr-xr-x 1 hopx hopx 512 11. Nov 22:40 ..
+-rw-r--r-- 1 hopx hopx 214 11. Nov 22:35 input.conf
+
 ./airootfs/etc/calamares:
 insgesamt 8
 drwxr-xr-x 1 hopx hopx   62 31. Okt 04:21 .
-drwxr-xr-x 1 hopx hopx  494 31. Okt 04:00 ..
+drwxr-xr-x 1 hopx hopx  512 11. Nov 22:40 ..
 drwxr-xr-x 1 hopx hopx   16 17. Okt 16:20 branding
 drwxr-xr-x 1 hopx hopx  816 31. Okt 04:21 modules
 lrwxrwxrwx 1 hopx hopx   24 11. Okt 00:38 qml -> /usr/share/calamares/qml
@@ -231,42 +237,44 @@ drwxr-xr-x 1 hopx hopx   62 31. Okt 04:21 ..
 -rw-r--r-- 1 hopx hopx  581 20. Okt 22:39 welcome.conf
 
 ./airootfs/etc/default:
-insgesamt 8
-drwxr-xr-x 1 hopx hopx   14 22. Okt 02:30 .
-drwxr-xr-x 1 hopx hopx  494 31. Okt 04:00 ..
+insgesamt 12
+drwxr-xr-x 1 hopx hopx   28 16. Nov 12:26 .
+drwxr-xr-x 1 hopx hopx  512 11. Nov 22:40 ..
 -rw-r--r-- 1 hopx hopx 2951 24. Okt 21:03 grub
 -rw-r--r-- 1 hopx hopx  248 11. Okt 00:38 ufw
+-rw-r--r-- 1 hopx hopx   19 16. Nov 12:26 useradd
 
 ./airootfs/etc/grub.d:
 insgesamt 20
 drwxr-xr-x 1 hopx hopx    34 19. Okt 00:18 .
-drwxr-xr-x 1 hopx hopx   494 31. Okt 04:00 ..
+drwxr-xr-x 1 hopx hopx   512 11. Nov 22:40 ..
 -rwxr-xr-x 1 hopx hopx 12632 11. Okt 00:38 10_linux
 -rwxr-xr-x 1 hopx hopx   416 11. Okt 00:38 40_custom
 
 ./airootfs/etc/mkinitcpio.conf.d:
 insgesamt 4
 drwxr-xr-x 1 hopx hopx  24 17. Okt 21:23 .
-drwxr-xr-x 1 hopx hopx 494 31. Okt 04:00 ..
+drwxr-xr-x 1 hopx hopx 512 11. Nov 22:40 ..
 -rw-r--r-- 1 hopx hopx 211 17. Okt 21:23 archiso.conf
 
 ./airootfs/etc/modprobe.d:
 insgesamt 8
 drwxr-xr-x 1 hopx hopx  66 19. Okt 00:18 .
-drwxr-xr-x 1 hopx hopx 494 31. Okt 04:00 ..
+drwxr-xr-x 1 hopx hopx 512 11. Nov 22:40 ..
 -rw-r--r-- 1 hopx hopx 380 11. Okt 00:38 broadcom-wl.conf
 -rw-r--r-- 1 hopx hopx 272 11. Okt 00:38 nvidia-power.conf
 
 ./airootfs/etc/modules-load.d:
-insgesamt 4
-drwxr-xr-x 1 hopx hopx  24 19. Okt 00:18 .
-drwxr-xr-x 1 hopx hopx 494 31. Okt 04:00 ..
+insgesamt 8
+drwxr-xr-x 1 hopx hopx  46 11. Nov 22:40 .
+drwxr-xr-x 1 hopx hopx 512 11. Nov 22:40 ..
 -rw-r--r-- 1 hopx hopx 383 11. Okt 00:38 i2c-dev.conf
+-rw-r--r-- 1 hopx hopx   7  7. Nov 18:41 uinput.conf
 
 ./airootfs/etc/NetworkManager:
 insgesamt 0
 drwxr-xr-x 1 hopx hopx  12 17. Okt 16:20 .
-drwxr-xr-x 1 hopx hopx 494 31. Okt 04:00 ..
+drwxr-xr-x 1 hopx hopx 512 11. Nov 22:40 ..
 drwxr-xr-x 1 hopx hopx  16 19. Okt 00:18 conf.d
 
 ./airootfs/etc/NetworkManager/conf.d:
@@ -278,7 +286,7 @@ drwxr-xr-x 1 hopx hopx 12 17. Okt 16:20 ..
 ./airootfs/etc/pacman.d:
 insgesamt 0
 drwxr-xr-x 1 hopx hopx  10 17. Okt 16:20 .
-drwxr-xr-x 1 hopx hopx 494 31. Okt 04:00 ..
+drwxr-xr-x 1 hopx hopx 512 11. Nov 22:40 ..
 drwxr-xr-x 1 hopx hopx 222 19. Okt 00:18 hooks
 
 ./airootfs/etc/pacman.d/hooks:
@@ -293,7 +301,7 @@ drwxr-xr-x 1 hopx hopx  10 17. Okt 16:20 ..
 ./airootfs/etc/pam.d:
 insgesamt 68
 drwxr-xr-x 1 hopx hopx  316 19. Okt 00:18 .
-drwxr-xr-x 1 hopx hopx  494 31. Okt 04:00 ..
+drwxr-xr-x 1 hopx hopx  512 11. Nov 22:40 ..
 -rw-r--r-- 1 hopx hopx  126 11. Okt 00:38 hyprlock
 -rw-r--r-- 1 hopx hopx  222 11. Okt 00:38 login
 -rw-r--r-- 1 hopx hopx  437 11. Okt 00:38 passwd
@@ -315,13 +323,13 @@ drwxr-xr-x 1 hopx hopx  494 31. Okt 04:00 ..
 ./airootfs/etc/plymouth:
 insgesamt 4
 drwxr-xr-x 1 hopx hopx  28 31. Okt 04:00 .
-drwxr-xr-x 1 hopx hopx 494 31. Okt 04:00 ..
+drwxr-xr-x 1 hopx hopx 512 11. Nov 22:40 ..
 -rw-r--r-- 1 hopx hopx  23 31. Okt 04:00 plymouthd.conf
 
 ./airootfs/etc/polkit-1:
 insgesamt 0
 drwxr-xr-x 1 hopx hopx  14 17. Okt 16:20 .
-drwxr-xr-x 1 hopx hopx 494 31. Okt 04:00 ..
+drwxr-xr-x 1 hopx hopx 512 11. Nov 22:40 ..
 drwxr-xr-x 1 hopx hopx  54 19. Okt 00:18 rules.d
 
 ./airootfs/etc/polkit-1/rules.d:
@@ -333,45 +341,49 @@ drwxr-xr-x 1 hopx hopx  14 17. Okt 16:20 ..
 ./airootfs/etc/sddm.conf.d:
 insgesamt 4
 drwxr-xr-x 1 hopx hopx  20 19. Okt 00:18 .
-drwxr-xr-x 1 hopx hopx 494 31. Okt 04:00 ..
+drwxr-xr-x 1 hopx hopx 512 11. Nov 22:40 ..
 -rw-r--r-- 1 hopx hopx  25 11. Okt 00:38 theme.conf
 
 ./airootfs/etc/security:
 insgesamt 4
 drwxr-xr-x 1 hopx hopx  28 19. Okt 00:18 .
-drwxr-xr-x 1 hopx hopx 494 31. Okt 04:00 ..
+drwxr-xr-x 1 hopx hopx 512 11. Nov 22:40 ..
 -rw-r--r-- 1 hopx hopx 968 24. Okt 19:55 pwquality.conf
 
 ./airootfs/etc/skel:
 insgesamt 8
-drwxr-xr-x 1 hopx hopx 100 19. Okt 00:36 .
-drwxr-xr-x 1 hopx hopx 494 31. Okt 04:00 ..
+drwxr-xr-x 1 hopx hopx 100 16. Nov 13:18 .
+drwxr-xr-x 1 hopx hopx 512 11. Nov 22:40 ..
 -rw-r--r-- 1 hopx hopx 137 11. Okt 00:38 .bash_profile
-drwxr-xr-x 1 hopx hopx 320 19. Okt 00:18 .config
+drwxr-xr-x 1 hopx hopx 414 19. Nov 15:07 .config
 drwxr-xr-x 1 hopx hopx  10 11. Okt 00:38 .local
 lrwxrwxrwx 1 hopx hopx   8 11. Okt 00:38 Templates -> Vorlagen
 drwxr-xr-x 1 hopx hopx  80 17. Okt 16:20 .themes
 drwxr-xr-x 1 hopx hopx  58 19. Okt 00:18 Vorlagen
 
 ./airootfs/etc/skel/.config:
-insgesamt 4
-drwxr-xr-x 1 hopx hopx  320 19. Okt 00:18 .
-drwxr-xr-x 1 hopx hopx  100 19. Okt 00:36 ..
+insgesamt 12
+drwxr-xr-x 1 hopx hopx  414 19. Nov 15:07 .
+drwxr-xr-x 1 hopx hopx  100 16. Nov 13:18 ..
 drwxr-xr-x 1 hopx hopx  214 19. Okt 00:18 Assets
 drwxr-xr-x 1 hopx hopx   50 19. Okt 00:18 fastfetch
+drwxr-xr-x 1 hopx hopx   34 19. Nov 15:07 fish
 drwxr-xr-x 1 hopx hopx   38 19. Okt 00:18 gtk-3.0
 drwxr-xr-x 1 hopx hopx   74 19. Okt 00:18 gtk-4.0
-drwxr-xr-x 1 hopx hopx  618 26. Okt 21:39 hypr
+drwxr-xr-x 1 hopx hopx  422 13. Nov 09:07 hypr
 drwxr-xr-x 1 hopx hopx   76 19. Okt 00:18 Kvantum
 -rw-r--r-- 1 hopx hopx 1419 11. Okt 00:38 mimeapps.list
 drwxr-xr-x 1 hopx hopx   12 19. Okt 00:18 nwg-look
 drwxr-xr-x 1 hopx hopx   12 19. Okt 00:18 pamac
 drwxr-xr-x 1 hopx hopx   54 19. Okt 00:18 qt5ct
 drwxr-xr-x 1 hopx hopx   54 19. Okt 00:18 qt6ct
+-rw-r--r-- 1 hopx hopx 1671 19. Nov 15:07 starship-light.toml
+-rw-r--r-- 1 hopx hopx 1301 16. Nov 13:19 starship.toml
 drwxr-xr-x 1 hopx hopx  124 19. Okt 00:18 swaync
 drwxr-xr-x 1 hopx hopx   52 19. Okt 00:18 Thunar
-drwxr-xr-x 1 hopx hopx  104 19. Okt 00:18 TrafkTuxBar
-drwxr-xr-x 1 hopx hopx  130 24. Okt 20:11 TrafkTuxLauncher
+drwxr-xr-x 1 hopx hopx  104 13. Nov 09:06 TrafkTuxBar
+drwxr-xr-x 1 hopx hopx  130 13. Nov 09:07 TrafkTuxLauncher
+drwxr-xr-x 1 hopx hopx  132 23. Nov 20:30 TrafkTuxPad
 drwxr-xr-x 1 hopx hopx   26 22. Okt 19:30 TrafkTuxScripts
 drwxr-xr-x 1 hopx hopx    8 17. Okt 16:20 VSCodium
 drwxr-xr-x 1 hopx hopx   56 19. Okt 00:18 waybar
@@ -381,7 +393,7 @@ drwxr-xr-x 1 hopx hopx   60 19. Okt 00:18 xfce4
 ./airootfs/etc/skel/.config/Assets:
 insgesamt 7824
 drwxr-xr-x 1 hopx hopx     214 19. Okt 00:18 .
-drwxr-xr-x 1 hopx hopx     320 19. Okt 00:18 ..
+drwxr-xr-x 1 hopx hopx     414 19. Nov 15:07 ..
 -rw-r--r-- 1 hopx hopx 1685018 11. Okt 00:38 Bar.png
 -rw-r--r-- 1 hopx hopx  179999 11. Okt 00:38 Left.png
 drwxr-xr-x 1 hopx hopx     308 19. Okt 00:18 LegacyFiles
@@ -407,73 +419,81 @@ drwxr-xr-x 1 hopx hopx   214 19. Okt 00:18 ..
 ./airootfs/etc/skel/.config/fastfetch:
 insgesamt 12
 drwxr-xr-x 1 hopx hopx   50 19. Okt 00:18 .
-drwxr-xr-x 1 hopx hopx  320 19. Okt 00:18 ..
+drwxr-xr-x 1 hopx hopx  414 19. Nov 15:07 ..
 -rw-r--r-- 1 hopx hopx 5841 14. Okt 10:05 config.jsonc
 -rw-r--r-- 1 hopx hopx 1700 11. Okt 00:38 fastfetch.txt
+
+./airootfs/etc/skel/.config/fish:
+insgesamt 4
+drwxr-xr-x 1 hopx hopx   34 19. Nov 15:07 .
+drwxr-xr-x 1 hopx hopx  414 19. Nov 15:07 ..
+-rw-r--r-- 1 hopx hopx 1331 19. Nov 15:07 config.fish
+drwxr-xr-x 1 hopx hopx   28 19. Nov 15:07 themes
+
+./airootfs/etc/skel/.config/fish/themes:
+insgesamt 4
+drwxr-xr-x 1 hopx hopx  28 19. Nov 15:07 .
+drwxr-xr-x 1 hopx hopx  34 19. Nov 15:07 ..
+-rw-r--r-- 1 hopx hopx 973 19. Nov 15:07 trafktux.theme
 
 ./airootfs/etc/skel/.config/gtk-3.0:
 insgesamt 8
 drwxr-xr-x 1 hopx hopx  38 19. Okt 00:18 .
-drwxr-xr-x 1 hopx hopx 320 19. Okt 00:18 ..
+drwxr-xr-x 1 hopx hopx 414 19. Nov 15:07 ..
 -rw-r--r-- 1 hopx hopx  49 11. Okt 00:38 gtk.css
 -rw-r--r-- 1 hopx hopx 478 11. Okt 00:38 settings.ini
 
 ./airootfs/etc/skel/.config/gtk-4.0:
 insgesamt 16
 drwxr-xr-x 1 hopx hopx  74 19. Okt 00:18 .
-drwxr-xr-x 1 hopx hopx 320 19. Okt 00:18 ..
+drwxr-xr-x 1 hopx hopx 414 19. Nov 15:07 ..
 lrwxrwxrwx 1 hopx hopx  67 11. Okt 00:38 assets -> /home/hopx/.local/share/themes/Colloid-Light-Dracula/gtk-4.0/assets
 lrwxrwxrwx 1 hopx hopx  68 11. Okt 00:38 gtk.css -> /home/hopx/.local/share/themes/Colloid-Light-Dracula/gtk-4.0/gtk.css
 lrwxrwxrwx 1 hopx hopx  73 11. Okt 00:38 gtk-dark.css -> /home/hopx/.local/share/themes/Colloid-Light-Dracula/gtk-4.0/gtk-dark.css
 -rw-r--r-- 1 hopx hopx 209 11. Okt 00:38 settings.ini
 
 ./airootfs/etc/skel/.config/hypr:
-insgesamt 500
-drwxr-xr-x 1 hopx hopx    618 26. Okt 21:39 .
-drwxr-xr-x 1 hopx hopx    320 19. Okt 00:18 ..
+insgesamt 480
+drwxr-xr-x 1 hopx hopx    422 13. Nov 09:07 .
+drwxr-xr-x 1 hopx hopx    414 19. Nov 15:07 ..
 drwxr-xr-x 1 hopx hopx     68 17. Okt 16:20 BUILD
--rw-r--r-- 1 hopx hopx    496 11. Okt 00:38 GameScopeDgvoodooExcludes.txt
--rw-r--r-- 1 hopx hopx    443 11. Okt 00:38 GameScopeExcludes.txt
--rw-r--r-- 1 hopx hopx   1955 11. Okt 00:38 GameScopeWrapper.conf
--rw-r--r-- 1 hopx hopx    624 11. Okt 00:38 hypridle.conf
-drwxr-xr-x 1 hopx hopx    186 25. Okt 23:43 HyprlandConfigs
+drwxr-xr-x 1 hopx hopx    186 22. Nov 13:36 HyprlandConfigs
 -rw-r--r-- 1 hopx hopx    906 10. Okt 17:55 hyprland.lua
 -rw-r--r-- 1 hopx hopx  61198 11. Okt 00:44 hyprlandOLD.lua
 -rw-r--r-- 1 hopx hopx   1722 11. Okt 00:38 hyprlock.conf
 -rw-r--r-- 1 hopx hopx 282902 11. Okt 00:38 hyprlock.png
--rw-r--r-- 1 hopx hopx    245 11. Okt 00:38 hyprpaper.conf
 -rwxr-xr-x 1 hopx hopx   6455 11. Okt 00:38 LayoutSwitcher.sh
 -rwxr-xr-x 1 hopx hopx    517 11. Okt 00:38 PictureInPicture.sh
 -rwxr-xr-x 1 hopx hopx   1164 11. Okt 00:38 SoundCenter.sh
--rwxr-xr-x 1 hopx hopx  17232 11. Okt 00:38 SoundControl
--rwxr-xr-x 1 hopx hopx  43736 11. Okt 00:38 SoundDaemon
+-rwxr-xr-x 1 hopx hopx  17232 13. Nov 09:07 SoundControl
+-rwxr-xr-x 1 hopx hopx  43736 13. Nov 09:07 SoundDaemon
 drwxr-xr-x 1 hopx hopx    250 19. Okt 00:18 Sounds
 -rwxr-xr-x 1 hopx hopx  13211 11. Okt 00:38 SymlinkShortcut.sh
 -rwxr-xr-x 1 hopx hopx   2159 24. Okt 19:51 WallpaperHotplug.sh
-drwxr-xr-x 1 hopx hopx     14 17. Okt 16:20 Wallpapers
+drwxr-xr-x 1 hopx hopx     10 20. Nov 12:00 Wallpapers
 -rwxr-xr-x 1 hopx hopx  30153 27. Okt 23:17 Wallpapers.sh
 
 ./airootfs/etc/skel/.config/hypr/BUILD:
 insgesamt 0
 drwxr-xr-x 1 hopx hopx  68 17. Okt 16:20 .
-drwxr-xr-x 1 hopx hopx 618 26. Okt 21:39 ..
-drwxr-xr-x 1 hopx hopx  40 19. Okt 00:18 SoundCenter_Build
+drwxr-xr-x 1 hopx hopx 422 13. Nov 09:07 ..
+drwxr-xr-x 1 hopx hopx  40 13. Nov 09:07 SoundCenter_Build
 drwxr-xr-x 1 hopx hopx 100 19. Okt 00:18 TrafkCursor_Build
 
 ./airootfs/etc/skel/.config/hypr/BUILD/SoundCenter_Build:
 insgesamt 20
-drwxr-xr-x 1 hopx hopx    40 19. Okt 00:18 .
+drwxr-xr-x 1 hopx hopx    40 13. Nov 09:07 .
 drwxr-xr-x 1 hopx hopx    68 17. Okt 16:20 ..
 -rw-r--r-- 1 hopx hopx  1191 11. Okt 00:38 Makefile
 -rw-r--r-- 1 hopx hopx 15514 11. Okt 00:38 README.md
-drwxr-xr-x 1 hopx hopx    54 19. Okt 00:18 src
+drwxr-xr-x 1 hopx hopx    54 13. Nov 09:07 src
 
 ./airootfs/etc/skel/.config/hypr/BUILD/SoundCenter_Build/src:
 insgesamt 32
-drwxr-xr-x 1 hopx hopx    54 19. Okt 00:18 .
-drwxr-xr-x 1 hopx hopx    40 19. Okt 00:18 ..
+drwxr-xr-x 1 hopx hopx    54 13. Nov 09:07 .
+drwxr-xr-x 1 hopx hopx    40 13. Nov 09:07 ..
 -rw-r--r-- 1 hopx hopx  7866 11. Okt 00:38 SoundControl.c
--rw-r--r-- 1 hopx hopx 23230 11. Okt 00:38 SoundDaemon.c
+-rw------- 1 hopx hopx 23518 13. Nov 08:05 SoundDaemon.c
 
 ./airootfs/etc/skel/.config/hypr/BUILD/TrafkCursor_Build:
 insgesamt 16
@@ -672,12 +692,12 @@ drwxr-xr-x 1 hopx hopx  100 19. Okt 00:18 ..
 -rw-r--r-- 1 hopx hopx 3009 11. Okt 00:38 X.png
 
 ./airootfs/etc/skel/.config/hypr/HyprlandConfigs:
-insgesamt 92
-drwxr-xr-x 1 hopx hopx   186 25. Okt 23:43 .
-drwxr-xr-x 1 hopx hopx   618 26. Okt 21:39 ..
+insgesamt 96
+drwxr-xr-x 1 hopx hopx   186 22. Nov 13:36 .
+drwxr-xr-x 1 hopx hopx   422 13. Nov 09:07 ..
 -rw-r--r-- 1 hopx hopx  5671 17. Okt 15:31 AppWallpaper.lua
--rw-r--r-- 1 hopx hopx 11895 25. Okt 23:41 Autostart.lua
--rw-r--r-- 1 hopx hopx 42376 13. Okt 11:43 Controls.lua
+-rw-r--r-- 1 hopx hopx 13367 21. Nov 20:38 Autostart.lua
+-rw-r--r-- 1 hopx hopx 44437 22. Nov 13:35 Controls.lua
 -rw-r--r-- 1 hopx hopx  1902 12. Okt 14:08 Devices.lua
 -rw-r--r-- 1 hopx hopx  2889 17. Okt 01:16 Display.lua
 -rw-r--r-- 1 hopx hopx  3102 10. Okt 17:51 Layout.lua
@@ -687,7 +707,7 @@ drwxr-xr-x 1 hopx hopx   618 26. Okt 21:39 ..
 ./airootfs/etc/skel/.config/hypr/Sounds:
 insgesamt 196
 drwxr-xr-x 1 hopx hopx   250 19. Okt 00:18 .
-drwxr-xr-x 1 hopx hopx   618 26. Okt 21:39 ..
+drwxr-xr-x 1 hopx hopx   422 13. Nov 09:07 ..
 -rw-r--r-- 1 hopx hopx  7976 11. Okt 00:38 Click.ogg
 -rw-r--r-- 1 hopx hopx 13799 11. Okt 00:38 Close.ogg
 -rw-r--r-- 1 hopx hopx 66352 11. Okt 00:38 Dunst.ogg
@@ -702,37 +722,30 @@ drwxr-xr-x 1 hopx hopx   618 26. Okt 21:39 ..
 
 ./airootfs/etc/skel/.config/hypr/Wallpapers:
 insgesamt 0
-drwxr-xr-x 1 hopx hopx  14 17. Okt 16:20 .
-drwxr-xr-x 1 hopx hopx 618 26. Okt 21:39 ..
-drwxr-xr-x 1 hopx hopx  34 19. Okt 00:18 11
-drwxr-xr-x 1 hopx hopx 204 26. Okt 00:13 169
-drwxr-xr-x 1 hopx hopx  36 19. Okt 00:18 43
-
-./airootfs/etc/skel/.config/hypr/Wallpapers/11:
-insgesamt 2400
-drwxr-xr-x 1 hopx hopx      34 19. Okt 00:18 .
-drwxr-xr-x 1 hopx hopx      14 17. Okt 16:20 ..
--rw-r--r-- 1 hopx hopx 2455547 11. Okt 00:06 HoppiTex Head.png
+drwxr-xr-x 1 hopx hopx  10 20. Nov 12:00 .
+drwxr-xr-x 1 hopx hopx 422 13. Nov 09:07 ..
+drwxr-xr-x 1 hopx hopx 176 20. Nov 12:21 169
+drwxr-xr-x 1 hopx hopx  28 20. Nov 15:27 43
 
 ./airootfs/etc/skel/.config/hypr/Wallpapers/169:
-insgesamt 14552
-drwxr-xr-x 1 hopx hopx     204 26. Okt 00:13 .
-drwxr-xr-x 1 hopx hopx      14 17. Okt 16:20 ..
+insgesamt 12796
+drwxr-xr-x 1 hopx hopx     176 20. Nov 12:21 .
+drwxr-xr-x 1 hopx hopx      10 20. Nov 12:00 ..
 -rw-r--r-- 1 hopx hopx 2284593 11. Okt 00:38 13WorldsBG3.png
 -rw-r--r-- 1 hopx hopx 1541889 26. Okt 00:11 Background.png
--rw-r--r-- 1 hopx hopx 2760467 25. Okt 23:58 Lisß Rosa in Steira beim Milchshake trinken.png
+-rw-r--r-- 1 hopx hopx  960671 12. Nov 03:19 Drinking a milkshake in Steira.jpg
 -rw-r--r-- 1 hopx hopx 8308918 13. Okt 20:44 TrafkVersePrimalMagic.png
 
 ./airootfs/etc/skel/.config/hypr/Wallpapers/43:
-insgesamt 2092
-drwxr-xr-x 1 hopx hopx      36 19. Okt 00:18 .
-drwxr-xr-x 1 hopx hopx      14 17. Okt 16:20 ..
--rw-r--r-- 1 hopx hopx 2141526 11. Okt 00:38 Straßenklippe.png
+insgesamt 24344
+drwxr-xr-x 1 hopx hopx       28 20. Nov 15:27 .
+drwxr-xr-x 1 hopx hopx       10 20. Nov 12:00 ..
+-rw-r--r-- 1 hopx hopx 24925597 20. Nov 14:50 Ursel Edge.png
 
 ./airootfs/etc/skel/.config/Kvantum:
 insgesamt 4
 drwxr-xr-x 1 hopx hopx  76 19. Okt 00:18 .
-drwxr-xr-x 1 hopx hopx 320 19. Okt 00:18 ..
+drwxr-xr-x 1 hopx hopx 414 19. Nov 15:07 ..
 -rw-r--r-- 1 hopx hopx  39 11. Okt 00:38 kvantum.kvconfig
 drwxr-xr-x 1 hopx hopx 244 19. Okt 00:18 TrafkTux-Kvantum-Theme
 
@@ -748,33 +761,33 @@ drwxr-xr-x 1 hopx hopx     76 19. Okt 00:18 ..
 ./airootfs/etc/skel/.config/nwg-look:
 insgesamt 4
 drwxr-xr-x 1 hopx hopx  12 19. Okt 00:18 .
-drwxr-xr-x 1 hopx hopx 320 19. Okt 00:18 ..
+drwxr-xr-x 1 hopx hopx 414 19. Nov 15:07 ..
 -rw-r--r-- 1 hopx hopx 279 11. Okt 00:38 config
 
 ./airootfs/etc/skel/.config/pamac:
 insgesamt 4
 drwxr-xr-x 1 hopx hopx  12 19. Okt 00:18 .
-drwxr-xr-x 1 hopx hopx 320 19. Okt 00:18 ..
+drwxr-xr-x 1 hopx hopx 414 19. Nov 15:07 ..
 -rw-r--r-- 1 hopx hopx  39 11. Okt 00:38 config
 
 ./airootfs/etc/skel/.config/qt5ct:
 insgesamt 8
 drwxr-xr-x 1 hopx hopx  54 19. Okt 00:18 .
-drwxr-xr-x 1 hopx hopx 320 19. Okt 00:18 ..
+drwxr-xr-x 1 hopx hopx 414 19. Nov 15:07 ..
 -rw-r--r-- 1 hopx hopx 840 11. Okt 00:38 qt5ct.conf
 -rw-r--r-- 1 hopx hopx 750 11. Okt 00:38 style-colors.conf
 
 ./airootfs/etc/skel/.config/qt6ct:
 insgesamt 8
 drwxr-xr-x 1 hopx hopx  54 19. Okt 00:18 .
-drwxr-xr-x 1 hopx hopx 320 19. Okt 00:18 ..
+drwxr-xr-x 1 hopx hopx 414 19. Nov 15:07 ..
 -rw-r--r-- 1 hopx hopx 891 11. Okt 00:38 qt6ct.conf
 -rw-r--r-- 1 hopx hopx 783 11. Okt 00:38 style-colors.conf
 
 ./airootfs/etc/skel/.config/swaync:
 insgesamt 16
 drwxr-xr-x 1 hopx hopx  124 19. Okt 00:18 .
-drwxr-xr-x 1 hopx hopx  320 19. Okt 00:18 ..
+drwxr-xr-x 1 hopx hopx  414 19. Nov 15:07 ..
 -rw-r--r-- 1 hopx hopx 1451 11. Okt 00:38 config.json
 drwxr-xr-x 1 hopx hopx   18 19. Okt 00:18 old
 -rwxr-xr-x 1 hopx hopx  616 11. Okt 00:38 SoundCenterNotify.sh
@@ -790,50 +803,50 @@ drwxr-xr-x 1 hopx hopx  124 19. Okt 00:18 ..
 ./airootfs/etc/skel/.config/Thunar:
 insgesamt 20
 drwxr-xr-x 1 hopx hopx   52 19. Okt 00:18 .
-drwxr-xr-x 1 hopx hopx  320 19. Okt 00:18 ..
+drwxr-xr-x 1 hopx hopx  414 19. Nov 15:07 ..
 -rw-r--r-- 1 hopx hopx 9501 11. Okt 00:59 accels.scm
 -rw-r--r-- 1 hopx hopx  353 11. Okt 00:59 renamerrc
 -rw-r--r-- 1 hopx hopx 2285 11. Okt 00:59 uca.xml
 
 ./airootfs/etc/skel/.config/TrafkTuxBar:
-insgesamt 376
-drwxr-xr-x 1 hopx hopx    104 19. Okt 00:18 .
-drwxr-xr-x 1 hopx hopx    320 19. Okt 00:18 ..
+insgesamt 420
+drwxr-xr-x 1 hopx hopx    104 13. Nov 09:06 .
+drwxr-xr-x 1 hopx hopx    414 19. Nov 15:07 ..
 -rw-r--r-- 1 hopx hopx    326 11. Okt 00:38 Makefile
 drwxr-xr-x 1 hopx hopx     60 19. Okt 00:18 Old
--rwxr-xr-x 1 hopx hopx 139200 17. Okt 14:54 TrafkTuxBar
--rw-r--r-- 1 hopx hopx 229176 17. Okt 14:50 TrafkTuxBar.c
--rw-r--r-- 1 hopx hopx  11694 11. Okt 00:38 TrafkTuxBar.jsonc
+-rwxr-xr-x 1 hopx hopx 153944 13. Nov 09:06 TrafkTuxBar
+-rw------- 1 hopx hopx 255824 13. Nov 08:05 TrafkTuxBar.c
+-rw------- 1 hopx hopx   9421 13. Nov 08:05 TrafkTuxBar.jsonc
 
 ./airootfs/etc/skel/.config/TrafkTuxBar/Old:
 insgesamt 236
 drwxr-xr-x 1 hopx hopx     60 19. Okt 00:18 .
-drwxr-xr-x 1 hopx hopx    104 19. Okt 00:18 ..
+drwxr-xr-x 1 hopx hopx    104 13. Nov 09:06 ..
 -rw-r--r-- 1 hopx hopx 226678 11. Okt 00:38 TrafkTuxBar.c
 -rw-r--r-- 1 hopx hopx  11396 11. Okt 00:38 TrafkTuxBar.jsonc
 
 ./airootfs/etc/skel/.config/TrafkTuxLauncher:
-insgesamt 268
-drwxr-xr-x 1 hopx hopx    130 24. Okt 20:11 .
-drwxr-xr-x 1 hopx hopx    320 19. Okt 00:18 ..
+insgesamt 272
+drwxr-xr-x 1 hopx hopx    130 13. Nov 09:07 .
+drwxr-xr-x 1 hopx hopx    414 19. Nov 15:07 ..
 drwxr-xr-x 1 hopx hopx     38  4. Nov 20:57 AppLauncher
 -rw-r--r-- 1 hopx hopx    864 11. Okt 00:38 Makefile
 drwxr-xr-x 1 hopx hopx    106 24. Okt 20:12 old
 drwxr-xr-x 1 hopx hopx     38 19. Okt 00:18 PowerMenu
--rwxr-xr-x 1 hopx hopx  97272 17. Okt 14:54 TrafkTuxLauncher
--rw-r--r-- 1 hopx hopx 168979 17. Okt 14:54 TrafkTuxLauncher.c
+-rwxr-xr-x 1 hopx hopx 101320 13. Nov 09:07 TrafkTuxLauncher
+-rw------- 1 hopx hopx 169552 13. Nov 08:05 TrafkTuxLauncher.c
 
 ./airootfs/etc/skel/.config/TrafkTuxLauncher/AppLauncher:
 insgesamt 12
 drwxr-xr-x 1 hopx hopx   38  4. Nov 20:57 .
-drwxr-xr-x 1 hopx hopx  130 24. Okt 20:11 ..
+drwxr-xr-x 1 hopx hopx  130 13. Nov 09:07 ..
 -rw-r--r-- 1 hopx hopx 3365  4. Nov 20:57 menu.json
 -rw-r--r-- 1 hopx hopx 6189 11. Okt 00:38 theme.rasi
 
 ./airootfs/etc/skel/.config/TrafkTuxLauncher/old:
 insgesamt 248
 drwxr-xr-x 1 hopx hopx    106 24. Okt 20:12 .
-drwxr-xr-x 1 hopx hopx    130 24. Okt 20:11 ..
+drwxr-xr-x 1 hopx hopx    130 13. Nov 09:07 ..
 drwxr-xr-x 1 hopx hopx     26 24. Okt 20:12 new ig
 -rw-r--r-- 1 hopx hopx     71 11. Okt 00:38 Settings.json
 -rwxr-xr-x 1 hopx hopx  95728 11. Okt 00:38 TrafkTuxLauncher
@@ -848,20 +861,30 @@ drwxr-xr-x 1 hopx hopx 106 24. Okt 20:12 ..
 ./airootfs/etc/skel/.config/TrafkTuxLauncher/PowerMenu:
 insgesamt 8
 drwxr-xr-x 1 hopx hopx   38 19. Okt 00:18 .
-drwxr-xr-x 1 hopx hopx  130 24. Okt 20:11 ..
+drwxr-xr-x 1 hopx hopx  130 13. Nov 09:07 ..
 -rw-r--r-- 1 hopx hopx 2756 11. Okt 00:38 menu.json
 -rw-r--r-- 1 hopx hopx 3965 11. Okt 00:38 theme.rasi
+
+./airootfs/etc/skel/.config/TrafkTuxPad:
+insgesamt 236
+drwxr-xr-x 1 hopx hopx    132 23. Nov 20:30 .
+drwxr-xr-x 1 hopx hopx    414 19. Nov 15:07 ..
+-rwxr-xr-x 1 hopx hopx    208  7. Nov 18:41 build.sh
+-rwxr-xr-x 1 hopx hopx  87000 23. Nov 20:30 TrafkPad
+-rw-r--r-- 1 hopx hopx 137996 23. Nov 20:29 TrafkPad.c
+-rwxr-xr-x 1 hopx hopx   1167 21. Nov 20:38 wiimote-autoconnect.sh
+-rw-r--r-- 1 hopx hopx   1402 13. Nov 07:07 wiimote-connect.sh
 
 ./airootfs/etc/skel/.config/TrafkTuxScripts:
 insgesamt 4
 drwxr-xr-x 1 hopx hopx   26 22. Okt 19:30 .
-drwxr-xr-x 1 hopx hopx  320 19. Okt 00:18 ..
+drwxr-xr-x 1 hopx hopx  414 19. Nov 15:07 ..
 -rwxr-xr-x 1 hopx hopx 1098 19. Okt 13:29 SmartClose.sh
 
 ./airootfs/etc/skel/.config/VSCodium:
 insgesamt 0
 drwxr-xr-x 1 hopx hopx   8 17. Okt 16:20 .
-drwxr-xr-x 1 hopx hopx 320 19. Okt 00:18 ..
+drwxr-xr-x 1 hopx hopx 414 19. Nov 15:07 ..
 drwxr-xr-x 1 hopx hopx  26 19. Okt 00:18 User
 
 ./airootfs/etc/skel/.config/VSCodium/User:
@@ -873,15 +896,16 @@ drwxr-xr-x 1 hopx hopx   8 17. Okt 16:20 ..
 ./airootfs/etc/skel/.config/waybar:
 insgesamt 20
 drwxr-xr-x 1 hopx hopx   56 19. Okt 00:18 .
-drwxr-xr-x 1 hopx hopx  320 19. Okt 00:18 ..
+drwxr-xr-x 1 hopx hopx  414 19. Nov 15:07 ..
 -rw-r--r-- 1 hopx hopx 8758 11. Okt 00:38 config.jsonc
-drwxr-xr-x 1 hopx hopx  362  6. Nov 11:03 Scripts
+drwxr-xr-x 1 hopx hopx  388 22. Nov 22:11 Scripts
 -rw-r--r-- 1 hopx hopx 5721 11. Okt 00:38 style.css
 
 ./airootfs/etc/skel/.config/waybar/Scripts:
-insgesamt 1624
-drwxr-xr-x 1 hopx hopx    362  6. Nov 11:03 .
+insgesamt 1840
+drwxr-xr-x 1 hopx hopx    388 22. Nov 22:11 .
 drwxr-xr-x 1 hopx hopx     56 19. Okt 00:18 ..
+-rw-r--r-- 1 hopx hopx  12067  7. Nov 23:31 Autostart.lua
 -rwxr-xr-x 1 hopx hopx  17208 11. Okt 00:38 FocusFixDaemon
 -rw-r--r-- 1 hopx hopx  10844 11. Okt 00:38 FocusFixDaemon.c
 -rwxr-xr-x 1 hopx hopx   7145 11. Okt 00:38 HideAll.sh
@@ -890,14 +914,14 @@ drwxr-xr-x 1 hopx hopx     56 19. Okt 00:18 ..
 -rw-r--r-- 1 hopx hopx  39036 11. Okt 00:38 ScreenRotationDaemon.c
 -rw-r--r-- 1 hopx hopx   1464 11. Okt 00:38 WidgetsClient.py
 -rw-r--r-- 1 hopx hopx 755531  6. Nov 10:53 WidgetsDaemonOld.py
--rw-r--r-- 1 hopx hopx 755531  6. Nov 10:53 WidgetsDaemon.py
+-rw-r--r-- 1 hopx hopx 964002 22. Nov 22:11 WidgetsDaemon.py
 -rwxr-xr-x 1 hopx hopx  16344 11. Okt 00:38 WidgetsHelperDaemon
 -rw-r--r-- 1 hopx hopx   3661 11. Okt 00:38 WidgetsHelperDaemon.c
 
 ./airootfs/etc/skel/.config/wireplumber:
 insgesamt 0
 drwxr-xr-x 1 hopx hopx  20 17. Okt 16:20 .
-drwxr-xr-x 1 hopx hopx 320 19. Okt 00:18 ..
+drwxr-xr-x 1 hopx hopx 414 19. Nov 15:07 ..
 drwxr-xr-x 1 hopx hopx 136 19. Okt 00:18 main.lua.d
 
 ./airootfs/etc/skel/.config/wireplumber/main.lua.d:
@@ -910,7 +934,7 @@ drwxr-xr-x 1 hopx hopx   20 17. Okt 16:20 ..
 ./airootfs/etc/skel/.config/xfce4:
 insgesamt 8
 drwxr-xr-x 1 hopx hopx  60 19. Okt 00:18 .
-drwxr-xr-x 1 hopx hopx 320 19. Okt 00:18 ..
+drwxr-xr-x 1 hopx hopx 414 19. Nov 15:07 ..
 drwxr-xr-x 1 hopx hopx  56 19. Okt 00:18 desktop
 -rw-r--r-- 1 hopx hopx  32 11. Okt 00:59 helpers.rc
 -rw-r--r-- 1 hopx hopx  19 11. Okt 00:59 help.rc
@@ -941,7 +965,7 @@ drwxr-xr-x 1 hopx hopx   38 17. Okt 16:20 ..
 ./airootfs/etc/skel/.local:
 insgesamt 0
 drwxr-xr-x 1 hopx hopx  10 11. Okt 00:38 .
-drwxr-xr-x 1 hopx hopx 100 19. Okt 00:36 ..
+drwxr-xr-x 1 hopx hopx 100 16. Nov 13:18 ..
 drwxr-xr-x 1 hopx hopx  88 17. Okt 16:20 share
 
 ./airootfs/etc/skel/.local/share:
@@ -1235,7 +1259,7 @@ drwxr-xr-x 1 hopx hopx   12 17. Okt 16:20 ..
 ./airootfs/etc/skel/.themes:
 insgesamt 0
 drwxr-xr-x 1 hopx hopx  80 17. Okt 16:20 .
-drwxr-xr-x 1 hopx hopx 100 19. Okt 00:36 ..
+drwxr-xr-x 1 hopx hopx 100 16. Nov 13:18 ..
 drwxr-xr-x 1 hopx hopx  82 19. Okt 00:18 TrafkTux-GTK-Theme
 drwxr-xr-x 1 hopx hopx 244 19. Okt 00:18 TrafkTux-Kvantum-Theme
 
@@ -1603,7 +1627,7 @@ drwxr-xr-x 1 hopx hopx     80 17. Okt 16:20 ..
 ./airootfs/etc/skel/Vorlagen:
 insgesamt 8
 drwxr-xr-x 1 hopx hopx  58 19. Okt 00:18 .
-drwxr-xr-x 1 hopx hopx 100 19. Okt 00:36 ..
+drwxr-xr-x 1 hopx hopx 100 16. Nov 13:18 ..
 drwxr-xr-x 1 hopx hopx 186 19. Okt 00:18 Code
 -rw-r--r-- 1 hopx hopx  11 11. Okt 00:38 MD.md
 drwxr-xr-x 1 hopx hopx 128 19. Okt 00:18 Office
@@ -1783,7 +1807,7 @@ drwxr-xr-x 1 hopx hopx       58 19. Okt 00:18 ..
 ./airootfs/etc/sudoers.d:
 insgesamt 12
 drwxr-xr-x 1 hopx hopx  66 19. Okt 22:28 .
-drwxr-xr-x 1 hopx hopx 494 31. Okt 04:00 ..
+drwxr-xr-x 1 hopx hopx 512 11. Nov 22:40 ..
 -rw-r--r-- 1 hopx hopx  79 17. Okt 16:16 00-sudo-timeout
 -rw-r--r-- 1 hopx hopx  35 11. Okt 00:38 99-liveuser
 -rw-r--r-- 1 hopx hopx  35 19. Okt 22:28 g_wheel
@@ -1791,13 +1815,13 @@ drwxr-xr-x 1 hopx hopx 494 31. Okt 04:00 ..
 ./airootfs/etc/sysctl.d:
 insgesamt 4
 drwxr-xr-x 1 hopx hopx   52 19. Okt 00:18 .
-drwxr-xr-x 1 hopx hopx  494 31. Okt 04:00 ..
+drwxr-xr-x 1 hopx hopx  512 11. Nov 22:40 ..
 -rw-r--r-- 1 hopx hopx 2544 11. Okt 00:38 99-trafktux-hardening.conf
 
 ./airootfs/etc/systemd:
 insgesamt 8
 drwxr-xr-x 1 hopx hopx  160 19. Okt 00:18 .
-drwxr-xr-x 1 hopx hopx  494 31. Okt 04:00 ..
+drwxr-xr-x 1 hopx hopx  512 11. Nov 22:40 ..
 drwxr-xr-x 1 hopx hopx   42 19. Okt 00:18 journald.conf.d
 -rw-r--r-- 1 hopx hopx 1802 11. Okt 00:38 logind.conf
 drwxr-xr-x 1 hopx hopx   34 19. Okt 00:18 logind.conf.d
@@ -1861,25 +1885,27 @@ lrwxrwxrwx 1 hopx hopx  35 11. Okt 00:38 trafktux-grub-theme-sync.service -> ../
 ./airootfs/etc/udev:
 insgesamt 0
 drwxr-xr-x 1 hopx hopx  14 17. Okt 16:20 .
-drwxr-xr-x 1 hopx hopx 494 31. Okt 04:00 ..
-drwxr-xr-x 1 hopx hopx  40 19. Okt 00:18 rules.d
+drwxr-xr-x 1 hopx hopx 512 11. Nov 22:40 ..
+drwxr-xr-x 1 hopx hopx 116 19. Nov 15:42 rules.d
 
 ./airootfs/etc/udev/rules.d:
-insgesamt 4
-drwxr-xr-x 1 hopx hopx  40 19. Okt 00:18 .
+insgesamt 12
+drwxr-xr-x 1 hopx hopx 116 19. Nov 15:42 .
 drwxr-xr-x 1 hopx hopx  14 17. Okt 16:20 ..
 -rw-r--r-- 1 hopx hopx 607 11. Okt 00:38 45-ddcutil-i2c.rules
+-rw-r--r-- 1 hopx hopx 202  7. Nov 18:41 60-trafkpad.rules
+-rw-r--r-- 1 hopx hopx  73 19. Nov 15:42 99-no-automount.rules
 
 ./airootfs/etc/ufw:
 insgesamt 4
 drwxr-xr-x 1 hopx hopx  16 19. Okt 00:18 .
-drwxr-xr-x 1 hopx hopx 494 31. Okt 04:00 ..
+drwxr-xr-x 1 hopx hopx 512 11. Nov 22:40 ..
 -rw-r--r-- 1 hopx hopx  25 11. Okt 00:38 ufw.conf
 
 ./airootfs/etc/xdg:
 insgesamt 0
 drwxr-xr-x 1 hopx hopx  44 17. Okt 16:20 .
-drwxr-xr-x 1 hopx hopx 494 31. Okt 04:00 ..
+drwxr-xr-x 1 hopx hopx 512 11. Nov 22:40 ..
 drwxr-xr-x 1 hopx hopx  28 19. Okt 00:18 reflector
 drwxr-xr-x 1 hopx hopx  18 19. Okt 00:18 swaync
 drwxr-xr-x 1 hopx hopx  20 19. Okt 00:18 tumbler
@@ -2053,7 +2079,7 @@ drwxr-xr-x 1 hopx hopx 190  2. Nov 01:38 ..
 insgesamt 8
 drwxr-xr-x 1 hopx hopx   42  6. Nov 11:06 .
 drwxr-xr-x 1 hopx hopx   34 17. Okt 16:20 ..
--rwxr-xr-x 1 hopx hopx 6945  6. Nov 11:06 customize_airootfs.sh
+-rwxr-xr-x 1 hopx hopx 6945 16. Nov 12:22 customize_airootfs.sh
 
 ./airootfs/usr:
 insgesamt 0
@@ -2066,14 +2092,15 @@ drwxr-xr-x 1 hopx hopx 80 25. Okt 23:44 share
 insgesamt 0
 drwxr-xr-x 1 hopx hopx  12 17. Okt 16:20 .
 drwxr-xr-x 1 hopx hopx  20 11. Okt 00:38 ..
-drwxr-xr-x 1 hopx hopx 308 30. Okt 05:23 bin
+drwxr-xr-x 1 hopx hopx 324  7. Nov 21:46 bin
 drwxr-xr-x 1 hopx hopx  16 17. Okt 16:20 lib
 
 ./airootfs/usr/local/bin:
-insgesamt 56
-drwxr-xr-x 1 hopx hopx   308 30. Okt 05:23 .
+insgesamt 60
+drwxr-xr-x 1 hopx hopx   324  7. Nov 21:46 .
 drwxr-xr-x 1 hopx hopx    12 17. Okt 16:20 ..
 -rwxr-xr-x 1 hopx hopx   794 11. Okt 00:38 create-liveuser.sh
+-rwxr-xr-x 1 hopx hopx   199  7. Nov 18:41 hyprlock
 -rwxr-xr-x 1 hopx hopx   693 11. Okt 00:38 Installation_guide
 -rwxr-xr-x 1 hopx hopx  4782 30. Okt 05:22 install-aur-packages.sh
 -rwxr-xr-x 1 hopx hopx  1669 11. Okt 00:38 install-hyprpm-plugins.sh
@@ -2087,13 +2114,13 @@ lrwxrwxrwx 1 hopx hopx    39 11. Okt 00:38 wine64 -> ../lib/trafktux/GameScopeWi
 insgesamt 0
 drwxr-xr-x 1 hopx hopx  16 17. Okt 16:20 .
 drwxr-xr-x 1 hopx hopx  12 17. Okt 16:20 ..
-drwxr-xr-x 1 hopx hopx 154 31. Okt 00:01 trafktux
+drwxr-xr-x 1 hopx hopx 154  7. Nov 23:40 trafktux
 
 ./airootfs/usr/local/lib/trafktux:
-insgesamt 60
-drwxr-xr-x 1 hopx hopx   154 31. Okt 00:01 .
+insgesamt 64
+drwxr-xr-x 1 hopx hopx   154  7. Nov 23:40 .
 drwxr-xr-x 1 hopx hopx    16 17. Okt 16:20 ..
--rwxr-xr-x 1 hopx hopx 20962 31. Okt 00:01 GameScopeWineWrapper.sh
+-rwxr-xr-x 1 hopx hopx 25208  7. Nov 23:40 GameScopeWineWrapper.sh
 -rwxr-xr-x 1 hopx hopx  3095 25. Okt 23:41 LiveInstallerShortcut.sh
 -rwxr-xr-x 1 hopx hopx 10455 11. Okt 00:38 OptionalSync.sh
 -rwxr-xr-x 1 hopx hopx 16739 11. Okt 00:38 SystemUpdate.sh
@@ -125064,7 +125091,7 @@ drwxr-xr-x 1 hopx hopx     12 17. Okt 16:22 ..
 ./efiboot:
 insgesamt 0
 drwxr-xr-x 1 hopx hopx  12 11. Okt 00:38 .
-drwxr-xr-x 1 hopx hopx 308  6. Nov 22:58 ..
+drwxr-xr-x 1 hopx hopx 276 24. Nov 19:46 ..
 drwxr-xr-x 1 hopx hopx  36 11. Okt 00:38 loader
 
 ./efiboot/loader:
@@ -125084,14 +125111,14 @@ drwxr-xr-x 1 hopx hopx  36 11. Okt 00:38 ..
 ./grub:
 insgesamt 8
 drwxr-xr-x 1 hopx hopx   40 11. Okt 00:38 .
-drwxr-xr-x 1 hopx hopx  308  6. Nov 22:58 ..
+drwxr-xr-x 1 hopx hopx  276 24. Nov 19:46 ..
 -rw-r--r-- 1 hopx hopx 1202 11. Okt 00:38 grub.cfg
 -rw-r--r-- 1 hopx hopx  269 11. Okt 00:38 loopback.cfg
 
 ./OLD:
 insgesamt 9580
 drwxr-xr-x 1 hopx hopx     174 25. Okt 22:30 .
-drwxr-xr-x 1 hopx hopx     308  6. Nov 22:58 ..
+drwxr-xr-x 1 hopx hopx     276 24. Nov 19:46 ..
 -rw-r--r-- 1 hopx hopx 9779495 17. Okt 17:35 Archiso.txt
 -rw-r--r-- 1 hopx hopx    4927 11. Okt 00:38 build-hyprland-plugins.sh
 -rwxr-xr-x 1 hopx hopx    2824 11. Okt 00:38 build-iso.sh
@@ -125101,7 +125128,7 @@ drwxr-xr-x 1 hopx hopx     308  6. Nov 22:58 ..
 ./syslinux:
 insgesamt 76
 drwxr-xr-x 1 hopx hopx   252 11. Okt 00:38 .
-drwxr-xr-x 1 hopx hopx   308  6. Nov 22:58 ..
+drwxr-xr-x 1 hopx hopx   276 24. Nov 19:46 ..
 -rw-r--r-- 1 hopx hopx   815 11. Okt 00:38 archiso_head.cfg
 -rw-r--r-- 1 hopx hopx    82 11. Okt 00:38 archiso_pxe.cfg
 -rw-r--r-- 1 hopx hopx  1220 11. Okt 00:38 archiso_pxe-linux.cfg

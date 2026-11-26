@@ -17,14 +17,15 @@
  *   Linker Stick  = W A S D  (Config left_stick = arrows -> Pfeiltasten)
  *   D-Pad         = Pfeiltasten
  *   Rechter Stick = Mauszeiger
- *   A=Space  B=X  X=Backspace  Y=Tab  L1=Q  R1=E  Start=Enter  Select=Esc
+ *   A=Space  B=Ctrl  X=Tab  Y=F  L1=Q  R1=E  Start=Enter  Select=Esc
  *   L2=Linksklick  R2=Rechtsklick  R3=Mittelklick  L3=Shift
+ *   Modus-Kombi: Tastatur -> Gamepad (Wiimote als virtuelles Gamepad) -> Aus -> Tastatur
  *   HOME gehalten = Ebene 2: Buttons senden F13-F24 (Controls.lua bindet
  *   diese NUR im Controller-Modus), Rechter Stick = Scrollen (4 Richtungen),
  *   Linker Stick = Fenster-Fokus, L2/R2 = Super+Maus (Fenster ziehen/skalieren)
  *
  * Kein systemd: wird aus Autostart.lua gestartet (Watchdog-Loop).
- * Steuerung von aussen:  TrafkPad --ctl toggle|on|off|status|reload|quit
+ * Steuerung von aussen:  TrafkPad --ctl toggle|cycle|on|off|mode keyboard|gamepad|off|status|reload|quit
  *
  * Build: gcc -O2 -Wall -Wextra -o TrafkPad TrafkPad.c $(pkg-config --cflags --libs libevdev) -lm
  */
@@ -57,18 +58,22 @@
 #include <unistd.h>
 
 #define MAX_PADS 16
-#define PAD_PROTO 4          /* Protokollstand der Socket-Befehle (Widget prueft das) */
+#define PAD_PROTO 7          /* Protokollstand der Socket-Befehle (Widget prueft das) */
 #define TICK_MS 8
 #define KEYS_USED 256
 
 /* ───────────────────────── Eingaben (abstrakt) ───────────────────────── */
 enum {
     I_A, I_B, I_X, I_Y, I_L1, I_R1, I_L2, I_R2, I_SELECT, I_START, I_HOME,
-    I_L3, I_R3, I_DU, I_DD, I_DL, I_DR, I_SLU, I_SLD, I_SLL, I_SLR, I_COUNT
+    I_L3, I_R3, I_DU, I_DD, I_DL, I_DR, I_SLU, I_SLD, I_SLL, I_SLR,
+    I_E1, I_E2, I_E3, I_E4, I_E5, I_E6, I_E7, I_E8,     /* Zusatztasten des Pads (Paddles, Makros ...), je Geraet aus den Faehigkeiten */
+    I_COUNT
 };
+#define NEXTRA 8
 static const char *INPUT_NAMES[I_COUNT] = {
     "A", "B", "X", "Y", "L1", "R1", "L2", "R2", "SELECT", "START", "HOME",
-    "L3", "R3", "DU", "DD", "DL", "DR", "SLU", "SLD", "SLL", "SLR"
+    "L3", "R3", "DU", "DD", "DL", "DR", "SLU", "SLD", "SLL", "SLR",
+    "E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8"
 };
 
 typedef struct { uint8_t kind; uint16_t code; uint16_t mod; uint8_t mods; } Action; /* kind: 0 none, 1 key, 2 maus-btn, 3 scroll (code 0 hoch,1 runter,2 links,3 rechts); mods: Bit0 Shift, 1 Strg, 2 Alt, 3 Super */
@@ -88,6 +93,9 @@ typedef struct {
     bool debug, home_tap;
     char layout[48];                          /* aktives Layout: layouts/<name>.conf (Ueberschreibungen der Standardbelegung) */
     int stick_base, stick_home;               /* Maus-Stick: 0 aus, 1 Maus, 2 Scrollen (ohne / mit Home) */
+    float wii_edge;                                             /* Randbereich der Kamera (Anteil), der als Bildschirmrand gilt */
+    int shift_in;                                               /* Shift-Taste der Home-Ebene: I_R3 (Standard) oder I_L3 */
+    bool wii_rumble;                                            /* Rumble auch an der Wiimote (Standard AUS: danach reagierte sie nicht mehr) */
     bool wii_roll;                                              /* Drehung der Wiimote (Rollwinkel aus den zwei IR-Punkten) ausgleichen */
     bool wii_pointer, wii_flip_x, wii_flip_y, wii_nun_flip_y;   /* Wiimote: IR-Zeiger, Achsen-Spiegelung */
     float wii_tau;                            /* Glaettung 1..4 -> Zeitkonstante in s (gross = traege) */
@@ -106,6 +114,7 @@ typedef struct Pad {
     struct libevdev *dev;
     char path[300], name[96];
     struct input_absinfo ai[ABS_CNT > 64 ? 64 : ABS_CNT];
+    int extra[NEXTRA], nextra;     /* evdev-Codes der Zusatztasten -> I_E1.. */
     bool src_btn[I_COUNT], src_abs[I_COUNT], down[I_COUNT];
     bool ignore[I_COUNT];          /* beim Aktivieren schon gehalten */
     bool pending[I_COUNT], swallowed[I_COUNT];
@@ -138,7 +147,7 @@ static Cfg cfg;
 static Action map_base[I_COUNT], map_home[I_COUNT];
 static Action wmap_base[I_COUNT], wmap_home[I_COUNT];   /* Wiimote hat eigene Belegung (Layout-Schluessel wbase./whome.) */
 static Pad *pads[MAX_PADS];
-static struct { bool active; } g;
+static struct { bool active, gpad; } g;     /* active = Tastatur/Maus-Modus, gpad = Gamepad-Modus (beides aus = AUS) */
 
 static int64_t (*clock_ms)(void);
 static int64_t real_clock_ms(void) {
@@ -170,8 +179,10 @@ static void out_key(int code, int val)  { rec_add("K%d=%d ", code, val); }
 static void out_btn(int code, int val)  { rec_add("B%d=%d ", code, val); }
 static void out_rel(int code, int val)  { rec_add("R%d:%d ", code, val); }
 static void out_abs(int code, int val)  { rec_add("A%d:%d ", code, val); }
+static void gout_btn(int code, int val) { rec_add("gb%d=%d ", code, val); }
+static void gout_abs(int code, int val) { rec_add("ga%d:%d ", code, val); }
 #else
-static struct libevdev_uinput *ui_kbd, *ui_mouse, *ui_ptr;
+static struct libevdev_uinput *ui_kbd, *ui_mouse, *ui_ptr, *ui_gpad;
 static void out_key(int code, int val) {
     if (!ui_kbd) return;
     libevdev_uinput_write_event(ui_kbd, EV_KEY, code, val);
@@ -195,6 +206,16 @@ static void out_abs(int code, int val) {
 }
 static void out_abs_sync(void) {
     if (ui_ptr) libevdev_uinput_write_event(ui_ptr, EV_SYN, SYN_REPORT, 0);
+}
+static void gout_btn(int code, int val) {
+    if (!ui_gpad) return;
+    libevdev_uinput_write_event(ui_gpad, EV_KEY, code, val);
+    libevdev_uinput_write_event(ui_gpad, EV_SYN, SYN_REPORT, 0);
+}
+static void gout_abs(int code, int val) {
+    if (!ui_gpad) return;
+    libevdev_uinput_write_event(ui_gpad, EV_ABS, code, val);
+    libevdev_uinput_write_event(ui_gpad, EV_SYN, SYN_REPORT, 0);
 }
 #endif
 
@@ -234,8 +255,8 @@ static void layout_apply(void);
 static void build_maps(void) {
     memset(map_base, 0, sizeof map_base);
     memset(map_home, 0, sizeof map_home);
-    map_base[I_A] = K(KEY_SPACE);      map_base[I_B] = K(KEY_X);
-    map_base[I_X] = K(KEY_BACKSPACE);  map_base[I_Y] = K(KEY_TAB);
+    map_base[I_A] = K(KEY_SPACE);      map_base[I_B] = K(KEY_LEFTCTRL);
+    map_base[I_X] = K(KEY_TAB);        map_base[I_Y] = K(KEY_F);
     map_base[I_L1] = K(KEY_Q);         map_base[I_R1] = K(KEY_E);
     map_base[I_L2] = MB(BTN_LEFT);     map_base[I_R2] = MB(BTN_RIGHT);
     map_base[I_SELECT] = K(KEY_ESC);   map_base[I_START] = K(KEY_ENTER);
@@ -249,32 +270,43 @@ static void build_maps(void) {
         map_base[I_SLU] = K(KEY_UP);   map_base[I_SLD] = K(KEY_DOWN);
         map_base[I_SLL] = K(KEY_LEFT); map_base[I_SLR] = K(KEY_RIGHT);
     }
-    /* Home-Ebene: F13..F24 (KEY_F13=183). Hyprland-Binds: "code:<evdev+8>"
-       in Controls.lua. Linker Stick = Shift+F13..F16 (Fenster-Fokus). */
-    map_home[I_A] = K(KEY_F13);  map_home[I_B] = K(KEY_F14);
-    map_home[I_X] = K(KEY_F15);  map_home[I_Y] = K(KEY_F16);
-    map_home[I_DU] = K(KEY_F17); map_home[I_DD] = K(KEY_F18);
-    map_home[I_DL] = K(KEY_F19); map_home[I_DR] = K(KEY_F20);
+    /* Home-Ebene: F13..F24 (KEY_F13=183). Hyprland-Binds: "code:<evdev+8>" in ControllerBinds.lua.
+       Mit gehaltenem R3 ("Shift-Ebene", einstellbar: shift_btn = L3|R3) kommt Shift+<dieselbe Taste>
+       und der rechte Stick (Scroll) ist abgeschaltet (siehe press_action).
+         F13 Launcher (Shift: Optionen)   F14 Power-Menue        F16 Hyprexpo      F17 Screenshot
+         F18 Verstecken (Shift: alle)     F19 Pin                F20 Bar sperren   F21/F22 Workspace zurueck/vor
+         F23 Vollbild 1 (Shift: Vollbild 0)                      Ctrl+F13..F16 Fokus (linker Stick) */
+    map_home[I_X] = K(KEY_F16);  map_home[I_Y] = K(KEY_F17);
+    map_home[I_DU] = K(KEY_F19); map_home[I_DD] = K(KEY_F18);
+    map_home[I_DL] = K(KEY_F23); map_home[I_DR] = K(KEY_F20);
     map_home[I_L1] = K(KEY_F21); map_home[I_R1] = K(KEY_F22);
-    map_home[I_START] = K(KEY_F23); map_home[I_SELECT] = K(KEY_F24);
+    map_home[I_START] = K(KEY_F13); map_home[I_SELECT] = K(KEY_F14);
     map_home[I_L2] = MBM(KEY_LEFTMETA, BTN_LEFT);   /* Super+LMB = Fenster ziehen   */
     map_home[I_R2] = MBM(KEY_LEFTMETA, BTN_RIGHT);  /* Super+RMB = Fenster skalieren */
-    map_home[I_SLU] = KM(KEY_LEFTSHIFT, KEY_F13);
-    map_home[I_SLL] = KM(KEY_LEFTSHIFT, KEY_F14);
-    map_home[I_SLD] = KM(KEY_LEFTSHIFT, KEY_F15);
-    map_home[I_SLR] = KM(KEY_LEFTSHIFT, KEY_F16);
+    map_home[I_SLU] = KM(KEY_LEFTCTRL, KEY_F13);
+    map_home[I_SLL] = KM(KEY_LEFTCTRL, KEY_F14);
+    map_home[I_SLD] = KM(KEY_LEFTCTRL, KEY_F15);
+    map_home[I_SLR] = KM(KEY_LEFTCTRL, KEY_F16);
     if (cfg.swap_dpad) {                    /* D-Pad <-> linker Stick, in BEIDEN Ebenen */
         static const int dp[4] = { I_DU, I_DD, I_DL, I_DR }, sl[4] = { I_SLU, I_SLD, I_SLL, I_SLR };
         for (int k = 0; k < 4; k++) {
             Action t = map_base[dp[k]]; map_base[dp[k]] = map_base[sl[k]]; map_base[sl[k]] = t;
             t = map_home[dp[k]]; map_home[dp[k]] = map_home[sl[k]]; map_home[sl[k]] = t;
         }
-        /* Linker Stick = Maus: die Stick-Richtungen (jetzt Launcher/Power/Settings/Expo)
-           sind nicht erreichbar -> Launcher und Power-Menue auf Home + L3 / R3 legen. */
-        if (cfg.mouse_left) { map_home[I_L3] = K(KEY_F17); map_home[I_R3] = K(KEY_F18); }
+        /* Linker Stick = Maus: die Stick-Richtungen (jetzt Pin/Hide/Vollbild/Bar) sind nicht
+           erreichbar -> Launcher und Power-Menue auf Home + L3 / R3 legen (dann keine Shift-Ebene). */
+        if (cfg.mouse_left) { map_home[I_L3] = K(KEY_F13); map_home[I_R3] = K(KEY_F14); }
     }
     memcpy(wmap_base, map_base, sizeof wmap_base);
     memcpy(wmap_home, map_home, sizeof wmap_home);
+    /* Wiimote: eigene Standardbelegung (Z/C = Q/E, D-Pad = Pfeile, Nunchuk-Stick wie beim Pad) */
+    wmap_base[I_L2] = MB(BTN_RIGHT);  wmap_base[I_R2] = MB(BTN_LEFT);      /* A = Rechtsklick, B = Linksklick */
+    wmap_base[I_A] = (Action){3, 0, 0, 0};  wmap_base[I_B] = (Action){3, 1, 0, 0};   /* 1 = Scroll hoch, 2 = runter */
+    wmap_home[I_L2] = MBM(KEY_LEFTMETA, BTN_RIGHT); wmap_home[I_R2] = MBM(KEY_LEFTMETA, BTN_LEFT);
+    wmap_home[I_DU] = K(KEY_F13);  wmap_home[I_DD] = K(KEY_F14);
+    wmap_home[I_DL] = KM(KEY_LEFTSHIFT, KEY_F13);  wmap_home[I_DR] = K(KEY_F16);
+    wmap_home[I_START] = K(KEY_F13); wmap_home[I_SELECT] = K(KEY_F14);
+    wmap_home[I_A] = K(KEY_F17);   wmap_home[I_B] = KM(KEY_LEFTSHIFT, KEY_F18);
     layout_apply();
 }
 
@@ -291,7 +323,7 @@ static void cfg_defaults(void) {
         .stick_thr = 0.5f, .mouse_dz = 0.12f, .mouse_speed = 900.f, .mouse_curve = 1.8f,
         .scroll_speed = 1500.f, .combo_hold_ms = 1000, .combo_grace_ms = 80,
         .ov_rx = -2, .ov_ry = -2, .ov_l2 = -2, .ov_r2 = -2, .home_btn = BTN_MODE, .home_release_ms = 350, .debug = false, .home_tap = true,
-        .wii_roll = true, .wii_pointer = true, .wii_flip_x = true, .wii_flip_y = false, .wii_nun_flip_y = true,
+        .shift_in = I_R3, .wii_roll = true, .wii_edge = 0.03f, .wii_pointer = true, .wii_flip_x = true, .wii_flip_y = false, .wii_nun_flip_y = true,
         .layout = "default", .stick_base = 1, .stick_home = 2,
         .wii_tau = 0.2f, .wii_mode = 0, .wii_alt_mode = 1, .wii_rel_scale = 2500.f, .wii_x0 = 0.f, .wii_y0 = 0.f, .wii_x1 = 1.f, .wii_y1 = 1.f,
     };
@@ -333,9 +365,11 @@ static void cfg_apply_kv(const char *k, const char *v) {
     else if (!strcmp(k, "swap_xy")) cfg.swap_xy = parse_bool(v, cfg.swap_xy);
     else if (!strcmp(k, "nintendo_layout")) cfg.swap_ab = cfg.swap_xy = parse_bool(v, cfg.swap_ab);
     else if (!strcmp(k, "swap_dpad")) cfg.swap_dpad = parse_bool(v, cfg.swap_dpad);
+    else if (!strcmp(k, "shift_btn")) cfg.shift_in = strcasecmp(v, "L3") == 0 ? I_L3 : I_R3;
     else if (!strcmp(k, "mouse_stick")) cfg.mouse_left = strcasecmp(v, "left") == 0;
     else if (!strcmp(k, "swap_ab")) cfg.swap_ab = parse_bool(v, cfg.swap_ab);
     else if (!strcmp(k, "rumble")) cfg.rumble = parse_bool(v, cfg.rumble);
+    else if (!strcmp(k, "wii_rumble")) cfg.wii_rumble = parse_bool(v, cfg.wii_rumble);
     else if (!strcmp(k, "notify")) cfg.notify = parse_bool(v, cfg.notify);
     else if (!strcmp(k, "sounds")) cfg.sounds = parse_bool(v, cfg.sounds);
     else if (!strcmp(k, "scroll_invert")) cfg.scroll_invert = parse_bool(v, cfg.scroll_invert);
@@ -352,6 +386,7 @@ static void cfg_apply_kv(const char *k, const char *v) {
     else if (!strcmp(k, "wii_pointer")) cfg.wii_pointer = parse_bool(v, cfg.wii_pointer);
     else if (!strcmp(k, "wii_flip_x")) cfg.wii_flip_x = parse_bool(v, cfg.wii_flip_x);
     else if (!strcmp(k, "wii_flip_y")) cfg.wii_flip_y = parse_bool(v, cfg.wii_flip_y);
+    else if (!strcmp(k, "wii_edge")) cfg.wii_edge = clampf((float)atof(v) / 100.f, 0.f, 0.2f);   /* in Prozent */
     else if (!strcmp(k, "wii_roll")) cfg.wii_roll = parse_bool(v, cfg.wii_roll);
     else if (!strcmp(k, "wii_smooth")) { static const float tau[6] = { 0.15f, 0.9f, 0.45f, 0.2f, 0.08f, 0.f }; int l = (int)clampf((float)atoi(v), 1.f, 5.f); cfg.wii_tau = tau[l];   /* 1 = extrem glatt ... 5 = roh */ }
     else if (!strcmp(k, "layout")) {
@@ -539,6 +574,7 @@ static void set_flag_file(bool on) {
 }
 static void rumble(Pad *p, int ms) {
     if (!cfg.rumble || !p->dev || p->fd < 0 || !p->ff_ok) return;
+    if (p->wii && !cfg.wii_rumble) return;      /* hid-wiimote: nach dem Rumble kamen keine Tasten mehr an (Modus-Wechsel per Wiimote) */
     struct ff_effect e;
     memset(&e, 0, sizeof e);
     e.type = FF_RUMBLE;
@@ -570,7 +606,60 @@ static void pad_grab(Pad *p, bool on) {
     p->grabbed = on;
 }
 
+/* ─────────────────────────────── Gamepad-Modus ───────────────────────────────
+ * Im Gamepad-Modus (Modus "Controller") erscheinen Wiimote + Nunchuk als ein normales Xbox-artiges Gamepad
+ * ("TrafkPad Virtual Gamepad"). Echte Gamepads werden dann nicht abgefangen - sie gehoeren direkt den Spielen.
+ *   Wiimote 1/2 = A/B, A/B-Knopf = LT/RT, Z/C = LB/RB, +/- = Start/Select, Home = Guide, Kreuz = Hat
+ *   Nunchuk-Stick = linker Stick, IR-Zeiger (Abstand zur Bildschirmmitte) = rechter Stick */
+static bool gp_in[I_COUNT];
+static int gp_lx, gp_ly, gp_rx, gp_ry;
+static bool gp_hat[4];                                   /* hoch, runter, links, rechts */
+
+static void gpad_hat(void) {
+    gout_abs(ABS_HAT0X, (gp_hat[3] ? 1 : 0) - (gp_hat[2] ? 1 : 0));
+    gout_abs(ABS_HAT0Y, (gp_hat[1] ? 1 : 0) - (gp_hat[0] ? 1 : 0));
+}
+static void gpad_input(int i, bool d) {
+    int v = d ? 1 : 0;
+    gp_in[i] = d;
+    switch (i) {
+    case I_A: gout_btn(BTN_SOUTH, v); break;      case I_B: gout_btn(BTN_EAST, v); break;
+    case I_X: gout_btn(BTN_NORTH, v); break;      case I_Y: gout_btn(BTN_WEST, v); break;
+    case I_L1: gout_btn(BTN_TL, v); break;        case I_R1: gout_btn(BTN_TR, v); break;
+    case I_L2: gout_btn(BTN_TL2, v); gout_abs(ABS_Z, d ? 255 : 0); break;
+    case I_R2: gout_btn(BTN_TR2, v); gout_abs(ABS_RZ, d ? 255 : 0); break;
+    case I_SELECT: gout_btn(BTN_SELECT, v); break; case I_START: gout_btn(BTN_START, v); break;
+    case I_HOME: gout_btn(BTN_MODE, v); break;
+    case I_L3: gout_btn(BTN_THUMBL, v); break;    case I_R3: gout_btn(BTN_THUMBR, v); break;
+    case I_DU: gp_hat[0] = d; gpad_hat(); break;  case I_DD: gp_hat[1] = d; gpad_hat(); break;
+    case I_DL: gp_hat[2] = d; gpad_hat(); break;  case I_DR: gp_hat[3] = d; gpad_hat(); break;
+    default: break;
+    }
+}
+static int gp_axis(float v) { return (int)(clampf(v, -1.f, 1.f) * 32767.f); }
+static void gpad_left(float x, float y) {
+    int ax = gp_axis(x), ay = gp_axis(y);
+    if (ax != gp_lx) { gp_lx = ax; gout_abs(ABS_X, ax); }
+    if (ay != gp_ly) { gp_ly = ay; gout_abs(ABS_Y, ay); }
+}
+static void gpad_right(float x, float y) {
+    int ax = gp_axis(x), ay = gp_axis(y);
+    if (ax != gp_rx) { gp_rx = ax; gout_abs(ABS_RX, ax); }
+    if (ay != gp_ry) { gp_ry = ay; gout_abs(ABS_RY, ay); }
+}
+static void gpad_release_all(void) {
+    for (int i = 0; i < I_COUNT; i++) if (gp_in[i]) gpad_input(i, false);
+    gpad_left(0, 0); gpad_right(0, 0);
+}
+
 /* ─────────────────────────────── Modus-Wechsel ─────────────────────────────── */
+enum { MODE_OFF = 0, MODE_KEYBOARD = 1, MODE_GAMEPAD = 2 };
+static int cur_mode(void) { return g.active ? MODE_KEYBOARD : g.gpad ? MODE_GAMEPAD : MODE_OFF; }
+static const char *mode_name(int m) { return m == MODE_KEYBOARD ? "keyboard" : m == MODE_GAMEPAD ? "gamepad" : "off"; }
+static int mode_next(int m) { return m == MODE_KEYBOARD ? MODE_GAMEPAD : m == MODE_GAMEPAD ? MODE_OFF : MODE_KEYBOARD; }
+/* Welche Pads fangen wir im aktuellen Modus ab? Tastatur: alle. Gamepad: nur die Wiimote-Knoten. */
+static bool mode_grabs(const Pad *p) { return g.active || (g.gpad && p->wii); }
+
 static void pad_reset_state(Pad *p) {
     memset(p->pending, 0, sizeof p->pending);
     memset(p->swallowed, 0, sizeof p->swallowed);
@@ -578,43 +667,37 @@ static void pad_reset_state(Pad *p) {
     p->home = false; p->home_armed = false; p->home_rel_pending = false;
 }
 
-static void set_active(bool on, bool announce) {
-    if (g.active == on) return;
-    g.active = on;
-    if (on) {
-        for (int i = 0; i < MAX_PADS; i++) if (pads[i]) {
-            Pad *p = pads[i];
-            pad_reset_state(p);
-            /* Was gerade schon gehalten wird (z.B. die Toggle-Kombi selbst),
-               zaehlt erst nach dem Loslassen wieder. */
-            for (int k = 0; k < I_COUNT; k++) p->ignore[k] = p->down[k];
-            p->combo_armed = false;
-            p->combo_latch = true;
-            p->mcombo_armed = false;
-            p->mcombo_latch = true;
-            pad_grab(p, true);
-        }
-    } else {
-        release_all_outputs();
-        for (int i = 0; i < MAX_PADS; i++) if (pads[i]) {
-            pad_reset_state(pads[i]);
-            pad_grab(pads[i], false);
-            pads[i]->combo_armed = false;
-            pads[i]->combo_latch = true;
-        }
-    }
-    set_flag_file(on);
-    logf_("Controller-Modus: %s", on ? "AN" : "AUS");
+/* Ein Pad passend zum aktuellen Modus vorbereiten: schon gehaltene Tasten (z.B. die Toggle-Kombi selbst)
+ * zaehlen erst nach dem Loslassen wieder, dann abfangen bzw. freigeben. */
+static void pad_apply_mode(Pad *p) {
+    pad_reset_state(p);
+    for (int k = 0; k < I_COUNT; k++) p->ignore[k] = p->down[k];
+    p->combo_armed = false; p->combo_latch = true;
+    p->mcombo_armed = false; p->mcombo_latch = true;
+    pad_grab(p, mode_grabs(p));
+}
+
+static void set_mode(int m, bool announce) {
+    if (cur_mode() == m) return;
+    if (g.active) release_all_outputs();
+    if (g.gpad) gpad_release_all();
+    g.active = m == MODE_KEYBOARD;
+    g.gpad = m == MODE_GAMEPAD;
+    for (int i = 0; i < MAX_PADS; i++) if (pads[i]) pad_apply_mode(pads[i]);
+    set_flag_file(g.active);
+    logf_("Controller-Modus: %s", m == MODE_KEYBOARD ? "TASTATUR" : m == MODE_GAMEPAD ? "GAMEPAD" : "AUS");
     if (announce) {
-        for (int i = 0; i < MAX_PADS; i++) if (pads[i]) { rumble(pads[i], on ? 140 : 350); }
+        for (int i = 0; i < MAX_PADS; i++) if (pads[i]) rumble(pads[i], m == MODE_OFF ? 350 : m == MODE_GAMEPAD ? 220 : 140);
         if (cfg.sounds)
-            spawn_sh(on ? "bash \"$HOME/.config/hypr/SoundCenter.sh\" Open >/dev/null 2>&1"
-                        : "bash \"$HOME/.config/hypr/SoundCenter.sh\" Close >/dev/null 2>&1");
+            spawn_sh(m == MODE_OFF ? "bash \"$HOME/.config/hypr/SoundCenter.sh\" Close >/dev/null 2>&1"
+                                   : "bash \"$HOME/.config/hypr/SoundCenter.sh\" Open >/dev/null 2>&1");
         if (cfg.notify)
-            spawn_sh(on ? "command -v notify-send >/dev/null && notify-send -a TrafkPad -t 2000 -i input-gaming 'Controller-Modus: AN' 'Gamepad steuert den Desktop'"
-                        : "command -v notify-send >/dev/null && notify-send -a TrafkPad -t 2000 -i input-gaming 'Controller-Modus: AUS' 'Gamepad gehoert wieder den Spielen'");
+            spawn_sh(m == MODE_KEYBOARD ? "command -v notify-send >/dev/null && notify-send -a TrafkPad -t 2000 -i input-gaming 'Controller-Modus: Tastatur' 'Gamepad steuert den Desktop'"
+                   : m == MODE_GAMEPAD  ? "command -v notify-send >/dev/null && notify-send -a TrafkPad -t 2000 -i input-gaming 'Controller-Modus: Gamepad' 'Wiimote erscheint als Gamepad, echte Pads gehen direkt an die Spiele'"
+                                        : "command -v notify-send >/dev/null && notify-send -a TrafkPad -t 2000 -i input-gaming 'Controller-Modus: AUS' 'Gamepad gehoert wieder den Spielen'");
     }
 }
+static void set_active(bool on, bool announce) { set_mode(on ? MODE_KEYBOARD : MODE_OFF, announce); }
 
 /* ─────────────────────────────── Eingabe-Logik ─────────────────────────────── */
 static unsigned toggle_mask(const Pad *p) { return p->wii == 1 ? cfg.wii_combo_mask : cfg.combo_mask; }
@@ -655,6 +738,8 @@ static bool layer_on(Pad *p) {
 static void press_action(Pad *p, int i) {
     bool lay = layer_on(p);
     Action a = p->wii ? (lay ? wmap_home[i] : wmap_base[i]) : (lay ? map_home[i] : map_base[i]);
+    /* Shift-Ebene: Home + Shift-Taste (R3, einstellbar: shift_btn) gehalten -> Shift zur Taste der Home-Ebene dazu (nur Gamepad) */
+    if (lay && !p->wii && i != cfg.shift_in && p->down[cfg.shift_in] && map_home[cfg.shift_in].kind == 0 && a.kind == 1) a.mods |= 1;
     if (lay) { p->home_used = true; if (!p->home) p->home_armed = false; }
     p->held[i] = a;
     p->held_valid[i] = true;
@@ -748,6 +833,12 @@ static void on_input_change(Pad *p, int i, bool down) {
     if (cfg.debug)
         logf_("INPUT %s %s%s%s%s", INPUT_NAMES[i], down ? "down" : "up", g.active ? "" : " [Modus AUS]",
               p->ignore[i] ? " [ignoriert: schon beim Einschalten gehalten]" : "", p->home ? " [Home gehalten]" : "");
+    if (g.gpad) {                              /* Gamepad-Modus: Wiimote-Eingaben gehen als Gamepad nach aussen */
+        if (p->ignore[i]) { if (!down) p->ignore[i] = false; combo_check(p); return; }
+        if (p->wii == 1 && i != I_SLU && i != I_SLD && i != I_SLL && i != I_SLR && i < I_E1) gpad_input(i, down);
+        combo_check(p);
+        return;
+    }
     if (!g.active) { combo_check(p); return; }
     if (p->ignore[i]) { if (!down) p->ignore[i] = false; combo_check(p); return; }
     if (i == I_HOME) {
@@ -838,6 +929,7 @@ static void pad_event(Pad *p, int type, int code, int value) {
         case BTN_DPAD_UP: in = I_DU; break; case BTN_DPAD_DOWN: in = I_DD; break;
         case BTN_DPAD_LEFT: in = I_DL; break; case BTN_DPAD_RIGHT: in = I_DR; break;
         }
+        if (in < 0) for (int k = 0; k < p->nextra; k++) if (p->extra[k] == code) { in = I_E1 + k; break; }
         if (code == cfg.home_btn) {
             in = I_HOME;
             /* Manche Pads (8BitDo) senden Home nur als ~100 ms-Impuls, beim Halten als
@@ -924,6 +1016,11 @@ static void wii_nunchuk(Pad *p, int type, int code, int value) {
         float sg = cfg.wii_nun_flip_y ? -1.f : 1.f;
         if (code == ABS_HAT0X) { c->lx = clampf((value - p->cx) / NUN_RANGE, -1.f, 1.f); update_left_stick(c); }
         if (code == ABS_HAT0Y) { c->ly = sg * clampf((value - p->cy) / NUN_RANGE, -1.f, 1.f); update_left_stick(c); }
+        if (g.gpad && (code == ABS_HAT0X || code == ABS_HAT0Y)) {
+            float x = c->lx, y = c->ly, m = hypotf(x, y);
+            if (m < 0.12f) x = y = 0;                      /* kleine Totzone gegen Zittern */
+            gpad_left(x, y);
+        }
     }
 }
 
@@ -933,7 +1030,7 @@ static int wii_mode_rt = -1;
 static int wii_mode_eff(void) { return wii_mode_rt >= 0 ? wii_mode_rt : cfg.wii_mode; }
 static void wii_mode_toggle(void) {
     static const char *names[] = { "absolut", "relativ", "Joystick" };
-    wii_mode_rt = wii_mode_eff() == 0 ? cfg.wii_alt_mode : 0;
+    wii_mode_rt = (wii_mode_eff() + 1) % 3;                 /* absolut -> relativ -> Joystick -> absolut */
     char m[96]; snprintf(m, sizeof m, "Zeiger-Modus: %s", names[wii_mode_rt]); wii_cal_notify(m);
 }
 static float act_rect[4]; static bool act_ok;
@@ -946,13 +1043,81 @@ static void set_active_mon(const char *name) {
         }
     }
 }
+/* Echte Monitor-Geometrie von Hyprland ("hyprctl monitors -j"): der Zeigerbereich "aktiver Workspace" rechnet
+ * damit selbst (Bounding-Box aller Monitore = Flaeche des absoluten Zeigegeraets), statt sich auf beim Einrichten
+ * gespeicherte Anteile zu verlassen (die veralten, wenn sich Aufloesung/Skalierung/Anordnung aendern). */
+typedef struct { char name[64]; float x, y, w, h, scale; int transform; bool focused; } HMon;
+static int hypr_parse_monitors(const char *buf, HMon *m, int max) {
+    int depth = 0, cnt = -1; bool instr = false;
+    for (const char *c = buf; *c; c++) {
+        if (instr) { if (*c == '\\' && c[1]) c++; else if (*c == '"') instr = false; continue; }
+        if (*c == '{' || *c == '[') {
+            depth++;
+            if (*c == '{' && depth == 2) { if (++cnt >= max) { cnt = max - 1; break; } memset(&m[cnt], 0, sizeof m[cnt]); m[cnt].scale = 1.f; }
+            continue;
+        }
+        if (*c == '}' || *c == ']') { depth--; continue; }
+        if (*c != '"') continue;
+        if (depth != 2 || cnt < 0) { instr = true; continue; }
+        char key[32]; int i = 0; const char *q = c + 1;
+        while (*q && *q != '"' && i < 31) key[i++] = *q++;
+        key[i] = 0;
+        if (*q != '"') break;
+        const char *v = q + 1; while (isspace((unsigned char)*v)) v++;
+        if (*v != ':') { c = q; continue; }                      /* war ein String-Wert */
+        v++; while (isspace((unsigned char)*v)) v++;
+        if (!strcmp(key, "name") && *v == '"') { v++; size_t k = 0; while (*v && *v != '"' && k < sizeof m[cnt].name - 1) m[cnt].name[k++] = *v++; m[cnt].name[k] = 0; }
+        else if (!strcmp(key, "width")) m[cnt].w = (float)atof(v);
+        else if (!strcmp(key, "height")) m[cnt].h = (float)atof(v);
+        else if (!strcmp(key, "x")) m[cnt].x = (float)atof(v);
+        else if (!strcmp(key, "y")) m[cnt].y = (float)atof(v);
+        else if (!strcmp(key, "scale")) { float sc = (float)atof(v); if (sc > 0.f) m[cnt].scale = sc; }
+        else if (!strcmp(key, "transform")) m[cnt].transform = atoi(v);
+        else if (!strcmp(key, "focused")) m[cnt].focused = !strncmp(v, "true", 4);
+        c = q;
+    }
+    return cnt + 1;
+}
+/* Aus der Monitorliste den Bereich (Anteile der Bounding-Box) von "name" bzw. dem fokussierten Monitor (name == NULL) */
+static bool hypr_rect_from(const HMon *m, int n, const char *name, float out[4]) {
+    float bx0 = 1e9f, by0 = 1e9f, bx1 = -1e9f, by1 = -1e9f; int sel = -1;
+    for (int i = 0; i < n; i++) {
+        float w = m[i].w / m[i].scale, h = m[i].h / m[i].scale;
+        if (m[i].transform % 2) { float t = w; w = h; h = t; }
+        if (m[i].x < bx0) bx0 = m[i].x;
+        if (m[i].y < by0) by0 = m[i].y;
+        if (m[i].x + w > bx1) bx1 = m[i].x + w;
+        if (m[i].y + h > by1) by1 = m[i].y + h;
+        if (name ? !strcmp(m[i].name, name) : m[i].focused) sel = i;
+    }
+    if (sel < 0 || bx1 <= bx0 || by1 <= by0) return false;
+    float w = m[sel].w / m[sel].scale, h = m[sel].h / m[sel].scale;
+    if (m[sel].transform % 2) { float t = w; w = h; h = t; }
+    out[0] = (m[sel].x - bx0) / (bx1 - bx0); out[1] = (m[sel].y - by0) / (by1 - by0);
+    out[2] = (m[sel].x + w - bx0) / (bx1 - bx0); out[3] = (m[sel].y + h - by0) / (by1 - by0);
+    return true;
+}
+static bool hypr_query_active(const char *name) {
+#ifdef TRAFKPAD_TEST
+    (void)name; return false;
+#else
+    FILE *f = popen("hyprctl monitors -j 2>/dev/null", "r");
+    if (!f) return false;
+    static char buf[65536];
+    size_t n = fread(buf, 1, sizeof buf - 1, f); buf[n] = 0; pclose(f);
+    HMon m[8]; int cnt = hypr_parse_monitors(buf, m, 8);
+    float r[4];
+    if (cnt > 0 && hypr_rect_from(m, cnt, name, r)) { memcpy(act_rect, r, sizeof r); act_ok = true; return true; }
+    return false;
+#endif
+}
 static void hypr_line(const char *line) {
     int pre = !strncmp(line, "focusedmonv2>>", 14) ? 14 : !strncmp(line, "focusedmon>>", 12) ? 12 : 0;
     if (!pre) return;                                           /* aktiver Workspace/Monitor wechselt */
     char name[64]; size_t i = 0;
     for (const char *c = line + pre; *c && *c != ',' && i < sizeof name - 1; c++) name[i++] = *c;
     name[i] = 0;
-    set_active_mon(name);
+    if (!hypr_query_active(name)) set_active_mon(name);
 }
 
 /* IR-Zeiger */
@@ -1018,18 +1183,28 @@ static void ir_process(const int pts[][2], int n) {
     ir.u = u; ir.v = v;
     ir.tx = clampf((u - cal_u0) / (cal_u1 - cal_u0), 0.f, 1.f);
     ir.ty = clampf((v - cal_v0) / (cal_v1 - cal_v0), 0.f, 1.f);
+    if (cfg.wii_edge > 0.f) {          /* die aeusseren Prozent der Kamera = Bildschirmrand (Rand sonst kaum erreichbar) */
+        float e = cfg.wii_edge, k = 1.f / (1.f - 2.f * e);
+        ir.tx = clampf((ir.tx - e) * k, 0.f, 1.f); ir.ty = clampf((ir.ty - e) * k, 0.f, 1.f);
+    }
 }
 
 /* Glaettung nach ZEIT (nicht pro Ereignis) und Ausgabe; wird vom Tick aufgerufen. */
 static void ir_emit(float dt) {
     static bool prev_reset;
-    if (!ir.vis) { prev_reset = true; return; }
+    if (!ir.vis) { prev_reset = true; if (g.gpad) gpad_right(0, 0); return; }
     if (!ir.init || ir.fresh) { prev_reset = true; ir.sx = ir.tx; ir.sy = ir.ty; ir.init = true; ir.fresh = false; ir.last_x = ir.last_y = -1; }
     else {
         float d = hypotf(ir.tx - ir.sx, ir.ty - ir.sy);
         float a = cfg.wii_tau > 0.f ? 1.f - expf(-dt / cfg.wii_tau) : 1.f;
         if (d > 0.25f) a = clampf(a + (d - 0.25f) * 4.f, a, 1.f);   /* nur echte Spruenge (neuer Zielpunkt) ohne Verzoegerung */
         ir.sx += (ir.tx - ir.sx) * a; ir.sy += (ir.ty - ir.sy) * a;
+    }
+    if (g.gpad && cfg.wii_pointer && !monitoring()) {          /* Gamepad-Modus: Zeigerabstand zur Mitte = rechter Stick */
+        float vx = (ir.sx - 0.5f) * 2.f, vy = (ir.sy - 0.5f) * 2.f, dz = 0.12f, mag = hypotf(vx, vy);
+        if (mag > dz) { float k = clampf((mag - dz) / (1.f - dz), 0.f, 1.f) / mag; gpad_right(vx * k, vy * k); }
+        else gpad_right(0, 0);
+        return;
     }
     if (!g.active || !cfg.wii_pointer || monitoring()) return;
     int mode = wii_mode_eff();
@@ -1060,6 +1235,10 @@ static void ir_emit(float dt) {
     }
     prev_ok = false;
     float rc[4] = { cfg.wii_x0, cfg.wii_y0, cfg.wii_x1, cfg.wii_y1 };
+    if (cfg.wii_area_active) {                 /* Sicherheitsnetz: Monitor alle paar Sekunden neu erfragen (verpasste Events, geaenderte Anordnung) */
+        static int64_t last_q = -100000; int64_t tn = clock_ms();
+        if (tn - last_q > 3000) { last_q = tn; hypr_query_active(NULL); }
+    }
     if (cfg.wii_area_active && !act_ok && cfg.wii_cur[0]) set_active_mon(cfg.wii_cur);
     if (cfg.wii_area_active && act_ok) memcpy(rc, act_rect, sizeof rc);
     int ox = (int)((rc[0] + ir.sx * (rc[2] - rc[0])) * 32767.f + 0.5f);
@@ -1131,7 +1310,7 @@ static bool tick(int64_t now) {
             else if (now - p->combo_since >= cfg.combo_hold_ms) {
                 p->combo_armed = false;
                 p->combo_latch = true;
-                set_active(!g.active, true);
+                set_mode(mode_next(cur_mode()), true);          /* Tastatur -> Gamepad -> Aus -> Tastatur */
                 return true;                  /* Zustand hat sich geaendert, neu bewerten */
             } else need = true;
         }
@@ -1157,6 +1336,7 @@ static bool tick(int64_t now) {
         float ux = mx(p) / mag, uy = my(p) / mag;
         int smode = layer_on(p) ? cfg.stick_home : cfg.stick_base;
         if (smode == 0) continue;
+        if (layer_on(p) && !p->wii && p->down[cfg.shift_in] && map_home[cfg.shift_in].kind == 0) continue;   /* Shift-Ebene (Home + R3): Zeigerstick unbelegt */
         if (smode == 2) {                      /* Scrollen */
             float sp = cfg.scroll_speed * s * dt;
             acc_sx += ux * sp * (cfg.scroll_invert ? -1.f : 1.f);
@@ -1181,7 +1361,7 @@ static bool tick(int64_t now) {
 #endif
     ir_poll();
     ir_emit(dt);
-    if (ir.vis && g.active && cfg.wii_pointer) need = true;
+    if (ir.vis && (g.active || g.gpad) && cfg.wii_pointer) need = true;
     return need;
 }
 
@@ -1241,7 +1421,7 @@ static bool need_tick(void) {
         if (!p) continue;
         if (p->combo_armed || p->mcombo_armed || p->home_rel_pending || (g.active && rstick_live(p))) return true;
         for (int i = 0; i < I_COUNT; i++) if (g.active && p->held_valid[i] && p->held[i].kind == 3) return true;
-        if (p->wii == 3 && (ir.dirty || (ir.vis && g.active && cfg.wii_pointer))) return true;
+        if (p->wii == 3 && (ir.dirty || (ir.vis && (g.active || g.gpad) && cfg.wii_pointer))) return true;
         for (int i = 0; i < I_COUNT; i++) if (p->pending[i]) return true;
     }
     return false;
@@ -1301,6 +1481,20 @@ static void pad_try_open(const char *path) {
         if (a) p->ai[c] = *a;
     }
     p->ff_ok = libevdev_has_event_code(dev, EV_FF, FF_RUMBLE) && fcntl(fd, F_GETFL) >= 0;
+    if (!wk) {                                  /* Zusatztasten: alles, was das Pad kann und wir nicht kennen */
+        for (int c = BTN_MISC; c < KEY_MAX && p->nextra < NEXTRA; c++) {
+            if (!libevdev_has_event_code(dev, EV_KEY, c)) continue;
+            switch (c) {
+            case BTN_SOUTH: case BTN_EAST: case BTN_NORTH: case BTN_WEST: case BTN_TL: case BTN_TR: case BTN_TL2: case BTN_TR2:
+            case BTN_SELECT: case BTN_START: case BTN_MODE: case BTN_THUMBL: case BTN_THUMBR:
+            case BTN_DPAD_UP: case BTN_DPAD_DOWN: case BTN_DPAD_LEFT: case BTN_DPAD_RIGHT: continue;
+            }
+            if (c >= BTN_MOUSE && c < BTN_JOYSTICK) continue;         /* Maustasten */
+            if (c >= BTN_DIGI && c < BTN_WHEEL) continue;             /* Stift/Tablet */
+            if (c > BTN_TRIGGER_HAPPY40) break;
+            p->extra[p->nextra++] = c;
+        }
+    }
     /* Startzustand lesen (Trigger in Ruhe, schon gehaltene Tasten) */
     static const int btns[] = { BTN_SOUTH, BTN_EAST, BTN_NORTH, BTN_WEST, BTN_TL, BTN_TR, BTN_TL2, BTN_TR2,
         BTN_SELECT, BTN_START, BTN_MODE, BTN_THUMBL, BTN_THUMBR, BTN_DPAD_UP, BTN_DPAD_DOWN, BTN_DPAD_LEFT, BTN_DPAD_RIGHT };
@@ -1343,7 +1537,7 @@ static void pad_try_open(const char *path) {
         for (int c = 0; c < KEY_MAX; c++)
             if (libevdev_has_event_code(dev, EV_KEY, c)) logf_("  hat Taste %s (%d)", libevdev_event_code_get_name(EV_KEY, c), c);
     }
-    if (g.active) {
+    if (mode_grabs(p)) {
         for (int k = 0; k < I_COUNT; k++) p->ignore[k] = p->down[k];
         p->combo_latch = true;
         pad_grab(p, true);
@@ -1432,6 +1626,26 @@ static int create_outputs(void) {
     rc = libevdev_uinput_create_from_device(a, LIBEVDEV_UINPUT_OPEN_MANAGED, &ui_ptr);
     libevdev_free(a);
     if (rc < 0) logf_("uinput (Zeiger) fehlgeschlagen: %s - Wiimote-Zeiger aus", strerror(-rc));
+
+    /* Virtuelles Gamepad (Gamepad-Modus). Xbox-360-Kennung, damit SDL/Steam/Wine es ohne eigene Zuordnung kennen. */
+    struct libevdev *gp = libevdev_new();
+    libevdev_set_name(gp, "TrafkPad Virtual Gamepad");
+    libevdev_set_id_bustype(gp, BUS_USB);
+    libevdev_set_id_vendor(gp, 0x045e); libevdev_set_id_product(gp, 0x028e); libevdev_set_id_version(gp, 0x0114);
+    libevdev_enable_event_type(gp, EV_KEY);
+    static const int gbtns[] = { BTN_SOUTH, BTN_EAST, BTN_NORTH, BTN_WEST, BTN_TL, BTN_TR, BTN_TL2, BTN_TR2, BTN_SELECT, BTN_START, BTN_MODE, BTN_THUMBL, BTN_THUMBR };
+    for (size_t i = 0; i < sizeof gbtns / sizeof *gbtns; i++) libevdev_enable_event_code(gp, EV_KEY, gbtns[i], NULL);
+    libevdev_enable_event_type(gp, EV_ABS);
+    struct input_absinfo sa = { .minimum = -32768, .maximum = 32767, .fuzz = 16, .flat = 128 };
+    struct input_absinfo ta = { .minimum = 0, .maximum = 255 };
+    struct input_absinfo ha = { .minimum = -1, .maximum = 1 };
+    static const int saxes[] = { ABS_X, ABS_Y, ABS_RX, ABS_RY };
+    for (size_t i = 0; i < 4; i++) libevdev_enable_event_code(gp, EV_ABS, saxes[i], &sa);
+    libevdev_enable_event_code(gp, EV_ABS, ABS_Z, &ta);   libevdev_enable_event_code(gp, EV_ABS, ABS_RZ, &ta);
+    libevdev_enable_event_code(gp, EV_ABS, ABS_HAT0X, &ha); libevdev_enable_event_code(gp, EV_ABS, ABS_HAT0Y, &ha);
+    rc = libevdev_uinput_create_from_device(gp, LIBEVDEV_UINPUT_OPEN_MANAGED, &ui_gpad);
+    libevdev_free(gp);
+    if (rc < 0) logf_("uinput (Gamepad) fehlgeschlagen: %s - Gamepad-Modus ohne Wirkung", strerror(-rc));
     return 0;
 }
 
@@ -1474,9 +1688,15 @@ static void handle_cmd(int c) {
     while (n > 0 && (buf[n - 1] == '\n' || buf[n - 1] == '\r' || buf[n - 1] == ' ')) buf[--n] = 0;
     char reply[160];
     bool was_enabled = cfg.enabled;
-    if (!strcmp(buf, "toggle")) { if (cfg.enabled) set_active(!g.active, true); snprintf(reply, sizeof reply, "ok %s", g.active ? "on" : "off"); }
-    else if (!strcmp(buf, "on"))  { if (cfg.enabled) set_active(true, true);  snprintf(reply, sizeof reply, "ok on"); }
-    else if (!strcmp(buf, "off")) { set_active(false, true); snprintf(reply, sizeof reply, "ok off"); }
+    if (!strcmp(buf, "toggle") || !strcmp(buf, "cycle")) { if (cfg.enabled) set_mode(mode_next(cur_mode()), true); snprintf(reply, sizeof reply, "ok %s", mode_name(cur_mode())); }
+    else if (!strcmp(buf, "on"))  { if (cfg.enabled) set_mode(MODE_KEYBOARD, true);  snprintf(reply, sizeof reply, "ok on"); }
+    else if (!strcmp(buf, "off")) { set_mode(MODE_OFF, true); snprintf(reply, sizeof reply, "ok off"); }
+    else if (!strncmp(buf, "mode ", 5)) {
+        const char *w = buf + 5;
+        int m = !strcmp(w, "keyboard") ? MODE_KEYBOARD : !strcmp(w, "gamepad") ? MODE_GAMEPAD : !strcmp(w, "off") ? MODE_OFF : -1;
+        if (m < 0) snprintf(reply, sizeof reply, "error mode keyboard|gamepad|off");
+        else { if (cfg.enabled || m == MODE_OFF) set_mode(m, true); snprintf(reply, sizeof reply, "ok %s", mode_name(cur_mode())); }
+    }
     else if (!strcmp(buf, "reload")) {
         cfg_load();
         wii_mode_rt = -1;                        /* geaenderte Einstellung gilt sofort */
@@ -1486,6 +1706,18 @@ static void handle_cmd(int c) {
     } else if (!strcmp(buf, "dump")) {
         char big[6144]; size_t l = dump_maps(big, sizeof big);
         (void)!write(c, big, l);
+        return;
+    } else if (!strcmp(buf, "extras")) {          /* Zusatztasten des ersten Gamepads: "E1=BTN_C E2=..." */
+        char ex[400]; size_t l = 0; ex[0] = 0;
+        for (int i = 0; i < MAX_PADS && !l; i++) {
+            if (!pads[i] || pads[i]->wii || !pads[i]->nextra) continue;
+            for (int k = 0; k < pads[i]->nextra; k++) {
+                const char *nm = libevdev_event_code_get_name(EV_KEY, (unsigned)pads[i]->extra[k]);
+                l += (size_t)snprintf(ex + l, sizeof ex - l, "%sE%d=%s", k ? " " : "", k + 1, nm ? nm : "?");
+            }
+        }
+        if (!l) snprintf(ex, sizeof ex, "-");
+        (void)!write(c, ex, strlen(ex));
         return;
     } else if (!strcmp(buf, "padmon")) {
         mon_until = clock_ms() + 800;
@@ -1501,10 +1733,10 @@ static void handle_cmd(int c) {
     } else if (!strcmp(buf, "detect stop")) { detect_on = false; snprintf(reply, sizeof reply, "ok");
     } else if (!strcmp(buf, "detect")) { snprintf(reply, sizeof reply, "%s", detect_name[0] ? detect_name : (detect_on ? "waiting" : "-")); if (detect_name[0]) detect_name[0] = 0;
     } else if (!strcmp(buf, "status")) {
-        int np = 0;
-        for (int i = 0; i < MAX_PADS; i++) if (pads[i]) np++;
+        int np = 0, ng = 0, nw = 0, ne = 0;
+        for (int i = 0; i < MAX_PADS; i++) if (pads[i]) { np++; if (pads[i]->wii == 0) { ng++; if (pads[i]->nextra > ne) ne = pads[i]->nextra; } else if (pads[i]->wii == 1) nw++; }
         static const char *wm[] = { "abs", "rel", "joy" };
-        snprintf(reply, sizeof reply, "%s pads=%d enabled=%d proto=%d wii=%s", g.active ? "on" : "off", np, cfg.enabled, PAD_PROTO, wm[wii_mode_eff()]);
+        snprintf(reply, sizeof reply, "%s pads=%d gpads=%d wiis=%d ebtn=%d enabled=%d proto=%d wii=%s mode=%s", g.active ? "on" : "off", np, ng, nw, ne, cfg.enabled, PAD_PROTO, wm[wii_mode_eff()], mode_name(cur_mode()));
     } else if (!strncmp(buf, "wii-mode", 8)) {
         const char *w = buf + 8;
         while (*w == ' ') w++;
@@ -1662,6 +1894,7 @@ static int fails;
 #define CHECK(cond, ...) do { if (!(cond)) { fails++; printf("FAIL line %d: ", __LINE__); printf(__VA_ARGS__); printf("\n"); } } while (0)
 static void clear(void) { rec[0] = 0; }
 static bool has(const char *s) { return strstr(rec, s) != NULL; }
+static bool hasf(const char *fmt, ...) { char b[64]; va_list ap; va_start(ap, fmt); vsnprintf(b, sizeof b, fmt, ap); va_end(ap); return strstr(rec, b) != NULL; }
 static void adv(int ms) { for (int t = 0; t < ms; t += TICK_MS) { fake_now += TICK_MS; tick(fake_now); } }
 static Pad *mk(void) {
     Pad *p = calloc(1, sizeof *p);
@@ -1709,9 +1942,9 @@ int main(void) {
     /* Home-Ebene */
     clear();
     pad_event(p, EV_KEY, BTN_MODE, 1);
-    pad_event(p, EV_ABS, ABS_HAT0Y, -1); CHECK(has("K187=1"), "Home+Dpad hoch = F17(%d) '%s'", KEY_F17, rec);
+    pad_event(p, EV_ABS, ABS_HAT0Y, -1); CHECK(has("K189=1"), "Home+Dpad hoch = F19 Pin(%d) '%s'", KEY_F19, rec);
     pad_event(p, EV_KEY, BTN_MODE, 0);   /* Home vor Dpad losgelassen */
-    pad_event(p, EV_ABS, ABS_HAT0Y, 0);  CHECK(has("K187=0"), "F17 wird trotzdem losgelassen (kein haengender Key) '%s'", rec);
+    pad_event(p, EV_ABS, ABS_HAT0Y, 0);  CHECK(has("K189=0"), "F19 wird trotzdem losgelassen (kein haengender Key) '%s'", rec);
     clear();
     pad_event(p, EV_KEY, BTN_MODE, 1);
     pad_event(p, EV_ABS, ABS_Z, 255);    CHECK(has("K125=1 B272=1"), "Home+L2 = Super+LMB '%s'", rec);
@@ -1719,9 +1952,43 @@ int main(void) {
     pad_event(p, EV_KEY, BTN_MODE, 0);
     clear();
     pad_event(p, EV_KEY, BTN_MODE, 1);
-    pad_event(p, EV_ABS, ABS_X, 30000);  CHECK(has("K42=1 K186=1"), "Home+Stick rechts = Shift+F16 '%s'", rec);
+    pad_event(p, EV_ABS, ABS_X, 30000);  CHECK(has("K29=1 K186=1"), "Home+Stick rechts = Ctrl+F16 '%s'", rec);
     pad_event(p, EV_ABS, ABS_X, 0);      pad_event(p, EV_KEY, BTN_MODE, 0);
-    CHECK(kref[KEY_LEFTSHIFT] == 0 && kref[KEY_F16] == 0, "nichts haengt");
+    CHECK(kref[KEY_LEFTCTRL] == 0 && kref[KEY_F16] == 0, "nichts haengt");
+    clear();
+    pad_event(p, EV_KEY, BTN_MODE, 1); pad_event(p, EV_KEY, BTN_THUMBR, 1);
+    pad_event(p, EV_ABS, ABS_HAT0Y, 1);  CHECK(has("K42=1 K188=1") && !has("K42=1 K188=1 K42"), "Shift-Ebene: Home+R3+Dpad runter = Shift+F18 (alle verstecken) '%s'", rec);
+    pad_event(p, EV_ABS, ABS_HAT0Y, 0);  pad_event(p, EV_KEY, BTN_THUMBR, 0); pad_event(p, EV_KEY, BTN_MODE, 0);
+    CHECK(kref[KEY_LEFTSHIFT] == 0 && kref[KEY_F18] == 0, "Shift-Ebene: nichts haengt");
+    {   /* Shift-Taste umstellbar: L3 */
+        cfg_apply_kv("shift_btn", "L3");
+        clear(); pad_event(p, EV_KEY, BTN_MODE, 1); pad_event(p, EV_KEY, BTN_THUMBL, 1);
+        pad_event(p, EV_ABS, ABS_HAT0Y, 1);  CHECK(has("K42=1 K188=1"), "Shift-Ebene mit shift_btn=L3 '%s'", rec);
+        pad_event(p, EV_ABS, ABS_HAT0Y, 0);  pad_event(p, EV_KEY, BTN_THUMBL, 0); pad_event(p, EV_KEY, BTN_MODE, 0);
+        cfg_apply_kv("shift_btn", "R3");
+        clear(); pad_event(p, EV_KEY, BTN_MODE, 1); pad_event(p, EV_KEY, BTN_THUMBL, 1);
+        pad_event(p, EV_ABS, ABS_HAT0Y, 1);  CHECK(!has("K42=1"), "mit shift_btn=R3 ist L3 keine Shift-Taste '%s'", rec);
+        pad_event(p, EV_ABS, ABS_HAT0Y, 0);  pad_event(p, EV_KEY, BTN_THUMBL, 0); pad_event(p, EV_KEY, BTN_MODE, 0);
+    }
+    {   /* Zusatztasten */
+        p->extra[0] = BTN_C; p->extra[1] = BTN_TRIGGER_HAPPY1; p->nextra = 2;
+        map_base[I_E1] = K(KEY_P); clear();
+        pad_event(p, EV_KEY, BTN_C, 1);  CHECK(has("K25=1"), "Zusatztaste E1 = P '%s'", rec);
+        pad_event(p, EV_KEY, BTN_C, 0);
+        clear(); pad_event(p, EV_KEY, BTN_TRIGGER_HAPPY1, 1); pad_event(p, EV_KEY, BTN_TRIGGER_HAPPY1, 0);
+        CHECK(!has("K25=1"), "E2 unbelegt macht nichts '%s'", rec);
+        map_base[I_E1] = NOACT; p->nextra = 0;
+    }
+    {   /* Hyprland-Monitorliste -> Zeigerbereich (zwei Monitore, 2. skaliert) */
+        const char *js = "[{\n\t\"id\": 0,\n\t\"name\": \"eDP-1\",\n\t\"width\": 2560,\n\t\"height\": 1600,\n\t\"x\": 0,\n\t\"y\": 0,\n"
+            "\t\"activeWorkspace\": {\"id\": 1, \"name\": \"1\"},\n\t\"scale\": 1.60,\n\t\"transform\": 0,\n\t\"focused\": false\n},"
+            "{\n\t\"name\": \"HDMI-A-1\",\n\t\"width\": 1920,\n\t\"height\": 1080,\n\t\"x\": 1600,\n\t\"y\": 0,\n\t\"scale\": 1.00,\n\t\"transform\": 0,\n\t\"focused\": true\n}]";
+        HMon hm[8]; int hn = hypr_parse_monitors(js, hm, 8); float r[4];
+        CHECK(hn == 2 && !strcmp(hm[1].name, "HDMI-A-1") && hm[1].focused && !hm[0].focused, "hyprctl-JSON: Monitore '%d'", hn);
+        CHECK(hypr_rect_from(hm, hn, NULL, r) && fabsf(r[0] - 1600.f / 3520.f) < 0.001f && fabsf(r[2] - 1.f) < 0.001f && fabsf(r[3] - 1.f) < 0.001f,
+              "hyprctl-JSON: Rechter Monitor reicht bis zum Rand (%.3f %.3f %.3f %.3f)", r[0], r[1], r[2], r[3]);
+        CHECK(hypr_rect_from(hm, hn, "eDP-1", r) && fabsf(r[2] - 1600.f / 3520.f) < 0.001f && fabsf(r[3] - 1000.f / 1080.f) < 0.001f, "hyprctl-JSON: Laptop-Monitor (skaliert)");
+    }
 
     /* Maus */
     clear();
@@ -1752,9 +2019,19 @@ int main(void) {
     pad_event(p, EV_KEY, BTN_SELECT, 1); adv(10);
     pad_event(p, EV_KEY, BTN_START, 1);
     adv(1100);
-    CHECK(!g.active, "Kombi 1s gehalten -> AUS");
+    CHECK(!g.active && g.gpad, "Kombi 1s gehalten -> Gamepad-Modus (Tastatur -> Gamepad)");
     CHECK(!has("K28=1") && !has("K1=1"), "Keine Geister-Tasten (Enter/Esc) bei der Kombi '%s'", rec);
     CHECK(has("FLAG=0"), "Flag-Datei weg");
+    pad_event(p, EV_KEY, BTN_TL, 0); pad_event(p, EV_KEY, BTN_TR, 0);
+    pad_event(p, EV_KEY, BTN_SELECT, 0); pad_event(p, EV_KEY, BTN_START, 0);
+    adv(50);
+
+    /* nochmal: Gamepad -> AUS */
+    clear();
+    pad_event(p, EV_KEY, BTN_TL, 1); pad_event(p, EV_KEY, BTN_TR, 1);
+    pad_event(p, EV_KEY, BTN_SELECT, 1); pad_event(p, EV_KEY, BTN_START, 1);
+    adv(1100);
+    CHECK(!g.active && !g.gpad && cur_mode() == MODE_OFF, "Kombi nochmal -> AUS");
     pad_event(p, EV_KEY, BTN_TL, 0); pad_event(p, EV_KEY, BTN_TR, 0);
     pad_event(p, EV_KEY, BTN_SELECT, 0); pad_event(p, EV_KEY, BTN_START, 0);
     adv(50);
@@ -1764,7 +2041,7 @@ int main(void) {
     pad_event(p, EV_KEY, BTN_TL, 1); pad_event(p, EV_KEY, BTN_TR, 1);
     pad_event(p, EV_KEY, BTN_SELECT, 1); pad_event(p, EV_KEY, BTN_START, 1);
     adv(1100);
-    CHECK(g.active, "AUS -> AN per Kombi");
+    CHECK(g.active, "AUS -> Tastatur per Kombi (Zyklus Tastatur -> Gamepad -> Aus -> Tastatur)");
     adv(3000);
     CHECK(g.active, "Weiterhalten schaltet nicht erneut um");
     clear();
@@ -1820,7 +2097,7 @@ int main(void) {
         pad_event(q, EV_KEY, BTN_MODE, 1); adv(100); pad_event(q, EV_KEY, BTN_MODE, 0); adv(150);
         pad_event(q, EV_KEY, BTN_MODE, 1); adv(100); pad_event(q, EV_KEY, BTN_MODE, 0); adv(150);
         pad_event(q, EV_ABS, ABS_HAT0Y, -1);
-        CHECK(has("K187=1"), "Home als Impulsfolge + Dpad hoch = F17 '%s'", rec);
+        CHECK(has("K189=1"), "Home als Impulsfolge + Dpad hoch = F19 '%s'", rec);
         pad_event(q, EV_ABS, ABS_HAT0Y, 0); adv(500);
         CHECK(!q->home && !q->home_armed, "Home nach Impulsfolge wieder losgelassen");
         pads[4] = NULL; free(q); g.active = true; cfg.home_release_ms = 0;
@@ -1831,7 +2108,7 @@ int main(void) {
         Pad *q = mk(); pads[4] = q; g.active = true; clear();
         pad_event(q, EV_KEY, BTN_MODE, 1); adv(40); pad_event(q, EV_KEY, BTN_MODE, 0);
         pad_event(q, EV_ABS, ABS_HAT0Y, -1);
-        CHECK(has("K187=1"), "Home-Tipp + Dpad hoch = F17 '%s'", rec);
+        CHECK(has("K189=1"), "Home-Tipp + Dpad hoch = F19 '%s'", rec);
         pad_event(q, EV_ABS, ABS_HAT0Y, 0); clear();
         pad_event(q, EV_ABS, ABS_HAT0Y, -1);
         CHECK(has("K103=1") && !has("K187"), "danach wieder normal (Pfeil hoch) '%s'", rec);
@@ -1859,10 +2136,10 @@ int main(void) {
         pad_event(q, EV_ABS, ABS_HAT0Y, 0);
         clear();
         pad_event(q, EV_KEY, BTN_MODE, 1);
-        pad_event(q, EV_ABS, ABS_HAT0Y, -1);  CHECK(has("K42=1 K183=1"), "Home+Dpad hoch = Fokus (Shift+F13) '%s'", rec);
+        pad_event(q, EV_ABS, ABS_HAT0Y, -1);  CHECK(has("K29=1 K183=1"), "Home+Dpad hoch = Fokus (Ctrl+F13) '%s'", rec);
         pad_event(q, EV_ABS, ABS_HAT0Y, 0);
         clear();
-        pad_event(q, EV_KEY, BTN_THUMBL, 1);  CHECK(has("K187=1"), "Home+L3 = Launcher (F17) '%s'", rec);
+        pad_event(q, EV_KEY, BTN_THUMBL, 1);  CHECK(has("K183=1"), "Home+L3 = Launcher (F13) '%s'", rec);
         pad_event(q, EV_KEY, BTN_THUMBL, 0);
         pad_event(q, EV_KEY, BTN_MODE, 0);
         clear();
@@ -1878,7 +2155,7 @@ int main(void) {
         cfg.mouse_left = false; build_maps(); clear();
         pad_event(q, EV_ABS, ABS_RX, 0);
         pad_event(q, EV_KEY, BTN_MODE, 1);
-        pad_event(q, EV_ABS, ABS_Y, -30000);  CHECK(has("K187=1"), "Tausch: Home+Stick hoch = F17 '%s'", rec);
+        pad_event(q, EV_ABS, ABS_Y, -30000);  CHECK(has("K189=1"), "Tausch: Home+Stick hoch = F19 '%s'", rec);
         pad_event(q, EV_ABS, ABS_Y, 0);
         pad_event(q, EV_KEY, BTN_MODE, 0);
         pads[6] = NULL; free(q);
@@ -1920,13 +2197,13 @@ int main(void) {
         Pad *nk = mk(); nk->wii = 2; nk->cx = -13; nk->cy = 10; pads[7] = nk;
         g.active = true; cfg.mouse_left = false; clear();
         wii_button(w, BTN_SOUTH, 1); wii_button(w, BTN_SOUTH, 0);
-        CHECK(has("B272=1") && has("B272=0"), "Wii A = Linksklick '%s'", rec);
+        CHECK(has("B273=1") && has("B273=0"), "Wii A = Rechtsklick '%s'", rec);
         clear(); wii_button(w, BTN_EAST, 1); wii_button(w, BTN_EAST, 0);
-        CHECK(has("B273=1"), "Wii B = Rechtsklick '%s'", rec);
+        CHECK(has("B272=1"), "Wii B = Linksklick '%s'", rec);
         clear(); wii_button(w, KEY_UP, 1); wii_button(w, KEY_UP, 0);
         CHECK(has("K103=1"), "Wii Steuerkreuz hoch = Pfeil hoch '%s'", rec);
         clear(); wii_button(w, BTN_1, 1); wii_button(w, BTN_1, 0);
-        CHECK(has("K57=1"), "Wii 1 = Space '%s'", rec);
+        CHECK(wmap_base[I_A].kind == 3 && wmap_base[I_A].code == 0 && wmap_base[I_B].code == 1, "Wii 1/2 = Scroll hoch/runter");
         clear(); wii_nunchuk(nk, EV_ABS, ABS_HAT0Y, 10 + 90);   /* Stick nach oben (positiv) */
         adv(10);
         CHECK(has("K17=1"), "Nunchuk hoch = W '%s'", rec);
@@ -1937,7 +2214,7 @@ int main(void) {
         CHECK(has("K16=1"), "Nunchuk Z = Q '%s'", rec);
         /* Home auf der Wiimote = Ebene */
         clear(); wii_button(w, BTN_MODE, 1); wii_button(w, BTN_1, 1); wii_button(w, BTN_1, 0); wii_button(w, BTN_MODE, 0);
-        CHECK(has("K191=1") || has("K183=1"), "Wii Home+1 = F13 '%s'", rec);
+        CHECK(has("K187=1"), "Wii Home+1 = F17 Screenshot '%s'", rec);
         /* IR: zwei Punkte -> Mitte, gespiegelt */
         ir.init = false; ir.have2 = false; ir.vis = false; ir.last_x = ir.last_y = 0;
         cal_u0 = cal_v0 = 0.f; cal_u1 = cal_v1 = 1.f; clear(); cfg.wii_roll = false; ir.theta_ok = false;
@@ -2084,7 +2361,7 @@ int main(void) {
             CHECK(map_base[I_A].code == KEY_ENTER, "Layout: base.A = Enter");
             CHECK(map_home[I_A].code == KEY_C && map_home[I_A].mods == 2, "Layout: home.A = Ctrl+C");
             CHECK(map_base[I_DU].kind == 3 && map_base[I_L2].kind == 0, "Layout: Scroll + none");
-            CHECK(map_base[I_B].code == KEY_X, "Layout: kaputte Zeile ignoriert");
+            CHECK(map_base[I_B].code == KEY_LEFTCTRL, "Layout: kaputte Zeile ignoriert");
             CHECK(cfg.stick_base == 0 && cfg.stick_home == 1, "Layout: Stick-Modi");
             char big[6144]; dump_maps(big, sizeof big);
             CHECK(strstr(big, "base.A=enter") && strstr(big, "home.A=ctrl+c") && strstr(big, "layout=spiel") && strstr(big, "stick.home=mouse"), "dump_maps");
@@ -2120,7 +2397,7 @@ int main(void) {
             fputs("wbase.L2 = enter\nwhome.A = ctrl+c\nbase.L2 = none\n", lf); fclose(lf);
             snprintf(cfg.layout, sizeof cfg.layout, "wiitest"); build_maps();
             CHECK(wmap_base[I_L2].code == KEY_ENTER && map_base[I_L2].kind == 0, "wbase. nur fuer Wiimote, base. nur fuer Gamepad");
-            CHECK(wmap_home[I_A].code == KEY_C && map_home[I_A].code == KEY_F13, "whome.");
+            CHECK(wmap_home[I_A].code == KEY_C && map_home[I_A].kind == 0, "whome.");
             char big[6144]; dump_maps(big, sizeof big);
             CHECK(strstr(big, "wbase.L2=enter") && strstr(big, "whome.A=ctrl+c") && strstr(big, "base.L2=none"), "dump enthaelt Wiimote-Belegung");
             Pad *keep[MAX_PADS]; memcpy(keep, pads, sizeof keep); memset(pads, 0, sizeof pads);
@@ -2140,8 +2417,54 @@ int main(void) {
             tick(t0 + 700); CHECK(wii_mode_eff() == 1, "nach 600 ms: relativ");
             set_src(wp, I_A, false, false); set_src(wp, I_B, false, false);
             set_src(wp, I_A, false, true); set_src(wp, I_B, false, true);
-            tick(clock_ms() + 700); CHECK(wii_mode_eff() == 0, "nochmal: zurueck auf absolut");
+            tick(clock_ms() + 700); CHECK(wii_mode_eff() == 2, "nochmal: Joystick");
             set_src(wp, I_A, false, false); set_src(wp, I_B, false, false);
+            set_src(wp, I_A, false, true); set_src(wp, I_B, false, true);
+            tick(clock_ms() + 700); CHECK(wii_mode_eff() == 0, "und nochmal: zurueck auf absolut (abs -> rel -> joy -> abs)");
+            set_src(wp, I_A, false, false); set_src(wp, I_B, false, false);
+
+            /* Gamepad-Modus: Wiimote + Nunchuk als virtuelles Gamepad */
+            {
+                cfg_defaults(); build_maps();
+                Pad *np = mk(); np->wii = 2; np->cx = 128; np->cy = 128; pads[2] = np;
+                set_mode(MODE_GAMEPAD, false); clear();
+                CHECK(!g.active && g.gpad && cur_mode() == MODE_GAMEPAD, "Gamepad-Modus aktiv");
+                CHECK(wp->grabbed && !gp->grabbed, "Gamepad-Modus: Wiimote abgefangen, echtes Pad frei");
+                set_src(wp, I_A, false, true);
+                CHECK(hasf("gb%d=1", BTN_SOUTH) && !has("K"), "Wiimote 1 = A-Knopf, keine Tastatur '%s'", rec);
+                set_src(wp, I_A, false, false); CHECK(hasf("gb%d=0", BTN_SOUTH), "los");
+                clear(); set_src(wp, I_L2, false, true);
+                CHECK(hasf("gb%d=1", BTN_TL2) && hasf("ga%d:255", ABS_Z), "Wiimote-A = linker Trigger '%s'", rec);
+                set_src(wp, I_L2, false, false);
+                clear(); set_src(wp, I_R2, false, true);
+                CHECK(hasf("gb%d=1", BTN_TR2) && hasf("ga%d:255", ABS_RZ), "Wiimote-B = rechter Trigger");
+                set_src(wp, I_R2, false, false);
+                clear(); set_src(wp, I_DU, false, true); CHECK(hasf("ga%d:-1", ABS_HAT0Y), "Kreuz hoch = Hat -1 '%s'", rec);
+                set_src(wp, I_DU, false, false); CHECK(hasf("ga%d:0", ABS_HAT0Y), "Kreuz los");
+                clear(); set_src(wp, I_HOME, false, true); CHECK(hasf("gb%d=1", BTN_MODE) && !has("K"), "Home = Guide-Knopf '%s'", rec);
+                set_src(wp, I_HOME, false, false);
+                clear(); set_src(wp, I_START, false, true); CHECK(hasf("gb%d=1", BTN_START), "+ = Start");
+                set_src(wp, I_START, false, false);
+                clear(); wii_nunchuk(np, EV_ABS, ABS_HAT0X, 128 + 95);
+                CHECK(hasf("ga%d:32767", ABS_X) && !has("K"), "Nunchuk-Stick rechts = linker Stick, keine Taste D '%s'", rec);
+                wii_nunchuk(np, EV_ABS, ABS_HAT0X, 128);
+                clear(); wii_nunchuk(np, EV_KEY, BTN_Z, 1); CHECK(hasf("gb%d=1", BTN_TL), "Z = LB");
+                wii_nunchuk(np, EV_KEY, BTN_Z, 0);
+                clear(); ir.init = true; ir.fresh = false; ir.vis = true; ir.sx = ir.tx = 1.0f; ir.sy = ir.ty = 0.5f;
+                ir_emit(0.016f);
+                CHECK(hasf("ga%d:32767", ABS_RX) && !has("R0:") && !has("A0:"), "IR-Zeiger rechts = rechter Stick '%s'", rec);
+                ir.sx = ir.tx = 0.5f; clear(); ir_emit(0.016f); CHECK(hasf("ga%d:0", ABS_RX), "Zeiger in der Mitte = Stick 0");
+                ir.vis = false;
+                clear(); set_src(gp, I_A, false, true); set_src(gp, I_A, false, false);
+                CHECK(rec[0] == 0, "echtes Pad im Gamepad-Modus: nichts ausgegeben '%s'", rec);
+                set_src(wp, I_B, false, true); clear();
+                set_mode(MODE_OFF, false);
+                CHECK(hasf("gb%d=0", BTN_EAST), "Moduswechsel laesst keine Gamepad-Taste haengen '%s'", rec);
+                set_src(wp, I_B, false, false);
+                CHECK(!wp->grabbed && !gp->grabbed, "AUS: alles frei");
+                set_mode(MODE_KEYBOARD, false); CHECK(wp->grabbed && gp->grabbed, "Tastatur: alle abgefangen");
+                pads[2] = NULL; free(np); g.active = true; clear();
+            }
             cfg_apply_kv("wii_mode_combo", "none"); CHECK(cfg.wii_mode_mask == 0, "Modus-Kombi aus");
             cfg_apply_kv("wii_mode_combo", "L2+R2"); CHECK(cfg.wii_mode_mask == ((1u << I_L2) | (1u << I_R2)), "Modus-Kombi A+B der Wiimote");
             cfg_apply_kv("wii_toggle_combo", "A+B"); CHECK(cfg.wii_combo_mask == ((1u << I_A) | (1u << I_B)), "Wiimote-Toggle-Kombi frei waehlbar");

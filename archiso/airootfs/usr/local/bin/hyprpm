@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# hyprpm   (Ziel: /usr/local/bin/hyprpm, Modus 0755)
+#
+# Wrapper vor dem echten /usr/bin/hyprpm (/usr/local/bin steht im PATH davor).
+#
+# Nur ein nacktes "hyprpm update" wird umgeleitet, und zwar auf
+# HyprpmSync.sh --now: alles neu bauen, nicht baubare Repos entfernen.
+# Alles andere geht unveraendert an das echte hyprpm, z.B.:
+#   hyprpm update -f      (mit Flag: das echte update, ohne Aufraeumen)
+#   hyprpm reload -n, hyprpm add ..., hyprpm list ...
+#
+# Umgeleitet wird nur innerhalb einer laufenden Hyprland-Session. Sonst (TTY,
+# chroot, Installer) laeuft immer das echte hyprpm.
+#
+# Zum Ueberspringen: TRAFKTUX_HYPRPM_RAW=1 hyprpm update
+
+REAL="${TRAFKTUX_HYPRPM_REAL:-/usr/bin/hyprpm}"
+SYNC="/usr/local/lib/trafktux/HyprpmSync.sh"
+
+if [[ "${TRAFKTUX_HYPRPM_RAW:-0}" != "1" \
+    && "$#" -eq 1 && "${1}" == "update" \
+    && -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" \
+    && -f "${SYNC}" ]]; then
+    exec bash "${SYNC}" --now
+fi
+
+exec "${REAL}" "$@"
